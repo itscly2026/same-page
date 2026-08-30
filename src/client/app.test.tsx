@@ -78,6 +78,60 @@ describe("AppRoutes", () => {
     ).toBeInTheDocument();
   });
 
+  it("lets an administrator rotate and then hide a one-time join code", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "admin-1", email: "admin@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    const fetchMock = vi.fn().mockImplementation(
+      (input: string, init?: RequestInit) => {
+        if (input.endsWith("/join-code/rotate") && init?.method === "POST") {
+          return Promise.resolve(
+            Response.json({ joinCode: "ABCDEFGH", joinCodeVersion: 2 }),
+          );
+        }
+        if (input.includes("/scores")) {
+          return Promise.resolve(
+            Response.json({
+              scores: [],
+              storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
+              permissions: { canManage: true },
+            }),
+          );
+        }
+        return Promise.resolve(
+          Response.json({ choir: { id: "choir-1", name: "小红花合唱团" } }),
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("confirm", vi.fn(() => true));
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "轮换邀请码" }),
+    );
+
+    expect(
+      await screen.findByText("邀请码已轮换。请现在复制新邀请码并通过私密渠道发送。"),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("新的八位邀请码")).toHaveTextContent(
+      "ABCDEFGH",
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/choirs/choir-1/join-code/rotate",
+      { method: "POST" },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "已复制，隐藏邀请码" }));
+    expect(screen.queryByLabelText("新的八位邀请码")).not.toBeInTheDocument();
+  });
+
   it("requires explicit confirmation before logout discards pending work", async () => {
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "user-1", email: "member@example.test" } },

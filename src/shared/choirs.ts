@@ -21,6 +21,11 @@ export const joinCurrentGuestRequestSchema = z.object({
   displayName: displayNameSchema,
 });
 
+export const rotateJoinCodeResponseSchema = z.object({
+  joinCode: joinCodeSchema,
+  joinCodeVersion: z.number().int().positive(),
+});
+
 export const choirSummarySchema = z.object({
   id: z.string(),
   name: z.string(),

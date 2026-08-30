@@ -407,7 +407,7 @@ h1 {
 
 .score-card small,
 .score-toolbar > p,
-.upload-panel > p {
+.admin-panel > p {
   color: #6e5660;
 }
 
@@ -463,11 +463,48 @@ h1 {
   background: #f5eddc;
 }
 
-.upload-panel {
+.admin-panel {
   max-width: 48rem;
   margin-top: 4rem;
   border-top: 1px solid #d8c4ba;
   padding-top: 1.5rem;
+}
+
+.admin-panel > button,
+.join-code-result button {
+  min-height: 2.65rem;
+  border: 1px solid #bda69b;
+  border-radius: 0.7rem;
+  padding: 0.55rem 0.85rem;
+  color: #4e2638;
+  background: #fff;
+  cursor: pointer;
+}
+
+.join-code-result {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  margin-top: 1rem;
+  border: 1px solid #d8c4ba;
+  border-radius: 0.8rem;
+  padding: 1rem;
+  background: #fff;
+}
+
+.join-code-result p {
+  flex-basis: 100%;
+  margin: 0;
+  color: #6e5660;
+}
+
+.join-code-result output {
+  color: #5f1f3d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
 }
 
 .empty-state {

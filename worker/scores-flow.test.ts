@@ -264,7 +264,7 @@ async function createAdminChoir() {
   const provisioned = await provisionChoir({
     binding: env.DB,
     adminUserId: admin!.id,
-    adminDisplayName: "团长",
+    adminDisplayName: "管理员",
     inviteSecret: env.INVITE_SECRET,
   });
   return {
