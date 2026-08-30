@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 
 import { healthResponseSchema } from "../src/shared/health";
+import { annotationRoutes } from "./annotations/routes";
 import { AuthorizationError } from "./auth/authorization";
 import { createAuth } from "./auth/create-auth";
 import { choirRoutes } from "./choirs/routes";
@@ -26,6 +27,7 @@ app.on(["GET", "POST"], "/api/auth/*", (context) => {
 
 app.route("/api", choirRoutes);
 app.route("/api", scoreRoutes);
+app.route("/api", annotationRoutes);
 
 app.notFound((context) => context.json({ error: "not_found" }, 404));
 

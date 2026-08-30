@@ -27,6 +27,7 @@
     "@tanstack/react-virtual": "^3.14.10",
     "better-auth": "^1.7.2",
     "dexie": "^4.4.5",
+    "dexie-react-hooks": "^4.4.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.5",
     "pdfjs-dist": "^6.3.289",
