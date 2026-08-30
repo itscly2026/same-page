@@ -1,4 +1,7 @@
-import type { AnnotationObjectRecord } from "../../shared/annotations";
+import {
+  annotationPullResponseSchema,
+  type AnnotationObjectRecord,
+} from "../../shared/annotations";
 import {
   annotationScopeKey,
   localDatabase,
@@ -21,10 +24,7 @@ export async function syncAnnotations(
         `/api/choirs/${choirId}/scores/${scoreId}/annotations?cursor=${cursor}`,
       );
       if (!response.ok) throw new Error("annotation_pull_failed");
-      const body = (await response.json()) as {
-        cursor: number;
-        objects: AnnotationObjectRecord[];
-      };
+      const body = annotationPullResponseSchema.parse(await response.json());
       await applyPulledAnnotations(choirId, scoreId, body.cursor, body.objects);
       pulled = body.objects.length;
     }

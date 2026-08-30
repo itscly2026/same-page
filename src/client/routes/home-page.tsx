@@ -13,6 +13,11 @@ import {
   type MembershipSummary,
 } from "../../shared/choirs";
 import { authClient } from "../auth/auth-client";
+import {
+  clearPrivateLocalDataAfterLogout,
+  getLogoutLocalSummary,
+  type LogoutLocalSummary,
+} from "../auth/logout-local-data";
 
 export function HomePage() {
   const navigate = useNavigate();
@@ -22,6 +27,9 @@ export function HomePage() {
   const [memberships, setMemberships] = useState<MembershipSummary[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [logoutSummary, setLogoutSummary] =
+    useState<LogoutLocalSummary | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
   const userId = session.data?.user.id;
 
   useEffect(() => {
@@ -101,7 +109,9 @@ export function HomePage() {
             <span>已登录：{session.data.user.email}</span>
             <Button
               className="text-button"
-              onPress={() => void authClient.signOut()}
+              onPress={() =>
+                void getLogoutLocalSummary().then(setLogoutSummary)
+              }
             >
               退出登录
             </Button>
@@ -112,6 +122,59 @@ export function HomePage() {
           </Link>
         )}
       </section>
+
+      {logoutSummary ? (
+        <aside
+          className="logout-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="logout-title"
+        >
+          <h2 id="logout-title">确认退出登录</h2>
+          {logoutSummary.pendingOperations > 0 || logoutSummary.conflicts > 0 ? (
+            <p>
+              本机还有 {logoutSummary.pendingOperations} 项待同步操作和 {logoutSummary.conflicts}
+              项本地冲突。继续会永久丢弃这些内容。
+            </p>
+          ) : (
+            <p>退出后会清除本机个人层、编辑权限和账号偏好；已下载的共享内容可以保留。</p>
+          )}
+          <div className="update-prompt__actions">
+            <Button isDisabled={loggingOut} onPress={() => setLogoutSummary(null)}>
+              返回处理
+            </Button>
+            <Button
+              isDisabled={loggingOut}
+              onPress={() => {
+                if (!navigator.onLine) {
+                  setMessage("请联网后退出，以确保服务端会话同时失效。");
+                  setLogoutSummary(null);
+                  return;
+                }
+                setLoggingOut(true);
+                void authClient
+                  .signOut()
+                  .then((result) => {
+                    if (result.error) throw new Error("sign_out_failed");
+                    return clearPrivateLocalDataAfterLogout();
+                  })
+                  .then(() => {
+                    setMemberships([]);
+                    setLogoutSummary(null);
+                  })
+                  .catch(() => {
+                    setMessage("退出未完成，本机数据没有清除。请重试。");
+                  })
+                  .finally(() => setLoggingOut(false));
+              }}
+            >
+              {logoutSummary.pendingOperations > 0 || logoutSummary.conflicts > 0
+                ? "丢弃并退出"
+                : "退出并清除"}
+            </Button>
+          </div>
+        </aside>
+      ) : null}
 
       {memberships.length > 0 ? (
         <section className="choir-section" aria-labelledby="my-choirs-title">

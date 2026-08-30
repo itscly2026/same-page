@@ -22,6 +22,14 @@ export interface OfflineScoreRecord {
   blob: Blob;
   active: 0 | 1;
   verifiedAt: number;
+  annotationSnapshot: OfflineAnnotationSnapshot;
+}
+
+export interface OfflineAnnotationSnapshot {
+  layers: LocalAnnotationLayerRecord[];
+  annotations: LocalAnnotationRecord[];
+  cursor: number;
+  verifiedAt: number;
 }
 
 export type LocalAnnotationState = "synced" | "draft" | "pending" | "conflict";
