@@ -1,0 +1,1035 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Same Page 同步模型原型（可丢弃）</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        color: #1f2933;
+        background: #f5f7f8;
+        --accent: #b42348;
+        --accent-soft: #fff0f3;
+        --border: #d8dee3;
+        --muted: #5f6c76;
+        --success: #147a55;
+        --warning: #a15c00;
+        --danger: #b42318;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      button {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: white;
+        color: inherit;
+        padding: 0.65rem 0.85rem;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+
+      button:focus-visible {
+        outline: 3px solid color-mix(in srgb, var(--accent) 30%, transparent);
+        outline-offset: 2px;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.46;
+      }
+
+      main {
+        width: min(1480px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 32px 0 64px;
+      }
+
+      header,
+      section {
+        margin-bottom: 24px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 10px;
+        font-size: clamp(1.8rem, 4vw, 2.75rem);
+      }
+
+      h2 {
+        font-size: 1.25rem;
+      }
+
+      h3 {
+        font-size: 1rem;
+        margin-bottom: 8px;
+      }
+
+      .eyebrow {
+        color: var(--accent);
+        font-size: 0.8rem;
+        font-weight: 750;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .intro {
+        max-width: 920px;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .question {
+        border-left: 4px solid var(--accent);
+        background: var(--accent-soft);
+        border-radius: 0 10px 10px 0;
+        padding: 16px 18px;
+        max-width: 1080px;
+      }
+
+      .question strong {
+        color: var(--accent);
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .metric,
+      .panel,
+      .walkthrough {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: white;
+      }
+
+      .metric {
+        padding: 14px 16px;
+      }
+
+      .metric-label {
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      .metric-value {
+        margin-top: 4px;
+        font-size: 1.45rem;
+        font-weight: 720;
+      }
+
+      .state-grid {
+        display: grid;
+        grid-template-columns: 1.15fr 1fr 1fr;
+        gap: 16px;
+      }
+
+      .panel {
+        min-width: 0;
+        padding: 18px;
+      }
+
+      .panel.server {
+        border-top: 4px solid #1f6feb;
+      }
+
+      .panel.client-a {
+        border-top: 4px solid #147a55;
+      }
+
+      .panel.client-b {
+        border-top: 4px solid #8e4ec6;
+      }
+
+      .status-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+
+      .badge {
+        border-radius: 999px;
+        background: #eef2f5;
+        padding: 4px 8px;
+        font-size: 0.75rem;
+        font-weight: 650;
+      }
+
+      .badge.online,
+      .badge.ok {
+        color: var(--success);
+        background: #e9f8f1;
+      }
+
+      .badge.offline,
+      .badge.pending {
+        color: var(--warning);
+        background: #fff5df;
+      }
+
+      .badge.conflict {
+        color: var(--danger);
+        background: #fff0ed;
+      }
+
+      .object-list,
+      .queue-list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .object,
+      .queue-item {
+        border: 1px solid #e7ebee;
+        border-radius: 8px;
+        background: #fafbfc;
+        padding: 10px;
+        overflow-wrap: anywhere;
+      }
+
+      .object.deleted {
+        color: var(--muted);
+        text-decoration: line-through;
+      }
+
+      .object-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-weight: 680;
+      }
+
+      .object-meta,
+      .empty,
+      .hint {
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      .stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .subsection {
+        border-top: 1px solid #edf0f2;
+        padding-top: 12px;
+      }
+
+      .activity {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #17212b;
+        color: #f6f8fa;
+        padding: 14px 16px;
+        min-height: 54px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        line-height: 1.5;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .control-group {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: white;
+        padding: 16px;
+      }
+
+      .button-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: white;
+      }
+
+      .danger {
+        border-color: #f2b8b5;
+        color: var(--danger);
+      }
+
+      .tabs {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        margin-bottom: 12px;
+        padding-bottom: 4px;
+      }
+
+      .tab[aria-selected="true"] {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .walkthrough {
+        padding: 18px;
+      }
+
+      .steps {
+        display: grid;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: 32px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        border-top: 1px solid #edf0f2;
+        padding-top: 10px;
+      }
+
+      .step-number {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border-radius: 50%;
+        background: #eef2f5;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .step.done .step-number {
+        color: white;
+        background: var(--success);
+      }
+
+      footer {
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      @media (max-width: 1050px) {
+        .state-grid,
+        .summary {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .panel.server {
+          grid-column: 1 / -1;
+        }
+      }
+
+      @media (max-width: 720px) {
+        main {
+          width: min(100% - 20px, 1480px);
+          padding-top: 20px;
+        }
+
+        .state-grid,
+        .summary,
+        .controls {
+          grid-template-columns: 1fr;
+        }
+
+        .panel.server {
+          grid-column: auto;
+        }
+
+        .step {
+          grid-template-columns: 28px 1fr;
+        }
+
+        .step button {
+          grid-column: 2;
+          justify-self: start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="eyebrow">Throwaway prototype · Issue #3</div>
+        <h1>对象级同步模型试验台</h1>
+        <p class="intro">
+          这是一个可双击打开、完全在内存中运行的逻辑原型。它不是产品界面，也不会写入数据库。
+          你可以让设备 A、设备 B 在离线或旧版本基础上编辑，再观察服务端、outbox
+          和本地冲突如何变化。
+        </p>
+        <div class="question">
+          <strong>要回答的问题：</strong>
+          云端只保存已接受版本时，标准乐观并发控制能否做到“不同对象自动合并；同一对象只有后到者产生本地冲突；响应丢失后的重试不重复写入”？
+        </div>
+      </header>
+
+      <section aria-labelledby="summary-title">
+        <h2 id="summary-title">当前状态</h2>
+        <div class="summary" id="summary"></div>
+      </section>
+
+      <section aria-labelledby="state-title">
+        <h2 id="state-title">完整模型</h2>
+        <div class="state-grid">
+          <article class="panel server" id="server-panel"></article>
+          <article class="panel client-a" id="client-a-panel"></article>
+          <article class="panel client-b" id="client-b-panel"></article>
+        </div>
+      </section>
+
+      <section aria-labelledby="activity-title">
+        <h2 id="activity-title">刚刚发生</h2>
+        <div class="activity" id="activity" aria-live="polite"></div>
+      </section>
+
+      <section aria-labelledby="freeplay-title">
+        <h2 id="freeplay-title">自由操作</h2>
+        <p class="hint">按钮始终可用；无效操作会明确说明原因，不会悄悄忽略。</p>
+        <div class="controls" id="freeplay-controls"></div>
+      </section>
+
+      <section aria-labelledby="walkthrough-title">
+        <h2 id="walkthrough-title">引导场景</h2>
+        <div class="tabs" id="scenario-tabs" role="tablist"></div>
+        <div class="walkthrough" id="walkthrough"></div>
+      </section>
+
+      <footer>
+        原型代码应保留在 throwaway 分支，不进入生产 main。验证后的同步规则由 ADR-0001
+        与 ADR-0009 承接。
+      </footer>
+    </main>
+
+    <script>
+      // Portable pure model. It intentionally has no DOM dependencies.
+      const SyncModel = (() => {
+        const clone = (value) => JSON.parse(JSON.stringify(value));
+
+        const initialObject = {
+          id: "shared-text-1",
+          type: "text",
+          text: "统一吸气",
+          deleted: false,
+          version: 1,
+          author: "指挥",
+        };
+
+        function createClient(name) {
+          return {
+            name,
+            online: true,
+            cursor: 1,
+            known: { [initialObject.id]: clone(initialObject) },
+            drafts: {},
+            outbox: [],
+            conflicts: [],
+          };
+        }
+
+        function initialState() {
+          return {
+            server: {
+              sequence: 1,
+              objects: { [initialObject.id]: clone(initialObject) },
+              processed: {},
+            },
+            clients: {
+              A: createClient("设备 A"),
+              B: createClient("设备 B"),
+            },
+            nextObjectNumber: 2,
+            nextOperationNumber: 1,
+            activity: "模型已重置：两台设备都知道云端 v1「统一吸气」。",
+          };
+        }
+
+        function operationId(state, clientId) {
+          const id = `${clientId}-op-${state.nextOperationNumber}`;
+          state.nextOperationNumber += 1;
+          return id;
+        }
+
+        function queueOperation(state, clientId, operation, draft) {
+          const client = state.clients[clientId];
+          client.outbox.push(operation);
+          client.drafts[operation.annotationId] = draft;
+        }
+
+        function acceptOperation(state, operation) {
+          const current = state.server.objects[operation.annotationId];
+          const currentVersion = current?.version ?? 0;
+
+          if (operation.kind === "create") {
+            if (current && !current.deleted) {
+              return { status: "conflict", canonical: clone(current) };
+            }
+          } else if (!current || currentVersion !== operation.baseVersion) {
+            return {
+              status: "conflict",
+              canonical: current ? clone(current) : null,
+            };
+          }
+
+          state.server.sequence += 1;
+          const accepted = {
+            ...clone(operation.payload),
+            id: operation.annotationId,
+            deleted: operation.kind === "tombstone",
+            version: currentVersion + 1,
+          };
+          state.server.objects[operation.annotationId] = accepted;
+          const response = {
+            status: "accepted",
+            canonical: clone(accepted),
+            sequence: state.server.sequence,
+          };
+          state.server.processed[operation.opId] = clone(response);
+          return response;
+        }
+
+        function processOperation(state, operation) {
+          const previous = state.server.processed[operation.opId];
+          if (previous) {
+            return { ...clone(previous), replayed: true };
+          }
+          return acceptOperation(state, operation);
+        }
+
+        function pushAll(state, clientId) {
+          const client = state.clients[clientId];
+          if (!client.online) {
+            state.activity = `${client.name} 当前离线：outbox 保留在本机。`;
+            return;
+          }
+          if (!client.outbox.length) {
+            state.activity = `${client.name} 没有待上传操作。`;
+            return;
+          }
+
+          const accepted = [];
+          const conflicted = [];
+          const operations = [...client.outbox];
+          client.outbox = [];
+
+          for (const operation of operations) {
+            const response = processOperation(state, operation);
+            if (response.status === "accepted") {
+              client.known[operation.annotationId] = clone(response.canonical);
+              delete client.drafts[operation.annotationId];
+              client.cursor = Math.max(client.cursor, response.sequence);
+              accepted.push(`${operation.annotationId}${response.replayed ? "（幂等重放）" : ""}`);
+              continue;
+            }
+
+            client.conflicts.push({
+              id: `conflict-${operation.opId}`,
+              operation: clone(operation),
+              canonical: clone(response.canonical),
+            });
+            if (response.canonical) {
+              client.known[operation.annotationId] = clone(response.canonical);
+            }
+            conflicted.push(operation.annotationId);
+          }
+
+          state.activity = `${client.name} 保存结果：${accepted.length} 项成功${
+            conflicted.length ? `，${conflicted.length} 项成为本地冲突` : "，没有冲突"
+          }。`;
+        }
+
+        function loseAcknowledgement(state, clientId) {
+          const client = state.clients[clientId];
+          if (!client.online) {
+            state.activity = `${client.name} 离线，无法模拟云端已写入。`;
+            return;
+          }
+          const operation = client.outbox[0];
+          if (!operation) {
+            state.activity = `${client.name} 没有可用于模拟丢失响应的操作。`;
+            return;
+          }
+          const response = processOperation(state, operation);
+          if (response.status === "accepted") {
+            state.activity = `云端已接受 ${operation.opId}，但响应丢失；${client.name} 仍把它留在 outbox。`;
+          } else {
+            state.activity = `云端拒绝 ${operation.opId}，响应也丢失；客户端尚不知道冲突。`;
+          }
+        }
+
+        function reducer(inputState, action) {
+          if (action.type === "RESET") return initialState();
+          const state = clone(inputState);
+          const client = action.client ? state.clients[action.client] : null;
+
+          switch (action.type) {
+            case "SET_ONLINE": {
+              client.online = action.online;
+              state.activity = `${client.name} 已切换为${action.online ? "在线" : "离线"}。`;
+              return state;
+            }
+            case "PULL": {
+              if (!client.online) {
+                state.activity = `${client.name} 离线，无法拉取云端。`;
+                return state;
+              }
+              client.known = clone(state.server.objects);
+              client.cursor = state.server.sequence;
+              state.activity = `${client.name} 已拉取到云端序列 ${state.server.sequence}；本地草稿与冲突未被覆盖。`;
+              return state;
+            }
+            case "ADD_TEXT": {
+              const id = `${action.client.toLowerCase()}-text-${state.nextObjectNumber}`;
+              state.nextObjectNumber += 1;
+              const payload = {
+                id,
+                type: "text",
+                text: action.text,
+                deleted: false,
+                author: client.name,
+              };
+              queueOperation(
+                state,
+                action.client,
+                {
+                  opId: operationId(state, action.client),
+                  annotationId: id,
+                  baseVersion: 0,
+                  kind: "create",
+                  payload,
+                },
+                payload,
+              );
+              state.activity = `${client.name} 在本机新增「${action.text}」，尚未上传。`;
+              return state;
+            }
+            case "EDIT_SHARED": {
+              const known = client.known[initialObject.id];
+              if (!known) {
+                state.activity = `${client.name} 尚不知道目标对象，请先拉取。`;
+                return state;
+              }
+              const payload = {
+                ...clone(known),
+                text: action.text,
+                deleted: false,
+                author: client.name,
+              };
+              queueOperation(
+                state,
+                action.client,
+                {
+                  opId: operationId(state, action.client),
+                  annotationId: initialObject.id,
+                  baseVersion: known.version,
+                  kind: "replace",
+                  payload,
+                },
+                payload,
+              );
+              state.activity = `${client.name} 基于 v${known.version} 把共享文本改为「${action.text}」。`;
+              return state;
+            }
+            case "DELETE_SHARED": {
+              const known = client.known[initialObject.id];
+              if (!known) {
+                state.activity = `${client.name} 尚不知道目标对象，请先拉取。`;
+                return state;
+              }
+              const payload = { ...clone(known), deleted: true, author: client.name };
+              queueOperation(
+                state,
+                action.client,
+                {
+                  opId: operationId(state, action.client),
+                  annotationId: initialObject.id,
+                  baseVersion: known.version,
+                  kind: "tombstone",
+                  payload,
+                },
+                payload,
+              );
+              state.activity = `${client.name} 基于 v${known.version} 在本机删除共享文本。`;
+              return state;
+            }
+            case "PUSH": {
+              pushAll(state, action.client);
+              return state;
+            }
+            case "PUSH_LOSE_ACK": {
+              loseAcknowledgement(state, action.client);
+              return state;
+            }
+            case "RESOLVE_DISCARD": {
+              const conflict = client.conflicts.shift();
+              if (!conflict) {
+                state.activity = `${client.name} 没有本地冲突可放弃。`;
+                return state;
+              }
+              delete client.drafts[conflict.operation.annotationId];
+              if (conflict.canonical) {
+                client.known[conflict.operation.annotationId] = clone(conflict.canonical);
+              }
+              state.activity = `${client.name} 放弃本地冲突，保留云端版本。`;
+              return state;
+            }
+            case "RESOLVE_REAPPLY": {
+              const conflict = client.conflicts.shift();
+              if (!conflict) {
+                state.activity = `${client.name} 没有本地冲突可重新应用。`;
+                return state;
+              }
+              const currentVersion = conflict.canonical?.version ?? 0;
+              const operation = {
+                ...clone(conflict.operation),
+                opId: operationId(state, action.client),
+                baseVersion: currentVersion,
+              };
+              client.outbox.push(operation);
+              state.activity = `${client.name} 已把冲突稿重新基于云端 v${currentVersion} 排入 outbox；需要再次保存。`;
+              return state;
+            }
+            case "RESOLVE_KEEP_BOTH": {
+              const conflict = client.conflicts.shift();
+              if (!conflict) {
+                state.activity = `${client.name} 没有本地冲突可保留两份。`;
+                return state;
+              }
+              const newId = `${action.client.toLowerCase()}-text-${state.nextObjectNumber}`;
+              state.nextObjectNumber += 1;
+              const payload = {
+                ...clone(conflict.operation.payload),
+                id: newId,
+                deleted: false,
+              };
+              delete client.drafts[conflict.operation.annotationId];
+              client.drafts[newId] = payload;
+              client.outbox.push({
+                opId: operationId(state, action.client),
+                annotationId: newId,
+                baseVersion: 0,
+                kind: "create",
+                payload,
+              });
+              state.activity = `${client.name} 把冲突稿改成新对象 ${newId}；云端原对象保持不变。`;
+              return state;
+            }
+            default:
+              state.activity = `未知操作：${action.type}`;
+              return state;
+          }
+        }
+
+        return { initialState, reducer };
+      })();
+    </script>
+
+    <script>
+      let state = SyncModel.initialState();
+      let activeScenario = 0;
+      let completedSteps = 0;
+
+      const scenarios = [
+        {
+          title: "不同对象自动合并",
+          description:
+            "A 与 B 都基于同一云端状态新增不同文本。即使 B 保存时云端序列已经变化，两项也都应成功。",
+          steps: [
+            ["A 新增「换气」", { type: "ADD_TEXT", client: "A", text: "换气" }],
+            ["B 新增「渐弱」", { type: "ADD_TEXT", client: "B", text: "渐弱" }],
+            ["A 保存", { type: "PUSH", client: "A" }],
+            ["B 保存", { type: "PUSH", client: "B" }],
+          ],
+        },
+        {
+          title: "同一对象只在后到设备冲突",
+          description:
+            "A、B 都修改 v1 的同一个文本。A 先保存；B 后保存时，云端不保存 B 的版本，只在 B 本地形成冲突。",
+          steps: [
+            ["A 改为「A：提前吸气」", { type: "EDIT_SHARED", client: "A", text: "A：提前吸气" }],
+            ["B 改为「B：延后吸气」", { type: "EDIT_SHARED", client: "B", text: "B：延后吸气" }],
+            ["A 保存", { type: "PUSH", client: "A" }],
+            ["B 保存并发现冲突", { type: "PUSH", client: "B" }],
+            ["B 选择两份都保留", { type: "RESOLVE_KEEP_BOTH", client: "B" }],
+            ["B 再次保存", { type: "PUSH", client: "B" }],
+          ],
+        },
+        {
+          title: "响应丢失后的幂等重试",
+          description:
+            "云端已经写入，但设备没收到响应。相同 opId 重试必须返回同一结果，不能重复创建文本。",
+          steps: [
+            ["A 新增「延长两拍」", { type: "ADD_TEXT", client: "A", text: "延长两拍" }],
+            ["云端接受，但响应丢失", { type: "PUSH_LOSE_ACK", client: "A" }],
+            ["A 重试同一个 outbox 操作", { type: "PUSH", client: "A" }],
+          ],
+        },
+        {
+          title: "删除与编辑并发",
+          description:
+            "A 删除对象、B 编辑同一对象。A 先保存后，B 的编辑必须留在本地，不应让云端静默复活对象。",
+          steps: [
+            ["A 删除共享文本", { type: "DELETE_SHARED", client: "A" }],
+            ["B 改为「保留并轻唱」", { type: "EDIT_SHARED", client: "B", text: "保留并轻唱" }],
+            ["A 保存删除", { type: "PUSH", client: "A" }],
+            ["B 保存并发现冲突", { type: "PUSH", client: "B" }],
+            ["B 决定重新应用本地版本", { type: "RESOLVE_REAPPLY", client: "B" }],
+            ["B 再次保存以明确复活", { type: "PUSH", client: "B" }],
+          ],
+        },
+      ];
+
+      function dispatch(action) {
+        state = SyncModel.reducer(state, action);
+        render();
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function objectMarkup(object) {
+        if (!object) return '<div class="empty">对象不存在</div>';
+        return `<li class="object ${object.deleted ? "deleted" : ""}">
+          <div class="object-title">
+            <span>${escapeHtml(object.text || "（无文本）")}</span>
+            <span class="badge">v${object.version ?? "草稿"}</span>
+          </div>
+          <div class="object-meta">${escapeHtml(object.id)} · ${escapeHtml(object.author || "未知作者")}${
+            object.deleted ? " · 已删除" : ""
+          }</div>
+        </li>`;
+      }
+
+      function operationMarkup(operation) {
+        return `<li class="queue-item">
+          <strong>${escapeHtml(operation.kind)}</strong> ${escapeHtml(operation.annotationId)}
+          <div class="object-meta">${escapeHtml(operation.opId)} · base v${operation.baseVersion}</div>
+        </li>`;
+      }
+
+      function conflictMarkup(conflict) {
+        const localText = conflict.operation.payload?.text || "（删除）";
+        const cloudText = conflict.canonical?.text || "（云端不存在）";
+        return `<li class="queue-item">
+          <strong>本地：</strong>${escapeHtml(localText)}<br />
+          <strong>云端：</strong>${escapeHtml(cloudText)}
+          <div class="object-meta">${escapeHtml(conflict.operation.annotationId)} · 本地基于 v${
+            conflict.operation.baseVersion
+          }，云端当前 v${conflict.canonical?.version ?? 0}</div>
+        </li>`;
+      }
+
+      function clientPanel(clientId) {
+        const client = state.clients[clientId];
+        const known = Object.values(client.known);
+        const drafts = Object.values(client.drafts);
+        return `
+          <div class="status-row">
+            <h3>${client.name}</h3>
+            <span class="badge ${client.online ? "online" : "offline"}">${client.online ? "在线" : "离线"}</span>
+          </div>
+          <div class="stack">
+            <div>
+              <div class="object-meta">已拉取游标：${client.cursor}</div>
+              <h3>已知云端对象</h3>
+              <ul class="object-list">${known.length ? known.map(objectMarkup).join("") : '<li class="empty">暂无</li>'}</ul>
+            </div>
+            <div class="subsection">
+              <h3>本地草稿 <span class="badge pending">${drafts.length}</span></h3>
+              <ul class="object-list">${drafts.length ? drafts.map(objectMarkup).join("") : '<li class="empty">暂无</li>'}</ul>
+            </div>
+            <div class="subsection">
+              <h3>Outbox <span class="badge pending">${client.outbox.length}</span></h3>
+              <ul class="queue-list">${
+                client.outbox.length ? client.outbox.map(operationMarkup).join("") : '<li class="empty">暂无</li>'
+              }</ul>
+            </div>
+            <div class="subsection">
+              <h3>本地冲突 <span class="badge conflict">${client.conflicts.length}</span></h3>
+              <ul class="queue-list">${
+                client.conflicts.length ? client.conflicts.map(conflictMarkup).join("") : '<li class="empty">暂无</li>'
+              }</ul>
+            </div>
+          </div>`;
+      }
+
+      function renderSummary() {
+        const objects = Object.values(state.server.objects);
+        const live = objects.filter((object) => !object.deleted).length;
+        const outbox = state.clients.A.outbox.length + state.clients.B.outbox.length;
+        const conflicts = state.clients.A.conflicts.length + state.clients.B.conflicts.length;
+        document.querySelector("#summary").innerHTML = [
+          ["云端序列", state.server.sequence],
+          ["云端有效对象", live],
+          ["本机待上传", outbox],
+          ["本地冲突", conflicts],
+        ]
+          .map(
+            ([label, value]) => `<div class="metric"><div class="metric-label">${label}</div><div class="metric-value">${value}</div></div>`,
+          )
+          .join("");
+      }
+
+      function renderServer() {
+        const objects = Object.values(state.server.objects);
+        document.querySelector("#server-panel").innerHTML = `
+          <div class="status-row">
+            <h3>云端权威状态</h3>
+            <span class="badge ok">只存已接受版本</span>
+          </div>
+          <div class="object-meta">server sequence：${state.server.sequence} · 已处理 opId：${
+            Object.keys(state.server.processed).length
+          }</div>
+          <div class="subsection">
+            <h3>批注对象</h3>
+            <ul class="object-list">${objects.map(objectMarkup).join("")}</ul>
+          </div>`;
+      }
+
+      function actionButton(label, action, className = "") {
+        const encoded = encodeURIComponent(JSON.stringify(action));
+        return `<button class="${className}" data-action="${encoded}">${escapeHtml(label)}</button>`;
+      }
+
+      function renderFreeplay() {
+        const groups = ["A", "B"].map((clientId) => {
+          const client = state.clients[clientId];
+          const suffix = clientId === "A" ? "A" : "B";
+          return `<div class="control-group">
+            <h3>${client.name}</h3>
+            <div class="button-grid">
+              ${actionButton(client.online ? "切换离线" : "切换在线", {
+                type: "SET_ONLINE",
+                client: clientId,
+                online: !client.online,
+              })}
+              ${actionButton("拉取云端", { type: "PULL", client: clientId })}
+              ${actionButton(`新增「${suffix} 的新文本」`, {
+                type: "ADD_TEXT",
+                client: clientId,
+                text: `${suffix} 的新文本`,
+              })}
+              ${actionButton(`修改共享文本为「${suffix} 版本」`, {
+                type: "EDIT_SHARED",
+                client: clientId,
+                text: `${suffix} 版本`,
+              })}
+              ${actionButton("删除共享文本", { type: "DELETE_SHARED", client: clientId }, "danger")}
+              ${actionButton("完成并保存", { type: "PUSH", client: clientId }, "primary")}
+              ${actionButton("模拟云端写入但响应丢失", { type: "PUSH_LOSE_ACK", client: clientId })}
+              ${actionButton("冲突：保留云端", { type: "RESOLVE_DISCARD", client: clientId })}
+              ${actionButton("冲突：重新应用本地", { type: "RESOLVE_REAPPLY", client: clientId })}
+              ${actionButton("冲突：两份都保留", { type: "RESOLVE_KEEP_BOTH", client: clientId })}
+            </div>
+          </div>`;
+        });
+        document.querySelector("#freeplay-controls").innerHTML = groups.join("");
+        document.querySelectorAll("[data-action]").forEach((button) => {
+          button.addEventListener("click", () => dispatch(JSON.parse(decodeURIComponent(button.dataset.action))));
+        });
+      }
+
+      function startScenario(index) {
+        activeScenario = index;
+        completedSteps = 0;
+        state = SyncModel.initialState();
+        state.activity = `已开始场景：${scenarios[index].title}`;
+        render();
+      }
+
+      function runScenarioStep(index) {
+        const scenario = scenarios[activeScenario];
+        if (index !== completedSteps) return;
+        state = SyncModel.reducer(state, scenario.steps[index][1]);
+        completedSteps += 1;
+        render();
+      }
+
+      function renderWalkthrough() {
+        document.querySelector("#scenario-tabs").innerHTML = scenarios
+          .map(
+            (scenario, index) => `<button class="tab" role="tab" aria-selected="${index === activeScenario}" data-scenario="${index}">${
+              index + 1
+            }. ${escapeHtml(scenario.title)}</button>`,
+          )
+          .join("");
+        document.querySelectorAll("[data-scenario]").forEach((button) => {
+          button.addEventListener("click", () => startScenario(Number(button.dataset.scenario)));
+        });
+
+        const scenario = scenarios[activeScenario];
+        document.querySelector("#walkthrough").innerHTML = `
+          <div class="status-row">
+            <div>
+              <h3>${escapeHtml(scenario.title)}</h3>
+              <p class="intro">${escapeHtml(scenario.description)}</p>
+            </div>
+            <button data-reset-scenario>重新开始此场景</button>
+          </div>
+          <div class="steps">
+            ${scenario.steps
+              .map(
+                ([label], index) => `<div class="step ${index < completedSteps ? "done" : ""}">
+                  <span class="step-number">${index < completedSteps ? "✓" : index + 1}</span>
+                  <span>${escapeHtml(label)}</span>
+                  <button data-step="${index}" ${index !== completedSteps ? "disabled" : ""}>执行这一步</button>
+                </div>`,
+              )
+              .join("")}
+          </div>`;
+        document.querySelector("[data-reset-scenario]").addEventListener("click", () => startScenario(activeScenario));
+        document.querySelectorAll("[data-step]").forEach((button) => {
+          button.addEventListener("click", () => runScenarioStep(Number(button.dataset.step)));
+        });
+      }
+
+      function render() {
+        renderSummary();
+        renderServer();
+        document.querySelector("#client-a-panel").innerHTML = clientPanel("A");
+        document.querySelector("#client-b-panel").innerHTML = clientPanel("B");
+        document.querySelector("#activity").textContent = state.activity;
+        renderFreeplay();
+        renderWalkthrough();
+      }
+
+      render();
+    </script>
+  </body>
+</html>
