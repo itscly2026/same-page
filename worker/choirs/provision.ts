@@ -9,22 +9,31 @@ export async function provisionChoir(options: {
   adminDisplayName: string;
   inviteSecret: string;
   choirName?: string;
+  guestAdmissionMode?: "invite" | "open";
   getRandomValues?: (array: Uint8Array) => Uint8Array;
 }) {
   const choirId = crypto.randomUUID();
-  const joinCode = generateJoinCode(options.getRandomValues);
-  const joinCodeHash = await hashJoinCode(joinCode, options.inviteSecret);
+  const guestAdmissionMode = options.guestAdmissionMode ?? "invite";
+  const joinCode =
+    guestAdmissionMode === "invite"
+      ? generateJoinCode(options.getRandomValues)
+      : null;
+  const joinCodeHash = joinCode
+    ? await hashJoinCode(joinCode, options.inviteSecret)
+    : null;
 
   await options.binding.batch([
     options.binding
       .prepare(
         `INSERT INTO choirs
-          (id, name, join_code_hash, join_code_version, storage_limit_bytes)
-         VALUES (?, ?, ?, 1, ?)`,
+          (id, name, guest_admission_mode, guest_session_version,
+           join_code_hash, storage_limit_bytes)
+         VALUES (?, ?, ?, 1, ?, ?)`,
       )
       .bind(
         choirId,
         options.choirName ?? DEFAULT_CHOIR_NAME,
+        guestAdmissionMode,
         joinCodeHash,
         CHOIR_STORAGE_LIMIT_BYTES,
       ),

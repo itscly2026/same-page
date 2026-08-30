@@ -20,6 +20,7 @@ describe("choir provisioning output", () => {
     const message = formatSuccessMessage("ABCDEFGH", options.showJoinCode);
 
     expect(options.showJoinCode).toBe(false);
+    expect(options.guestAdmission).toBe("invite");
     expect(message).not.toContain("ABCDEFGH");
     expect(message).toContain("was not displayed");
   });
@@ -31,5 +32,29 @@ describe("choir provisioning output", () => {
     expect(formatSuccessMessage("ABCDEFGH", options.showJoinCode)).toContain(
       "ABCDEFGH",
     );
+  });
+
+  it("creates a choir with open guest admission without an invite code", () => {
+    const options = parseArguments([
+      ...baseArguments,
+      "--guest-admission",
+      "open",
+      "--show-join-code",
+    ]);
+
+    expect(options.guestAdmission).toBe("open");
+    expect(
+      formatSuccessMessage(
+        null,
+        options.showJoinCode,
+        options.guestAdmission,
+      ),
+    ).toBe("Choir created with open guest admission.\n");
+  });
+
+  it("rejects an unknown guest admission mode", () => {
+    expect(() =>
+      parseArguments([...baseArguments, "--guest-admission", "demo"]),
+    ).toThrow("--guest-admission must be invite or open");
   });
 });

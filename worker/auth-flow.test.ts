@@ -26,6 +26,7 @@ import {
 import { provisionChoir } from "./choirs/provision";
 import { createDatabase } from "./db/database";
 import {
+  choirs,
   memberships,
   sharedLayerEditGrants,
   user,
@@ -121,7 +122,10 @@ describe("authentication and choir boundaries", () => {
         "content-type": "application/json",
         "CF-Connecting-IP": "198.51.100.1",
       },
-      body: JSON.stringify({ joinCode: provisioned.joinCode }),
+      body: JSON.stringify({
+        admission: "invite",
+        joinCode: provisioned.joinCode!,
+      }),
     });
     expect(guestResponse.status).toBe(200);
     const guestCookie = cookieFrom(guestResponse);
@@ -131,7 +135,11 @@ describe("authentication and choir boundaries", () => {
       headers: { cookie: guestCookie },
     });
     expect(await guestSessionResponse.json()).toEqual({
-      choir: { id: provisioned.choirId, name: "小红花合唱团" },
+      choir: {
+        id: provisioned.choirId,
+        name: "小红花合唱团",
+        guestAdmissionMode: "invite",
+      },
     });
 
     const createChoirResponse = await callWorker("/api/choirs", {
@@ -146,12 +154,8 @@ describe("authentication and choir boundaries", () => {
       { method: "POST", headers: { cookie: adminCookie } },
     );
     expect(rotateResponse.status).toBe(200);
-    const rotated = (await rotateResponse.json()) as {
-      joinCode: string;
-      joinCodeVersion: number;
-    };
+    const rotated = (await rotateResponse.json()) as { joinCode: string };
     expect(rotated.joinCode).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
-    expect(rotated.joinCodeVersion).toBe(2);
 
     const expiredGuestResponse = await callWorker("/api/guest/session", {
       headers: { cookie: guestCookie },
@@ -164,7 +168,7 @@ describe("authentication and choir boundaries", () => {
         "content-type": "application/json",
         "CF-Connecting-IP": "198.51.100.2",
       },
-      body: JSON.stringify({ joinCode: rotated.joinCode }),
+      body: JSON.stringify({ admission: "invite", joinCode: rotated.joinCode }),
     });
     const currentGuestCookie = cookieFrom(currentGuestResponse);
 
@@ -222,6 +226,7 @@ describe("authentication and choir boundaries", () => {
         "CF-Connecting-IP": "198.51.100.3",
       },
       body: JSON.stringify({
+        admission: "invite",
         joinCode: secondChoir.joinCode,
         displayName: "小花二团",
       }),
@@ -247,6 +252,158 @@ describe("authentication and choir boundaries", () => {
       ]),
     );
 
+    const choirWithOpenGuestAdmission = await provisionChoir({
+      binding: env.DB,
+      adminUserId: admin!.id,
+      adminDisplayName: "管理员",
+      choirName: "公开合唱团",
+      guestAdmissionMode: "open",
+      inviteSecret: env.INVITE_SECRET,
+      getRandomValues(array) {
+        array.fill(2);
+        return array;
+      },
+    });
+    expect(choirWithOpenGuestAdmission.joinCode).toBeNull();
+    const persistedChoirWithOpenGuestAdmission =
+      await database.query.choirs.findFirst({
+        where: eq(choirs.id, choirWithOpenGuestAdmission.choirId),
+      });
+    expect(persistedChoirWithOpenGuestAdmission).toMatchObject({
+      guestAdmissionMode: "open",
+      guestSessionVersion: 1,
+      joinCodeHash: null,
+    });
+    const choirsWithOpenGuestAdmissionResponse = await callWorker(
+      "/api/guest/choirs",
+    );
+    expect(await choirsWithOpenGuestAdmissionResponse.json()).toEqual({
+      choirs: [
+        {
+          id: choirWithOpenGuestAdmission.choirId,
+          name: "公开合唱团",
+          guestAdmissionMode: "open",
+        },
+      ],
+    });
+
+    const guestWithOpenAdmissionResponse = await callWorker(
+      "/api/guest/session",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "CF-Connecting-IP": "198.51.100.4",
+        },
+        body: JSON.stringify({
+          admission: "open",
+          choirId: choirWithOpenGuestAdmission.choirId,
+        }),
+      },
+    );
+    expect(guestWithOpenAdmissionResponse.status).toBe(200);
+    const guestWithOpenAdmissionCookie = cookieFrom(
+      guestWithOpenAdmissionResponse,
+    );
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const repeatedOpenAdmissionResponse = await callWorker(
+        "/api/guest/session",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "CF-Connecting-IP": "198.51.100.4",
+          },
+          body: JSON.stringify({
+            admission: "open",
+            choirId: choirWithOpenGuestAdmission.choirId,
+          }),
+        },
+      );
+      expect(repeatedOpenAdmissionResponse.status).toBe(200);
+    }
+    const scoreListWithOpenAdmissionResponse = await callWorker(
+      `/api/choirs/${choirWithOpenGuestAdmission.choirId}/scores`,
+      { headers: { cookie: guestWithOpenAdmissionCookie } },
+    );
+    expect(scoreListWithOpenAdmissionResponse.status).toBe(200);
+    expect(await scoreListWithOpenAdmissionResponse.json()).toMatchObject({
+      scores: [],
+      permissions: { canManage: false },
+    });
+
+    const crossChoirResponse = await callWorker(
+      `/api/choirs/${provisioned.choirId}/scores`,
+      { headers: { cookie: guestWithOpenAdmissionCookie } },
+    );
+    expect(crossChoirResponse.status).toBe(403);
+
+    const rotateJoinCodeWithOpenAdmissionResponse = await callWorker(
+      `/api/choirs/${choirWithOpenGuestAdmission.choirId}/join-code/rotate`,
+      { method: "POST", headers: { cookie: adminCookie } },
+    );
+    expect(rotateJoinCodeWithOpenAdmissionResponse.status).toBe(409);
+    expect(await rotateJoinCodeWithOpenAdmissionResponse.json()).toEqual({
+      error: "join_code_not_available",
+    });
+    const guestSessionAfterRejectedRotation = await callWorker(
+      "/api/guest/session",
+      { headers: { cookie: guestWithOpenAdmissionCookie } },
+    );
+    expect(guestSessionAfterRejectedRotation.status).toBe(200);
+
+    const inventedInviteAdmission = await callWorker("/api/guest/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "CF-Connecting-IP": "198.51.100.5",
+      },
+      body: JSON.stringify({
+        admission: "invite",
+        joinCode: "CCCCCCCC",
+      }),
+    });
+    expect(inventedInviteAdmission.status).toBe(401);
+
+    const openAdmissionToInviteChoir = await callWorker("/api/guest/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "CF-Connecting-IP": "198.51.100.6",
+      },
+      body: JSON.stringify({
+        admission: "open",
+        choirId: provisioned.choirId,
+      }),
+    });
+    expect(openAdmissionToInviteChoir.status).toBe(401);
+
+    const joinWithOpenAdmissionResponse = await callWorker("/api/choirs/join", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: memberCookie,
+        "CF-Connecting-IP": "198.51.100.7",
+      },
+      body: JSON.stringify({
+        admission: "open",
+        choirId: choirWithOpenGuestAdmission.choirId,
+        displayName: "小花体验",
+      }),
+    });
+    expect(joinWithOpenAdmissionResponse.status).toBe(201);
+    expect(await joinWithOpenAdmissionResponse.json()).toMatchObject({
+      membership: {
+        displayName: "小花体验",
+        role: "member",
+        choir: {
+          id: choirWithOpenGuestAdmission.choirId,
+          name: "公开合唱团",
+          guestAdmissionMode: "open",
+        },
+      },
+    });
+
     const member = await database.query.user.findFirst({
       where: eq(user.email, memberEmail),
     });
@@ -258,7 +415,7 @@ describe("authentication and choir boundaries", () => {
         {
           kind: "guest",
           choirId: provisioned.choirId,
-          joinCodeVersion: 2,
+          guestSessionVersion: 2,
         },
         provisioned.choirId,
       ),
@@ -316,7 +473,7 @@ describe("authentication and choir boundaries", () => {
           "content-type": "application/json",
           "CF-Connecting-IP": "203.0.113.9",
         },
-        body: JSON.stringify({ joinCode: "AAAAAAAA" }),
+        body: JSON.stringify({ admission: "invite", joinCode: "AAAAAAAA" }),
       });
     }
 

@@ -35,10 +35,10 @@ export function provisionChoirFromCli(argv = process.argv.slice(2)) {
 
   const choirId = randomUUID();
   const membershipId = randomUUID();
-  const joinCode = generateJoinCode();
-  const joinCodeHash = hashJoinCode(joinCode, inviteSecret);
+  const joinCode = options.guestAdmission === "invite" ? generateJoinCode() : null;
+  const joinCodeHash = joinCode ? hashJoinCode(joinCode, inviteSecret) : null;
   const sql = [
-    `INSERT INTO choirs (id, name, join_code_hash, join_code_version, storage_limit_bytes) VALUES (${quote(choirId)}, ${quote(options.choirName)}, ${quote(joinCodeHash)}, 1, 1073741824);`,
+    `INSERT INTO choirs (id, name, guest_admission_mode, guest_session_version, join_code_hash, storage_limit_bytes) VALUES (${quote(choirId)}, ${quote(options.choirName)}, ${quote(options.guestAdmission)}, 1, ${quoteNullable(joinCodeHash)}, 1073741824);`,
     `INSERT INTO memberships (id, choir_id, user_id, display_name, role, status) VALUES (${quote(membershipId)}, ${quote(choirId)}, ${quote(user.id)}, ${quote(options.adminDisplayName)}, 'admin', 'active');`,
   ].join("\n");
 
@@ -60,7 +60,9 @@ export function provisionChoirFromCli(argv = process.argv.slice(2)) {
     rmSync(temporaryDirectory, { recursive: true, force: true });
   }
 
-  process.stdout.write(formatSuccessMessage(joinCode, options.showJoinCode));
+  process.stdout.write(
+    formatSuccessMessage(joinCode, options.showJoinCode, options.guestAdmission),
+  );
 }
 
 function queryAdminUser(email, mode) {
@@ -116,6 +118,7 @@ export function parseArguments(argv) {
   const adminEmail = values.get("--admin-email")?.trim().toLowerCase();
   const adminDisplayName = values.get("--admin-display-name")?.trim();
   const choirName = values.get("--choir-name")?.trim() || "小红花合唱团";
+  const guestAdmission = values.get("--guest-admission")?.trim() || "invite";
   if (!adminEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
     throw new Error("--admin-email is required");
   }
@@ -125,10 +128,23 @@ export function parseArguments(argv) {
   if (choirName.length > 80) {
     throw new Error("--choir-name must contain at most 80 characters");
   }
-  return { adminEmail, adminDisplayName, choirName, mode, showJoinCode };
+  if (guestAdmission !== "invite" && guestAdmission !== "open") {
+    throw new Error("--guest-admission must be invite or open");
+  }
+  return {
+    adminEmail,
+    adminDisplayName,
+    choirName,
+    guestAdmission,
+    mode,
+    showJoinCode,
+  };
 }
 
-export function formatSuccessMessage(joinCode, showJoinCode) {
+export function formatSuccessMessage(joinCode, showJoinCode, guestAdmission) {
+  if (guestAdmission === "open") {
+    return "Choir created with open guest admission.\n";
+  }
   if (showJoinCode) {
     return `Choir created. Invite code: ${joinCode}\n`;
   }
@@ -140,6 +156,10 @@ export function formatSuccessMessage(joinCode, showJoinCode) {
 
 function quote(value) {
   return `'${value.replaceAll("'", "''")}'`;
+}
+
+function quoteNullable(value) {
+  return value === null ? "NULL" : quote(value);
 }
 
 if (fileURLToPath(import.meta.url) === process.argv[1]) {

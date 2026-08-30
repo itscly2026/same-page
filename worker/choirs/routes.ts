@@ -26,39 +26,39 @@ import {
   hashRateLimitIdentity,
 } from "../security/join-code";
 import { consumeRateLimit } from "../security/rate-limit";
+import { findAdmissibleChoir } from "./admission";
 
 export const choirRoutes = new Hono<AppEnvironment>();
 
 choirRoutes.post("/guest/session", async (context) => {
-  const limited = await enforceInviteRateLimit(context);
-  if (limited) {
-    return limited;
-  }
-
   const parsed = guestSessionRequestSchema.safeParse(
     await context.req.json().catch(() => null),
   );
   if (!parsed.success) {
-    return invalidInvite(context);
+    return admissionDenied(context);
+  }
+  if (parsed.data.admission === "invite") {
+    const limited = await enforceInviteRateLimit(context);
+    if (limited) {
+      return limited;
+    }
   }
 
   const database = createDatabase(context.env.DB);
-  const joinCodeHash = await hashJoinCode(
-    parsed.data.joinCode,
-    context.env.INVITE_SECRET,
-  );
-  const choir = await database.query.choirs.findFirst({
-    where: eq(choirs.joinCodeHash, joinCodeHash),
+  const choir = await findAdmissibleChoir({
+    database,
+    inviteSecret: context.env.INVITE_SECRET,
+    request: parsed.data,
   });
   if (!choir) {
-    return invalidInvite(context);
+    return admissionDenied(context);
   }
 
   const expiresAt = Date.now() + GUEST_SESSION_SECONDS * 1000;
   const token = await createGuestSessionToken(
     {
       choirId: choir.id,
-      joinCodeVersion: choir.joinCodeVersion,
+      guestSessionVersion: choir.guestSessionVersion,
       expiresAt,
     },
     context.env.INVITE_SECRET,
@@ -71,7 +71,24 @@ choirRoutes.post("/guest/session", async (context) => {
     maxAge: GUEST_SESSION_SECONDS,
   });
 
-  return context.json({ choir: { id: choir.id, name: choir.name } });
+  return context.json({
+    choir: {
+      id: choir.id,
+      name: choir.name,
+      guestAdmissionMode: choir.guestAdmissionMode,
+    },
+  });
+});
+
+choirRoutes.get("/guest/choirs", async (context) => {
+  const database = createDatabase(context.env.DB);
+  const rows = await database.query.choirs.findMany({
+    where: eq(choirs.guestAdmissionMode, "open"),
+    columns: { id: true, name: true, guestAdmissionMode: true },
+    orderBy: (table, { asc }) => [asc(table.createdAt), asc(table.name)],
+  });
+
+  return context.json({ choirs: rows });
 });
 
 choirRoutes.get("/guest/session", async (context) => {
@@ -84,7 +101,7 @@ choirRoutes.get("/guest/session", async (context) => {
   const database = createDatabase(context.env.DB);
   const choir = await database.query.choirs.findFirst({
     where: eq(choirs.id, principal.choirId),
-    columns: { id: true, name: true },
+    columns: { id: true, name: true, guestAdmissionMode: true },
   });
   if (!choir) {
     deleteCookie(context, GUEST_SESSION_COOKIE, { path: "/" });
@@ -107,6 +124,7 @@ choirRoutes.get("/choirs", async (context) => {
       role: memberships.role,
       choirId: choirs.id,
       choirName: choirs.name,
+      guestAdmissionMode: choirs.guestAdmissionMode,
     })
     .from(memberships)
     .innerJoin(choirs, eq(memberships.choirId, choirs.id))
@@ -122,17 +140,16 @@ choirRoutes.get("/choirs", async (context) => {
       id: row.id,
       displayName: row.displayName,
       role: row.role,
-      choir: { id: row.choirId, name: row.choirName },
+      choir: {
+        id: row.choirId,
+        name: row.choirName,
+        guestAdmissionMode: row.guestAdmissionMode,
+      },
     })),
   });
 });
 
 choirRoutes.post("/choirs/join", async (context) => {
-  const limited = await enforceInviteRateLimit(context);
-  if (limited) {
-    return limited;
-  }
-
   const principal = await resolveContextPrincipal(context);
   if (!principal || principal.kind !== "user") {
     return context.json({ error: "unauthorized" }, 401);
@@ -142,19 +159,23 @@ choirRoutes.post("/choirs/join", async (context) => {
     await context.req.json().catch(() => null),
   );
   if (!parsed.success) {
-    return invalidInvite(context);
+    return admissionDenied(context);
+  }
+  if (parsed.data.admission === "invite") {
+    const limited = await enforceInviteRateLimit(context);
+    if (limited) {
+      return limited;
+    }
   }
 
   const database = createDatabase(context.env.DB);
-  const joinCodeHash = await hashJoinCode(
-    parsed.data.joinCode,
-    context.env.INVITE_SECRET,
-  );
-  const choir = await database.query.choirs.findFirst({
-    where: eq(choirs.joinCodeHash, joinCodeHash),
+  const choir = await findAdmissibleChoir({
+    database,
+    inviteSecret: context.env.INVITE_SECRET,
+    request: parsed.data,
   });
   if (!choir) {
-    return invalidInvite(context);
+    return admissionDenied(context);
   }
 
   const existing = await database.query.memberships.findFirst({
@@ -248,6 +269,16 @@ choirRoutes.post("/choirs/:choirId/join-code/rotate", async (context) => {
   const principal = await resolveContextPrincipal(context);
   const choirId = context.req.param("choirId");
   await requireChoirAdmin(database, principal, choirId);
+  const choir = await database.query.choirs.findFirst({
+    where: eq(choirs.id, choirId),
+    columns: { guestAdmissionMode: true },
+  });
+  if (!choir) {
+    return context.json({ error: "not_found" }, 404);
+  }
+  if (choir.guestAdmissionMode !== "invite") {
+    return context.json({ error: "join_code_not_available" }, 409);
+  }
 
   const joinCode = generateJoinCode();
   const joinCodeHash = await hashJoinCode(
@@ -258,16 +289,16 @@ choirRoutes.post("/choirs/:choirId/join-code/rotate", async (context) => {
     .update(choirs)
     .set({
       joinCodeHash,
-      joinCodeVersion: sql`${choirs.joinCodeVersion} + 1`,
+      guestSessionVersion: sql`${choirs.guestSessionVersion} + 1`,
     })
     .where(eq(choirs.id, choirId))
-    .returning({ joinCodeVersion: choirs.joinCodeVersion });
+    .returning({ id: choirs.id });
 
   if (!updated) {
     return context.json({ error: "not_found" }, 404);
   }
 
-  return context.json({ joinCode, joinCodeVersion: updated.joinCodeVersion });
+  return context.json({ joinCode });
 });
 
 async function enforceInviteRateLimit(
@@ -292,10 +323,10 @@ async function enforceInviteRateLimit(
   return context.json({ error: "try_again_later" }, 429);
 }
 
-function invalidInvite(
+function admissionDenied(
   context: Context<AppEnvironment>,
 ) {
-  return context.json({ error: "invalid_or_expired_invite" }, 401);
+  return context.json({ error: "guest_admission_denied" }, 401);
 }
 
 function serializeMembership(
@@ -304,12 +335,20 @@ function serializeMembership(
     displayName: string;
     role: "admin" | "member";
   },
-  choir: { id: string; name: string },
+  choir: {
+    id: string;
+    name: string;
+    guestAdmissionMode: "invite" | "open";
+  },
 ) {
   return {
     id: membership.id,
     displayName: membership.displayName,
     role: membership.role,
-    choir: { id: choir.id, name: choir.name },
+    choir: {
+      id: choir.id,
+      name: choir.name,
+      guestAdmissionMode: choir.guestAdmissionMode,
+    },
   };
 }

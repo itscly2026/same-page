@@ -12,7 +12,7 @@ export const GUEST_SESSION_SECONDS = 60 * 60 * 24 * 30;
 
 export interface GuestSession {
   choirId: string;
-  joinCodeVersion: number;
+  guestSessionVersion: number;
   expiresAt: number;
 }
 
@@ -59,7 +59,7 @@ export async function verifyGuestSessionToken(
     const candidate = JSON.parse(decoded) as Partial<GuestSession>;
     if (
       typeof candidate.choirId !== "string" ||
-      !Number.isInteger(candidate.joinCodeVersion) ||
+      !Number.isInteger(candidate.guestSessionVersion) ||
       typeof candidate.expiresAt !== "number" ||
       candidate.expiresAt <= now
     ) {

@@ -8,14 +8,27 @@ export const joinCodeSchema = z
 
 export const displayNameSchema = z.string().trim().min(1).max(40);
 
-export const guestSessionRequestSchema = z.object({
+export const guestAdmissionModeSchema = z.enum(["invite", "open"]);
+
+const inviteGuestAdmissionSchema = z.object({
+  admission: z.literal("invite"),
   joinCode: joinCodeSchema,
 });
 
-export const joinChoirRequestSchema = z.object({
-  joinCode: joinCodeSchema,
-  displayName: displayNameSchema,
+const openGuestAdmissionSchema = z.object({
+  admission: z.literal("open"),
+  choirId: z.string().min(1).max(128),
 });
+
+export const guestSessionRequestSchema = z.discriminatedUnion("admission", [
+  inviteGuestAdmissionSchema,
+  openGuestAdmissionSchema,
+]);
+
+export const joinChoirRequestSchema = z.discriminatedUnion("admission", [
+  inviteGuestAdmissionSchema.extend({ displayName: displayNameSchema }),
+  openGuestAdmissionSchema.extend({ displayName: displayNameSchema }),
+]);
 
 export const joinCurrentGuestRequestSchema = z.object({
   displayName: displayNameSchema,
@@ -23,12 +36,16 @@ export const joinCurrentGuestRequestSchema = z.object({
 
 export const rotateJoinCodeResponseSchema = z.object({
   joinCode: joinCodeSchema,
-  joinCodeVersion: z.number().int().positive(),
 });
 
 export const choirSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
+  guestAdmissionMode: guestAdmissionModeSchema,
+});
+
+export const choirsWithOpenGuestAdmissionResponseSchema = z.object({
+  choirs: z.array(choirSummarySchema),
 });
 
 export const membershipSummarySchema = z.object({
@@ -43,3 +60,7 @@ export const choirMembershipsResponseSchema = z.object({
 });
 
 export type MembershipSummary = z.infer<typeof membershipSummarySchema>;
+export type GuestAdmissionRequest = z.infer<
+  typeof guestSessionRequestSchema
+>;
+export type ChoirSummary = z.infer<typeof choirSummarySchema>;

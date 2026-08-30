@@ -54,10 +54,16 @@ CREATE INDEX verification_identifier_idx ON verification(identifier);
 CREATE TABLE choirs (
   id TEXT PRIMARY KEY NOT NULL,
   name TEXT NOT NULL,
-  join_code_hash TEXT NOT NULL,
-  join_code_version INTEGER NOT NULL DEFAULT 1,
+  guest_admission_mode TEXT NOT NULL DEFAULT 'invite'
+    CHECK (guest_admission_mode IN ('invite', 'open')),
+  guest_session_version INTEGER NOT NULL DEFAULT 1,
+  join_code_hash TEXT,
   storage_limit_bytes INTEGER NOT NULL DEFAULT 1073741824 CHECK (storage_limit_bytes > 0),
-  created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsecond') * 1000 AS INTEGER))
+  created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsecond') * 1000 AS INTEGER)),
+  CHECK (
+    (guest_admission_mode = 'invite' AND join_code_hash IS NOT NULL) OR
+    (guest_admission_mode = 'open' AND join_code_hash IS NULL)
+  )
 );
 CREATE UNIQUE INDEX choirs_join_code_hash_uidx ON choirs(join_code_hash);
 

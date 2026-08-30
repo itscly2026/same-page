@@ -157,6 +157,12 @@ h1 {
   font-size: 1.3rem;
 }
 
+.section-copy {
+  margin: 0.75rem 0 0;
+  color: #6e5660;
+  line-height: 1.6;
+}
+
 .entry-form {
   display: grid;
   gap: 1rem;
@@ -168,7 +174,8 @@ h1 {
   min-width: 0;
 }
 
-.entry-form label {
+.entry-form label,
+.open-admission-display-name label {
   display: block;
   margin-bottom: 0.45rem;
   color: #523c45;
@@ -176,7 +183,8 @@ h1 {
   font-weight: 700;
 }
 
-.entry-form input {
+.entry-form input,
+.open-admission-display-name input {
   width: 100%;
   min-height: 3rem;
   border: 1px solid #bda69b;
@@ -186,7 +194,8 @@ h1 {
   background: #fff;
 }
 
-.entry-form input:focus-visible {
+.entry-form input:focus-visible,
+.open-admission-display-name input:focus-visible {
   outline: 3px solid rgb(124 45 82 / 22%);
   outline-offset: 2px;
 }
@@ -245,6 +254,24 @@ h1 {
 
 .choir-card span {
   color: #6e5660;
+}
+
+.choir-card--button {
+  width: 100%;
+  align-items: center;
+  cursor: pointer;
+  text-align: left;
+}
+
+.choir-card--button[disabled] {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.open-admission-display-name {
+  display: block;
+  max-width: 30rem;
+  margin-top: 1.25rem;
 }
 
 .status-panel h2 {

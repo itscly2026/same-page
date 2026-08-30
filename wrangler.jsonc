@@ -15,7 +15,7 @@
     {
       "binding": "DB",
       "database_name": "same-page-production",
-      "database_id": "15358b1c-334f-4e60-9ea1-e6f9ec2e1507",
+      "database_id": "e4af1bb2-5935-413e-bd38-273bb64d1d1e",
       "migrations_dir": "migrations"
     }
   ],

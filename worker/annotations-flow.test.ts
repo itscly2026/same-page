@@ -142,7 +142,7 @@ describe("annotation layers and object synchronization", () => {
 
   it("enforces revoked grants, choir boundaries, personal privacy and guest read-only access", async () => {
     const fixture = await createFixture();
-    const member = await createMember(fixture.joinCode, "member@example.test", "小王");
+    const member = await createMember(fixture.joinCode!, "member@example.test", "小王");
     const memberRow = await createDatabase(env.DB).query.memberships.findFirst({
       where: eq(memberships.userId, member.userId),
     });
@@ -194,7 +194,7 @@ describe("annotation layers and object synchronization", () => {
     );
     expect(crossChoir.status).toBe(404);
 
-    const guestCookie = await createGuestCookie(fixture.joinCode);
+    const guestCookie = await createGuestCookie(fixture.joinCode!);
     const guestLayers = await callWorker(
       `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/layers`,
       { headers: { cookie: guestCookie } },
@@ -261,7 +261,11 @@ async function createMember(joinCode: string, email: string, name: string) {
   const account = await signIn(email, name);
   const joined = await callWorker(
     "/api/choirs/join",
-    jsonRequest(account.cookie, { joinCode, displayName: name }),
+    jsonRequest(account.cookie, {
+      admission: "invite",
+      joinCode,
+      displayName: name,
+    }),
   );
   expect(joined.status).toBe(201);
   return account;
@@ -286,7 +290,11 @@ async function signIn(email: string, name: string) {
 async function createGuestCookie(joinCode: string) {
   const response = await callWorker(
     "/api/guest/session",
-    jsonRequest("", { joinCode }, { "CF-Connecting-IP": "192.0.2.22" }),
+    jsonRequest(
+      "",
+      { admission: "invite", joinCode },
+      { "CF-Connecting-IP": "192.0.2.22" },
+    ),
   );
   return cookieFrom(response);
 }

@@ -2,7 +2,12 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { Button, Form, Input, Label, TextField } from "react-aria-components";
 import { Link, useParams } from "react-router-dom";
 
-import { rotateJoinCodeResponseSchema } from "../../shared/choirs";
+import {
+  choirMembershipsResponseSchema,
+  choirSummarySchema,
+  rotateJoinCodeResponseSchema,
+  type ChoirSummary,
+} from "../../shared/choirs";
 import {
   scoreListResponseSchema,
   type ScoreListResponse,
@@ -11,7 +16,7 @@ import {
 
 export default function ChoirPage() {
   const { choirId = "" } = useParams();
-  const [name, setName] = useState<string | null>(null);
+  const [choir, setChoir] = useState<ChoirSummary | null>(null);
   const [result, setResult] = useState<ScoreListResponse | null>(null);
   const [search, setSearch] = useState("");
   const [denied, setDenied] = useState(false);
@@ -37,10 +42,13 @@ export default function ChoirPage() {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([loadChoirName(choirId), fetchScoreList(choirId, "")]).then(
-      ([choirName, initialResult]) => {
+    void Promise.all([
+      loadChoirSummary(choirId),
+      fetchScoreList(choirId, ""),
+    ]).then(
+      ([choirSummary, initialResult]) => {
         if (!active) return;
-        setName(choirName);
+        setChoir(choirSummary);
         if (initialResult) {
           setResult(initialResult);
           setDenied(false);
@@ -193,7 +201,7 @@ export default function ChoirPage() {
   return (
     <main className="page-shell choir-page">
       <p className="eyebrow">合唱团</p>
-      <h1>{name ?? "乐谱"}</h1>
+      <h1>{choir?.name ?? "乐谱"}</h1>
       <p className="hero__copy">
         {result.permissions.canManage
           ? "管理、预览并发布团内 PDF；所有文件版本共享团级配额。"
@@ -351,24 +359,26 @@ export default function ChoirPage() {
 
       {result.permissions.canManage ? (
         <>
-          <section className="admin-panel" aria-labelledby="invite-title">
-            <h2 id="invite-title">团邀请码</h2>
-            <p>
-              轮换会立即停用旧邀请码。新邀请码只在本次操作后显示，不会保存在浏览器中。
-            </p>
-            <Button isDisabled={busy} onPress={() => void rotateJoinCode()}>
-              轮换邀请码
-            </Button>
-            {rotatedJoinCode ? (
-              <div className="join-code-result" role="status">
-                <p>新的八位邀请码</p>
-                <output aria-label="新的八位邀请码">{rotatedJoinCode}</output>
-                <Button onPress={() => setRotatedJoinCode(null)}>
-                  已复制，隐藏邀请码
-                </Button>
-              </div>
-            ) : null}
-          </section>
+          {choir?.guestAdmissionMode === "invite" ? (
+            <section className="admin-panel" aria-labelledby="invite-title">
+              <h2 id="invite-title">团邀请码</h2>
+              <p>
+                轮换会立即停用旧邀请码。新邀请码只在本次操作后显示，不会保存在浏览器中。
+              </p>
+              <Button isDisabled={busy} onPress={() => void rotateJoinCode()}>
+                轮换邀请码
+              </Button>
+              {rotatedJoinCode ? (
+                <div className="join-code-result" role="status">
+                  <p>新的八位邀请码</p>
+                  <output aria-label="新的八位邀请码">{rotatedJoinCode}</output>
+                  <Button onPress={() => setRotatedJoinCode(null)}>
+                    已复制，隐藏邀请码
+                  </Button>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           <section className="admin-panel" aria-labelledby="upload-title">
             <h2 id="upload-title">上传新乐谱</h2>
@@ -414,23 +424,26 @@ export default function ChoirPage() {
   );
 }
 
-async function loadChoirName(choirId: string): Promise<string | null> {
+async function loadChoirSummary(
+  choirId: string,
+): Promise<ChoirSummary | null> {
   try {
     const guestResponse = await fetch("/api/guest/session");
     if (guestResponse.ok) {
       const payload = (await guestResponse.json()) as {
-        choir: { id: string; name: string };
+        choir: unknown;
       };
-      if (payload.choir.id === choirId) return payload.choir.name;
+      const guestChoir = choirSummarySchema.parse(payload.choir);
+      if (guestChoir.id === choirId) return guestChoir;
     }
     const memberResponse = await fetch("/api/choirs");
     if (!memberResponse.ok) return null;
-    const payload = (await memberResponse.json()) as {
-      memberships: Array<{ choir: { id: string; name: string } }>;
-    };
+    const payload = choirMembershipsResponseSchema.parse(
+      await memberResponse.json(),
+    );
     return (
-      payload.memberships.find((item) => item.choir.id === choirId)?.choir
-        .name ?? null
+      payload.memberships.find((item) => item.choir.id === choirId)?.choir ??
+      null
     );
   } catch {
     return null;

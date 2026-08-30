@@ -14,7 +14,7 @@ export type Principal =
   | {
       kind: "guest";
       choirId: string;
-      joinCodeVersion: number;
+      guestSessionVersion: number;
     };
 
 export async function resolvePrincipal(options: {
@@ -56,7 +56,7 @@ export async function resolveGuestPrincipal(options: {
   const choir = await database.query.choirs.findFirst({
     where: and(
       eq(choirs.id, guestSession.choirId),
-      eq(choirs.joinCodeVersion, guestSession.joinCodeVersion),
+      eq(choirs.guestSessionVersion, guestSession.guestSessionVersion),
     ),
     columns: { id: true },
   });
@@ -68,6 +68,6 @@ export async function resolveGuestPrincipal(options: {
   return {
     kind: "guest",
     choirId: guestSession.choirId,
-    joinCodeVersion: guestSession.joinCodeVersion,
+    guestSessionVersion: guestSession.guestSessionVersion,
   };
 }

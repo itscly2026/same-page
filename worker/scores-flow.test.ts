@@ -119,7 +119,7 @@ describe("score management and PDF delivery", () => {
       storage: { usedBytes: originalPdf.byteLength, limitBytes: 1_073_741_824 },
     });
 
-    const guestCookie = await createGuestCookie(joinCode);
+    const guestCookie = await createGuestCookie(joinCode!);
     const guestDraftList = await callWorker(`/api/choirs/${choirId}/scores`, {
       headers: { cookie: guestCookie },
     });
@@ -281,7 +281,7 @@ async function createGuestCookie(joinCode: string) {
       "content-type": "application/json",
       "CF-Connecting-IP": "192.0.2.10",
     },
-    body: JSON.stringify({ joinCode }),
+    body: JSON.stringify({ admission: "invite", joinCode }),
   });
   expect(response.status).toBe(200);
   return cookieFrom(response);

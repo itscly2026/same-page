@@ -15,8 +15,13 @@ export const choirs = sqliteTable(
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
-    joinCodeHash: text("join_code_hash").notNull(),
-    joinCodeVersion: integer("join_code_version").notNull().default(1),
+    guestAdmissionMode: text("guest_admission_mode", {
+      enum: ["invite", "open"],
+    })
+      .notNull()
+      .default("invite"),
+    guestSessionVersion: integer("guest_session_version").notNull().default(1),
+    joinCodeHash: text("join_code_hash"),
     storageLimitBytes: integer("storage_limit_bytes")
       .notNull()
       .default(1_073_741_824),
@@ -27,6 +32,15 @@ export const choirs = sqliteTable(
   },
   (table) => [
     uniqueIndex("choirs_join_code_hash_uidx").on(table.joinCodeHash),
+    check(
+      "choirs_guest_admission_mode_valid",
+      sql`${table.guestAdmissionMode} in ('invite', 'open')`,
+    ),
+    check(
+      "choirs_guest_admission_mode_matches_join_code",
+      sql`(${table.guestAdmissionMode} = 'invite' and ${table.joinCodeHash} is not null)
+        or (${table.guestAdmissionMode} = 'open' and ${table.joinCodeHash} is null)`,
+    ),
     check("choirs_storage_limit_positive", sql`${table.storageLimitBytes} > 0`),
     check("choirs_storage_used_nonnegative", sql`${table.storageUsedBytes} >= 0`),
   ],
