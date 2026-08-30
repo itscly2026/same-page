@@ -1,6 +1,6 @@
 # Same Page
 
-> 当前状态：产品与领域设计已经确认，工程实现和技术原型正在启动。本文描述 V1 目标，不代表功能已经上线。
+> 当前状态：产品与领域设计已经确认，工程基线已经建立，V1 业务功能正在实现。本文描述 V1 目标，不代表功能已经上线。
 
 Same Page 是一款面向合唱排练的乐谱 PWA。它让成员围绕同一份 PDF 乐谱工作，通过共享批注层传达排练要求，并通过个人层保留自己的记号。
 
@@ -162,6 +162,23 @@ Cloudflare Worker + Hono
 ```
 
 PDF 批注的领域数据不得使用绘图库序列化格式。SVG 必须通过真实高密度笔迹原型；只有它在目标设备上无法达标时才采用 `react-konva`。Workbox Background Sync 只能作为增强能力，不能替代业务 outbox。
+
+## 工程开发
+
+工程使用 Node.js 24 与 npm。Cloudflare Vite plugin 在同一个开发和构建流程中运行 React 客户端、Workers Static Assets 与 Hono API；`/api/*` 先进入 Worker，其余未知路径回退到 React SPA。
+
+```bash
+npm install
+npm run dev          # React + Worker 本地开发
+npm run lint         # ESLint
+npm run typecheck    # 客户端、配置与 Worker 类型检查
+npm run test         # React/Vitest 单元测试
+npm run test:worker  # workerd 内的 Worker 测试
+npm run build        # 类型检查与生产构建
+npm run check        # 与 CI 相同的完整验证
+```
+
+Reader 路由和 PDF.js 从首页 bundle 中拆出，进入 `/reader` 时才加载。PWA 只由 `vite-plugin-pwa` 生成并注册一个 Service Worker，更新通过页面提示由用户确认。部署命令已经保留，但正式 Cloudflare 环境、资源绑定与发布流程属于后续 Issue。
 
 ## 原型与发布门槛
 
