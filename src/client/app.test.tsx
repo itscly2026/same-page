@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -289,9 +289,7 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    expect(
-      await screen.findByRole("heading", { name: "公开合唱团" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("这里还没有 PDF 文件。")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -386,9 +384,7 @@ describe("AppRoutes", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "加入并进入" }));
 
-    expect(
-      await screen.findByRole("heading", { name: "公开合唱团" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("这里还没有 PDF 文件。")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/choirs/join", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -446,7 +442,7 @@ describe("AppRoutes", () => {
     );
 
     expect(
-      await screen.findByText("邀请码已轮换。请现在复制新邀请码并通过私密渠道发送。"),
+      await screen.findByText("邀请码已轮换。请现在复制并通过私密渠道发送。"),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("新的八位邀请码")).toHaveTextContent(
       "ABCDEFGH",
@@ -470,7 +466,7 @@ describe("AppRoutes", () => {
         return Promise.resolve(
           Response.json({
             scores: [],
-            storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
+            storage: { usedBytes: 900_000_000, limitBytes: 1_073_741_824 },
             permissions: { canManage: true },
           }),
         );
@@ -494,11 +490,139 @@ describe("AppRoutes", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "上传新乐谱" }),
+      await screen.findByRole("button", { name: "上传 PDF" }),
     ).toBeInTheDocument();
+    expect(screen.getByText(/团存储已使用 858\.3 MB/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "管理" }));
+    expect(await screen.findByRole("menuitem", { name: /团存储：858\.3 MB/ })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByRole("menuitem", { name: "回收站" })).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "轮换邀请码" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows members a filename-first list without administrator storage controls", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) =>
+        Promise.resolve(
+          input.includes("/scores")
+            ? Response.json({
+                scores: [
+                  {
+                    id: "score-10",
+                    choirId: "choir-1",
+                    fileName: "排练 10.pdf",
+                    updatedAt: 1,
+                    currentVersion: {
+                      id: "version-1",
+                      versionNumber: 1,
+                      sizeBytes: 2 * 1024 * 1024,
+                      sha256: "a".repeat(64),
+                      etag: '"etag"',
+                      pageCount: 2,
+                      createdAt: 1,
+                    },
+                  },
+                ],
+                storage: { usedBytes: 950_000_000, limitBytes: 1_073_741_824 },
+                permissions: { canManage: false },
+              })
+            : Response.json({
+                choir: {
+                  id: "choir-1",
+                  name: "小红花合唱团",
+                  guestAdmissionMode: "invite",
+                },
+              }),
+        ),
+      ),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("link", { name: /排练 10\.pdf.*2\.0 MB/ })).toHaveAttribute(
+      "href",
+      "/choirs/choir-1/scores/score-10",
+    );
+    expect(screen.queryByRole("button", { name: "上传 PDF" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "回收站" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/团存储已使用/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/更多操作/)).not.toBeInTheDocument();
+  });
+
+  it("uploads files independently and reports invalid and duplicate files in place", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "admin-1", email: "admin@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    const uploadBodies: FormData[] = [];
+    const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+      if (input === "/api/choirs/choir-1/scores" && init?.method === "POST") {
+        const form = init.body as FormData;
+        uploadBodies.push(form);
+        const file = form.get("file") as File;
+        return Promise.resolve(
+          file.name === "重复.pdf"
+            ? Response.json({ error: "filename_conflict" }, { status: 409 })
+            : Response.json({}, { status: 201 }),
+        );
+      }
+      if (input.includes("/scores")) {
+        return Promise.resolve(
+          Response.json({
+            scores: [],
+            storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
+            permissions: { canManage: true },
+          }),
+        );
+      }
+      return Promise.resolve(
+        Response.json({
+          choir: {
+            id: "choir-1",
+            name: "小红花合唱团",
+            guestAdmissionMode: "invite",
+          },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "上传 PDF" }));
+    fireEvent.change(screen.getByLabelText("选择 PDF 文件"), {
+      target: {
+        files: [
+          new File(["ok"], "练声.pdf", { type: "application/pdf" }),
+          new File(["duplicate"], "重复.pdf", { type: "application/pdf" }),
+          new File(["notes"], "说明.txt", { type: "text/plain" }),
+        ],
+      },
+    });
+
+    const statuses = await screen.findByRole("list", { name: "上传状态" });
+    await waitFor(() => {
+      expect(within(statuses).getByText("上传完成")).toBeInTheDocument();
+      expect(within(statuses).getByText(/文件库已有同名文件/)).toBeInTheDocument();
+      expect(within(statuses).getByText("只接受 PDF 文件。")).toBeInTheDocument();
+    });
+    expect(uploadBodies).toHaveLength(2);
+    for (const body of uploadBodies) {
+      expect(Array.from(body.keys())).toEqual(["file"]);
+    }
   });
 
   it("requires explicit confirmation before logout discards pending work", async () => {

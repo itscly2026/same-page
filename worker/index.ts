@@ -6,7 +6,7 @@ import { AuthorizationError } from "./auth/authorization";
 import { handleAuthRequest } from "./auth/handler";
 import { choirRoutes } from "./choirs/routes";
 import type { AppEnvironment } from "./env";
-import { cleanupExpiredScoreVersions } from "./scores/cleanup";
+import { cleanupScoreStorage } from "./scores/cleanup";
 import { scoreRoutes } from "./scores/routes";
 
 const app = new Hono<AppEnvironment>();
@@ -39,6 +39,6 @@ app.onError((error, context) => {
 export default {
   fetch: app.fetch,
   scheduled(_controller, env, context) {
-    context.waitUntil(cleanupExpiredScoreVersions(env));
+    context.waitUntil(cleanupScoreStorage(env));
   },
 } satisfies ExportedHandler<Cloudflare.Env>;

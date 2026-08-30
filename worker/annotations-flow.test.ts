@@ -236,14 +236,9 @@ async function createFixture() {
   });
   const upload = await callWorker(
     `/api/choirs/${provisioned.choirId}/scores`,
-    uploadRequest(admin.cookie, "排练曲"),
+    uploadRequest(admin.cookie, "排练曲.pdf"),
   );
   const scoreId = ((await upload.json()) as { score: { id: string } }).score.id;
-  await callWorker(`/api/choirs/${provisioned.choirId}/scores/${scoreId}`, {
-    method: "PATCH",
-    headers: { cookie: admin.cookie, "content-type": "application/json" },
-    body: JSON.stringify({ status: "published" }),
-  });
   const layerResponse = await callWorker(
     `/api/choirs/${provisioned.choirId}/scores/${scoreId}/layers`,
     jsonRequest(admin.cookie, { name: "指挥批注", defaultColor: "#a12652", sortOrder: 0 }),
@@ -325,10 +320,9 @@ function jsonRequest(cookie: string, body: unknown, extraHeaders: Record<string,
   };
 }
 
-function uploadRequest(cookie: string, title: string): RequestInit {
+function uploadRequest(cookie: string, fileName: string): RequestInit {
   const form = new FormData();
-  form.set("file", new File([createMinimalPdf()], "score.pdf", { type: "application/pdf" }));
-  form.set("title", title);
+  form.set("file", new File([createMinimalPdf()], fileName, { type: "application/pdf" }));
   return { method: "POST", headers: { cookie }, body: form };
 }
 

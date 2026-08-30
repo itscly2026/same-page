@@ -38,7 +38,7 @@ export async function inspectPdf(data: ArrayBuffer): Promise<{
     }
 
     // Resolve both ends of the page tree so malformed page references fail
-    // before a version can be published.
+    // before an upload can become visible in the file library.
     await document.getPage(1);
     if (document.numPages > 1) {
       await document.getPage(document.numPages);

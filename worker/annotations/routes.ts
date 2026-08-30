@@ -545,12 +545,11 @@ async function resolveScoreAccess(
   const access = await requireChoirRead(createDatabase(context.env.DB), principal, choirId);
   if (!principal) return context.json({ error: "forbidden" }, 403);
   const score = await context.env.DB.prepare(
-    "SELECT status FROM scores WHERE id = ? AND choir_id = ?",
+    "SELECT trashed_at FROM scores WHERE id = ? AND choir_id = ?",
   )
     .bind(scoreId, choirId)
-    .first<{ status: string }>();
-  const canManage = access.kind === "membership" && access.membership.role === "admin";
-  if (!score || (!canManage && score.status !== "published")) {
+    .first<{ trashed_at: number | null }>();
+  if (!score || score.trashed_at !== null) {
     return context.json({ error: "score_not_found" }, 404);
   }
   return {
@@ -563,7 +562,9 @@ async function resolveScoreAccess(
 
 async function scoreExists(context: Context<AppEnvironment>, choirId: string, scoreId: string) {
   return Boolean(
-    await context.env.DB.prepare("SELECT 1 FROM scores WHERE id = ? AND choir_id = ?")
+    await context.env.DB.prepare(
+      "SELECT 1 FROM scores WHERE id = ? AND choir_id = ? AND trashed_at IS NULL",
+    )
       .bind(scoreId, choirId)
       .first(),
   );
