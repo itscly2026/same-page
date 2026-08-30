@@ -103,7 +103,7 @@ describe("authentication and choir boundaries", () => {
     const provisioned = await provisionChoir({
       binding: env.DB,
       adminUserId: admin!.id,
-      adminDisplayName: "团长",
+      adminDisplayName: "管理员",
       inviteSecret: env.INVITE_SECRET,
       getRandomValues(array) {
         array.fill(0);
@@ -206,7 +206,7 @@ describe("authentication and choir boundaries", () => {
     const secondChoir = await provisionChoir({
       binding: env.DB,
       adminUserId: admin!.id,
-      adminDisplayName: "团长",
+      adminDisplayName: "管理员",
       choirName: "第二合唱团",
       inviteSecret: env.INVITE_SECRET,
       getRandomValues(array) {

@@ -230,7 +230,7 @@ async function createFixture() {
   const provisioned = await provisionChoir({
     binding: env.DB,
     adminUserId: admin.userId,
-    adminDisplayName: "团长",
+    adminDisplayName: "管理员",
     inviteSecret: env.INVITE_SECRET,
   });
   const upload = await callWorker(

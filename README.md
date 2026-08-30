@@ -201,13 +201,14 @@ npm run dev
 ```bash
 INVITE_SECRET='与 .dev.vars 相同的独立值' npm run provision:choir -- \
   --admin-email admin@example.com \
-  --admin-display-name 团长 \
+  --admin-display-name 管理员 \
   --local
 ```
 
 命令默认只操作本地 D1；生产执行必须显式传入 `--remote`。邀请码只在创建成功时显示
-一次，应通过私密渠道保存和发送，不得粘贴到 Issue、PR 或日志。产品和公开 API 均不
-提供建团入口；新增合唱团沿用同一个受控运维命令。
+一次，应立即通过私密渠道发送，不得粘贴到 Issue、PR、日志或长期存档。之后由管理员在
+团页面主动轮换；新码同样只显示到离开页面或主动隐藏为止。产品和公开 API 均不提供建团
+入口；新增合唱团沿用同一个受控运维命令。
 
 Better Auth 的数据库定义由官方 CLI 生成。认证配置发生模型变化时运行
 `npm run auth:schema` 并审查生成结果；D1 的实际变更仍通过 `migrations/` 中的迁移执行。

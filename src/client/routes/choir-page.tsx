@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { Button, Form, Input, Label, TextField } from "react-aria-components";
 import { Link, useParams } from "react-router-dom";
 
+import { rotateJoinCodeResponseSchema } from "../../shared/choirs";
 import {
   scoreListResponseSchema,
   type ScoreListResponse,
@@ -16,6 +17,7 @@ export default function ChoirPage() {
   const [denied, setDenied] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [rotatedJoinCode, setRotatedJoinCode] = useState<string | null>(null);
   const [replacementFiles, setReplacementFiles] = useState<
     Record<string, File | undefined>
   >({});
@@ -136,6 +138,37 @@ export default function ChoirPage() {
     setReplacementFiles((current) => ({ ...current, [scoreId]: undefined }));
     setMessage("PDF 已替换；批注继续使用原页码和归一化坐标。");
     await refresh();
+  };
+
+  const rotateJoinCode = async () => {
+    if (
+      !window.confirm(
+        "轮换后，当前邀请码会立即失效，正在使用旧码的访客也需要重新输入新码。确认继续吗？",
+      )
+    ) {
+      return;
+    }
+
+    setBusy(true);
+    setMessage(null);
+    setRotatedJoinCode(null);
+    try {
+      const response = await fetch(
+        `/api/choirs/${choirId}/join-code/rotate`,
+        { method: "POST" },
+      );
+      if (!response.ok) {
+        setMessage("邀请码轮换失败，当前邀请码没有改变。");
+        return;
+      }
+      const payload = rotateJoinCodeResponseSchema.parse(await response.json());
+      setRotatedJoinCode(payload.joinCode);
+      setMessage("邀请码已轮换。请现在复制新邀请码并通过私密渠道发送。");
+    } catch {
+      setMessage("邀请码轮换失败，当前邀请码没有改变。");
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (denied) {
@@ -317,40 +350,61 @@ export default function ChoirPage() {
       )}
 
       {result.permissions.canManage ? (
-        <section className="upload-panel" aria-labelledby="upload-title">
-          <h2 id="upload-title">上传新乐谱</h2>
-          <p>只接受可解析且未加密的 PDF，单份最大 20 MB。上传后先保存为草稿。</p>
-          <form className="entry-form" onSubmit={uploadScore}>
-            <label>
-              标题
-              <input name="title" required maxLength={160} />
-            </label>
-            <label>
-              作曲者（选填）
-              <input name="composer" maxLength={120} />
-            </label>
-            <label>
-              编曲者（选填）
-              <input name="arranger" maxLength={120} />
-            </label>
-            <label>
-              排序
-              <input name="sortOrder" type="number" defaultValue={0} />
-            </label>
-            <label>
-              PDF 文件
-              <input
-                name="file"
-                type="file"
-                accept="application/pdf,.pdf"
-                required
-              />
-            </label>
-            <button type="submit" disabled={busy}>
-              {busy ? "正在验证并保存…" : "上传为草稿"}
-            </button>
-          </form>
-        </section>
+        <>
+          <section className="admin-panel" aria-labelledby="invite-title">
+            <h2 id="invite-title">团邀请码</h2>
+            <p>
+              轮换会立即停用旧邀请码。新邀请码只在本次操作后显示，不会保存在浏览器中。
+            </p>
+            <Button isDisabled={busy} onPress={() => void rotateJoinCode()}>
+              轮换邀请码
+            </Button>
+            {rotatedJoinCode ? (
+              <div className="join-code-result" role="status">
+                <p>新的八位邀请码</p>
+                <output aria-label="新的八位邀请码">{rotatedJoinCode}</output>
+                <Button onPress={() => setRotatedJoinCode(null)}>
+                  已复制，隐藏邀请码
+                </Button>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="admin-panel" aria-labelledby="upload-title">
+            <h2 id="upload-title">上传新乐谱</h2>
+            <p>只接受可解析且未加密的 PDF，单份最大 20 MB。上传后先保存为草稿。</p>
+            <form className="entry-form" onSubmit={uploadScore}>
+              <label>
+                标题
+                <input name="title" required maxLength={160} />
+              </label>
+              <label>
+                作曲者（选填）
+                <input name="composer" maxLength={120} />
+              </label>
+              <label>
+                编曲者（选填）
+                <input name="arranger" maxLength={120} />
+              </label>
+              <label>
+                排序
+                <input name="sortOrder" type="number" defaultValue={0} />
+              </label>
+              <label>
+                PDF 文件
+                <input
+                  name="file"
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  required
+                />
+              </label>
+              <button type="submit" disabled={busy}>
+                {busy ? "正在验证并保存…" : "上传为草稿"}
+              </button>
+            </form>
+          </section>
+        </>
       ) : null}
 
       <Link className="back-link" to="/">
