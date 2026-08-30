@@ -183,13 +183,33 @@ describe("PDF file library and delivery", () => {
         JSON.stringify({ kind: "text", pageNumber: 1, x: 0.1, y: 0.1, text: "保留" }),
       ),
     ]);
+    const historicalPdf = createMinimalPdf(595, 842);
+    expect(
+      (
+        await callWorker(
+          `/api/choirs/${choirId}/scores/${original.id}/versions`,
+          uploadRequest(historicalPdf, adminCookie, "replacement.pdf"),
+        )
+      ).status,
+    ).toBe(201);
+    await env.DB.prepare(
+      "UPDATE score_versions SET retention_expires_at = ? WHERE id = ?",
+    )
+      .bind(Date.now() - 1, original.versionId)
+      .run();
 
     const trashResponse = await callWorker(
       `/api/choirs/${choirId}/scores/${original.id}`,
       { method: "DELETE", headers: { cookie: adminCookie } },
     );
     expect(trashResponse.status).toBe(204);
-    expect((await env.SCORES_BUCKET.list()).objects).toHaveLength(1);
+    expect((await env.SCORES_BUCKET.list()).objects).toHaveLength(2);
+    await cleanupScoreStorage(env, Date.now());
+    expect(
+      await env.DB.prepare("SELECT COUNT(*) AS count FROM score_versions WHERE score_id = ?")
+        .bind(original.id)
+        .first(),
+    ).toEqual({ count: 2 });
 
     const guestList = await callWorker(`/api/choirs/${choirId}/scores`, {
       headers: { cookie: guestCookie },

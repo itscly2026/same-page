@@ -1,16 +1,12 @@
-import { type DragEvent, type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import {
   Button,
-  Dialog,
   Form,
-  Heading,
   Input,
   Label,
   Menu,
   MenuItem,
   MenuTrigger,
-  Modal,
-  ModalOverlay,
   Popover,
   TextField,
 } from "react-aria-components";
@@ -24,23 +20,19 @@ import {
 } from "../../shared/choirs";
 import {
   scoreListResponseSchema,
-  scoreTrashResponseSchema,
   type ScoreListResponse,
   type ScoreSummary,
-  type TrashedScoreSummary,
 } from "../../shared/scores";
 import { authClient } from "../auth/auth-client";
 import { AppHeader } from "../components/app-header";
-
-type ScoreAction = "rename" | "replace" | "trash";
-type UploadStatus = "uploading" | "success" | "error";
-
-interface UploadItem {
-  id: string;
-  file: File;
-  status: UploadStatus;
-  message: string;
-}
+import {
+  ScoreActionDialog,
+  type ScoreAction,
+  type ScoreActionSelection,
+} from "../score-library/score-action-dialog";
+import { formatBytes } from "../score-library/library-format";
+import { TrashDialog } from "../score-library/trash-dialog";
+import { UploadDialog } from "../score-library/upload-dialog";
 
 export default function ChoirPage() {
   const { choirId = "" } = useParams();
@@ -53,19 +45,9 @@ export default function ChoirPage() {
   const [busy, setBusy] = useState(false);
   const [rotatedJoinCode, setRotatedJoinCode] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [quotaBlocked, setQuotaBlocked] = useState(false);
-  const [scoreAction, setScoreAction] = useState<{
-    action: ScoreAction;
-    score: ScoreSummary;
-  } | null>(null);
-  const [renameValue, setRenameValue] = useState("");
-  const [replacementFile, setReplacementFile] = useState<File | null>(null);
+  const [scoreAction, setScoreAction] = useState<ScoreActionSelection | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
-  const [trash, setTrash] = useState<TrashedScoreSummary[]>([]);
-  const [trashMessage, setTrashMessage] = useState<string | null>(null);
-  const [restoreConflict, setRestoreConflict] = useState<TrashedScoreSummary | null>(null);
-  const [restoreName, setRestoreName] = useState("");
   const currentChoir =
     access.kind === "opened" || access.kind === "join-required"
       ? access.choir
@@ -132,157 +114,9 @@ export default function ChoirPage() {
     }
   };
 
-  const startUploads = async (files: File[]) => {
-    const nextItems = files.map((file) => ({
-      id: crypto.randomUUID(),
-      file,
-      status: isPdfFile(file) ? ("uploading" as const) : ("error" as const),
-      message: isPdfFile(file) ? "正在验证并上传…" : "只接受 PDF 文件。",
-    }));
-    setUploads((current) => [...nextItems, ...current]);
-    setUploadOpen(true);
-
-    await Promise.all(
-      nextItems.filter((item) => item.status === "uploading").map(async (item) => {
-        const form = new FormData();
-        form.set("file", item.file);
-        try {
-          const response = await fetch(`/api/choirs/${choirId}/scores`, {
-            method: "POST",
-            body: form,
-          });
-          const payload = await response.json().catch(() => null);
-          const next = response.ok
-            ? { status: "success" as const, message: "上传完成" }
-            : { status: "error" as const, message: uploadMessage(response.status, payload) };
-          if ((payload as { error?: string } | null)?.error === "storage_quota_exceeded") {
-            setQuotaBlocked(true);
-          }
-          setUploads((current) =>
-            current.map((entry) => (entry.id === item.id ? { ...entry, ...next } : entry)),
-          );
-        } catch {
-          setUploads((current) =>
-            current.map((entry) =>
-              entry.id === item.id
-                ? { ...entry, status: "error", message: "网络中断，请重新选择该文件。" }
-                : entry,
-            ),
-          );
-        }
-      }),
-    );
-    await refresh();
-  };
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const files = Array.from(event.dataTransfer.files);
-    if (files.length > 0) void startUploads(files);
-  };
-
   const openScoreAction = (score: ScoreSummary, action: ScoreAction) => {
     setScoreAction({ score, action });
-    setRenameValue(score.fileName);
-    setReplacementFile(null);
     setMessage(null);
-  };
-
-  const submitScoreAction = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!scoreAction) return;
-    setBusy(true);
-    setMessage(null);
-    try {
-      let response: Response;
-      if (scoreAction.action === "rename") {
-        response = await fetch(`/api/choirs/${choirId}/scores/${scoreAction.score.id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ fileName: renameValue }),
-        });
-      } else if (scoreAction.action === "replace" && replacementFile) {
-        const form = new FormData();
-        form.set("file", replacementFile);
-        response = await fetch(
-          `/api/choirs/${choirId}/scores/${scoreAction.score.id}/versions`,
-          { method: "POST", body: form },
-        );
-      } else {
-        response = await fetch(`/api/choirs/${choirId}/scores/${scoreAction.score.id}`, {
-          method: "DELETE",
-        });
-      }
-      const payload = response.status === 204 ? null : await response.json().catch(() => null);
-      if (!response.ok) {
-        setMessage(uploadMessage(response.status, payload));
-        return;
-      }
-      setScoreAction(null);
-      setMessage(
-        scoreAction.action === "rename"
-          ? "文件已重命名。"
-          : scoreAction.action === "replace"
-            ? "PDF 已替换；现有批注继续使用原页码和坐标。"
-            : "文件已移到回收站，将在三十天后自动删除。",
-      );
-      await refresh();
-    } catch {
-      setMessage("操作未完成，请稍后重试。");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const openTrash = async () => {
-    setTrashOpen(true);
-    setTrashMessage(null);
-    try {
-      const response = await fetch(`/api/choirs/${choirId}/scores/trash`);
-      if (!response.ok) throw new Error("trash_unavailable");
-      setTrash(scoreTrashResponseSchema.parse(await response.json()).scores);
-    } catch {
-      setTrashMessage("暂时无法打开回收站。");
-    }
-  };
-
-  const restoreScore = async (score: TrashedScoreSummary, nextName?: string) => {
-    setBusy(true);
-    setTrashMessage(null);
-    try {
-      if (nextName) {
-        const rename = await fetch(`/api/choirs/${choirId}/scores/${score.id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ fileName: nextName }),
-        });
-        if (!rename.ok) {
-          setTrashMessage(uploadMessage(rename.status, await rename.json().catch(() => null)));
-          return;
-        }
-      }
-      const response = await fetch(`/api/choirs/${choirId}/scores/${score.id}/restore`, {
-        method: "POST",
-      });
-      if (response.status === 409) {
-        setRestoreConflict(score);
-        setRestoreName(score.fileName);
-        setTrashMessage("当前文件库已有同名文件，请先为恢复的文件换一个名称。");
-        return;
-      }
-      if (!response.ok) {
-        setTrashMessage("恢复未完成，请稍后重试。");
-        return;
-      }
-      setRestoreConflict(null);
-      setTrash((current) => current.filter((entry) => entry.id !== score.id));
-      setTrashMessage("文件已恢复。批注和 PDF 版本保持不变。");
-      await refresh();
-    } catch {
-      setTrashMessage("恢复未完成，请稍后重试。");
-    } finally {
-      setBusy(false);
-    }
   };
 
   const rotateJoinCode = async () => {
@@ -388,7 +222,7 @@ export default function ChoirPage() {
                   <Menu
                     aria-label="管理员菜单"
                     onAction={(key) => {
-                      if (key === "trash") void openTrash();
+                      if (key === "trash") setTrashOpen(true);
                     }}
                   >
                     <MenuItem id="trash">回收站</MenuItem>
@@ -478,140 +312,33 @@ export default function ChoirPage() {
         ) : null}
       </main>
 
-      <ModalOverlay className="modal-overlay" isOpen={uploadOpen} onOpenChange={setUploadOpen} isDismissable>
-        <Modal className="app-modal">
-          <Dialog className="app-dialog">
-            {({ close }) => (
-              <>
-                <DialogHeading title="上传 PDF" close={close} />
-                <p className="dialog-copy">可一次选择或拖入多个 PDF。每个文件独立验证，单个失败不影响其他文件。</p>
-                <div
-                  className="upload-dropzone"
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={handleDrop}
-                >
-                  <label>
-                    <span>选择 PDF 文件</span>
-                    <input
-                      type="file"
-                      accept="application/pdf,.pdf"
-                      multiple
-                      onChange={(event) => {
-                        const files = Array.from(event.currentTarget.files ?? []);
-                        event.currentTarget.value = "";
-                        if (files.length > 0) void startUploads(files);
-                      }}
-                    />
-                  </label>
-                  <small>或拖到这里 · 单份最大 20 MB</small>
-                </div>
-                {uploads.length > 0 ? (
-                  <ul className="upload-list" aria-label="上传状态">
-                    {uploads.map((item) => (
-                      <li key={item.id} data-status={item.status}>
-                        <span>{item.file.name}</span>
-                        <strong>{item.message}</strong>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </>
-            )}
-          </Dialog>
-        </Modal>
-      </ModalOverlay>
-
-      <ModalOverlay
-        className="modal-overlay"
-        isOpen={Boolean(scoreAction)}
-        onOpenChange={(open) => { if (!open) setScoreAction(null); }}
-        isDismissable={!busy}
-      >
-        <Modal className="app-modal app-modal--compact">
-          <Dialog className="app-dialog">
-            {({ close }) => scoreAction ? (
-              <>
-                <DialogHeading title={actionTitle(scoreAction.action)} close={close} />
-                <Form className="entry-form dialog-form" onSubmit={submitScoreAction}>
-                  {scoreAction.action === "rename" ? (
-                    <TextField isRequired value={renameValue} onChange={setRenameValue} maxLength={255}>
-                      <Label>文件名</Label>
-                      <Input autoFocus />
-                    </TextField>
-                  ) : scoreAction.action === "replace" ? (
-                    <label>
-                      新的 PDF
-                      <input
-                        required
-                        type="file"
-                        accept="application/pdf,.pdf"
-                        onChange={(event) => setReplacementFile(event.currentTarget.files?.[0] ?? null)}
-                      />
-                    </label>
-                  ) : (
-                    <p className="dialog-copy">“{scoreAction.score.fileName}”将从文件库消失，三十天内可从回收站恢复。</p>
-                  )}
-                  <Button type="submit" isDisabled={busy || (scoreAction.action === "replace" && !replacementFile)}>
-                    {busy ? "正在处理…" : scoreAction.action === "trash" ? "移到回收站" : "确认"}
-                  </Button>
-                </Form>
-                {message ? <p className="form-message" role="alert">{message}</p> : null}
-              </>
-            ) : null}
-          </Dialog>
-        </Modal>
-      </ModalOverlay>
-
-      <ModalOverlay className="modal-overlay" isOpen={trashOpen} onOpenChange={setTrashOpen} isDismissable={!busy}>
-        <Modal className="app-modal">
-          <Dialog className="app-dialog">
-            {({ close }) => (
-              <>
-                <DialogHeading title="回收站" close={close} />
-                <p className="dialog-copy">文件保留三十天，到期自动删除。这里不提供手工永久删除。</p>
-                {trash.length > 0 ? (
-                  <ul className="trash-list">
-                    {trash.map((score) => (
-                      <li key={score.id}>
-                        <span><strong>{score.fileName}</strong><small>{daysRemaining(score.trashExpiresAt)} 天后自动删除</small></span>
-                        <Button isDisabled={busy} onPress={() => void restoreScore(score)}>恢复</Button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : <p className="empty-library">回收站是空的。</p>}
-                {restoreConflict ? (
-                  <Form
-                    className="entry-form restore-conflict"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void restoreScore(restoreConflict, restoreName);
-                    }}
-                  >
-                    <TextField isRequired value={restoreName} onChange={setRestoreName} maxLength={255}>
-                      <Label>恢复时使用的新文件名</Label>
-                      <Input autoFocus />
-                    </TextField>
-                    <Button type="submit" isDisabled={busy}>重命名并恢复</Button>
-                  </Form>
-                ) : null}
-                {trashMessage ? <p className="form-message" role="status">{trashMessage}</p> : null}
-              </>
-            )}
-          </Dialog>
-        </Modal>
-      </ModalOverlay>
-    </div>
-  );
-}
-
-function DialogHeading({ title, close }: { title: string; close: () => void }) {
-  return (
-    <div className="dialog-heading">
-      <div>
-        <p className="dialog-eyebrow">Same Page</p>
-        <Heading slot="title">{title}</Heading>
-      </div>
-      <Button className="icon-button" aria-label="关闭" onPress={close}>×</Button>
+      <UploadDialog
+        choirId={choirId}
+        isOpen={uploadOpen}
+        onOpenChange={setUploadOpen}
+        onComplete={refresh}
+        onQuotaBlocked={() => setQuotaBlocked(true)}
+      />
+      {scoreAction ? (
+        <ScoreActionDialog
+          key={`${scoreAction.score.id}:${scoreAction.action}`}
+          choirId={choirId}
+          selection={scoreAction}
+          onClose={() => setScoreAction(null)}
+          onComplete={async (nextMessage) => {
+            await refresh();
+            setScoreAction(null);
+            setMessage(nextMessage);
+          }}
+        />
+      ) : null}
+      {trashOpen ? (
+        <TrashDialog
+          choirId={choirId}
+          onClose={() => setTrashOpen(false)}
+          onRestored={refresh}
+        />
+      ) : null}
     </div>
   );
 }
@@ -688,35 +415,4 @@ async function fetchScoreList(choirId: string, query: string) {
   } catch {
     return null;
   }
-}
-
-function actionTitle(action: ScoreAction) {
-  if (action === "rename") return "重命名";
-  if (action === "replace") return "替换 PDF";
-  return "移到回收站";
-}
-
-function daysRemaining(expiresAt: number) {
-  return Math.max(1, Math.ceil((expiresAt - Date.now()) / (24 * 60 * 60 * 1000)));
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024 * 1024) return `${Math.max(0, bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function uploadMessage(status: number, payload: unknown) {
-  const error = (payload as { error?: string } | null)?.error;
-  if (status === 413 || error === "pdf_too_large") return "PDF 超过 20 MB。";
-  if (error === "encrypted_pdf") return "加密 PDF 不能上传。";
-  if (error === "invalid_pdf") return "PDF 已损坏或无法解析。";
-  if (error === "filename_conflict") return "文件库已有同名文件。请重命名，或在原文件上执行替换 PDF。";
-  if (error === "invalid_file_name") return "文件名无效。";
-  if (error === "storage_quota_exceeded") return "合唱团的 1 GB 文件配额已用完。";
-  if (error === "replacement_in_progress") return "另一项 PDF 替换正在进行，请稍后再试。";
-  return "操作没有完成，现有文件保持不变。";
-}
-
-function isPdfFile(file: File) {
-  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 }

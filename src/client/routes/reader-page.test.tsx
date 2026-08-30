@@ -741,4 +741,76 @@ describe("ReaderPage", () => {
       "/api/choirs/choir-1/scores/score-1/status",
     ]);
   });
+
+  it("detects trash on reconnect before draining the offline outbox", async () => {
+    const scopeKey = "choir-1:score-1";
+    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+      key: "offline-1",
+      choirId: "choir-1",
+      scoreId: "score-1",
+      versionId: "version-1",
+      fileName: "离线练声曲.pdf",
+      sha256: "a".repeat(64),
+      pageCount: 1,
+      blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
+      active: 1,
+      verifiedAt: 1,
+      annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 },
+    });
+    await localDatabase.annotationOutbox.put({
+      opId: "pending-reconnect-op",
+      scopeKey,
+      choirId: "choir-1",
+      scoreId: "score-1",
+      annotationId: "annotation-1",
+      layerId: "11111111-1111-4111-8111-111111111111",
+      baseVersion: 0,
+      type: "upsert",
+      payload: {
+        kind: "text",
+        pageNumber: 1,
+        x: 0.1,
+        y: 0.1,
+        text: "待恢复后同步",
+      },
+      attemptedAt: null,
+      createdAt: 1,
+    });
+    let connected = false;
+    const fetchMock = vi.fn().mockImplementation((input: string | URL | Request) => {
+      const url = String(input);
+      if (!connected) return Promise.reject(new Error("offline"));
+      if (url.endsWith("/scores")) {
+        return Promise.resolve(
+          Response.json({
+            scores: [],
+            storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
+            permissions: { canManage: false },
+          }),
+        );
+      }
+      if (url.endsWith("/scores/score-1/status")) {
+        return Promise.resolve(Response.json({ state: "trashed" }));
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("离线练声曲.pdf")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    connected = true;
+    fireEvent(window, new Event("online"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("乐谱已移入回收站");
+    expect(syncAnnotations).not.toHaveBeenCalled();
+    expect(await localDatabase.annotationOutbox.count()).toBe(1);
+  });
 });

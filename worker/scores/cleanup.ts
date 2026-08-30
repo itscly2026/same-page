@@ -35,7 +35,8 @@ export async function cleanupScoreStorage(
     `SELECT versions.id, versions.score_id, versions.object_key, versions.state
      FROM score_versions AS versions
      INNER JOIN scores ON scores.id = versions.score_id
-     WHERE versions.id <> COALESCE(scores.current_version_id, '')
+     WHERE (scores.trashed_at IS NULL OR scores.trash_expires_at <= ?)
+       AND versions.id <> COALESCE(scores.current_version_id, '')
        AND (
          (versions.state = 'ready' AND versions.retention_expires_at IS NOT NULL
           AND versions.retention_expires_at <= ?)
@@ -44,7 +45,7 @@ export async function cleanupScoreStorage(
        )
      LIMIT 100`,
   )
-    .bind(now, now - ABANDONED_UPLOAD_MS)
+    .bind(now, now, now - ABANDONED_UPLOAD_MS)
     .all<CleanupCandidate>();
 
   let removed = 0;

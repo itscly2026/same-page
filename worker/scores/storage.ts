@@ -20,6 +20,14 @@ export class FilenameConflictError extends Error {
   }
 }
 
+export function isFilenameConflictError(error: unknown) {
+  return (
+    error instanceof Error &&
+    (error.message.includes("scores_active_filename_uidx") ||
+      error.message.includes("scores.choir_id, scores.file_name_key"))
+  );
+}
+
 export interface InspectedPdf {
   data: ArrayBuffer;
   sizeBytes: number;
@@ -335,11 +343,7 @@ function classifyReservationError(error: unknown): Error {
   ) {
     return new StorageQuotaError();
   }
-  if (
-    error instanceof Error &&
-    (error.message.includes("scores_active_filename_uidx") ||
-      error.message.includes("scores.choir_id, scores.file_name_key"))
-  ) {
+  if (isFilenameConflictError(error)) {
     return new FilenameConflictError();
   }
   return error instanceof Error ? error : new Error("Storage reservation failed");

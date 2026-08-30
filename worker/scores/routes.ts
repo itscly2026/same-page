@@ -18,6 +18,7 @@ import {
   ConcurrentReplacementError,
   createScoreVersion,
   FilenameConflictError,
+  isFilenameConflictError,
   replaceScoreVersion,
   StorageQuotaError,
 } from "./storage";
@@ -410,14 +411,6 @@ function uploadError(context: Context<AppEnvironment>, error: unknown) {
     return context.json({ error: "replacement_in_progress" }, 409);
   }
   throw error;
-}
-
-function isFilenameConflictError(error: unknown) {
-  return (
-    error instanceof Error &&
-    (error.message.includes("scores_active_filename_uidx") ||
-      error.message.includes("scores.choir_id, scores.file_name_key"))
-  );
 }
 
 function parseRange(

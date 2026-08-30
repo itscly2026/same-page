@@ -156,32 +156,22 @@ export default function ReaderPage() {
       if (active) setOffline(local ?? null);
 
       try {
-        const response = await fetch(`/api/choirs/${choirId}/scores`);
-        if (!response.ok) throw new Error("Score list unavailable");
-        const payload = scoreListResponseSchema.parse(await response.json());
-        const current = payload.scores.find((item) => item.id === scoreId);
-        if (!current) {
-          const statusResponse = await fetch(
-            `/api/choirs/${choirId}/scores/${scoreId}/status`,
-          );
-          if (statusResponse.ok) {
-            const status = scoreCloudStateSchema.parse(await statusResponse.json());
-            if (status.state === "trashed") {
-              setCloudState("trashed");
-              if (!local) {
-                setLoadingError("这份乐谱已移入回收站，当前设备没有可用的离线副本。");
-                return;
-              }
-              setSyncMessage(
-                "这份乐谱已移入回收站；本机离线副本和未同步批注仍保留，恢复后可继续同步。",
-              );
-            }
+        const lookup = await lookupScoreCloudState(choirId, scoreId);
+        if (lookup.state === "trashed") {
+          setCloudState("trashed");
+          if (!local) {
+            setLoadingError("这份乐谱已移入回收站，当前设备没有可用的离线副本。");
+            return;
           }
+          setSyncMessage(
+            "这份乐谱已移入回收站；本机离线副本和未同步批注仍保留，恢复后可继续同步。",
+          );
           throw new Error("Score unavailable");
         }
+        if (lookup.state !== "active") throw new Error("Score unavailable");
         if (!active) return;
         setCloudState("active");
-        setScore(current);
+        setScore(lookup.score);
         setSource(`/api/choirs/${choirId}/scores/${scoreId}/pdf`);
       } catch {
         if (!active) return;
@@ -239,21 +229,35 @@ export default function ReaderPage() {
   }, [choirId, cloudState, scopeKey, scoreId, session.data?.user.id]);
 
   useEffect(() => {
-    const drain = () => {
-      if (
-        cloudState !== "active" ||
-        !navigator.onLine ||
-        globalThis.document.visibilityState === "hidden"
-      ) return;
-      void syncAnnotations(choirId, scoreId, { pull: false }).catch(() => undefined);
+    let active = true;
+    const revalidateAndDrain = () => {
+      if (!navigator.onLine || globalThis.document.visibilityState === "hidden") return;
+      void lookupScoreCloudState(choirId, scoreId)
+        .then(async (lookup) => {
+          if (!active) return;
+          if (lookup.state === "trashed") {
+            setCloudState("trashed");
+            setSyncMessage(
+              "这份乐谱已移入回收站；本机离线副本和未同步批注仍保留，恢复后可继续同步。",
+            );
+            return;
+          }
+          if (lookup.state !== "active") return;
+          setCloudState("active");
+          setScore(lookup.score);
+          setSource(`/api/choirs/${choirId}/scores/${scoreId}/pdf`);
+          await syncAnnotations(choirId, scoreId, { pull: false });
+        })
+        .catch(() => undefined);
     };
-    window.addEventListener("online", drain);
-    globalThis.document.addEventListener("visibilitychange", drain);
+    window.addEventListener("online", revalidateAndDrain);
+    globalThis.document.addEventListener("visibilitychange", revalidateAndDrain);
     return () => {
-      window.removeEventListener("online", drain);
-      globalThis.document.removeEventListener("visibilitychange", drain);
+      active = false;
+      window.removeEventListener("online", revalidateAndDrain);
+      globalThis.document.removeEventListener("visibilitychange", revalidateAndDrain);
     };
-  }, [choirId, cloudState, scoreId]);
+  }, [choirId, scoreId]);
 
   useEffect(() => {
     if (!source) return;
@@ -1077,6 +1081,27 @@ function readBooleanPreference(key: string) {
   } catch {
     return false;
   }
+}
+
+type ScoreCloudLookup =
+  | { state: "active"; score: ScoreSummary }
+  | { state: "trashed" }
+  | { state: "unavailable" };
+
+async function lookupScoreCloudState(
+  choirId: string,
+  scoreId: string,
+): Promise<ScoreCloudLookup> {
+  const response = await fetch(`/api/choirs/${choirId}/scores`);
+  if (!response.ok) return { state: "unavailable" };
+  const payload = scoreListResponseSchema.parse(await response.json());
+  const score = payload.scores.find((item) => item.id === scoreId);
+  if (score) return { state: "active", score };
+
+  const statusResponse = await fetch(`/api/choirs/${choirId}/scores/${scoreId}/status`);
+  if (!statusResponse.ok) return { state: "unavailable" };
+  const status = scoreCloudStateSchema.parse(await statusResponse.json());
+  return status.state === "trashed" ? { state: "trashed" } : { state: "unavailable" };
 }
 
 function scoreFromOffline(record: OfflineScoreRecord): ScoreSummary {
