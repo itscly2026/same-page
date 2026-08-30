@@ -204,12 +204,33 @@ describe("PDF file library and delivery", () => {
     );
     expect(trashResponse.status).toBe(204);
     expect((await env.SCORES_BUCKET.list()).objects).toHaveLength(2);
+    await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE choirs SET storage_used_bytes = storage_used_bytes + 100 WHERE id = ?",
+      ).bind(choirId),
+      env.DB.prepare(
+        `INSERT INTO score_versions
+          (id, choir_id, score_id, version_number, object_key, size_bytes,
+           sha256, page_count, state, created_at)
+         VALUES ('abandoned-trash-upload', ?, ?, 3, ?, 100, ?, 1, 'pending', ?)`,
+      ).bind(
+        choirId,
+        original.id,
+        `choirs/${choirId}/scores/${original.id}/versions/abandoned-trash-upload.pdf`,
+        "b".repeat(64),
+        Date.now() - 2 * 60 * 60 * 1000,
+      ),
+    ]);
     await cleanupScoreStorage(env, Date.now());
     expect(
       await env.DB.prepare("SELECT COUNT(*) AS count FROM score_versions WHERE score_id = ?")
         .bind(original.id)
         .first(),
     ).toEqual({ count: 2 });
+    expect(
+      await env.DB.prepare("SELECT id FROM score_versions WHERE id = 'abandoned-trash-upload'")
+        .first(),
+    ).toBeNull();
 
     const guestList = await callWorker(`/api/choirs/${choirId}/scores`, {
       headers: { cookie: guestCookie },
