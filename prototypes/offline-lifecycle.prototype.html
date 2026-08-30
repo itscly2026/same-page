@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Same Page - 离线生命周期原型</title>
+  <style>
+    :root { font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; color:#24231f; background:#eeeae2; --paper:#fffdf8; --line:#ddd6ca; --muted:#716d65; --green:#27704a; --red:#a33c31; --amber:#9b6219; --ink:#24231f; }
+    * { box-sizing:border-box; }
+    body { margin:0; }
+    button { font:inherit; border:1px solid #cfc7bb; background:#fff; color:var(--ink); border-radius:9px; padding:8px 11px; cursor:pointer; }
+    button:hover { border-color:#968c7e; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    button.primary { background:var(--ink); color:#fff; border-color:var(--ink); }
+    button.danger { color:var(--red); border-color:#ddb5af; }
+    header { padding:24px max(18px,calc((100vw - 1180px)/2)); background:var(--paper); border-bottom:1px solid var(--line); }
+    h1 { margin:0 0 7px; font-size:24px; }
+    header p { margin:0; max-width:900px; color:var(--muted); line-height:1.55; }
+    .throwaway { display:inline-block; margin-top:12px; padding:4px 8px; border-radius:6px; background:#f6e8c8; color:#6c4b12; font-size:12px; }
+    main { width:min(1180px,calc(100% - 28px)); margin:18px auto 42px; display:grid; gap:16px; }
+    section { background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:16px; }
+    h2 { margin:0 0 12px; font-size:16px; }
+    .status-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; }
+    .status { min-height:91px; padding:11px; background:#f6f2eb; border-radius:10px; }
+    .status span { color:var(--muted); font-size:11px; }
+    .status strong { display:block; margin:5px 0 2px; font-size:17px; overflow-wrap:anywhere; }
+    .status small { color:var(--muted); line-height:1.3; }
+    .ok { color:var(--green)!important; } .bad { color:var(--red)!important; } .warn { color:var(--amber)!important; }
+    .actions { display:flex; flex-wrap:wrap; gap:7px; }
+    .action-group { padding:11px 0; border-top:1px solid #eee8df; }
+    .action-group:first-of-type { border-top:0; padding-top:0; }
+    .action-group h3 { margin:0 0 8px; font-size:12px; color:var(--muted); }
+    .tabs { display:flex; gap:5px; overflow:auto; margin-bottom:12px; }
+    .tabs button[aria-selected="true"] { background:var(--ink); color:white; }
+    .scenario { display:none; }
+    .scenario.active { display:block; }
+    .scenario p { margin:0 0 10px; color:var(--muted); line-height:1.45; }
+    .steps { display:flex; flex-wrap:wrap; gap:7px; align-items:center; }
+    .step { display:flex; gap:6px; align-items:center; }
+    .step::after { content:"→"; color:#b1a89b; }
+    .step:last-child::after { display:none; }
+    .timeline { display:grid; gap:6px; max-height:240px; overflow:auto; }
+    .event { display:grid; grid-template-columns:70px 1fr; gap:9px; padding:7px 9px; background:#f8f5ef; border-radius:7px; font-size:12px; }
+    .event time { color:var(--muted); font-variant-numeric:tabular-nums; }
+    details { margin-top:12px; }
+    pre { overflow:auto; max-height:320px; padding:12px; border-radius:9px; background:#211f1c; color:#f4efe6; font-size:11px; }
+    #notice { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); z-index:20; max-width:min(92vw,720px); padding:9px 13px; border-radius:9px; background:#24231f; color:#fff; font-size:12px; opacity:0; pointer-events:none; transition:opacity .15s; }
+    #notice.show { opacity:1; }
+    .progress { height:5px; overflow:hidden; border-radius:5px; background:#ded7cb; margin-top:8px; }
+    .progress div { height:100%; width:0; background:var(--green); transition:width .1s; }
+    @media (max-width:760px) { .status-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } header { padding:18px 14px; } main { width:calc(100% - 18px); } .event { grid-template-columns:58px 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>离线副本、草稿与退出边界</h1>
+    <p>这个原型回答：20 MB 乐谱、本地草稿、outbox 和本地冲突，在断网、页面重载、缓存损坏、应用更新与退出登录中，能否保持可解释且不静默丢失？状态真正写入一个明确标记为原型的 IndexedDB 和 Cache Storage。</p>
+    <span class="throwaway">THROWAWAY · 仅验证生命周期，不进入生产</span>
+  </header>
+
+  <main>
+    <section>
+      <h2>当前状态</h2>
+      <div class="status-grid">
+        <div class="status"><span>会话 / 网络</span><strong id="sessionState">-</strong><small id="runtimeState">-</small></div>
+        <div class="status"><span>当前 PDF</span><strong id="pdfState">-</strong><small id="pdfDetail">-</small><div class="progress"><div id="pdfProgress"></div></div></div>
+        <div class="status"><span>本机修改</span><strong id="editState">-</strong><small id="editDetail">-</small></div>
+        <div class="status"><span>同步调用</span><strong id="syncState">-</strong><small id="syncDetail">-</small></div>
+        <div class="status"><span>存储保障</span><strong id="storageState">-</strong><small id="storageDetail">-</small></div>
+        <div class="status"><span>应用更新</span><strong id="updateState">-</strong><small id="updateDetail">-</small></div>
+        <div class="status"><span>退出登录</span><strong id="logoutState">-</strong><small id="logoutDetail">-</small></div>
+        <div class="status"><span>恢复证据</span><strong id="restoreState">-</strong><small id="restoreDetail">-</small></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>自由操作</h2>
+      <div class="action-group"><h3>离线副本</h3><div class="actions">
+        <button data-action="download" class="primary">下载并校验 20 MB PDF</button>
+        <button data-action="verify">重新校验缓存</button>
+        <button data-action="corrupt">破坏缓存内容</button>
+        <button data-action="newVersion">发布 PDF v2</button>
+      </div></div>
+      <div class="action-group"><h3>编辑与同步</h3><div class="actions">
+        <button data-action="offline">切到断网</button><button data-action="online">恢复网络</button>
+        <button data-action="draft">新增本地草稿</button><button data-action="conflict">新增本地冲突</button>
+        <button data-action="foreground">恢复到前台</button><button data-action="manualSync">立即同步</button>
+      </div></div>
+      <div class="action-group"><h3>浏览器与应用生命周期</h3><div class="actions">
+        <button data-action="persist">请求持久存储</button><button data-action="denyPersist">模拟持久存储被拒</button>
+        <button data-action="restart">模拟强杀后重启</button><button data-action="update">发现应用更新</button><button data-action="applyUpdate">应用更新</button>
+      </div></div>
+      <div class="action-group"><h3>退出与清理</h3><div class="actions">
+        <button data-action="logout" class="danger">退出登录</button><button data-action="confirmClear" class="danger">确认清除本机私有数据</button><button data-action="reset">重置整个原型</button>
+      </div></div>
+    </section>
+
+    <section>
+      <h2>引导场景</h2>
+      <div class="tabs" role="tablist"></div>
+      <div id="scenarios"></div>
+    </section>
+
+    <section>
+      <h2>发生了什么</h2>
+      <div id="timeline" class="timeline"></div>
+      <details><summary>查看完整模型状态</summary><pre id="rawState"></pre></details>
+    </section>
+  </main>
+  <div id="notice"></div>
+
+  <script>
+    const DB_NAME = 'same-page-offline-PROTOTYPE-v1';
+    const CACHE_NAME = 'same-page-offline-PROTOTYPE-pdf-v1';
+    const STATE_KEY = 'lifecycle';
+    const PDF_SIZE = 20 * 1024 * 1024;
+
+    const Lifecycle = (() => {
+      const initial = runtime => ({
+        schema:1,
+        session:'signed-in', network:'online', displayMode:runtime.displayMode,
+        pdf:{ currentVersion:'v1', availableVersion:null, oldAvailableVersion:null, status:'not-downloaded', bytes:0, expectedHashes:{}, progress:0 },
+        local:{ drafts:[], outbox:[], conflicts:[] },
+        sync:{ pushCalls:0, pullCalls:0, lastTrigger:'none' },
+        durability:{ persisted:'unknown', estimate:'unknown', restores:0, cacheKeys:0 },
+        update:{ available:false, status:'current', shellVersion:1 },
+        logout:{ status:'idle', warning:null },
+        timeline:[],
+      });
+      const copy = value => JSON.parse(JSON.stringify(value));
+      const eventText = event => ({
+        OFFLINE:'网络断开；现有离线副本和本地编辑仍可使用。', ONLINE:'网络恢复；仅触发 outbox push。',
+        DRAFT:'草稿已原子写入本机并加入 outbox。', CONFLICT:'冲突只保留在当前设备。',
+        PUSH:'已重试 outbox，没有执行 pull。', MANUAL_SYNC:'手动同步执行 push + pull。',
+        PDF_START:'开始生成、写入并回读 20 MB PDF。', PDF_OK:'完整字节与 SHA-256 一致，才标记为离线可用。',
+        PDF_BAD:'缓存校验失败；撤销“可离线”标记。', CORRUPT:'缓存内容已被替换为错误字节。',
+        NEW_VERSION:'云端已发布新 PDF；旧副本仍保留，但不能冒充当前版本。', PERSIST_DENIED:'持久存储被拒；继续工作，但明确显示 best-effort 风险。',
+        RESTORED:'从 IndexedDB 恢复，证明页面重载没有丢失状态。', UPDATE_FOUND:'发现应用壳更新。',
+        UPDATE_APPLIED:'应用壳已更新，本地草稿、outbox 和冲突未清除。',
+        LOGOUT_BLOCKED:'退出前发现未同步操作或本地冲突，等待明确确认。', LOGOUT_CLEAR:'已清除原型中的私有本地数据。',
+      })[event.type] || event.note || event.type;
+      function transition(source, event) {
+        const state = copy(source);
+        const now = new Date().toLocaleTimeString('zh-CN',{hour12:false});
+        switch (event.type) {
+          case 'OFFLINE': state.network='offline'; break;
+          case 'ONLINE': state.network='online'; state.sync.lastTrigger='online'; break;
+          case 'DRAFT': {
+            const id=`draft-${Date.now()}`; state.local.drafts.push(id); state.local.outbox.push({id:`op-${Date.now()}`,draftId:id}); break;
+          }
+          case 'CONFLICT': state.local.conflicts.push(`conflict-${Date.now()}`); break;
+          case 'PUSH':
+            state.sync.pushCalls+=1; state.sync.lastTrigger=event.trigger;
+            if(state.network==='online'){ state.local.outbox=[]; state.local.drafts=[]; }
+            break;
+          case 'MANUAL_SYNC': state.sync.pushCalls+=1; state.sync.pullCalls+=1; state.sync.lastTrigger='manual'; if(state.network==='online'){state.local.outbox=[];state.local.drafts=[];} break;
+          case 'PDF_START': state.pdf.status='downloading'; state.pdf.progress=event.progress||0; break;
+          case 'PDF_PROGRESS': state.pdf.progress=event.progress; break;
+          case 'PDF_OK':
+            state.pdf.oldAvailableVersion=state.pdf.availableVersion && state.pdf.availableVersion!==event.version ? state.pdf.availableVersion : null;
+            state.pdf.availableVersion=event.version; state.pdf.status='ready'; state.pdf.bytes=event.bytes; state.pdf.expectedHashes[event.version]=event.hash; state.pdf.progress=100; break;
+          case 'PDF_BAD': state.pdf.status='corrupt'; state.pdf.availableVersion=null; state.pdf.bytes=0; state.pdf.progress=0; break;
+          case 'CORRUPT': state.pdf.status='needs-verification'; break;
+          case 'NEW_VERSION': state.pdf.currentVersion='v2'; state.pdf.status=state.pdf.availableVersion==='v2'?'ready':'outdated'; state.pdf.progress=0; break;
+          case 'PERSIST_RESULT': state.durability.persisted=event.value?'granted':'denied'; break;
+          case 'PERSIST_DENIED': state.durability.persisted='denied'; break;
+          case 'RUNTIME': Object.assign(state.durability,event.durability); state.displayMode=event.displayMode; break;
+          case 'RESTORED': state.durability.restores+=1; break;
+          case 'UPDATE_FOUND': state.update.available=true; state.update.status='waiting'; break;
+          case 'UPDATE_APPLIED': state.update.available=false; state.update.status='current'; state.update.shellVersion+=1; break;
+          case 'LOGOUT_BLOCKED': state.logout.status='confirmation-required'; state.logout.warning=`${state.local.outbox.length} 个待同步操作，${state.local.conflicts.length} 个本地冲突`; break;
+          case 'LOGOUT_CLEAR': return {...initial({displayMode:state.displayMode}),session:'signed-out',timeline:[{time:now,text:eventText(event.type?event:{type:'LOGOUT_CLEAR'})}]};
+        }
+        if (!['PDF_PROGRESS','RUNTIME'].includes(event.type)) state.timeline.unshift({time:now,text:eventText(event)});
+        state.timeline=state.timeline.slice(0,30);
+        return state;
+      }
+      return { initial, transition };
+    })();
+
+    let state;
+    let dbPromise;
+    let busy=false;
+
+    function displayMode(){ return matchMedia('(display-mode: standalone)').matches ? '已安装 PWA' : '普通浏览器标签'; }
+    function openDb(){
+      if(dbPromise) return dbPromise;
+      dbPromise=new Promise((resolve,reject)=>{
+        const request=indexedDB.open(DB_NAME,1);
+        request.onupgradeneeded=()=>request.result.createObjectStore('model');
+        request.onsuccess=()=>resolve(request.result); request.onerror=()=>reject(request.error);
+      });
+      return dbPromise;
+    }
+    async function readState(){ const db=await openDb(); return new Promise((resolve,reject)=>{ const r=db.transaction('model').objectStore('model').get(STATE_KEY); r.onsuccess=()=>resolve(r.result); r.onerror=()=>reject(r.error); }); }
+    async function writeState(){ const db=await openDb(); return new Promise((resolve,reject)=>{ const tx=db.transaction('model','readwrite'); tx.objectStore('model').put(state,STATE_KEY); tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error); }); }
+    async function dispatch(event){ state=Lifecycle.transition(state,event); await writeState(); await refreshRuntime(); render(); }
+    const pdfRequest=version=>new Request(`${location.origin}/__same_page_offline_prototype__/${version}.pdf`);
+    const hex=buffer=>[...new Uint8Array(buffer)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+    async function digest(bytes){ return hex(await crypto.subtle.digest('SHA-256',bytes)); }
+    function makePdfBytes(version){
+      const bytes=new Uint8Array(PDF_SIZE); const seed=version==='v2'?83:41;
+      for(let i=0;i<bytes.length;i+=4096) bytes[i]=(i/4096+seed)%251;
+      bytes.set(new TextEncoder().encode(`%PDF-1.7\n% Same Page ${version} offline lifecycle prototype\n`),0);
+      bytes.set(new TextEncoder().encode('\n%%EOF\n'),bytes.length-7); return bytes;
+    }
+    async function refreshRuntime(){
+      if(!state) return;
+      const estimate=await navigator.storage?.estimate?.(); const cache=await caches.open(CACHE_NAME); const keys=await cache.keys();
+      state=Lifecycle.transition(state,{type:'RUNTIME',displayMode:displayMode(),durability:{cacheKeys:keys.length,estimate:estimate?`${(estimate.usage/1024/1024).toFixed(1)} / ${(estimate.quota/1024/1024).toFixed(0)} MB`:'不可用'}});
+    }
+    async function downloadPdf(){
+      if(busy) return; busy=true; render();
+      const version=state.pdf.currentVersion; await dispatch({type:'PDF_START'});
+      const bytes=makePdfBytes(version); await dispatch({type:'PDF_PROGRESS',progress:25});
+      const expected=await digest(bytes); await dispatch({type:'PDF_PROGRESS',progress:50});
+      const cache=await caches.open(CACHE_NAME); await cache.put(pdfRequest(version),new Response(bytes,{headers:{'Content-Type':'application/pdf','Content-Length':String(bytes.length)}}));
+      await dispatch({type:'PDF_PROGRESS',progress:75});
+      const stored=new Uint8Array(await (await cache.match(pdfRequest(version))).arrayBuffer()); const actual=await digest(stored);
+      if(actual===expected && stored.byteLength===PDF_SIZE){
+        const old=state.pdf.availableVersion; await dispatch({type:'PDF_OK',version,bytes:stored.byteLength,hash:expected});
+        if(old && old!==version) await cache.delete(pdfRequest(old));
+        notice(`${version} 的 20 MB 字节与哈希一致，已标记为可离线。`);
+      } else await dispatch({type:'PDF_BAD'});
+      busy=false; await refreshRuntime(); await writeState(); render();
+    }
+    async function verifyPdf(){
+      const version=state.pdf.availableVersion || state.pdf.currentVersion; const expected=state.pdf.expectedHashes[version]; const response=await (await caches.open(CACHE_NAME)).match(pdfRequest(version));
+      if(!response || !expected){ await dispatch({type:'PDF_BAD'}); notice('没有可验证的完整副本。'); return; }
+      const bytes=new Uint8Array(await response.arrayBuffer()); const actual=await digest(bytes);
+      if(bytes.byteLength===PDF_SIZE && actual===expected) { await dispatch({type:'PDF_OK',version,bytes:bytes.byteLength,hash:expected}); notice('重新校验通过。'); }
+      else { await (await caches.open(CACHE_NAME)).delete(pdfRequest(version)); await dispatch({type:'PDF_BAD'}); notice('校验失败，已撤销离线可用标记。'); }
+    }
+    async function corruptPdf(){ const version=state.pdf.availableVersion; if(!version){notice('先下载一份离线副本。');return;} await (await caches.open(CACHE_NAME)).put(pdfRequest(version),new Response(new Uint8Array([37,80,68,70,0,1,2]))); await dispatch({type:'CORRUPT'}); }
+    async function retryPush(trigger){
+      if(!state.local.outbox.length){ notice(`由${trigger==='online'?'网络恢复':'前台恢复'}触发：outbox 已空，不发请求。`); return; }
+      await dispatch({type:'PUSH',trigger}); notice(`由${trigger==='online'?'网络恢复':'前台恢复'}触发：只 push，没有 pull。`);
+    }
+    async function clearPrivate(){ await caches.delete(CACHE_NAME); state=Lifecycle.transition(state,{type:'LOGOUT_CLEAR'}); await writeState(); await refreshRuntime(); await writeState(); render(); }
+    async function resetAll(){ await caches.delete(CACHE_NAME); state=Lifecycle.initial({displayMode:displayMode()}); await writeState(); await refreshRuntime(); await writeState(); render(); notice('原型状态已重置。'); }
+
+    const actions={
+      download:downloadPdf, verify:verifyPdf, corrupt:corruptPdf,
+      newVersion:()=>dispatch({type:'NEW_VERSION'}), offline:()=>dispatch({type:'OFFLINE'}),
+      online:async()=>{await dispatch({type:'ONLINE'});await retryPush('online');}, draft:()=>dispatch({type:'DRAFT'}), conflict:()=>dispatch({type:'CONFLICT'}),
+      foreground:()=>retryPush('foreground'), manualSync:()=>dispatch({type:'MANUAL_SYNC'}),
+      persist:async()=>{const result=await navigator.storage?.persist?.();await dispatch({type:'PERSIST_RESULT',value:Boolean(result)});notice(`浏览器返回：${result?'已授予':'未授予'}持久存储。`);},
+      denyPersist:()=>dispatch({type:'PERSIST_DENIED'}), restart:async()=>{await writeState();location.reload();},
+      update:()=>dispatch({type:'UPDATE_FOUND'}),
+      applyUpdate:async()=>{await dispatch({type:'UPDATE_APPLIED'});location.reload();},
+      logout:async()=>{if(state.local.outbox.length||state.local.conflicts.length)await dispatch({type:'LOGOUT_BLOCKED'});else await clearPrivate();},
+      confirmClear:clearPrivate, reset:resetAll,
+    };
+
+    const scenarios=[
+      {name:'离线后重启',desc:'完整下载与哈希通过后断网编辑，再重载页面。草稿和 outbox 必须从 IndexedDB 恢复。',steps:[['reset','重置'],['download','下载 20 MB'],['offline','断网'],['draft','添加草稿'],['restart','重启页面']]},
+      {name:'只推不拉',desc:'网络恢复与应用回到前台只重试 outbox。只有“立即同步”才 pull。',steps:[['reset','重置'],['offline','断网'],['draft','添加草稿'],['online','恢复网络'],['foreground','恢复前台'],['manualSync','立即同步']]},
+      {name:'损坏与替换',desc:'损坏内容必须撤销离线标记；发布 v2 后，v1 不能冒充当前版本，直到 v2 完整校验。',steps:[['reset','重置'],['download','下载 v1'],['corrupt','破坏缓存'],['verify','重新校验'],['newVersion','发布 v2'],['download','下载 v2']]},
+      {name:'更新与退出',desc:'应用更新后本地工作仍能恢复；只有真正删除数据的退出登录需要明确确认。',steps:[['reset','重置'],['offline','断网'],['draft','添加草稿'],['conflict','添加冲突'],['update','发现更新'],['applyUpdate','应用并重载'],['logout','退出登录'],['confirmClear','确认清除']]},
+    ];
+    function notice(text){ const node=document.querySelector('#notice');node.textContent=text;node.classList.add('show');clearTimeout(notice.timer);notice.timer=setTimeout(()=>node.classList.remove('show'),2200); }
+    function tone(node,kind){node.className=kind||'';}
+    function render(){
+      document.querySelectorAll('button').forEach(button=>button.disabled=busy && button.dataset.action!=='restart');
+      const currentReady=state.pdf.availableVersion===state.pdf.currentVersion && state.pdf.status==='ready';
+      const session=document.querySelector('#sessionState');session.textContent=`${state.session==='signed-in'?'已登录':'已退出'} · ${state.network==='online'?'在线':'离线'}`;tone(session,state.network==='online'?'ok':'warn');
+      document.querySelector('#runtimeState').textContent=state.displayMode;
+      const pdf=document.querySelector('#pdfState');pdf.textContent=currentReady?`${state.pdf.currentVersion} 可离线`:state.pdf.status==='outdated'?`${state.pdf.currentVersion} 尚未离线`:state.pdf.status; tone(pdf,currentReady?'ok':state.pdf.status==='corrupt'?'bad':'warn');
+      document.querySelector('#pdfDetail').textContent=state.pdf.availableVersion?`本机 ${state.pdf.availableVersion} · ${(state.pdf.bytes/1024/1024).toFixed(1)} MB`:'没有已验证的当前副本'; document.querySelector('#pdfProgress').style.width=`${state.pdf.progress}%`;
+      document.querySelector('#editState').textContent=`${state.local.drafts.length} 草稿 · ${state.local.conflicts.length} 冲突`; document.querySelector('#editDetail').textContent=`outbox ${state.local.outbox.length} 条`;
+      document.querySelector('#syncState').textContent=`push ${state.sync.pushCalls} / pull ${state.sync.pullCalls}`; document.querySelector('#syncDetail').textContent=`最近触发：${state.sync.lastTrigger}`;
+      const storage=document.querySelector('#storageState');storage.textContent=state.durability.persisted==='granted'?'持久存储':state.durability.persisted==='denied'?'best-effort':'尚未请求';tone(storage,state.durability.persisted==='granted'?'ok':state.durability.persisted==='denied'?'warn':''); document.querySelector('#storageDetail').textContent=`占用/配额 ${state.durability.estimate} · Cache ${state.durability.cacheKeys}`;
+      document.querySelector('#updateState').textContent=state.update.status; document.querySelector('#updateDetail').textContent=`应用壳 v${state.update.shellVersion}`;
+      const logout=document.querySelector('#logoutState');logout.textContent=state.logout.status;tone(logout,state.logout.status==='confirmation-required'?'bad':'');document.querySelector('#logoutDetail').textContent=state.logout.warning||'无清理警告';
+      document.querySelector('#restoreState').textContent=`${state.durability.restores} 次恢复`;document.querySelector('#restoreDetail').textContent='刷新/重载从 IndexedDB 读取';
+      document.querySelector('#timeline').innerHTML=state.timeline.length?state.timeline.map(item=>`<div class="event"><time>${item.time}</time><span>${item.text}</span></div>`).join(''):'<div class="event"><time>—</time><span>尚无操作</span></div>';
+      document.querySelector('#rawState').textContent=JSON.stringify(state,null,2);
+    }
+    function buildScenarios(){
+      const tabs=document.querySelector('.tabs');const root=document.querySelector('#scenarios');
+      scenarios.forEach((scenario,index)=>{
+        const tab=document.createElement('button');tab.textContent=scenario.name;tab.setAttribute('role','tab');tab.setAttribute('aria-selected',String(index===0));tab.onclick=()=>selectScenario(index);tabs.append(tab);
+        const panel=document.createElement('div');panel.className=`scenario${index===0?' active':''}`;panel.innerHTML=`<p>${scenario.desc}</p><div class="steps"></div>`;
+        scenario.steps.forEach(([action,label])=>{const wrap=document.createElement('span');wrap.className='step';const button=document.createElement('button');button.textContent=label;button.onclick=()=>actions[action]();wrap.append(button);panel.querySelector('.steps').append(wrap);});root.append(panel);
+      });
+    }
+    function selectScenario(index){document.querySelectorAll('.tabs button').forEach((tab,i)=>tab.setAttribute('aria-selected',String(i===index)));document.querySelectorAll('.scenario').forEach((panel,i)=>panel.classList.toggle('active',i===index));}
+    async function boot(){
+      buildScenarios(); document.querySelectorAll('[data-action]').forEach(button=>button.onclick=()=>actions[button.dataset.action]());
+      const saved=await readState(); state=saved||Lifecycle.initial({displayMode:displayMode()});
+      if(saved) state=Lifecycle.transition(state,{type:'RESTORED'});
+      await refreshRuntime();await writeState();render();
+      addEventListener('online',async()=>{if(state.network==='offline'){await dispatch({type:'ONLINE'});await retryPush('online');}});
+      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&state.local.outbox.length)retryPush('foreground');});
+    }
+    boot().catch(error=>{console.error(error);notice(`启动失败：${error.message}`);});
+  </script>
+</body>
+</html>
