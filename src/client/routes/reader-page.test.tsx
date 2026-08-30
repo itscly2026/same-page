@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,14 +9,18 @@ import {
 } from "../platform/local-database";
 import ReaderPage from "./reader-page";
 
+const virtualTestState = vi.hoisted(() => ({ itemSize: 100 }));
+
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: (options: { count: number }) => ({
-    getTotalSize: () => options.count * 100,
+    getTotalSize: () => options.count * virtualTestState.itemSize,
     getVirtualItems: () =>
       Array.from({ length: options.count }, (_, index) => ({
         index,
         key: index,
-        start: index * 100,
+        start: index * virtualTestState.itemSize,
+        end: index * virtualTestState.itemSize + virtualTestState.itemSize,
+        size: virtualTestState.itemSize,
       })),
     measureElement: vi.fn(),
     scrollToIndex: vi.fn(),
@@ -31,7 +35,12 @@ vi.mock("../auth/auth-client", () => ({
 
 vi.mock("../reader/pdf-document", () => ({
   loadPdfDocument: vi.fn().mockResolvedValue({
-    document: { numPages: 3 },
+    document: {
+      numPages: 3,
+      getPage: vi.fn().mockResolvedValue({
+        getViewport: () => ({ width: 600, height: 800 }),
+      }),
+    },
     destroy: vi.fn(),
   }),
 }));
@@ -64,7 +73,37 @@ vi.mock("../annotations/local-annotations", async (importOriginal) => {
 });
 
 describe("ReaderPage", () => {
+  const getPageViewport = () => {
+    const viewport = screen
+      .getByLabelText("翻页阅读")
+      .querySelector<HTMLElement>(".page-reader__viewport");
+    if (!viewport) throw new Error("page viewport unavailable");
+    return viewport;
+  };
+
+  const toggleChrome = () => {
+    const viewport = getPageViewport();
+    fireEvent.pointerDown(viewport, {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 500,
+      clientY: 100,
+    });
+    fireEvent.pointerUp(viewport, {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 500,
+      clientY: 100,
+    });
+  };
+
+  const openMoreMenu = () => {
+    toggleChrome();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+  };
+
   beforeEach(async () => {
+    virtualTestState.itemSize = 100;
     await localDatabase.open();
     await localDatabase.annotationLayers.clear();
     await localDatabase.annotations.clear();
@@ -128,7 +167,7 @@ describe("ReaderPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("opens in page-reading mode and switches layouts without entering edit mode", async () => {
+  it("opens with score-only chrome and switches layouts without entering edit mode", async () => {
     render(
       <MemoryRouter
         initialEntries={["/choirs/choir-1/scores/score-1"]}
@@ -143,11 +182,7 @@ describe("ReaderPage", () => {
     );
 
     expect(await screen.findByText("练声曲")).toBeInTheDocument();
-    expect(screen.getByText("阅读模式")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "翻页" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.queryByLabelText("阅读器控制")).not.toBeInTheDocument();
     expect(
       within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 1 页"),
     ).toBeInTheDocument();
@@ -157,9 +192,26 @@ describe("ReaderPage", () => {
       within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 2 页"),
     ).toBeInTheDocument();
 
+    toggleChrome();
+    fireEvent.click(screen.getByRole("button", { name: "第 2 / 3 页" }));
+    expect(screen.getByLabelText("页面缩略图")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "图层" }));
+    expect(screen.getByLabelText("图层显示与颜色")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭页面与图层" }));
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    expect(screen.getByRole("button", { name: "翻页" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     fireEvent.click(screen.getByRole("button", { name: "连续滚动" }));
     expect(screen.getByLabelText("连续滚动阅读")).toBeInTheDocument();
-    expect(screen.getByRole("spinbutton")).toHaveValue(2);
+    expect(screen.getByRole("button", { name: "第 2 / 3 页" })).toBeInTheDocument();
+    expect(
+      screen.getByText("轻点页面中央显示控制，上下滑动连续浏览"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("轻点页面中央显示控制，点按两侧或左右滑动翻页"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("编辑")).not.toBeInTheDocument();
   });
 
@@ -178,11 +230,169 @@ describe("ReaderPage", () => {
     );
 
     await screen.findByText("练声曲");
+    openMoreMenu();
     fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
     expect(
       await screen.findByText("离线下载未完成，现有离线版本没有切换。"),
-    ).toBeInTheDocument();
+    ).toHaveClass("reader-more-menu__status");
     expect(activateVerifiedOfflineScore).not.toHaveBeenCalled();
+  });
+
+  it("swipes between fitted pages and pans instead of turning after pinch zoom", async () => {
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("练声曲");
+    const viewport = getPageViewport();
+    vi.spyOn(viewport, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 1000,
+      bottom: 800,
+      width: 1000,
+      height: 800,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.pointerDown(viewport, {
+      pointerId: 9,
+      pointerType: "touch",
+      clientX: 20,
+      clientY: 100,
+    });
+    fireEvent.pointerUp(viewport, {
+      pointerId: 9,
+      pointerType: "touch",
+      clientX: 20,
+      clientY: 100,
+    });
+    expect(screen.getByLabelText("渲染第 1 页")).toBeInTheDocument();
+    expect(screen.queryByLabelText("阅读器控制")).not.toBeInTheDocument();
+
+    fireEvent.pointerDown(viewport, {
+      pointerId: 10,
+      pointerType: "touch",
+      clientX: 980,
+      clientY: 100,
+    });
+    fireEvent.pointerUp(viewport, {
+      pointerId: 10,
+      pointerType: "touch",
+      clientX: 980,
+      clientY: 100,
+    });
+    expect(screen.getByLabelText("渲染第 2 页")).toBeInTheDocument();
+
+    fireEvent.pointerDown(viewport, {
+      pointerId: 11,
+      pointerType: "touch",
+      clientX: 20,
+      clientY: 100,
+    });
+    fireEvent.pointerUp(viewport, {
+      pointerId: 11,
+      pointerType: "touch",
+      clientX: 20,
+      clientY: 100,
+    });
+    expect(screen.getByLabelText("渲染第 1 页")).toBeInTheDocument();
+
+    fireEvent.pointerDown(viewport, {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 250,
+      clientY: 100,
+    });
+    fireEvent.pointerUp(viewport, {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 150,
+      clientY: 100,
+    });
+    expect(screen.getByLabelText("渲染第 2 页")).toBeInTheDocument();
+
+    fireEvent.pointerDown(viewport, {
+      pointerId: 2,
+      pointerType: "touch",
+      clientX: 20,
+      clientY: 100,
+    });
+    fireEvent.pointerDown(viewport, {
+      pointerId: 3,
+      pointerType: "touch",
+      clientX: 120,
+      clientY: 100,
+    });
+    fireEvent.pointerMove(viewport, {
+      pointerId: 3,
+      pointerType: "touch",
+      clientX: 220,
+      clientY: 100,
+    });
+    fireEvent.pointerUp(viewport, { pointerId: 3, pointerType: "touch" });
+    fireEvent.pointerUp(viewport, { pointerId: 2, pointerType: "touch" });
+
+    fireEvent.pointerDown(viewport, {
+      pointerId: 4,
+      pointerType: "touch",
+      clientX: 250,
+      clientY: 100,
+    });
+    fireEvent.pointerUp(viewport, {
+      pointerId: 4,
+      pointerType: "touch",
+      clientX: 150,
+      clientY: 100,
+    });
+    expect(screen.getByLabelText("渲染第 2 页")).toBeInTheDocument();
+
+    toggleChrome();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    expect(screen.getByText("200%")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    fireEvent.click(screen.getByRole("button", { name: "上一页" }));
+    fireEvent.pointerDown(viewport, {
+      pointerId: 12,
+      pointerType: "touch",
+      clientX: 20,
+      clientY: 100,
+    });
+    fireEvent.pointerDown(viewport, {
+      pointerId: 13,
+      pointerType: "touch",
+      clientX: 120,
+      clientY: 100,
+    });
+    fireEvent.pointerMove(viewport, {
+      pointerId: 13,
+      pointerType: "touch",
+      clientX: 220,
+      clientY: 100,
+    });
+    fireEvent.pointerUp(viewport, { pointerId: 13, pointerType: "touch" });
+    fireEvent.pointerUp(viewport, { pointerId: 12, pointerType: "touch" });
+    fireEvent.pointerDown(viewport, {
+      pointerId: 14,
+      pointerType: "touch",
+      clientX: 20,
+      clientY: 100,
+    });
+    fireEvent.pointerUp(viewport, {
+      pointerId: 14,
+      pointerType: "touch",
+      clientX: 20,
+      clientY: 100,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    expect(screen.getByText("200%")).toBeInTheDocument();
   });
 
   it("keeps page input read-only until edit is explicit and defaults editing to text", async () => {
@@ -243,13 +453,30 @@ describe("ReaderPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("阅读模式")).toBeInTheDocument();
+    await screen.findByText("练声曲");
     const overlay = screen.getByLabelText("第 1 页批注层");
     fireEvent.pointerDown(overlay, { clientX: 20, clientY: 20 });
+    fireEvent.pointerUp(overlay, { clientX: 20, clientY: 20 });
     expect(screen.queryByLabelText("批注文本")).not.toBeInTheDocument();
 
+    if (!screen.queryByLabelText("阅读器控制")) toggleChrome();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    fireEvent.click(screen.getByRole("button", { name: "连续滚动" }));
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    for (let count = 0; count < 4; count += 1) {
+      fireEvent.click(screen.getByRole("button", { name: "放大" }));
+    }
+    expect(screen.getByText("200%")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    const continuousReader = screen.getByLabelText("连续滚动阅读");
+    continuousReader.scrollTop = 40;
+    fireEvent.scroll(continuousReader);
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
-    expect(screen.getByText("编辑模式")).toBeInTheDocument();
+    expect(screen.getByText(/编辑模式/)).toBeInTheDocument();
+    expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "下一页" })).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(screen.getByText("编辑模式 · 第 1 页")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "文本" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -268,6 +495,25 @@ describe("ReaderPage", () => {
     });
     fireEvent.pointerDown(editingOverlay, { clientX: 20, clientY: 30 });
     expect(screen.getByLabelText("批注文本")).toBeInTheDocument();
+
+    virtualTestState.itemSize = 200;
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    const restoredReader = await screen.findByLabelText("连续滚动阅读");
+    await waitFor(() => expect(restoredReader.scrollTop).toBe(80));
+    fireEvent.pointerDown(restoredReader, {
+      pointerId: 8,
+      pointerType: "touch",
+      clientX: 100,
+      clientY: 100,
+    });
+    fireEvent.pointerUp(restoredReader, {
+      pointerId: 8,
+      pointerType: "touch",
+      clientX: 100,
+      clientY: 100,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    expect(screen.getByText("200%")).toBeInTheDocument();
   });
 
   it("marks an offline copy only after app shell, layer and annotation snapshot verification", async () => {
@@ -343,10 +589,11 @@ describe("ReaderPage", () => {
     );
 
     await screen.findByText("练声曲");
+    openMoreMenu();
     fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
     expect(
       await screen.findByText("离线副本已完整校验，可以离线打开。"),
-    ).toBeInTheDocument();
+    ).toHaveClass("reader-more-menu__status");
     expect(activateVerifiedOfflineScore).toHaveBeenCalledWith(
       expect.objectContaining({
         annotationSnapshot: expect.objectContaining({
@@ -400,8 +647,9 @@ describe("ReaderPage", () => {
     );
 
     expect(await screen.findByText("离线练声曲")).toBeInTheDocument();
+    toggleChrome();
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
-    expect(screen.getByText("编辑模式")).toBeInTheDocument();
+    expect(screen.getByText(/编辑模式/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "文本" })).toHaveAttribute(
       "aria-pressed",
       "true",

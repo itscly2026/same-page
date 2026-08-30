@@ -1,7 +1,5 @@
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
-  type PointerEvent as ReactPointerEvent,
   useEffect,
   useRef,
   useState,
@@ -14,10 +12,7 @@ import {
   type AnnotationLayerSummary,
 } from "../../shared/annotations";
 import { scoreListResponseSchema, type ScoreSummary } from "../../shared/scores";
-import {
-  AnnotationOverlay,
-  type AnnotationTool,
-} from "../annotations/annotation-overlay";
+import type { AnnotationTool } from "../annotations/annotation-overlay";
 import {
   cacheAnnotationLayers,
   discardAnnotationConflict,
@@ -43,16 +38,25 @@ import {
   annotationScopeKey,
   findActiveOfflineScore,
   localDatabase,
-  type LocalAnnotationRecord,
   type OfflineScoreRecord,
 } from "../platform/local-database";
 import {
   loadPdfDocument,
   type PDFDocumentProxy,
 } from "../reader/pdf-document";
-import { PdfPageCanvas } from "../reader/pdf-page";
+import {
+  type AnnotationPageProps,
+  type ContinuousReaderPosition,
+  ContinuousLayout,
+  PageLayout,
+  PageNavigatorPanel,
+} from "../reader/reader-layouts";
+import {
+  type ReaderLayout,
+  useReaderPreferences,
+} from "../reader/use-reader-preferences";
 
-type ReaderLayout = "page" | "continuous";
+type ReaderPanel = "pages" | "layers";
 
 export default function ReaderPage() {
   const { choirId = "", scoreId = "" } = useParams();
@@ -62,7 +66,6 @@ export default function ReaderPage() {
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [source, setSource] = useState<string | ArrayBuffer | null>(null);
   const [loadingError, setLoadingError] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [downloading, setDownloading] = useState(false);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
@@ -72,6 +75,24 @@ export default function ReaderPage() {
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [canManageLayers, setCanManageLayers] = useState(false);
+  const [chromeVisible, setChromeVisible] = useState(false);
+  const [readerPanel, setReaderPanel] = useState<ReaderPanel | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [editingOrigin, setEditingOrigin] = useState<{
+    layout: ReaderLayout;
+    page: number;
+    zoom: number;
+    continuousPosition: ContinuousReaderPosition | null;
+  } | null>(null);
+  const continuousPosition = useRef<ContinuousReaderPosition>({
+    page: 1,
+    pageOffsetRatio: 0,
+  });
+  const [continuousRestorePosition, setContinuousRestorePosition] =
+    useState<ContinuousReaderPosition | null>(null);
+  const [showGestureHint, setShowGestureHint] = useState(
+    () => !readBooleanPreference("reader-gesture-hint-seen"),
+  );
   const scopeKey = annotationScopeKey(choirId, scoreId);
   const layers = useLiveQuery(
     () =>
@@ -98,25 +119,23 @@ export default function ReaderPage() {
     [scopeKey],
     [],
   );
-  const preferenceKey = `reader-layout:${session.data?.user.id ?? "guest"}:${choirId}:${scoreId}`;
-  const [layoutState, setLayoutState] = useState<{
-    key: string;
-    value: ReaderLayout;
-  }>(() => ({ key: preferenceKey, value: readLayoutPreference(preferenceKey) }));
-  const layout =
-    layoutState.key === preferenceKey
-      ? layoutState.value
-      : readLayoutPreference(preferenceKey);
-  const setLayout = (value: ReaderLayout) =>
-    setLayoutState({ key: preferenceKey, value });
+  const { layout, currentPage, setLayout, setCurrentPage } =
+    useReaderPreferences({
+      identity: session.data?.user.id ?? "guest",
+      choirId,
+      scoreId,
+    });
 
   useEffect(() => {
+    if (!document || !showGestureHint) return;
     try {
-      localStorage.setItem(preferenceKey, layout);
+      localStorage.setItem("reader-gesture-hint-seen", "true");
     } catch {
-      // Reader remains usable when browser storage is unavailable.
+      // The one-time hint may repeat when storage is unavailable.
     }
-  }, [layout, preferenceKey]);
+    const timer = window.setTimeout(() => setShowGestureHint(false), 3600);
+    return () => window.clearTimeout(timer);
+  }, [document, showGestureHint]);
 
   useEffect(() => {
     let active = true;
@@ -223,12 +242,13 @@ export default function ReaderPage() {
       void destroyOpened?.();
       setDocument(null);
     };
-  }, [source]);
+  }, [setCurrentPage, source]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         layout !== "page" ||
+        editing ||
         event.metaKey ||
         event.ctrlKey ||
         event.altKey ||
@@ -238,10 +258,12 @@ export default function ReaderPage() {
       }
       if (event.key === "ArrowLeft" || event.key === "PageUp") {
         event.preventDefault();
+        setZoom(1);
         setCurrentPage((page) => Math.max(1, page - 1));
       }
       if (event.key === "ArrowRight" || event.key === "PageDown") {
         event.preventDefault();
+        setZoom(1);
         setCurrentPage((page) =>
           Math.min(document?.numPages ?? page, page + 1),
         );
@@ -249,7 +271,7 @@ export default function ReaderPage() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [document?.numPages, layout]);
+  }, [document?.numPages, editing, layout, setCurrentPage]);
 
   const downloadOffline = async () => {
     if (!score) return;
@@ -323,6 +345,26 @@ export default function ReaderPage() {
   const beginEditing = () => {
     const editableLayer = layers.find((layer) => layer.canEdit);
     if (!editableLayer) return;
+    setEditingOrigin({
+      layout,
+      page: currentPage,
+      zoom,
+      continuousPosition:
+        layout === "continuous"
+          ? {
+              page: currentPage,
+              pageOffsetRatio:
+                continuousPosition.current.page === currentPage
+                  ? continuousPosition.current.pageOffsetRatio
+                  : 0,
+            }
+          : null,
+    });
+    if (layout === "continuous") setLayout("page");
+    setZoom(1);
+    setChromeVisible(false);
+    setMoreOpen(false);
+    setReaderPanel(null);
     setActiveLayerId(editableLayer.id);
     setTool("text");
     beginAnnotationEditSession();
@@ -333,6 +375,13 @@ export default function ReaderPage() {
   const finishEditing = async () => {
     setEditing(false);
     endAnnotationEditSession();
+    if (editingOrigin) {
+      setLayout(editingOrigin.layout);
+      setCurrentPage(editingOrigin.page);
+      setZoom(editingOrigin.zoom);
+      setContinuousRestorePosition(editingOrigin.continuousPosition);
+    }
+    setEditingOrigin(null);
     const queued = await queueScoreDrafts(choirId, scoreId);
     if (queued === 0) {
       setSyncMessage("没有需要保存的修改");
@@ -423,102 +472,189 @@ export default function ReaderPage() {
 
   const hasNewOfflineVersion =
     offline && offline.versionId !== score.currentVersion.id;
+  const goToPage = (page: number) => {
+    setZoom(1);
+    setCurrentPage(clamp(page, 1, document.numPages));
+  };
+  const selectLayout = (value: ReaderLayout) => {
+    setZoom(1);
+    setLayout(value);
+    setMoreOpen(false);
+  };
+  const toggleChrome = () => {
+    setMoreOpen(false);
+    setChromeVisible((visible) => !visible);
+  };
+  const openReaderPanel = (panel: ReaderPanel) => {
+    setMoreOpen(false);
+    setReaderPanel(panel);
+  };
+  const annotationPageProps: AnnotationPageProps = {
+    choirId,
+    scoreId,
+    layers,
+    annotations,
+    editing,
+    tool,
+    activeLayerId,
+  };
 
   return (
     <main className="reader-shell">
-      <header className="reader-toolbar">
-        <div className="reader-toolbar__title">
-          <Link to={`/choirs/${choirId}`}>返回</Link>
-          <div>
-            <strong>{score.title}</strong>
-            <span>{editing ? "编辑模式" : "阅读模式"}</span>
-          </div>
-        </div>
-        <div className="reader-toolbar__controls" aria-label="阅读器控制">
-          <div className="segmented-control" aria-label="页面布局">
-            <Button
-              aria-pressed={layout === "page"}
-              onPress={() => setLayout("page")}
-            >
-              翻页
+      <h1 className="visually-hidden">{score.title}</h1>
+      {!editing && chromeVisible ? (
+        <header className="reader-chrome" aria-label="阅读器控制">
+          <Link className="reader-chrome__back" to={`/choirs/${choirId}`}>
+            返回
+          </Link>
+          <strong className="reader-chrome__title">{score.title}</strong>
+          <div className="reader-chrome__actions">
+            <Button onPress={() => openReaderPanel("pages")}>
+              第 {currentPage} / {document.numPages} 页
             </Button>
+            {layers.some((layer) => layer.canEdit) ? (
+              <Button onPress={beginEditing}>编辑</Button>
+            ) : null}
             <Button
-              aria-pressed={layout === "continuous"}
-              onPress={() => setLayout("continuous")}
+              aria-expanded={moreOpen}
+              onPress={() => setMoreOpen((open) => !open)}
             >
-              连续滚动
+              更多
             </Button>
           </div>
-          <Button
-            onPress={() => setZoom((value) => Math.max(0.75, value - 0.25))}
-          >
-            缩小
-          </Button>
-          <span aria-live="polite">{Math.round(zoom * 100)}%</span>
-          <Button
-            onPress={() => setZoom((value) => Math.min(2, value + 0.25))}
-          >
-            放大
-          </Button>
-          <label className="page-number-control">
-            第
-            <input
-              type="number"
-              min={1}
-              max={document.numPages}
-              value={currentPage}
-              onChange={(event) =>
-                setCurrentPage(
-                  clamp(Number(event.target.value), 1, document.numPages),
-                )
-              }
-            />
-            / {document.numPages} 页
-          </label>
-          <Button isDisabled={downloading} onPress={() => void downloadOffline()}>
-            {downloading ? "正在校验…" : "下载离线副本"}
-          </Button>
-          {editing ? (
-            <Button onPress={() => void finishEditing()}>完成</Button>
-          ) : layers.some((layer) => layer.canEdit) ? (
-            <Button onPress={beginEditing}>编辑</Button>
+          {moreOpen ? (
+            <aside className="reader-more-menu" aria-label="更多阅读选项">
+              <div className="segmented-control" aria-label="页面布局">
+                <Button
+                  aria-pressed={layout === "page"}
+                  onPress={() => selectLayout("page")}
+                >
+                  翻页
+                </Button>
+                <Button
+                  aria-pressed={layout === "continuous"}
+                  onPress={() => selectLayout("continuous")}
+                >
+                  连续滚动
+                </Button>
+              </div>
+              <div className="reader-more-menu__zoom" aria-label="缩放控制">
+                <Button onPress={() => setZoom(1)}>适合页面</Button>
+                <Button onPress={() => setZoom((value) => Math.max(1, value - 0.25))}>
+                  缩小
+                </Button>
+                <span aria-live="polite">{Math.round(zoom * 100)}%</span>
+                <Button onPress={() => setZoom((value) => Math.min(3, value + 0.25))}>
+                  放大
+                </Button>
+              </div>
+              <Button onPress={() => openReaderPanel("layers")}>页面与图层</Button>
+              <Button
+                isDisabled={downloading}
+                onPress={() => void downloadOffline()}
+              >
+                {downloading ? "正在校验…" : "下载离线副本"}
+              </Button>
+              <Button isDisabled={syncing} onPress={() => void manualSync()}>
+                {syncing ? "同步中…" : "立即同步"}
+              </Button>
+              <p className="reader-more-menu__status" role="status">
+                {downloadMessage ?? syncMessage ?? "尚未同步批注"}
+                {pendingCount > 0 ? ` · ${pendingCount} 项待同步` : ""}
+                {conflicts.length > 0 ? ` · ${conflicts.length} 项本地冲突` : ""}
+              </p>
+            </aside>
           ) : null}
-          <Button isDisabled={syncing} onPress={() => void manualSync()}>
-            {syncing ? "同步中…" : "立即同步"}
-          </Button>
-        </div>
-        {hasNewOfflineVersion ? (
-          <p className="reader-notice">
-            云端已有新版本；完整下载并校验前，原离线副本会继续保留。
-          </p>
-        ) : null}
-        {downloadMessage ? (
-          <p className="reader-notice" role="status">
-            {downloadMessage}
-          </p>
-        ) : null}
-        {syncMessage || pendingCount > 0 || conflicts.length > 0 ? (
-          <p className="reader-notice" role="status">
-            {syncMessage ?? ""}
-            {pendingCount > 0 ? ` · ${pendingCount} 项待同步` : ""}
-            {conflicts.length > 0 ? ` · ${conflicts.length} 项本地冲突` : ""}
-          </p>
-        ) : null}
-      </header>
+        </header>
+      ) : null}
 
-      <AnnotationControls
-        choirId={choirId}
-        scoreId={scoreId}
-        scopeKey={scopeKey}
-        layers={layers}
-        editing={editing}
-        tool={tool}
-        activeLayerId={activeLayerId}
-        canManageLayers={canManageLayers}
-        signedIn={Boolean(session.data?.user.id)}
-        onToolChange={setTool}
-        onLayerChange={setActiveLayerId}
-      />
+      {editing ? (
+        <>
+          <header className="reader-edit-header">
+            <div>
+              <strong>{score.title}</strong>
+              <span>编辑模式 · 第 {currentPage} 页</span>
+            </div>
+            <Button onPress={() => void finishEditing()}>完成</Button>
+          </header>
+          <EditingControls
+            choirId={choirId}
+            scoreId={scoreId}
+            layers={layers}
+            tool={tool}
+            activeLayerId={activeLayerId}
+            onToolChange={setTool}
+            onLayerChange={setActiveLayerId}
+          />
+        </>
+      ) : null}
+
+      {!editing && showGestureHint ? (
+        <p className="reader-gesture-hint" role="status">
+          {layout === "page"
+            ? "轻点页面中央显示控制，点按两侧或左右滑动翻页"
+            : "轻点页面中央显示控制，上下滑动连续浏览"}
+        </p>
+      ) : null}
+
+      {hasNewOfflineVersion ? (
+        <aside className="reader-alert" role="status">
+          云端已有新版本；完整下载并校验前，原离线副本会继续保留。
+        </aside>
+      ) : null}
+      {readerPanel ? (
+        <div
+          className="reader-panel-backdrop"
+          role="presentation"
+          onClick={() => setReaderPanel(null)}
+        >
+          <aside
+            className="reader-panel"
+            aria-label="页面与图层"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="reader-panel__header">
+              <div className="segmented-control" aria-label="辅助面板">
+                <Button
+                  aria-pressed={readerPanel === "pages"}
+                  onPress={() => setReaderPanel("pages")}
+                >
+                  页面
+                </Button>
+                <Button
+                  aria-pressed={readerPanel === "layers"}
+                  onPress={() => setReaderPanel("layers")}
+                >
+                  图层
+                </Button>
+              </div>
+              <Button aria-label="关闭页面与图层" onPress={() => setReaderPanel(null)}>
+                关闭
+              </Button>
+            </header>
+            {readerPanel === "pages" ? (
+              <PageNavigatorPanel
+                document={document}
+                currentPage={currentPage}
+                onSelect={(page) => {
+                  goToPage(page);
+                  setReaderPanel(null);
+                }}
+              />
+            ) : (
+              <LayerPanel
+                choirId={choirId}
+                scoreId={scoreId}
+                scopeKey={scopeKey}
+                layers={layers}
+                canManageLayers={canManageLayers}
+                signedIn={Boolean(session.data?.user.id)}
+              />
+            )}
+          </aside>
+        </div>
+      ) : null}
+
       {conflicts.length > 0 ? (
         <aside className="annotation-conflicts" aria-label="本地批注冲突">
           <strong>{conflicts.length} 项修改没有上传</strong>
@@ -544,97 +680,119 @@ export default function ReaderPage() {
           ))}
         </aside>
       ) : null}
-
-      <ThumbnailNavigator
-        document={document}
-        currentPage={currentPage}
-        onSelect={setCurrentPage}
-      />
-
-      {layout === "page" ? (
-        <PageLayout
-          document={document}
-          currentPage={currentPage}
-          zoom={zoom}
-          onPageChange={setCurrentPage}
-          annotationProps={{
-            choirId,
-            scoreId,
-            layers,
-            annotations,
-            editing,
-            tool,
-            activeLayerId,
-          }}
-        />
-      ) : (
-        <ContinuousLayout
-          document={document}
-          currentPage={currentPage}
-          zoom={zoom}
-          onPageChange={setCurrentPage}
-          annotationProps={{
-            choirId,
-            scoreId,
-            layers,
-            annotations,
-            editing,
-            tool,
-            activeLayerId,
-          }}
-        />
-      )}
+      <div className="reader-stage">
+        {layout === "page" ? (
+          <PageLayout
+            document={document}
+            currentPage={currentPage}
+            zoom={zoom}
+            onZoomChange={setZoom}
+            onPageChange={goToPage}
+            onToggleChrome={toggleChrome}
+            annotationProps={annotationPageProps}
+          />
+        ) : (
+          <ContinuousLayout
+            document={document}
+            currentPage={currentPage}
+            zoom={zoom}
+            onZoomChange={setZoom}
+            onPageChange={setCurrentPage}
+            onToggleChrome={toggleChrome}
+            annotationProps={annotationPageProps}
+            restorePosition={continuousRestorePosition}
+            onPositionChange={(position) => {
+              continuousPosition.current = position;
+            }}
+            onRestoreComplete={() => setContinuousRestorePosition(null)}
+          />
+        )}
+      </div>
     </main>
   );
 }
 
-function AnnotatedPdfPage({
-  document,
-  pageNumber,
-  width,
-  annotationProps,
-}: {
-  document: PDFDocumentProxy;
-  pageNumber: number;
-  width: number;
-  annotationProps: AnnotationPageProps;
-}) {
-  return (
-    <div className="annotated-pdf-page">
-      <PdfPageCanvas document={document} pageNumber={pageNumber} width={width} />
-      <AnnotationOverlay
-        {...annotationProps}
-        key={`${pageNumber}:${annotationProps.editing ? "edit" : "read"}`}
-        pageNumber={pageNumber}
-      />
-    </div>
-  );
-}
-
-function AnnotationControls({
+function EditingControls({
   choirId,
   scoreId,
-  scopeKey,
   layers,
-  editing,
   tool,
   activeLayerId,
-  canManageLayers,
-  signedIn,
   onToolChange,
   onLayerChange,
 }: {
   choirId: string;
   scoreId: string;
-  scopeKey: string;
   layers: AnnotationLayerSummary[];
-  editing: boolean;
   tool: AnnotationTool;
   activeLayerId: string | null;
-  canManageLayers: boolean;
-  signedIn: boolean;
   onToolChange(tool: AnnotationTool): void;
   onLayerChange(layerId: string): void;
+}) {
+  return (
+    <section className="annotation-controls" aria-label="批注工具">
+      <label>
+        编辑层
+        <select
+          value={activeLayerId ?? ""}
+          onChange={(event) => onLayerChange(event.target.value)}
+        >
+          {layers
+            .filter((layer) => layer.canEdit)
+            .map((layer) => (
+              <option value={layer.id} key={layer.id}>
+                {layer.name}
+              </option>
+            ))}
+        </select>
+      </label>
+      <div className="segmented-control" aria-label="批注工具">
+        {(["text", "ink", "eraser"] as const).map((entry) => (
+          <Button
+            aria-pressed={tool === entry}
+            key={entry}
+            onPress={() => onToolChange(entry)}
+          >
+            {{ text: "文本", ink: "画笔", eraser: "整条橡皮" }[entry]}
+          </Button>
+        ))}
+      </div>
+      <Button
+        onPress={() =>
+          activeLayerId
+            ? void undoAnnotationEdit(choirId, scoreId, activeLayerId)
+            : undefined
+        }
+      >
+        撤销
+      </Button>
+      <Button
+        onPress={() =>
+          activeLayerId
+            ? void redoAnnotationEdit(choirId, scoreId, activeLayerId)
+            : undefined
+        }
+      >
+        重做
+      </Button>
+    </section>
+  );
+}
+
+function LayerPanel({
+  choirId,
+  scoreId,
+  scopeKey,
+  layers,
+  canManageLayers,
+  signedIn,
+}: {
+  choirId: string;
+  scoreId: string;
+  scopeKey: string;
+  layers: AnnotationLayerSummary[];
+  canManageLayers: boolean;
+  signedIn: boolean;
 }) {
   const updatePreference = async (
     layer: AnnotationLayerSummary,
@@ -654,60 +812,8 @@ function AnnotationControls({
   };
 
   return (
-    <section className="annotation-controls" aria-label="批注控制">
-      {editing ? (
-        <>
-          <label>
-            编辑层
-            <select
-              value={activeLayerId ?? ""}
-              onChange={(event) => onLayerChange(event.target.value)}
-            >
-              {layers
-                .filter((layer) => layer.canEdit)
-                .map((layer) => (
-                  <option value={layer.id} key={layer.id}>
-                    {layer.name}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <div className="segmented-control" aria-label="批注工具">
-            {(["text", "ink", "eraser"] as const).map((entry) => (
-              <Button
-                aria-pressed={tool === entry}
-                key={entry}
-                onPress={() => onToolChange(entry)}
-              >
-                {{ text: "文本", ink: "画笔", eraser: "整条橡皮" }[entry]}
-              </Button>
-            ))}
-          </div>
-          <Button
-            onPress={() =>
-              activeLayerId
-                ? void undoAnnotationEdit(choirId, scoreId, activeLayerId)
-                : undefined
-            }
-          >
-            撤销
-          </Button>
-          <Button
-            onPress={() =>
-              activeLayerId
-                ? void redoAnnotationEdit(choirId, scoreId, activeLayerId)
-                : undefined
-            }
-          >
-            重做
-          </Button>
-        </>
-      ) : (
-        <span>阅读模式：批注层不会接收编辑输入</span>
-      )}
-      <details>
-        <summary>图层显示与颜色</summary>
-        <div className="annotation-layer-list">
+    <section className="reader-layer-panel" aria-label="图层显示与颜色">
+      <div className="annotation-layer-list">
           {layers.map((layer) => (
             <div key={layer.id}>
               <label>
@@ -792,8 +898,7 @@ function AnnotationControls({
               <Button type="submit">新建共享层</Button>
             </form>
           ) : null}
-        </div>
-      </details>
+      </div>
     </section>
   );
 }
@@ -915,237 +1020,11 @@ function LayerGrantManager({
   );
 }
 
-function PageLayout({
-  document,
-  currentPage,
-  zoom,
-  onPageChange,
-  annotationProps,
-}: ReaderProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const width = useElementWidth(containerRef);
-  const pointerStart = useRef<{
-    x: number;
-    y: number;
-    scrollLeft: number;
-    scrollTop: number;
-  } | null>(null);
-
-  const pointerDown = (event: ReactPointerEvent) => {
-    if (annotationProps.editing) return;
-    pointerStart.current = {
-      x: event.clientX,
-      y: event.clientY,
-      scrollLeft: containerRef.current?.scrollLeft ?? 0,
-      scrollTop: containerRef.current?.scrollTop ?? 0,
-    };
-    if (zoom > 1 && event.pointerType === "mouse") {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }
-  };
-  const pointerMove = (event: ReactPointerEvent) => {
-    if (annotationProps.editing) return;
-    const start = pointerStart.current;
-    const container = containerRef.current;
-    if (!start || !container || zoom <= 1 || event.pointerType !== "mouse") {
-      return;
-    }
-    container.scrollLeft = start.scrollLeft - (event.clientX - start.x);
-    container.scrollTop = start.scrollTop - (event.clientY - start.y);
-  };
-  const pointerUp = (event: ReactPointerEvent) => {
-    if (annotationProps.editing) return;
-    const start = pointerStart.current;
-    pointerStart.current = null;
-    if (!start) return;
-    if (zoom > 1) return;
-    const x = event.clientX - start.x;
-    const y = event.clientY - start.y;
-    if (Math.abs(x) < 50 || Math.abs(x) <= Math.abs(y)) return;
-    onPageChange(
-      x < 0
-        ? Math.min(document.numPages, currentPage + 1)
-        : Math.max(1, currentPage - 1),
-    );
-  };
-
-  return (
-    <section className="page-reader" aria-label="翻页阅读">
-      <Button
-        aria-label="上一页"
-        isDisabled={currentPage <= 1}
-        onPress={() => onPageChange(Math.max(1, currentPage - 1))}
-      >
-        ‹
-      </Button>
-      <div
-        className="page-reader__viewport"
-        ref={containerRef}
-        onPointerDown={pointerDown}
-        onPointerMove={pointerMove}
-        onPointerUp={pointerUp}
-      >
-        <div
-          className="page-reader__canvas-stage"
-          style={{ width: Math.max(1, width * zoom) }}
-        >
-          <AnnotatedPdfPage
-            document={document}
-            pageNumber={currentPage}
-            width={Math.max(1, width * zoom)}
-            annotationProps={annotationProps}
-          />
-        </div>
-      </div>
-      <Button
-        aria-label="下一页"
-        isDisabled={currentPage >= document.numPages}
-        onPress={() =>
-          onPageChange(Math.min(document.numPages, currentPage + 1))
-        }
-      >
-        ›
-      </Button>
-    </section>
-  );
-}
-
-function ContinuousLayout({
-  document,
-  currentPage,
-  zoom,
-  onPageChange,
-  annotationProps,
-}: ReaderProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const width = useElementWidth(scrollRef);
-  const pageWidth = Math.max(1, (width - 32) * zoom);
-  // TanStack Virtual intentionally exposes mutable measurement functions.
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const virtualizer = useVirtualizer({
-    count: document.numPages,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => pageWidth * 1.35 + 24,
-    overscan: 2,
-  });
-
-  useEffect(() => {
-    const scrollElement = scrollRef.current;
-    const target = virtualizer
-      .getVirtualItems()
-      .find((item) => item.index === currentPage - 1);
-    const visible =
-      scrollElement &&
-      target &&
-      target.start >= scrollElement.scrollTop &&
-      target.end <= scrollElement.scrollTop + scrollElement.clientHeight;
-    if (!visible) {
-      virtualizer.scrollToIndex(currentPage - 1, { align: "start" });
-    }
-  }, [currentPage, virtualizer]);
-
-  return (
-    <section
-      className="continuous-reader"
-      ref={scrollRef}
-      onScroll={() => {
-        const threshold = (scrollRef.current?.scrollTop ?? 0) + 8;
-        const items = virtualizer.getVirtualItems();
-        const first =
-          items.find((item) => item.end > threshold) ?? items[0];
-        if (first) onPageChange(first.index + 1);
-      }}
-      aria-label="连续滚动阅读"
-    >
-      <div
-        className="continuous-reader__inner"
-        style={{ height: virtualizer.getTotalSize() }}
-      >
-        {virtualizer.getVirtualItems().map((item) => (
-          <div
-            className="continuous-reader__page"
-            key={item.key}
-            data-index={item.index}
-            ref={virtualizer.measureElement}
-            style={{ transform: `translateY(${item.start}px)` }}
-          >
-            <AnnotatedPdfPage
-              document={document}
-              pageNumber={item.index + 1}
-              width={pageWidth}
-              annotationProps={annotationProps}
-            />
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ThumbnailNavigator({ document, currentPage, onSelect }: ThumbnailProps) {
-  const stripRef = useRef<HTMLDivElement>(null);
-  // TanStack Virtual intentionally exposes mutable measurement functions.
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const virtualizer = useVirtualizer({
-    horizontal: true,
-    count: document.numPages,
-    getScrollElement: () => stripRef.current,
-    estimateSize: () => 96,
-    overscan: 3,
-  });
-
-  useEffect(() => {
-    virtualizer.scrollToIndex(currentPage - 1, { align: "auto" });
-  }, [currentPage, virtualizer]);
-
-  return (
-    <nav className="thumbnail-strip" ref={stripRef} aria-label="页面缩略图">
-      <div
-        className="thumbnail-strip__inner"
-        style={{ width: virtualizer.getTotalSize() }}
-      >
-        {virtualizer.getVirtualItems().map((item) => (
-          <button
-            className="thumbnail-button"
-            data-current={item.index + 1 === currentPage || undefined}
-            key={item.key}
-            onClick={() => onSelect(item.index + 1)}
-            style={{ transform: `translateX(${item.start}px)` }}
-            aria-label={`前往第 ${item.index + 1} 页`}
-          >
-            <PdfPageCanvas
-              className="pdf-thumbnail"
-              document={document}
-              pageNumber={item.index + 1}
-              width={72}
-            />
-            <span>{item.index + 1}</span>
-          </button>
-        ))}
-      </div>
-    </nav>
-  );
-}
-
-function useElementWidth(ref: React.RefObject<HTMLElement | null>) {
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const update = () => setWidth(element.clientWidth);
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [ref]);
-  return width;
-}
-
-function readLayoutPreference(key: string): ReaderLayout {
+function readBooleanPreference(key: string) {
   try {
-    return localStorage.getItem(key) === "continuous" ? "continuous" : "page";
+    return localStorage.getItem(key) === "true";
   } catch {
-    return "page";
+    return false;
   }
 }
 
@@ -1193,28 +1072,4 @@ function isEditableTarget(target: EventTarget | null) {
     target instanceof HTMLElement &&
     (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
   );
-}
-
-interface ReaderProps {
-  document: PDFDocumentProxy;
-  currentPage: number;
-  zoom: number;
-  onPageChange(page: number): void;
-  annotationProps: AnnotationPageProps;
-}
-
-interface AnnotationPageProps {
-  choirId: string;
-  scoreId: string;
-  layers: AnnotationLayerSummary[];
-  annotations: LocalAnnotationRecord[];
-  editing: boolean;
-  tool: AnnotationTool;
-  activeLayerId: string | null;
-}
-
-interface ThumbnailProps {
-  document: PDFDocumentProxy;
-  currentPage: number;
-  onSelect(page: number): void;
 }
