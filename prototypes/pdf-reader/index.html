@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Same Page - PDF 阅读与批注性能原型</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --ink:#24221f; --muted:#746f67; --paper:#fffdf8; --line:#ded8ce; --accent:#c54834; --panel:#f6f2eb; }
+    * { box-sizing: border-box; }
+    body { margin:0; color:var(--ink); background:#e9e4db; }
+    button, input, select { font:inherit; }
+    button { border:1px solid #cfc8bd; background:#fff; color:var(--ink); border-radius:9px; padding:8px 11px; cursor:pointer; }
+    button:hover { border-color:#9f9689; }
+    button[aria-pressed="true"], button.primary { background:var(--ink); color:#fff; border-color:var(--ink); }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    header { position:sticky; top:0; z-index:30; display:grid; gap:10px; padding:12px 16px; background:rgba(255,253,248,.96); border-bottom:1px solid var(--line); backdrop-filter:blur(10px); }
+    .topline, .toolbar, .metric-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .topline { justify-content:space-between; }
+    h1 { font-size:17px; margin:0; }
+    .question { color:var(--muted); font-size:12px; max-width:850px; line-height:1.45; }
+    .toolbar { overflow-x:auto; flex-wrap:nowrap; padding-bottom:2px; }
+    .toolbar .group { display:flex; gap:4px; align-items:center; padding-right:8px; border-right:1px solid var(--line); white-space:nowrap; }
+    .toolbar .group:last-child { border-right:0; }
+    .toolbar label { display:flex; align-items:center; gap:5px; font-size:12px; color:var(--muted); }
+    input[type="range"] { width:110px; accent-color:var(--accent); }
+    .metric-row { gap:6px; }
+    .metric { min-width:95px; padding:6px 9px; background:var(--panel); border-radius:8px; font-size:11px; color:var(--muted); }
+    .metric strong { display:block; color:var(--ink); font-size:14px; font-variant-numeric:tabular-nums; }
+    #reader { height:calc(100dvh - var(--header-height, 190px)); min-height:360px; overflow:auto; overscroll-behavior:contain; padding:24px max(12px, calc((100% - 1050px) / 2)); scroll-padding-top:20px; }
+    #pages { display:flex; flex-direction:column; align-items:center; gap:24px; }
+    .page-shell { position:relative; flex:none; background:var(--paper); box-shadow:0 4px 20px rgba(54,45,34,.16); overflow:hidden; touch-action:none; }
+    .page-shell canvas.pdf { position:absolute; inset:0; width:100%; height:100%; background:var(--paper); }
+    .page-shell .empty { position:absolute; inset:0; display:grid; place-items:center; color:#9c958b; font-size:12px; background:linear-gradient(105deg,#f8f5ef,#fffdf8 38%,#f4f0e9); }
+    .page-shell[data-rendered="true"] .empty { display:none; }
+    .page-shell svg.overlay, .page-shell .konva-host { position:absolute; inset:0; width:100%; height:100%; }
+    .page-shell svg.overlay { overflow:visible; }
+    .page-shell .anchor { pointer-events:none; }
+    .text-note { position:absolute; z-index:5; left:12%; top:18%; max-width:38%; padding:4px 7px; border:1px solid rgba(163,112,20,.3); border-radius:5px; background:rgba(255,242,173,.86); color:#5b461c; font-size:clamp(8px,1.15vw,12px); line-height:1.25; pointer-events:auto; }
+    .page-label { position:absolute; top:8px; right:8px; z-index:6; padding:3px 6px; border-radius:5px; background:rgba(32,31,28,.72); color:#fff; font-size:10px; pointer-events:none; }
+    .selection { filter:drop-shadow(0 0 2px rgba(255,255,255,.95)); }
+    #toast { position:fixed; left:50%; bottom:18px; z-index:50; transform:translateX(-50%); max-width:min(92vw,680px); padding:9px 13px; border-radius:10px; background:#24221f; color:#fff; font-size:12px; opacity:0; pointer-events:none; transition:opacity .15s; }
+    #toast.show { opacity:1; }
+    dialog { width:min(720px, calc(100vw - 30px)); border:0; border-radius:14px; padding:0; box-shadow:0 20px 80px rgba(0,0,0,.28); }
+    dialog::backdrop { background:rgba(25,23,20,.48); }
+    dialog article { padding:20px; }
+    dialog h2 { margin:0 0 8px; font-size:18px; }
+    dialog p, dialog li { color:var(--muted); line-height:1.5; font-size:13px; }
+    dialog footer { display:flex; justify-content:flex-end; }
+    .pass { color:#28714a !important; }
+    .warn { color:#a05b13 !important; }
+    @media (max-width: 650px) {
+      header { padding:10px; }
+      .question { display:none; }
+      .metric { min-width:calc(25% - 5px); padding:5px 6px; }
+      .metric:nth-child(n+5) { display:none; }
+      #reader { padding:14px 6px; }
+      #pages { gap:12px; }
+      button { padding:7px 9px; }
+    }
+  </style>
+</head>
+<body>
+  <header id="header">
+    <div class="topline">
+      <div>
+        <h1>PDF.js + 批注 Overlay 性能原型</h1>
+        <div class="question">问题：长谱在高 DPR、连续滚动和密集笔迹下，视口附近渲染与内存回落是否成立；SVG 是否已经足够，还是需要引入 Konva？这是可丢弃原型，不是生产阅读器。</div>
+      </div>
+      <button id="verdict">查看判定口径</button>
+    </div>
+    <div class="toolbar" aria-label="阅读器控制">
+      <div class="group">
+        <button data-mode="continuous" aria-pressed="true">连续滚动</button>
+        <button data-mode="single" aria-pressed="false">单页</button>
+      </div>
+      <div class="group">
+        <button id="prev" aria-label="上一页">上一页</button>
+        <span id="pageCounter">1 / 24</span>
+        <button id="next" aria-label="下一页">下一页</button>
+      </div>
+      <div class="group">
+        <label>缩放 <input id="zoom" type="range" min="55" max="180" value="100" step="5"><span id="zoomLabel">100%</span></label>
+      </div>
+      <div class="group">
+        <button data-engine="svg" aria-pressed="true">SVG</button>
+        <button data-engine="konva" aria-pressed="false">Konva</button>
+      </div>
+      <div class="group">
+        <button data-stress="100">+100 笔</button>
+        <button data-stress="1000">+1,000 笔</button>
+        <button id="cancelProbe">取消渲染测试</button>
+        <button id="clear">清空批注</button>
+      </div>
+    </div>
+    <div class="metric-row" aria-live="polite">
+      <div class="metric"><strong id="visibleMetric">0</strong>邻近页 Canvas</div>
+      <div class="metric"><strong id="memoryMetric">0 MB</strong>Canvas 估算</div>
+      <div class="metric"><strong id="renderMetric">-</strong>最近 PDF 渲染</div>
+      <div class="metric"><strong id="overlayMetric">-</strong>最近 Overlay</div>
+      <div class="metric"><strong id="latencyMetric">-</strong>输入→绘制</div>
+      <div class="metric"><strong id="cancelMetric">0</strong>已取消任务</div>
+      <div class="metric"><strong id="driftMetric">0 px</strong>归一化漂移</div>
+      <div class="metric"><strong id="strokeMetric">0</strong>当前页笔迹</div>
+    </div>
+  </header>
+
+  <main id="reader" tabindex="0" aria-label="PDF 页面"><div id="pages"></div></main>
+  <div id="toast"></div>
+  <dialog id="verdictDialog">
+    <article>
+      <h2>本原型回答什么</h2>
+      <ul>
+        <li>只为视口附近页面保留 PDF Canvas，离开缓冲区后取消任务并将 Canvas 归零。</li>
+        <li>笔迹永远保存为 0..1 的页面坐标；缩放、单页/连续模式切换后检查锚点漂移。</li>
+        <li>SVG 与 Konva 使用同一批笔迹数据。先比较创建成本、DOM/Canvas 成本、选择命中和手写延迟，再决定是否值得多一层框架。</li>
+        <li>桌面结果只能决定工程方向；iPad Safari 与 Android 平板仍是生产前人工门槛。</li>
+      </ul>
+      <p id="runtimeVerdict" class="warn">请先分别在 SVG 与 Konva 下加入 1,000 笔，并缩放、滚动。</p>
+      <footer><button id="closeVerdict" class="primary">知道了</button></footer>
+    </article>
+  </dialog>
+
+  <script src="./vendor/konva.min.js"></script>
+  <script type="module">
+    import * as pdfjsLib from './vendor/pdf.mjs';
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.mjs';
+    const PDF_URL = '../../output/pdf/reader-test-score.pdf';
+    const BASE_WIDTH = 595.28;
+    const BASE_HEIGHT = 841.89;
+    const DPR_CAP = 2;
+    const state = {
+      pdf: null, mode: 'continuous', page: 1, zoom: 1, engine: 'svg',
+      pages: new Map(), strokes: new Map(), observer: null,
+      metrics: { renderMs: 0, overlayMs: 0, inputMs: 0, cancelled: 0, drift: 0 },
+      samples: { svg: null, konva: null }, selectedId: null,
+    };
+
+    const $ = (selector, root = document) => root.querySelector(selector);
+    const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+    const reader = $('#reader');
+    const pagesRoot = $('#pages');
+    const toast = $('#toast');
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => toast.classList.remove('show'), 1900);
+    }
+
+    function pageStrokes(pageNumber) {
+      if (!state.strokes.has(pageNumber)) state.strokes.set(pageNumber, []);
+      return state.strokes.get(pageNumber);
+    }
+
+    function makeStroke(pageNumber, index, points = null) {
+      if (points) return { id: crypto.randomUUID(), pageNumber, points, color:'#d44832', width:.0034 };
+      const column = index % 25;
+      const row = Math.floor(index / 25) % 38;
+      const x = .06 + column * .036;
+      const y = .07 + row * .023;
+      return {
+        id: crypto.randomUUID(), pageNumber,
+        points: [[x, y], [x + .011, y + .006], [x + .022, y - .003], [x + .031, y + .005]],
+        color: index % 11 === 0 ? '#3765a3' : '#d44832', width: .0028,
+      };
+    }
+
+    function pathData(points) {
+      return points.map(([x,y], index) => `${index ? 'L' : 'M'} ${x * BASE_WIDTH} ${y * BASE_HEIGHT}`).join(' ');
+    }
+
+    function shellSize() {
+      const available = Math.min(930, reader.clientWidth - 12);
+      const width = Math.max(260, Math.round(Math.min(available, BASE_WIDTH * state.zoom)));
+      return { width, height: Math.round(width * BASE_HEIGHT / BASE_WIDTH) };
+    }
+
+    function createShell(pageNumber) {
+      const { width, height } = shellSize();
+      const shell = document.createElement('section');
+      shell.className = 'page-shell';
+      shell.dataset.page = pageNumber;
+      shell.style.width = `${width}px`;
+      shell.style.height = `${height}px`;
+      shell.innerHTML = `<div class="empty">第 ${pageNumber} 页等待进入渲染缓冲区</div><canvas class="pdf"></canvas><div class="page-label">${pageNumber}</div>`;
+      state.pages.set(pageNumber, { shell, task:null, page:null, rendered:false, konva:null, renderToken:0 });
+      return shell;
+    }
+
+    function rebuildPages({ preservePosition = true } = {}) {
+      const anchorPage = preservePosition ? currentPageFromScroll() : state.page;
+      for (const entry of state.pages.values()) disposePage(entry, true);
+      state.pages.clear();
+      pagesRoot.replaceChildren();
+      const pageNumbers = state.mode === 'single' ? [state.page] : Array.from({ length: state.pdf.numPages }, (_, i) => i + 1);
+      const fragment = document.createDocumentFragment();
+      pageNumbers.forEach(number => fragment.append(createShell(number)));
+      pagesRoot.append(fragment);
+      setupObserver();
+      updateButtons();
+      requestAnimationFrame(() => {
+        if (state.mode === 'continuous') scrollToPage(anchorPage, false);
+        else observeSinglePage();
+        checkDrift();
+      });
+    }
+
+    function setupObserver() {
+      state.observer?.disconnect();
+      state.observer = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+          const pageNumber = Number(entry.target.dataset.page);
+          if (entry.isIntersecting) renderPage(pageNumber);
+          else disposeIfFar(pageNumber);
+        }
+        updateMetrics();
+      }, { root: reader, rootMargin:'110% 0px 110% 0px', threshold:0.01 });
+      state.pages.forEach(({ shell }) => state.observer.observe(shell));
+    }
+
+    function observeSinglePage() {
+      const entry = state.pages.get(state.page);
+      if (entry) renderPage(state.page);
+    }
+
+    async function renderPage(pageNumber) {
+      const entry = state.pages.get(pageNumber);
+      if (!entry || entry.rendered || entry.task) return;
+      const token = ++entry.renderToken;
+      const started = performance.now();
+      const page = await state.pdf.getPage(pageNumber);
+      if (!state.pages.has(pageNumber) || token !== entry.renderToken) return;
+      entry.page = page;
+      const { width } = shellSize();
+      const cssScale = width / BASE_WIDTH;
+      const viewport = page.getViewport({ scale: cssScale });
+      const outputScale = Math.min(devicePixelRatio || 1, DPR_CAP);
+      const canvas = $('canvas.pdf', entry.shell);
+      const context = canvas.getContext('2d', { alpha:false });
+      canvas.width = Math.floor(viewport.width * outputScale);
+      canvas.height = Math.floor(viewport.height * outputScale);
+      canvas.style.width = `${Math.floor(viewport.width)}px`;
+      canvas.style.height = `${Math.floor(viewport.height)}px`;
+      entry.task = page.render({ canvasContext:context, viewport, transform:outputScale === 1 ? null : [outputScale,0,0,outputScale,0,0] });
+      try {
+        await entry.task.promise;
+        if (token !== entry.renderToken) return;
+        entry.rendered = true;
+        entry.shell.dataset.rendered = 'true';
+        state.metrics.renderMs = performance.now() - started;
+        renderOverlay(pageNumber);
+      } catch (error) {
+        if (error?.name !== 'RenderingCancelledException') console.error(error);
+      } finally {
+        entry.task = null;
+        updateMetrics();
+      }
+    }
+
+    function disposeIfFar(pageNumber) {
+      const entry = state.pages.get(pageNumber);
+      if (!entry) return;
+      const readerRect = reader.getBoundingClientRect();
+      const rect = entry.shell.getBoundingClientRect();
+      const distance = rect.bottom < readerRect.top ? readerRect.top - rect.bottom : rect.top - readerRect.bottom;
+      if (distance > reader.clientHeight * 1.15) disposePage(entry, false);
+    }
+
+    function disposePage(entry, destroy = false) {
+      entry.renderToken += 1;
+      if (entry.task) {
+        entry.task.cancel();
+        entry.task = null;
+        state.metrics.cancelled += 1;
+      }
+      entry.konva?.destroy();
+      entry.konva = null;
+      entry.page?.cleanup();
+      entry.page = null;
+      $('svg.overlay', entry.shell)?.remove();
+      $('.konva-host', entry.shell)?.remove();
+      $('.text-note', entry.shell)?.remove();
+      const canvas = $('canvas.pdf', entry.shell);
+      canvas.width = 0;
+      canvas.height = 0;
+      entry.rendered = false;
+      entry.shell.dataset.rendered = 'false';
+      if (destroy) state.observer?.unobserve(entry.shell);
+    }
+
+    function drawSvg(pageNumber, strokes) {
+      const entry = state.pages.get(pageNumber);
+      const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+      svg.classList.add('overlay');
+      svg.setAttribute('viewBox', `0 0 ${BASE_WIDTH} ${BASE_HEIGHT}`);
+      svg.setAttribute('preserveAspectRatio','none');
+      const fragment = document.createDocumentFragment();
+      for (const stroke of strokes) {
+        const hit = document.createElementNS(svg.namespaceURI,'path');
+        hit.setAttribute('d', pathData(stroke.points));
+        hit.setAttribute('fill','none');
+        hit.setAttribute('stroke','transparent');
+        hit.setAttribute('stroke-width','12');
+        hit.setAttribute('stroke-linecap','round');
+        hit.setAttribute('stroke-linejoin','round');
+        hit.setAttribute('vector-effect','non-scaling-stroke');
+        hit.dataset.id = stroke.id;
+        hit.dataset.hit = 'true';
+        hit.style.pointerEvents = 'stroke';
+        const path = document.createElementNS(svg.namespaceURI,'path');
+        path.setAttribute('d', pathData(stroke.points));
+        path.setAttribute('fill','none');
+        path.setAttribute('stroke',stroke.color);
+        path.setAttribute('stroke-width',String(stroke.width * BASE_WIDTH));
+        path.setAttribute('stroke-linecap','round');
+        path.setAttribute('stroke-linejoin','round');
+        path.setAttribute('vector-effect','non-scaling-stroke');
+        path.dataset.id = stroke.id;
+        path.style.pointerEvents = 'none';
+        if (stroke.id === state.selectedId) path.classList.add('selection');
+        fragment.append(hit, path);
+      }
+      const anchor = document.createElementNS(svg.namespaceURI,'circle');
+      anchor.classList.add('anchor');
+      anchor.setAttribute('cx',String(BASE_WIDTH * .5));
+      anchor.setAttribute('cy',String(BASE_HEIGHT * .5));
+      anchor.setAttribute('r','4');
+      anchor.setAttribute('fill','#28714a');
+      fragment.append(anchor);
+      svg.append(fragment);
+      bindSvgDrawing(svg, pageNumber);
+      entry.shell.append(svg);
+    }
+
+    function bindSvgDrawing(svg, pageNumber) {
+      let active = null;
+      const normalized = event => {
+        const rect = svg.getBoundingClientRect();
+        return [(event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height];
+      };
+      svg.addEventListener('pointerdown', event => {
+        const hitId = event.target.dataset?.id;
+        if (hitId) { state.selectedId = hitId; renderOverlay(pageNumber); return; }
+        svg.setPointerCapture(event.pointerId);
+        active = makeStroke(pageNumber, 0, [normalized(event)]);
+      });
+      svg.addEventListener('pointermove', event => {
+        if (!active) return;
+        const started = performance.now();
+        active.points.push(normalized(event));
+        const preview = svg.querySelector('[data-preview]') || document.createElementNS(svg.namespaceURI,'path');
+        preview.dataset.preview = 'true';
+        preview.setAttribute('fill','none'); preview.setAttribute('stroke',active.color); preview.setAttribute('stroke-width','2'); preview.setAttribute('d',pathData(active.points));
+        if (!preview.parentNode) svg.append(preview);
+        requestAnimationFrame(() => { state.metrics.inputMs = performance.now() - started; updateMetrics(); });
+      });
+      svg.addEventListener('pointerup', () => {
+        if (active?.points.length > 1) pageStrokes(pageNumber).push(active);
+        active = null;
+        renderOverlay(pageNumber);
+      });
+    }
+
+    function drawKonva(pageNumber, strokes) {
+      const entry = state.pages.get(pageNumber);
+      const host = document.createElement('div');
+      host.className = 'konva-host';
+      entry.shell.append(host);
+      const { width, height } = entry.shell.getBoundingClientRect();
+      const stage = new Konva.Stage({ container:host, width, height });
+      const historical = new Konva.Layer();
+      const activeLayer = new Konva.Layer();
+      stage.add(historical, activeLayer);
+      for (const stroke of strokes) {
+        const line = new Konva.Line({
+          points:stroke.points.flatMap(([x,y]) => [x * width, y * height]), stroke:stroke.color,
+          strokeWidth:Math.max(1.2, stroke.width * width) + (stroke.id === state.selectedId ? 1.5 : 0),
+          shadowColor:'#ffffff', shadowBlur:stroke.id === state.selectedId ? 4 : 0,
+          lineCap:'round', lineJoin:'round',
+          hitStrokeWidth:12,
+          perfectDrawEnabled:false, id:stroke.id,
+        });
+        line.on('pointerdown', event => { event.cancelBubble = true; state.selectedId = stroke.id; renderOverlay(pageNumber); });
+        historical.add(line);
+      }
+      const anchor = new Konva.Circle({ x:width*.5, y:height*.5, radius:4, fill:'#28714a', listening:false });
+      activeLayer.add(anchor);
+      let active = null;
+      let preview = null;
+      stage.on('pointerdown', event => {
+        if (event.target !== stage) return;
+        const point = stage.getPointerPosition();
+        active = makeStroke(pageNumber, 0, [[point.x / width, point.y / height]]);
+        preview = new Konva.Line({ points:[point.x,point.y], stroke:active.color, strokeWidth:2, lineCap:'round', lineJoin:'round', listening:false });
+        activeLayer.add(preview);
+      });
+      stage.on('pointermove', () => {
+        if (!active) return;
+        const started = performance.now();
+        const point = stage.getPointerPosition();
+        active.points.push([point.x / width, point.y / height]);
+        preview.points(active.points.flatMap(([x,y]) => [x * width,y * height]));
+        activeLayer.batchDraw();
+        requestAnimationFrame(() => { state.metrics.inputMs = performance.now() - started; updateMetrics(); });
+      });
+      stage.on('pointerup pointercancel', () => {
+        if (active?.points.length > 1) pageStrokes(pageNumber).push(active);
+        active = null; preview = null; renderOverlay(pageNumber);
+      });
+      entry.konva = stage;
+    }
+
+    function renderOverlay(pageNumber) {
+      const entry = state.pages.get(pageNumber);
+      if (!entry?.rendered) return;
+      const started = performance.now();
+      entry.konva?.destroy(); entry.konva = null;
+      $('svg.overlay', entry.shell)?.remove();
+      $('.konva-host', entry.shell)?.remove();
+      $('.text-note', entry.shell)?.remove();
+      const strokes = pageStrokes(pageNumber);
+      if (state.engine === 'svg') drawSvg(pageNumber, strokes);
+      else drawKonva(pageNumber, strokes);
+      const textNote = document.createElement('div');
+      textNote.className = 'text-note';
+      textNote.textContent = `DOM 文本 · 第 ${pageNumber} 页`;
+      entry.shell.append(textNote);
+      const overlayMs = performance.now() - started;
+      entry.shell.dataset.selected = state.selectedId || '';
+      if (pageNumber === state.page) state.metrics.overlayMs = overlayMs;
+      if (strokes.length >= 1000) {
+        state.samples[state.engine] = { overlayMs, inputMs:state.metrics.inputMs, count:strokes.length };
+      }
+      checkDrift();
+      updateMetrics();
+    }
+
+    function addStress(count) {
+      const pageNumber = currentPageFromScroll();
+      const strokes = pageStrokes(pageNumber);
+      const start = strokes.length;
+      for (let i = 0; i < count; i += 1) strokes.push(makeStroke(pageNumber, start + i));
+      renderOverlay(pageNumber);
+      showToast(`第 ${pageNumber} 页增加 ${count.toLocaleString()} 笔；切换引擎可对比同一数据。`);
+    }
+
+    async function runCancellationProbe() {
+      const pageNumber = currentPageFromScroll();
+      const entry = state.pages.get(pageNumber);
+      if (!entry) return;
+      disposePage(entry, false);
+      const pending = renderPage(pageNumber);
+      await Promise.resolve();
+      await Promise.resolve();
+      if (entry.task) {
+        disposePage(entry, false);
+        showToast('RenderTask 已取消；页面将重新进入渲染队列。');
+      } else {
+        showToast('本页渲染过快，任务在取消前已经结束。');
+      }
+      await pending;
+      renderPage(pageNumber);
+    }
+
+    function currentPageFromScroll() {
+      if (state.mode === 'single') return state.page;
+      const focusY = reader.getBoundingClientRect().top + Math.min(reader.clientHeight * .35, 280);
+      let closest = state.page;
+      let distance = Infinity;
+      state.pages.forEach(({ shell }, pageNumber) => {
+        const rect = shell.getBoundingClientRect();
+        const candidate = Math.abs(rect.top - focusY);
+        if (candidate < distance) { distance = candidate; closest = pageNumber; }
+      });
+      state.page = closest;
+      return closest;
+    }
+
+    function scrollToPage(pageNumber, smooth = true) {
+      const entry = state.pages.get(pageNumber);
+      if (!entry) return;
+      entry.shell.scrollIntoView({ block:'start', behavior:smooth ? 'smooth' : 'instant' });
+    }
+
+    function checkDrift() {
+      const entry = state.pages.get(state.page) || [...state.pages.values()].find(item => item.rendered);
+      if (!entry) return;
+      const shellRect = entry.shell.getBoundingClientRect();
+      let anchorRect;
+      if (state.engine === 'svg') anchorRect = $('.anchor', entry.shell)?.getBoundingClientRect();
+      else {
+        const canvas = $('.konva-host canvas', entry.shell);
+        if (canvas) anchorRect = { left:shellRect.left + shellRect.width / 2 - 4, top:shellRect.top + shellRect.height / 2 - 4, width:8, height:8 };
+      }
+      if (!anchorRect) return;
+      const actualX = anchorRect.left + anchorRect.width / 2;
+      const actualY = anchorRect.top + anchorRect.height / 2;
+      state.metrics.drift = Math.hypot(actualX - (shellRect.left + shellRect.width*.5), actualY - (shellRect.top + shellRect.height*.5));
+    }
+
+    function updateMetrics() {
+      let canvases = 0;
+      let bytes = 0;
+      state.pages.forEach(entry => {
+        const canvas = $('canvas.pdf', entry.shell);
+        if (canvas.width) { canvases += 1; bytes += canvas.width * canvas.height * 4; }
+      });
+      $('#visibleMetric').textContent = String(canvases);
+      $('#memoryMetric').textContent = `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+      $('#renderMetric').textContent = state.metrics.renderMs ? `${state.metrics.renderMs.toFixed(0)} ms` : '-';
+      $('#overlayMetric').textContent = state.metrics.overlayMs ? `${state.metrics.overlayMs.toFixed(1)} ms` : '-';
+      $('#latencyMetric').textContent = state.metrics.inputMs ? `${state.metrics.inputMs.toFixed(1)} ms` : '-';
+      $('#cancelMetric').textContent = String(state.metrics.cancelled);
+      $('#driftMetric').textContent = `${state.metrics.drift.toFixed(2)} px`;
+      $('#strokeMetric').textContent = pageStrokes(state.page).length.toLocaleString();
+      $('#pageCounter').textContent = `${state.page} / ${state.pdf?.numPages || 24}`;
+      const { svg, konva } = state.samples;
+      if (svg && konva) {
+        const winner = svg.overlayMs <= konva.overlayMs ? 'SVG' : 'Konva';
+        $('#runtimeVerdict').className = 'pass';
+        $('#runtimeVerdict').textContent = `本机样本：SVG ${svg.overlayMs.toFixed(1)} ms，Konva ${konva.overlayMs.toFixed(1)} ms（各至少 1,000 笔）。当前创建成本较低的是 ${winner}；仍需结合手写延迟和真机结果。`;
+      }
+    }
+
+    function updateButtons() {
+      $$('[data-mode]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode)));
+      $$('[data-engine]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.engine === state.engine)));
+      $('#prev').disabled = state.page <= 1;
+      $('#next').disabled = state.page >= (state.pdf?.numPages || 24);
+    }
+
+    function bindControls() {
+      $$('[data-mode]').forEach(button => button.addEventListener('click', () => {
+        state.mode = button.dataset.mode;
+        rebuildPages();
+      }));
+      $$('[data-engine]').forEach(button => button.addEventListener('click', () => {
+        state.engine = button.dataset.engine;
+        state.pages.forEach((entry, pageNumber) => { if (entry.rendered) renderOverlay(pageNumber); });
+        updateButtons();
+      }));
+      $$('[data-stress]').forEach(button => button.addEventListener('click', () => addStress(Number(button.dataset.stress))));
+      $('#cancelProbe').addEventListener('click', runCancellationProbe);
+      $('#zoom').addEventListener('input', event => {
+        state.zoom = Number(event.target.value) / 100;
+        $('#zoomLabel').textContent = `${event.target.value}%`;
+        rebuildPages();
+      });
+      $('#prev').addEventListener('click', () => changePage(-1));
+      $('#next').addEventListener('click', () => changePage(1));
+      $('#clear').addEventListener('click', () => { state.strokes.set(state.page, []); state.selectedId = null; renderOverlay(state.page); });
+      reader.addEventListener('scroll', () => { requestAnimationFrame(() => { currentPageFromScroll(); updateButtons(); updateMetrics(); }); }, { passive:true });
+      $('#verdict').addEventListener('click', () => $('#verdictDialog').showModal());
+      $('#closeVerdict').addEventListener('click', () => $('#verdictDialog').close());
+      window.addEventListener('resize', () => {
+        document.documentElement.style.setProperty('--header-height', `${$('#header').offsetHeight}px`);
+        if (state.pdf) rebuildPages();
+      });
+    }
+
+    function changePage(delta) {
+      const next = Math.max(1, Math.min(state.pdf.numPages, state.page + delta));
+      if (next === state.page) return;
+      state.page = next;
+      if (state.mode === 'single') rebuildPages({ preservePosition:false });
+      else scrollToPage(next);
+      updateButtons();
+    }
+
+    async function init() {
+      document.documentElement.style.setProperty('--header-height', `${$('#header').offsetHeight}px`);
+      bindControls();
+      const loadingTask = pdfjsLib.getDocument({ url: PDF_URL });
+      state.pdf = await loadingTask.promise;
+      rebuildPages({ preservePosition:false });
+      showToast(`已载入 ${state.pdf.numPages} 页测试谱；仅渲染视口附近页面。`);
+    }
+
+    init().catch(error => {
+      console.error(error);
+      pagesRoot.innerHTML = `<p style="background:#fff;padding:20px;border-radius:12px">载入失败：${error.message}<br>请从仓库根目录运行 <code>python3 -m http.server 8766</code>。</p>`;
+    });
+  </script>
+</body>
+</html>
