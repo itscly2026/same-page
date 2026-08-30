@@ -25,9 +25,7 @@ describe("AppRoutes", () => {
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
           Response.json(
-            input === "/api/guest/choirs"
-              ? { choirs: [] }
-              : input === "/api/choirs"
+            input === "/api/choirs"
               ? { memberships: [] }
               : input.includes("/scores")
               ? {
@@ -52,7 +50,7 @@ describe("AppRoutes", () => {
     vi.unstubAllGlobals();
   });
 
-  it("opens with a read-only guest entry and no public choir creation", () => {
+  it("opens with the branded entry and keeps guest admission inside one dialog", () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <AppRoutes />
@@ -60,13 +58,17 @@ describe("AppRoutes", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "让每次排练，都在同一页" }),
+      screen.getByRole("heading", { name: "Every voice, on the same page." }),
     ).toBeInTheDocument();
+    expect(screen.getByText("同页共谱，众声一心。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "登录 / 注册" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("八位邀请码")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "进入合唱团" }));
+    expect(screen.getByRole("dialog", { name: "进入合唱团" })).toBeInTheDocument();
     expect(screen.getByLabelText("八位邀请码")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "访客进入" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("无需注册，也可以访客身份只读访问。")).toBeInTheDocument();
     expect(screen.queryByText("创建合唱团")).not.toBeInTheDocument();
+    expect(screen.queryByText("公开合唱团")).not.toBeInTheDocument();
   });
 
   it("uses the guest session response to enter a choir", async () => {
@@ -76,10 +78,11 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "进入合唱团" }));
     fireEvent.change(screen.getByLabelText("八位邀请码"), {
       target: { value: "AAAAAAAA" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "访客进入" }));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
 
     expect(
       await screen.findByRole("heading", { name: "小红花合唱团" }),
@@ -91,57 +94,199 @@ describe("AppRoutes", () => {
     });
   });
 
-  it("enters a choir with open guest admission through the same choir page", async () => {
-    const fetchMock = vi.fn().mockImplementation(
-      (input: string) => {
-        if (input === "/api/guest/choirs") {
-          return Promise.resolve(
-            Response.json({
-              choirs: [
-                {
-                  id: "spring-choir",
-                  name: "公开合唱团",
-                  guestAdmissionMode: "open",
-                },
-              ],
-            }),
-          );
-        }
-        if (input.includes("/scores")) {
-          return Promise.resolve(
-            Response.json({
-              scores: [],
-              storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
-              permissions: { canManage: false },
-            }),
-          );
-        }
-        if (input === "/api/choirs") {
-          return Promise.resolve(Response.json({ memberships: [] }));
-        }
-        return Promise.resolve(
-          Response.json({
-            choir: {
-              id: "spring-choir",
-              name: "公开合唱团",
-              guestAdmissionMode: "open",
-            },
-          }),
-        );
-      },
+  it("keeps invalid invitations in the entry dialog with clear feedback", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string, init?: RequestInit) =>
+        Promise.resolve(
+          input === "/api/guest/session" && init?.method === "POST"
+            ? Response.json({}, { status: 403 })
+            : Response.json({ memberships: [] }),
+        ),
+      ),
     );
-    vi.stubGlobal("fetch", fetchMock);
-
     render(
       <MemoryRouter initialEntries={["/"]}>
         <AppRoutes />
       </MemoryRouter>,
     );
 
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: /公开合唱团.*直接进入/,
-      }),
+    fireEvent.click(screen.getByRole("button", { name: "进入合唱团" }));
+    fireEvent.change(screen.getByLabelText("八位邀请码"), {
+      target: { value: "AAAAAAAA" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent("邀请码无效或已失效。");
+    expect(screen.getByRole("dialog", { name: "进入合唱团" })).toBeInTheDocument();
+  });
+
+  it("shows every existing membership to a signed-in user", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "user-1", email: "member@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({
+          memberships: [
+            {
+              id: "membership-1",
+              displayName: "小花",
+              role: "member",
+              choir: {
+                id: "choir-1",
+                name: "小红花合唱团",
+                guestAdmissionMode: "invite",
+              },
+            },
+            {
+              id: "membership-2",
+              displayName: "Alto",
+              role: "member",
+              choir: {
+                id: "choir-2",
+                name: "周末合唱团",
+                guestAdmissionMode: "invite",
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "进入合唱团" }));
+    expect(await screen.findByRole("link", { name: /小红花合唱团.*小花/ })).toHaveAttribute(
+      "href",
+      "/choirs/choir-1",
+    );
+    expect(screen.getByRole("link", { name: /周末合唱团.*Alto/ })).toHaveAttribute(
+      "href",
+      "/choirs/choir-2",
+    );
+    expect(screen.getByLabelText("团内显示名")).toBeInTheDocument();
+  });
+
+  it("shows a signed-in user with no memberships how to join one", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "user-1", email: "member@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(Response.json({ memberships: [] })),
+    );
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "进入合唱团" }));
+    expect(await screen.findByRole("heading", { name: "使用邀请码加入" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "我的合唱团" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("团内显示名")).toBeInTheDocument();
+  });
+
+  it("shows a signed-in user's single membership without skipping the entry dialog", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "user-1", email: "member@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({
+          memberships: [
+            {
+              id: "membership-1",
+              displayName: "小花",
+              role: "member",
+              choir: {
+                id: "choir-1",
+                name: "小红花合唱团",
+                guestAdmissionMode: "invite",
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "进入合唱团" }));
+    expect(await screen.findByRole("link", { name: /小红花合唱团.*小花/ })).toHaveAttribute(
+      "href",
+      "/choirs/choir-1",
+    );
+    expect(screen.getByRole("heading", { name: "使用邀请码加入" })).toBeInTheDocument();
+  });
+
+  it("enters an open-admission choir only through its dedicated link", async () => {
+    let admitted = false;
+    const fetchMock = vi.fn().mockImplementation(
+      (input: string, init?: RequestInit) => {
+        if (input === "/api/guest/choirs/spring-choir") {
+          return Promise.resolve(
+            Response.json({
+              choir: {
+                id: "spring-choir",
+                name: "公开合唱团",
+                guestAdmissionMode: "open",
+              },
+            }),
+          );
+        }
+        if (input === "/api/guest/session" && init?.method === "POST") {
+          admitted = true;
+          return Promise.resolve(
+            Response.json({
+              choir: {
+                id: "spring-choir",
+                name: "公开合唱团",
+                guestAdmissionMode: "open",
+              },
+            }),
+          );
+        }
+        if (input === "/api/guest/session") {
+          return Promise.resolve(Response.json({}, { status: 401 }));
+        }
+        if (input.includes("/scores")) {
+          return Promise.resolve(
+            admitted
+              ? Response.json({
+                  scores: [],
+                  storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
+                  permissions: { canManage: false },
+                })
+              : Response.json({}, { status: 403 }),
+          );
+        }
+        if (input === "/api/choirs") {
+          return Promise.resolve(Response.json({ memberships: [] }));
+        }
+        return Promise.resolve(Response.json({}, { status: 404 }));
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/spring-choir"]}>
+        <AppRoutes />
+      </MemoryRouter>,
     );
 
     expect(
@@ -154,27 +299,27 @@ describe("AppRoutes", () => {
     });
   });
 
-  it("joins the same choir with open guest admission as a signed-in user", async () => {
+  it("asks a signed-in user for a display name before joining an open choir", async () => {
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "user-1", email: "member@example.test" } },
       isPending: false,
     } as ReturnType<typeof authClient.useSession>);
+    let joined = false;
     const fetchMock = vi.fn().mockImplementation(
       (input: string, init?: RequestInit) => {
-        if (input === "/api/guest/choirs") {
+        if (input === "/api/guest/choirs/spring-choir") {
           return Promise.resolve(
             Response.json({
-              choirs: [
-                {
-                  id: "spring-choir",
-                  name: "公开合唱团",
-                  guestAdmissionMode: "open",
-                },
-              ],
+              choir: {
+                id: "spring-choir",
+                name: "公开合唱团",
+                guestAdmissionMode: "open",
+              },
             }),
           );
         }
         if (input === "/api/choirs/join" && init?.method === "POST") {
+          joined = true;
           return Promise.resolve(
             Response.json(
               {
@@ -196,18 +341,20 @@ describe("AppRoutes", () => {
         if (input === "/api/choirs") {
           return Promise.resolve(
             Response.json({
-              memberships: [
-                {
-                  id: "membership-1",
-                  displayName: "小花",
-                  role: "member",
-                  choir: {
-                    id: "spring-choir",
-                    name: "公开合唱团",
-                    guestAdmissionMode: "open",
-                  },
-                },
-              ],
+              memberships: joined
+                ? [
+                    {
+                      id: "membership-1",
+                      displayName: "小花",
+                      role: "member",
+                      choir: {
+                        id: "spring-choir",
+                        name: "公开合唱团",
+                        guestAdmissionMode: "open",
+                      },
+                    },
+                  ]
+                : [],
             }),
           );
         }
@@ -215,29 +362,29 @@ describe("AppRoutes", () => {
           return Promise.resolve(Response.json({}, { status: 401 }));
         }
         return Promise.resolve(
-          Response.json({
-            scores: [],
-            storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
-            permissions: { canManage: false },
-          }),
+          joined
+            ? Response.json({
+                scores: [],
+                storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
+                permissions: { canManage: false },
+              })
+            : Response.json({}, { status: 403 }),
         );
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
     render(
-      <MemoryRouter initialEntries={["/"]}>
+      <MemoryRouter initialEntries={["/choirs/spring-choir"]}>
         <AppRoutes />
       </MemoryRouter>,
     );
 
     fireEvent.change(
-      await screen.findByLabelText("加入采用开放准入的合唱团时使用的团内显示名"),
+      await screen.findByLabelText("团内显示名"),
       { target: { value: "小花" } },
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: /公开合唱团.*直接进入/ }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "加入并进入" }));
 
     expect(
       await screen.findByRole("heading", { name: "公开合唱团" }),

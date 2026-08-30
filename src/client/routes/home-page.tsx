@@ -1,18 +1,19 @@
 import { type FormEvent, useEffect, useState } from "react";
 import {
   Button,
+  Dialog,
   Form,
+  Heading,
   Input,
   Label,
+  Modal,
+  ModalOverlay,
   TextField,
 } from "react-aria-components";
 import { Link, useNavigate } from "react-router-dom";
 
 import {
   choirMembershipsResponseSchema,
-  choirsWithOpenGuestAdmissionResponseSchema,
-  type ChoirSummary,
-  type GuestAdmissionRequest,
   type MembershipSummary,
 } from "../../shared/choirs";
 import { authClient } from "../auth/auth-client";
@@ -21,356 +22,283 @@ import {
   getLogoutLocalSummary,
   type LogoutLocalSummary,
 } from "../auth/logout-local-data";
+import { AppHeader } from "../components/app-header";
 
 export function HomePage() {
   const navigate = useNavigate();
   const session = authClient.useSession();
+  const [joinOpen, setJoinOpen] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [memberships, setMemberships] = useState<MembershipSummary[]>([]);
-  const [choirsWithOpenGuestAdmission, setChoirsWithOpenGuestAdmission] =
-    useState<ChoirSummary[]>([]);
-  const [openAdmissionDisplayName, setOpenAdmissionDisplayName] = useState("");
-  const [choirEnteringWithOpenAdmissionId, setChoirEnteringWithOpenAdmissionId] =
-    useState<string | null>(null);
-  const [openAdmissionMessage, setOpenAdmissionMessage] = useState<string | null>(
-    null,
-  );
   const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [joinMessage, setJoinMessage] = useState<string | null>(null);
+  const [pageMessage, setPageMessage] = useState<string | null>(null);
   const [logoutSummary, setLogoutSummary] =
     useState<LogoutLocalSummary | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
   const userId = session.data?.user.id;
+  const visibleMemberships = userId ? memberships : [];
 
   useEffect(() => {
-    let active = true;
-    void loadChoirsWithOpenGuestAdmission().then((nextChoirs) => {
-      if (active) {
-        setChoirsWithOpenGuestAdmission(nextChoirs);
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!userId) {
-      return;
-    }
+    if (!userId) return;
 
     let active = true;
     void loadMemberships().then((nextMemberships) => {
-      if (active) {
-        setMemberships(nextMemberships);
-      }
+      if (active) setMemberships(nextMemberships);
     });
     return () => {
       active = false;
     };
   }, [userId]);
 
-  const admitToChoir = async (
-    admission: GuestAdmissionRequest,
-    nextDisplayName: string,
-  ) => {
-    const response = await fetch(
-      session.data?.user ? "/api/choirs/join" : "/api/guest/session",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(
-          session.data?.user
-            ? { ...admission, displayName: nextDisplayName }
-            : admission,
-        ),
-      },
-    );
-    if (!response.ok) {
-      return { ok: false as const, status: response.status };
-    }
-
-    const payload = (await response.json()) as {
-      choir?: { id: string };
-      membership?: { choir: { id: string } };
-    };
-    const choirId = payload.membership?.choir.id ?? payload.choir?.id;
-    if (!choirId) {
-      return { ok: false as const, status: 500 };
-    }
-    await navigate(`/choirs/${choirId}`);
-    return { ok: true as const, status: response.status };
-  };
-
   const enterInviteChoir = async (event: FormEvent) => {
     event.preventDefault();
     setSubmitting(true);
-    setMessage(null);
+    setJoinMessage(null);
 
     try {
-      const result = await admitToChoir(
-        { admission: "invite", joinCode },
-        displayName,
+      const response = await fetch(
+        session.data?.user ? "/api/choirs/join" : "/api/guest/session",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(
+            session.data?.user
+              ? { admission: "invite", joinCode, displayName }
+              : { admission: "invite", joinCode },
+          ),
+        },
       );
-      if (result.ok) {
+
+      if (!response.ok) {
+        setJoinMessage(
+          response.status === 429
+            ? "尝试次数过多，请稍后再试。"
+            : response.status === 403 && session.data?.user
+              ? "该成员关系需要团管理员恢复。"
+              : "邀请码无效或已失效。",
+        );
         return;
       }
-      setMessage(
-        result.status === 429
-          ? "尝试次数过多，请稍后再试。"
-          : result.status === 403
-            ? "该成员关系需要团管理员恢复。"
-          : "邀请码无效或已失效。",
-      );
+
+      const payload = (await response.json()) as {
+        choir?: { id: string };
+        membership?: { choir: { id: string } };
+      };
+      const choirId = payload.membership?.choir.id ?? payload.choir?.id;
+      if (!choirId) {
+        setJoinMessage("暂时无法进入这个合唱团，请稍后再试。");
+        return;
+      }
+      setJoinOpen(false);
+      await navigate(`/choirs/${choirId}`);
     } catch {
-      setMessage("暂时无法进入这个合唱团，请稍后再试。");
+      setJoinMessage("暂时无法进入这个合唱团，请稍后再试。");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const enterChoirWithOpenGuestAdmission = async (choir: ChoirSummary) => {
-    setChoirEnteringWithOpenAdmissionId(choir.id);
-    setOpenAdmissionMessage(null);
+  const finishLogout = async () => {
+    if (!navigator.onLine) {
+      setPageMessage("请联网后退出，以确保服务端会话同时失效。");
+      setLogoutSummary(null);
+      return;
+    }
 
+    setLoggingOut(true);
     try {
-      const result = await admitToChoir(
-        { admission: "open", choirId: choir.id },
-        openAdmissionDisplayName,
-      );
-      if (!result.ok) {
-        setOpenAdmissionMessage("暂时无法进入这个合唱团，请稍后再试。");
-      }
+      const result = await authClient.signOut();
+      if (result.error) throw new Error("sign_out_failed");
+      await clearPrivateLocalDataAfterLogout();
+      setMemberships([]);
+      setLogoutSummary(null);
     } catch {
-      setOpenAdmissionMessage("暂时无法进入这个合唱团，请稍后再试。");
+      setPageMessage("退出未完成，本机数据没有清除。请重试。");
+      setLogoutSummary(null);
     } finally {
-      setChoirEnteringWithOpenAdmissionId(null);
+      setLoggingOut(false);
     }
   };
 
   return (
-    <main className="page-shell">
-      <section className="hero" aria-labelledby="page-title">
-        <p className="eyebrow">Same Page · 合唱乐谱</p>
-        <h1 id="page-title">让每次排练，都在同一页</h1>
-        <p className="hero__copy">
-          无需注册即可只读体验采用开放准入的合唱团；采用邀请准入的合唱团使用八位团邀请码进入。
-        </p>
-
-        {session.data?.user ? (
-          <div className="session-strip">
-            <span>已登录：{session.data.user.email}</span>
-            <Button
-              className="text-button"
-              onPress={() =>
-                void getLogoutLocalSummary().then(setLogoutSummary)
-              }
-            >
-              退出登录
-            </Button>
-          </div>
-        ) : (
-          <Link className="primary-link" to="/login">
-            邮箱登录或注册
-          </Link>
-        )}
-      </section>
-
-      {logoutSummary ? (
-        <aside
-          className="logout-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="logout-title"
-        >
-          <h2 id="logout-title">确认退出登录</h2>
-          {logoutSummary.pendingOperations > 0 || logoutSummary.conflicts > 0 ? (
-            <p>
-              本机还有 {logoutSummary.pendingOperations} 项待同步操作和 {logoutSummary.conflicts}
-              项本地冲突。继续会永久丢弃这些内容。
-            </p>
-          ) : (
-            <p>退出后会清除本机个人层、编辑权限和账号偏好；已下载的共享内容可以保留。</p>
-          )}
-          <div className="update-prompt__actions">
-            <Button isDisabled={loggingOut} onPress={() => setLogoutSummary(null)}>
-              返回处理
-            </Button>
-            <Button
-              isDisabled={loggingOut}
-              onPress={() => {
-                if (!navigator.onLine) {
-                  setMessage("请联网后退出，以确保服务端会话同时失效。");
-                  setLogoutSummary(null);
-                  return;
-                }
-                setLoggingOut(true);
-                void authClient
-                  .signOut()
-                  .then((result) => {
-                    if (result.error) throw new Error("sign_out_failed");
-                    return clearPrivateLocalDataAfterLogout();
-                  })
-                  .then(() => {
-                    setMemberships([]);
-                    setLogoutSummary(null);
-                  })
-                  .catch(() => {
-                    setMessage("退出未完成，本机数据没有清除。请重试。");
-                  })
-                  .finally(() => setLoggingOut(false));
-              }}
-            >
-              {logoutSummary.pendingOperations > 0 || logoutSummary.conflicts > 0
-                ? "丢弃并退出"
-                : "退出并清除"}
-            </Button>
-          </div>
-        </aside>
-      ) : null}
-
-      {memberships.length > 0 ? (
-        <section className="choir-section" aria-labelledby="my-choirs-title">
-          <h2 id="my-choirs-title">我的合唱团</h2>
-          <div className="choir-grid">
-            {memberships.map((membership) => (
-              <Link
-                className="choir-card"
-                key={membership.id}
-                to={`/choirs/${membership.choir.id}`}
-              >
-                <strong>{membership.choir.name}</strong>
-                <span>
-                  {membership.displayName} ·
-                  {membership.role === "admin" ? " 团管理员" : " 成员"}
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {choirsWithOpenGuestAdmission.length > 0 ? (
-        <section
-          className="choir-section"
-          aria-labelledby="open-guest-admission-title"
-        >
-          <h2 id="open-guest-admission-title">直接体验</h2>
-          <p className="section-copy">
-            无需团邀请码；进入后仍然只能阅读已发布乐谱与共享批注。
-          </p>
-          {session.data?.user ? (
-            <TextField
-              className="open-admission-display-name"
-              isRequired
-              value={openAdmissionDisplayName}
-              onChange={setOpenAdmissionDisplayName}
-              maxLength={40}
-            >
-              <Label>加入采用开放准入的合唱团时使用的团内显示名</Label>
-              <Input autoComplete="nickname" placeholder="例如：小花" />
-            </TextField>
-          ) : null}
-          <div className="choir-grid">
-            {choirsWithOpenGuestAdmission.map((choir) => (
+    <div className="marketing-page">
+      <AppHeader
+        actions={
+          session.data?.user ? (
+            <>
+              <span className="account-email">{session.data.user.email}</span>
               <Button
-                className="choir-card choir-card--button"
-                isDisabled={
-                  session.isPending ||
-                  choirEnteringWithOpenAdmissionId !== null ||
-                  (Boolean(session.data?.user) &&
-                    !openAdmissionDisplayName.trim())
-                }
-                key={choir.id}
-                onPress={() => void enterChoirWithOpenGuestAdmission(choir)}
+                className="header-action"
+                onPress={() => void getLogoutLocalSummary().then(setLogoutSummary)}
               >
-                <strong>{choir.name}</strong>
-                <span>
-                  {choirEnteringWithOpenAdmissionId === choir.id
-                    ? "正在进入…"
-                    : "直接进入"}
-                </span>
+                退出登录
               </Button>
-            ))}
-          </div>
-          {openAdmissionMessage ? (
-            <p className="form-message" role="alert">
-              {openAdmissionMessage}
-            </p>
-          ) : null}
-        </section>
-      ) : null}
+            </>
+          ) : (
+            <Link className="header-action" to="/login">
+              登录 / 注册
+            </Link>
+          )
+        }
+      />
 
-      <section className="join-panel" aria-labelledby="join-title">
-        <h2 id="join-title">
-          {session.data?.user ? "加入另一个合唱团" : "使用邀请码访问"}
-        </h2>
-        <Form
-          className="entry-form entry-form--inline"
-          onSubmit={enterInviteChoir}
-        >
-          <TextField
-            isRequired
-            value={joinCode}
-            onChange={(value) => setJoinCode(value.toUpperCase())}
-            minLength={8}
-            maxLength={8}
-          >
-            <Label>八位邀请码</Label>
-            <Input
-              autoCapitalize="characters"
-              autoComplete="off"
-              placeholder="ABCDEFGH"
-              pattern="[A-HJ-NP-Z2-9]{8}"
-            />
-          </TextField>
-          {session.data?.user ? (
-            <TextField
-              isRequired
-              value={displayName}
-              onChange={setDisplayName}
-              maxLength={40}
-            >
-              <Label>团内显示名</Label>
-              <Input autoComplete="nickname" placeholder="例如：小花" />
-            </TextField>
-          ) : null}
-          <Button type="submit" isDisabled={submitting || session.isPending}>
-            {submitting
-              ? "正在验证…"
-              : session.data?.user
-                ? "加入"
-                : "访客进入"}
-          </Button>
-        </Form>
-        {message ? (
-          <p className="form-message" role="alert">
-            {message}
+      <main className="marketing-hero" aria-labelledby="page-title">
+        <p className="hero-mark">Same Page</p>
+        <h1 id="page-title">Every voice, on the same page.</h1>
+        <p className="hero-zh">同页共谱，众声一心。</p>
+        <p className="hero-description">为合唱排练而设计的共享乐谱与批注空间。</p>
+        <Button className="primary-button hero-cta" onPress={() => setJoinOpen(true)}>
+          进入合唱团
+        </Button>
+        {pageMessage ? (
+          <p className="form-message page-message" role="alert">
+            {pageMessage}
           </p>
         ) : null}
-      </section>
-    </main>
+      </main>
+
+      <ModalOverlay
+        className="modal-overlay"
+        isOpen={joinOpen}
+        onOpenChange={setJoinOpen}
+        isDismissable
+      >
+        <Modal className="app-modal">
+          <Dialog className="app-dialog">
+            {({ close }) => (
+              <>
+                <div className="dialog-heading">
+                  <div>
+                    <p className="dialog-eyebrow">Same Page</p>
+                    <Heading slot="title">进入合唱团</Heading>
+                  </div>
+                  <Button className="icon-button" aria-label="关闭" onPress={close}>
+                    ×
+                  </Button>
+                </div>
+
+                {visibleMemberships.length > 0 ? (
+                  <section className="membership-picker" aria-labelledby="membership-title">
+                    <h3 id="membership-title">我的合唱团</h3>
+                    <div className="membership-list">
+                      {visibleMemberships.map((membership) => (
+                        <Link
+                          className="membership-row"
+                          key={membership.id}
+                          to={`/choirs/${membership.choir.id}`}
+                          onClick={() => setJoinOpen(false)}
+                        >
+                          <span>
+                            <strong>{membership.choir.name}</strong>
+                            <small>{membership.displayName}</small>
+                          </span>
+                          <span aria-hidden="true">→</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+
+                <section className={visibleMemberships.length ? "invite-section" : undefined}>
+                  <h3>{session.data?.user ? "使用邀请码加入" : "使用邀请码访问"}</h3>
+                  <p className="dialog-copy">
+                    {session.data?.user
+                      ? "输入合唱团提供的八位邀请码。"
+                      : "无需注册，也可以访客身份只读访问。"}
+                  </p>
+                  <Form className="entry-form dialog-form" onSubmit={enterInviteChoir}>
+                    <TextField
+                      isRequired
+                      value={joinCode}
+                      onChange={(value) => setJoinCode(value.toUpperCase())}
+                      minLength={8}
+                      maxLength={8}
+                    >
+                      <Label>八位邀请码</Label>
+                      <Input
+                        autoFocus
+                        autoCapitalize="characters"
+                        autoComplete="off"
+                        placeholder="ABCDEFGH"
+                        pattern="[A-HJ-NP-Z2-9]{8}"
+                      />
+                    </TextField>
+                    {session.data?.user ? (
+                      <TextField
+                        isRequired
+                        value={displayName}
+                        onChange={setDisplayName}
+                        maxLength={40}
+                      >
+                        <Label>团内显示名</Label>
+                        <Input autoComplete="nickname" placeholder="例如：小花" />
+                      </TextField>
+                    ) : null}
+                    <Button type="submit" isDisabled={submitting || session.isPending}>
+                      {submitting ? "正在验证…" : "继续"}
+                    </Button>
+                  </Form>
+                  {joinMessage ? (
+                    <p className="form-message" role="alert">
+                      {joinMessage}
+                    </p>
+                  ) : null}
+                </section>
+              </>
+            )}
+          </Dialog>
+        </Modal>
+      </ModalOverlay>
+
+      <ModalOverlay
+        className="modal-overlay"
+        isOpen={Boolean(logoutSummary)}
+        onOpenChange={(open) => {
+          if (!open) setLogoutSummary(null);
+        }}
+        isDismissable={!loggingOut}
+      >
+        <Modal className="app-modal app-modal--compact">
+          <Dialog className="app-dialog">
+            <Heading slot="title">确认退出登录</Heading>
+            {logoutSummary?.pendingOperations || logoutSummary?.conflicts ? (
+              <p className="dialog-copy">
+                本机还有 {logoutSummary?.pendingOperations ?? 0} 项待同步操作和{" "}
+                {logoutSummary?.conflicts ?? 0} 项本地冲突。继续会永久丢弃这些内容。
+              </p>
+            ) : (
+              <p className="dialog-copy">
+                退出后会清除本机个人层、编辑权限和用户偏好；已下载的共享内容可以保留。
+              </p>
+            )}
+            <div className="dialog-actions">
+              <Button className="secondary-button" onPress={() => setLogoutSummary(null)}>
+                返回处理
+              </Button>
+              <Button
+                className="primary-button"
+                isDisabled={loggingOut}
+                onPress={() => void finishLogout()}
+              >
+                {logoutSummary?.pendingOperations || logoutSummary?.conflicts
+                  ? "丢弃并退出"
+                  : "退出并清除"}
+              </Button>
+            </div>
+          </Dialog>
+        </Modal>
+      </ModalOverlay>
+    </div>
   );
 }
 
 async function loadMemberships(): Promise<MembershipSummary[]> {
-  const response = await fetch("/api/choirs");
-  if (!response.ok) {
-    return [];
-  }
-  return choirMembershipsResponseSchema.parse(await response.json()).memberships;
-}
-
-async function loadChoirsWithOpenGuestAdmission(): Promise<ChoirSummary[]> {
   try {
-    const response = await fetch("/api/guest/choirs");
-    if (!response.ok) {
-      return [];
-    }
-    return choirsWithOpenGuestAdmissionResponseSchema.parse(
-      await response.json(),
-    ).choirs;
+    const response = await fetch("/api/choirs");
+    if (!response.ok) return [];
+    return choirMembershipsResponseSchema.parse(await response.json()).memberships;
   } catch {
     return [];
   }

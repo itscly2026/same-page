@@ -80,15 +80,20 @@ choirRoutes.post("/guest/session", async (context) => {
   });
 });
 
-choirRoutes.get("/guest/choirs", async (context) => {
+choirRoutes.get("/guest/choirs/:choirId", async (context) => {
   const database = createDatabase(context.env.DB);
-  const rows = await database.query.choirs.findMany({
-    where: eq(choirs.guestAdmissionMode, "open"),
+  const choir = await database.query.choirs.findFirst({
+    where: and(
+      eq(choirs.id, context.req.param("choirId")),
+      eq(choirs.guestAdmissionMode, "open"),
+    ),
     columns: { id: true, name: true, guestAdmissionMode: true },
-    orderBy: (table, { asc }) => [asc(table.createdAt), asc(table.name)],
   });
 
-  return context.json({ choirs: rows });
+  if (!choir) {
+    return context.json({ error: "not_found" }, 404);
+  }
+  return context.json({ choir });
 });
 
 choirRoutes.get("/guest/session", async (context) => {

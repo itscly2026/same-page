@@ -53,13 +53,59 @@ describe("AuthPage", () => {
     fireEvent.change(screen.getByLabelText("密码"), {
       target: { value: "correct horse battery staple" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    const loginButton = screen.getByRole("button", { name: "登录" });
+    await vi.waitFor(() => expect(loginButton).toBeEnabled());
+    fireEvent.click(loginButton);
 
     await vi.waitFor(() => {
       expect(authClient.signIn.email).toHaveBeenCalledWith({
         email: "singer@example.test",
         password: "correct horse battery staple",
       });
+    });
+  });
+
+  it("waits for guest-session discovery before allowing password sign-in", async () => {
+    let resolveGuestSession!: (response: Response) => void;
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input === "/api/guest/session") {
+        return new Promise<Response>((resolve) => {
+          resolveGuestSession = resolve;
+        });
+      }
+      return Promise.resolve(Response.json({ membership: { id: "member-1" } }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderAuthPage();
+
+    fireEvent.change(screen.getByLabelText("邮箱"), {
+      target: { value: "singer@example.test" },
+    });
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "correct horse battery staple" },
+    });
+    const loginButton = screen.getByRole("button", { name: "登录" });
+    expect(loginButton).toBeDisabled();
+    fireEvent.click(loginButton);
+    expect(authClient.signIn.email).not.toHaveBeenCalled();
+
+    resolveGuestSession(
+      Response.json({ choir: { id: "choir-1", name: "小红花合唱团" } }),
+    );
+    await screen.findByText("登录后，你将以成员身份加入“小红花合唱团”。");
+    fireEvent.change(screen.getByLabelText("团内显示名"), {
+      target: { value: "小花" },
+    });
+    fireEvent.click(loginButton);
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/choirs/join-current-guest",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ displayName: "小花" }),
+        }),
+      );
     });
   });
 
@@ -146,9 +192,11 @@ describe("AuthPage", () => {
     fireEvent.change(screen.getByLabelText("邮箱"), {
       target: { value: "Admin@Example.Test" },
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: "发送密码重置验证码" }),
-    );
+    const resetRequestButton = screen.getByRole("button", {
+      name: "发送密码重置验证码",
+    });
+    await vi.waitFor(() => expect(resetRequestButton).toBeEnabled());
+    fireEvent.click(resetRequestButton);
 
     expect(await screen.findByLabelText("六位验证码")).toBeInTheDocument();
     expect(authClient.emailOtp.requestPasswordReset).toHaveBeenCalledWith({

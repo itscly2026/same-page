@@ -44,10 +44,6 @@ export const choirSummarySchema = z.object({
   guestAdmissionMode: guestAdmissionModeSchema,
 });
 
-export const choirsWithOpenGuestAdmissionResponseSchema = z.object({
-  choirs: z.array(choirSummarySchema),
-});
-
 export const membershipSummarySchema = z.object({
   id: z.string(),
   displayName: z.string(),

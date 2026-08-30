@@ -354,18 +354,20 @@ describe("authentication and choir boundaries", () => {
       guestSessionVersion: 1,
       joinCodeHash: null,
     });
-    const choirsWithOpenGuestAdmissionResponse = await callWorker(
-      "/api/guest/choirs",
+    const openChoirDetailResponse = await callWorker(
+      `/api/guest/choirs/${choirWithOpenGuestAdmission.choirId}`,
     );
-    expect(await choirsWithOpenGuestAdmissionResponse.json()).toEqual({
-      choirs: [
-        {
-          id: choirWithOpenGuestAdmission.choirId,
-          name: "公开合唱团",
-          guestAdmissionMode: "open",
-        },
-      ],
+    expect(await openChoirDetailResponse.json()).toEqual({
+      choir: {
+        id: choirWithOpenGuestAdmission.choirId,
+        name: "公开合唱团",
+        guestAdmissionMode: "open",
+      },
     });
+    const inviteChoirDetailResponse = await callWorker(
+      `/api/guest/choirs/${provisioned.choirId}`,
+    );
+    expect(inviteChoirDetailResponse.status).toBe(404);
 
     const guestWithOpenAdmissionResponse = await callWorker(
       "/api/guest/session",
