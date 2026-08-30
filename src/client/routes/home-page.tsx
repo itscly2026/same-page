@@ -202,7 +202,7 @@ export function HomePage() {
                 ) : null}
 
                 <section className={visibleMemberships.length ? "invite-section" : undefined}>
-                  <h3>{visibleMemberships.length ? "使用邀请码加入" : "使用邀请码访问"}</h3>
+                  <h3>{session.data?.user ? "使用邀请码加入" : "使用邀请码访问"}</h3>
                   <p className="dialog-copy">
                     {session.data?.user
                       ? "输入合唱团提供的八位邀请码。"
@@ -270,7 +270,7 @@ export function HomePage() {
               </p>
             ) : (
               <p className="dialog-copy">
-                退出后会清除本机个人层、编辑权限和账号偏好；已下载的共享内容可以保留。
+                退出后会清除本机个人层、编辑权限和用户偏好；已下载的共享内容可以保留。
               </p>
             )}
             <div className="dialog-actions">

@@ -32,6 +32,7 @@ export default function AuthPage() {
     id: string;
     name: string;
   } | null>(null);
+  const [guestSessionPending, setGuestSessionPending] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -47,6 +48,8 @@ export default function AuthPage() {
         if (active) setGuestChoir(payload.choir);
       } catch {
         // Authentication remains available when the optional guest lookup fails.
+      } finally {
+        if (active) setGuestSessionPending(false);
       }
     })();
     return () => {
@@ -79,6 +82,7 @@ export default function AuthPage() {
 
   const signIn = async (event: FormEvent) => {
     event.preventDefault();
+    if (guestSessionPending) return;
     setSubmitting(true);
     setMessage(null);
     const { error } = await authClient.signIn.email({
@@ -96,6 +100,7 @@ export default function AuthPage() {
 
   const signUp = async (event: FormEvent) => {
     event.preventDefault();
+    if (guestSessionPending) return;
     if (!validPasswordConfirmation(password, passwordConfirmation)) {
       setMessage(passwordValidationMessage(password, passwordConfirmation));
       return;
@@ -122,6 +127,7 @@ export default function AuthPage() {
 
   const verifyRegistration = async (event: FormEvent) => {
     event.preventDefault();
+    if (guestSessionPending) return;
     setSubmitting(true);
     setMessage(null);
     const registration = await postJson("/api/auth/registration/complete", {
@@ -154,6 +160,7 @@ export default function AuthPage() {
 
   const requestPasswordReset = async (event: FormEvent) => {
     event.preventDefault();
+    if (guestSessionPending) return;
     setSubmitting(true);
     setMessage(null);
     const { error } = await authClient.emailOtp.requestPasswordReset({
@@ -170,6 +177,7 @@ export default function AuthPage() {
 
   const resetPassword = async (event: FormEvent) => {
     event.preventDefault();
+    if (guestSessionPending) return;
     if (!validPasswordConfirmation(password, passwordConfirmation)) {
       setMessage(passwordValidationMessage(password, passwordConfirmation));
       return;
@@ -228,7 +236,9 @@ export default function AuthPage() {
       case "sign-in":
         return {
           title: "密码登录",
-          description: guestChoir
+          description: guestSessionPending
+            ? "正在确认访问来源…"
+            : guestChoir
             ? `登录后，你将以成员身份加入“${guestChoir.name}”。`
             : "使用邮箱和密码登录；日常登录不发送验证码。",
           form: (
@@ -241,7 +251,7 @@ export default function AuthPage() {
                 autoComplete="current-password"
               />
               {guestDisplayNameField}
-              <Button type="submit" isDisabled={submitting}>
+              <Button type="submit" isDisabled={submitting || guestSessionPending}>
                 {submitting ? "正在登录…" : "登录"}
               </Button>
               <Button
@@ -283,7 +293,7 @@ export default function AuthPage() {
                 autoComplete="new-password"
               />
               {guestDisplayNameField}
-              <Button type="submit" isDisabled={submitting}>
+              <Button type="submit" isDisabled={submitting || guestSessionPending}>
                 {submitting ? "正在注册…" : "注册并发送验证码"}
               </Button>
               <Button
@@ -305,7 +315,7 @@ export default function AuthPage() {
           form: (
             <Form className="entry-form" onSubmit={verifyRegistration}>
               <OtpField value={otp} onChange={setOtp} />
-              <Button type="submit" isDisabled={submitting}>
+              <Button type="submit" isDisabled={submitting || guestSessionPending}>
                 {submitting ? "正在验证…" : "完成注册"}
               </Button>
               <Button
@@ -336,7 +346,7 @@ export default function AuthPage() {
             <Form className="entry-form" onSubmit={requestPasswordReset}>
               <EmailField value={email} onChange={setEmail} />
               {guestDisplayNameField}
-              <Button type="submit" isDisabled={submitting}>
+              <Button type="submit" isDisabled={submitting || guestSessionPending}>
                 {submitting ? "正在发送…" : "发送密码重置验证码"}
               </Button>
               <Button
@@ -370,7 +380,7 @@ export default function AuthPage() {
                 onChange={setPasswordConfirmation}
                 autoComplete="new-password"
               />
-              <Button type="submit" isDisabled={submitting}>
+              <Button type="submit" isDisabled={submitting || guestSessionPending}>
                 {submitting ? "正在重设…" : "重设密码并登录"}
               </Button>
               <Button

@@ -20,30 +20,30 @@ export default function ChoirPage() {
   const { choirId = "" } = useParams();
   const session = authClient.useSession();
   const userId = session.data?.user.id;
-  const [choir, setChoir] = useState<ChoirSummary | null>(null);
-  const [result, setResult] = useState<ScoreListResponse | null>(null);
-  const [openJoinRequired, setOpenJoinRequired] = useState(false);
+  const [access, setAccess] = useState<ChoirAccessState>({ kind: "loading" });
   const [openAdmissionDisplayName, setOpenAdmissionDisplayName] = useState("");
   const [search, setSearch] = useState("");
-  const [denied, setDenied] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [rotatedJoinCode, setRotatedJoinCode] = useState<string | null>(null);
   const [replacementFiles, setReplacementFiles] = useState<
     Record<string, File | undefined>
   >({});
+  const currentChoir =
+    access.kind === "opened" || access.kind === "join-required"
+      ? access.choir
+      : null;
 
   const refresh = useCallback(
     async (query = search) => {
       const next = await fetchScoreList(choirId, query);
       if (!next) {
-        setDenied(true);
+        setAccess({ kind: "denied" });
         return;
       }
-      setResult(next);
-      setDenied(false);
+      setAccess({ kind: "opened", choir: currentChoir, result: next });
     },
-    [choirId, search],
+    [choirId, currentChoir, search],
   );
 
   useEffect(() => {
@@ -51,10 +51,7 @@ export default function ChoirPage() {
     let active = true;
     void openChoir(choirId, Boolean(userId)).then((opened) => {
       if (!active) return;
-      setChoir(opened.choir);
-      setResult(opened.result);
-      setOpenJoinRequired(opened.openJoinRequired);
-      setDenied(opened.denied);
+      setAccess(opened);
     });
     return () => {
       active = false;
@@ -87,10 +84,11 @@ export default function ChoirPage() {
         loadChoirSummary(choirId),
         fetchScoreList(choirId, ""),
       ]);
-      setChoir(nextChoir ?? choir);
-      setResult(nextResult);
-      setOpenJoinRequired(false);
-      setDenied(!nextResult);
+      setAccess(
+        nextResult
+          ? { kind: "opened", choir: nextChoir ?? currentChoir, result: nextResult }
+          : { kind: "denied" },
+      );
     } catch {
       setMessage("暂时无法加入这个合唱团，请稍后再试。");
     } finally {
@@ -230,15 +228,15 @@ export default function ChoirPage() {
     </>
   );
 
-  if (openJoinRequired && choir) {
+  if (access.kind === "join-required") {
     return (
       <div className="app-page">
         <AppHeader actions={headerActions} />
         <main className="page-shell compact-page access-page">
-          <p className="eyebrow">开放访问</p>
-          <h1>{choir.name}</h1>
+          <p className="eyebrow">开放准入</p>
+          <h1>{access.choir.name}</h1>
           <p className="hero__copy">
-            这个合唱团允许直接访问。填写团内显示名后即可加入。
+            这个合唱团采用开放准入。填写团内显示名后即可加入。
           </p>
           <Form className="entry-form" onSubmit={joinOpenChoir}>
             <TextField
@@ -264,7 +262,7 @@ export default function ChoirPage() {
     );
   }
 
-  if (denied) {
+  if (access.kind === "denied") {
     return (
       <div className="app-page">
         <AppHeader actions={headerActions} />
@@ -282,7 +280,7 @@ export default function ChoirPage() {
     );
   }
 
-  if (!result) {
+  if (access.kind === "loading") {
     return (
       <div className="app-page">
         <AppHeader actions={headerActions} />
@@ -290,6 +288,8 @@ export default function ChoirPage() {
       </div>
     );
   }
+
+  const { choir, result } = access;
 
   return (
     <div className="app-page">
@@ -523,30 +523,23 @@ export default function ChoirPage() {
 async function openChoir(
   choirId: string,
   signedIn: boolean,
-): Promise<{
-  choir: ChoirSummary | null;
-  result: ScoreListResponse | null;
-  openJoinRequired: boolean;
-  denied: boolean;
-}> {
+): Promise<Exclude<ChoirAccessState, { kind: "loading" }>> {
   const [choir, result] = await Promise.all([
     loadChoirSummary(choirId),
     fetchScoreList(choirId, ""),
   ]);
   if (result) {
-    return { choir, result, openJoinRequired: false, denied: false };
+    return { kind: "opened", choir, result };
   }
 
   const openChoirSummary = await loadOpenAdmissionChoir(choirId);
   if (!openChoirSummary) {
-    return { choir: null, result: null, openJoinRequired: false, denied: true };
+    return { kind: "denied" };
   }
   if (signedIn) {
     return {
+      kind: "join-required",
       choir: openChoirSummary,
-      result: null,
-      openJoinRequired: true,
-      denied: false,
     };
   }
 
@@ -557,19 +550,22 @@ async function openChoir(
       body: JSON.stringify({ admission: "open", choirId }),
     });
     if (!admission.ok) {
-      return { choir: null, result: null, openJoinRequired: false, denied: true };
+      return { kind: "denied" };
     }
     const admittedResult = await fetchScoreList(choirId, "");
-    return {
-      choir: openChoirSummary,
-      result: admittedResult,
-      openJoinRequired: false,
-      denied: !admittedResult,
-    };
+    return admittedResult
+      ? { kind: "opened", choir: openChoirSummary, result: admittedResult }
+      : { kind: "denied" };
   } catch {
-    return { choir: null, result: null, openJoinRequired: false, denied: true };
+    return { kind: "denied" };
   }
 }
+
+type ChoirAccessState =
+  | { kind: "loading" }
+  | { kind: "opened"; choir: ChoirSummary | null; result: ScoreListResponse }
+  | { kind: "join-required"; choir: ChoirSummary }
+  | { kind: "denied" };
 
 async function loadOpenAdmissionChoir(
   choirId: string,

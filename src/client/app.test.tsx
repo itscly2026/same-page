@@ -175,6 +175,65 @@ describe("AppRoutes", () => {
     expect(screen.getByLabelText("团内显示名")).toBeInTheDocument();
   });
 
+  it("shows a signed-in user with no memberships how to join one", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "user-1", email: "member@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(Response.json({ memberships: [] })),
+    );
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "进入合唱团" }));
+    expect(await screen.findByRole("heading", { name: "使用邀请码加入" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "我的合唱团" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("团内显示名")).toBeInTheDocument();
+  });
+
+  it("shows a signed-in user's single membership without skipping the entry dialog", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "user-1", email: "member@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({
+          memberships: [
+            {
+              id: "membership-1",
+              displayName: "小花",
+              role: "member",
+              choir: {
+                id: "choir-1",
+                name: "小红花合唱团",
+                guestAdmissionMode: "invite",
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "进入合唱团" }));
+    expect(await screen.findByRole("link", { name: /小红花合唱团.*小花/ })).toHaveAttribute(
+      "href",
+      "/choirs/choir-1",
+    );
+    expect(screen.getByRole("heading", { name: "使用邀请码加入" })).toBeInTheDocument();
+  });
+
   it("enters an open-admission choir only through its dedicated link", async () => {
     let admitted = false;
     const fetchMock = vi.fn().mockImplementation(
