@@ -3,20 +3,32 @@
   "name": "same-page",
   "main": "worker/index.ts",
   "compatibility_date": "2026-08-25",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "samepage.clyapps.com",
+      "custom_domain": true
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "same-page",
-      "database_id": "local",
+      "database_name": "same-page-production",
+      "database_id": "15358b1c-334f-4e60-9ea1-e6f9ec2e1507",
       "migrations_dir": "migrations"
     }
   ],
   "r2_buckets": [
     {
       "binding": "SCORES_BUCKET",
-      "bucket_name": "same-page-scores"
+      "bucket_name": "same-page-production-scores"
     }
   ],
+  "vars": {
+    "BETTER_AUTH_URL": "https://samepage.clyapps.com",
+    "AUTH_EMAIL_FROM": "Same Page <login@clyapps.com>"
+  },
   "assets": {
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]

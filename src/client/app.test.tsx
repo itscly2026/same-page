@@ -3,22 +3,31 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppRoutes } from "./app";
+import { authClient } from "./auth/auth-client";
+import { localDatabase } from "./platform/local-database";
 
 vi.mock("./auth/auth-client", () => ({
   authClient: {
-    useSession: () => ({ data: null, isPending: false }),
+    useSession: vi.fn(),
     signOut: vi.fn(),
   },
 }));
 
 describe("AppRoutes", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await localDatabase.open();
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: null,
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
           Response.json(
-            input.includes("/scores")
+            input === "/api/choirs"
+              ? { memberships: [] }
+              : input.includes("/scores")
               ? {
                   scores: [],
                   storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
@@ -67,5 +76,82 @@ describe("AppRoutes", () => {
     expect(
       await screen.findByRole("heading", { name: "小红花合唱团" }),
     ).toBeInTheDocument();
+  });
+
+  it("requires explicit confirmation before logout discards pending work", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "user-1", email: "member@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    await localDatabase.annotationOutbox.put({
+      opId: "pending-op",
+      scopeKey: "choir-1:score-1",
+      choirId: "choir-1",
+      scoreId: "score-1",
+      annotationId: "annotation-1",
+      layerId: "layer-1",
+      baseVersion: 0,
+      type: "upsert",
+      payload: {
+        kind: "text",
+        pageNumber: 1,
+        x: 0.1,
+        y: 0.1,
+        text: "待同步",
+      },
+      attemptedAt: null,
+      createdAt: 1,
+    });
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+    expect(await screen.findByRole("dialog", { name: "确认退出登录" })).toHaveTextContent(
+      "本机还有 1 项待同步操作",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "返回处理" }));
+    expect(authClient.signOut).not.toHaveBeenCalled();
+    expect(await localDatabase.annotationOutbox.count()).toBe(1);
+  });
+
+  it("keeps local data when the server rejects logout", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "user-1", email: "member@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    vi.mocked(authClient.signOut).mockResolvedValueOnce({
+      data: null,
+      error: { status: 503, statusText: "Service Unavailable" },
+    } as Awaited<ReturnType<typeof authClient.signOut>>);
+    await localDatabase.annotationLayers.put({
+      key: "choir-1:score-1:personal-layer",
+      scopeKey: "choir-1:score-1",
+      id: "personal-layer",
+      kind: "personal",
+      name: "我的批注",
+      sortOrder: 10_000,
+      defaultColor: "#b4235a",
+      colorOverride: null,
+      visible: true,
+      canEdit: true,
+    });
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "退出并清除" }),
+    );
+
+    expect(
+      await screen.findByText("退出未完成，本机数据没有清除。请重试。"),
+    ).toBeInTheDocument();
+    expect(await localDatabase.annotationLayers.count()).toBe(1);
   });
 });

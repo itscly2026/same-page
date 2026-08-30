@@ -9,7 +9,10 @@ import {
 import { Button } from "react-aria-components";
 import { Link, useParams } from "react-router-dom";
 
-import type { AnnotationLayerSummary } from "../../shared/annotations";
+import {
+  annotationLayerListResponseSchema,
+  type AnnotationLayerSummary,
+} from "../../shared/annotations";
 import { scoreListResponseSchema, type ScoreSummary } from "../../shared/scores";
 import {
   AnnotationOverlay,
@@ -23,6 +26,11 @@ import {
   updateCachedLayer,
 } from "../annotations/local-annotations";
 import { syncAnnotations } from "../annotations/sync";
+import {
+  captureOfflineAnnotationSnapshot,
+  ensureOfflineAppShell,
+  restoreOfflineAnnotationSnapshot,
+} from "../annotations/offline-snapshot";
 import {
   beginAnnotationEditSession,
   endAnnotationEditSession,
@@ -117,6 +125,7 @@ export default function ReaderPage() {
       const local = await findActiveOfflineScore(choirId, scoreId).catch(
         () => undefined,
       );
+      if (local) await restoreOfflineAnnotationSnapshot(local).catch(() => undefined);
       if (active) setOffline(local ?? null);
 
       try {
@@ -151,11 +160,9 @@ export default function ReaderPage() {
           `/api/choirs/${choirId}/scores/${scoreId}/layers`,
         );
         if (!layerResponse.ok) throw new Error("layers unavailable");
-        const body = (await layerResponse.json()) as {
-          layers: AnnotationLayerSummary[];
-          permissions?: { canManageLayers: boolean };
-        };
-        if (!Array.isArray(body.layers)) throw new Error("invalid layers");
+        const body = annotationLayerListResponseSchema.parse(
+          await layerResponse.json(),
+        );
         const previousLayers = await localDatabase.annotationLayers
           .where("scopeKey")
           .equals(scopeKey)
@@ -170,7 +177,7 @@ export default function ReaderPage() {
                 previousById.get(layer.id)?.colorOverride ?? layer.colorOverride,
             }));
         await cacheAnnotationLayers(choirId, scoreId, layersToCache);
-        if (active) setCanManageLayers(body.permissions?.canManageLayers ?? false);
+        if (active) setCanManageLayers(body.permissions.canManageLayers);
         await syncAnnotations(choirId, scoreId, { pull: true });
         if (active) setSyncMessage("批注已同步");
       } catch {
@@ -258,6 +265,36 @@ export default function ReaderPage() {
       if (actualHash !== score.currentVersion.sha256) {
         throw new Error("Checksum mismatch");
       }
+      await ensureOfflineAppShell();
+      const layerResponse = await fetch(
+        `/api/choirs/${choirId}/scores/${scoreId}/layers`,
+      );
+      if (!layerResponse.ok) throw new Error("Layer download failed");
+      const layerBody = annotationLayerListResponseSchema.parse(
+        await layerResponse.json(),
+      );
+      const currentLayers = await localDatabase.annotationLayers
+        .where("scopeKey")
+        .equals(scopeKey)
+        .toArray();
+      const currentById = new Map(currentLayers.map((layer) => [layer.id, layer]));
+      await cacheAnnotationLayers(
+        choirId,
+        scoreId,
+        session.data?.user.id
+          ? layerBody.layers
+          : layerBody.layers.map((layer) => ({
+              ...layer,
+              visible: currentById.get(layer.id)?.visible ?? layer.visible,
+              colorOverride:
+                currentById.get(layer.id)?.colorOverride ?? layer.colorOverride,
+            })),
+      );
+      await syncAnnotations(choirId, scoreId, { pull: true });
+      const annotationSnapshot = await captureOfflineAnnotationSnapshot(
+        choirId,
+        scoreId,
+      );
       const record = {
         key: `${choirId}:${scoreId}:${score.currentVersion.id}`,
         choirId,
@@ -267,6 +304,7 @@ export default function ReaderPage() {
         sha256: score.currentVersion.sha256,
         pageCount: score.currentVersion.pageCount,
         blob: new Blob([data], { type: "application/pdf" }),
+        annotationSnapshot,
       };
       await activateVerifiedOfflineScore(record);
       const activeRecord = await findActiveOfflineScore(choirId, scoreId);

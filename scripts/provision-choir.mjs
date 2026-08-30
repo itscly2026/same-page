@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const DATABASE_NAME = process.env.SAME_PAGE_DATABASE_NAME || "same-page-production";
 
 export function generateJoinCode() {
   return Array.from(
@@ -48,7 +49,7 @@ export function provisionChoirFromCli(argv = process.argv.slice(2)) {
     runWrangler([
       "d1",
       "execute",
-      "same-page",
+      DATABASE_NAME,
       options.mode,
       "--file",
       sqlPath,
@@ -68,7 +69,7 @@ function queryAdminUser(email, mode) {
   const output = runWrangler([
     "d1",
     "execute",
-    "same-page",
+    DATABASE_NAME,
     mode,
     "--command",
     `SELECT id FROM user WHERE lower(email) = lower(${quote(email)}) LIMIT 1`,

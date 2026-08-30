@@ -178,7 +178,10 @@ npm run build        # 类型检查与生产构建
 npm run check        # 与 CI 相同的完整验证
 ```
 
-Reader 路由和 PDF.js 从首页 bundle 中拆出，进入 `/reader` 时才加载。PWA 只由 `vite-plugin-pwa` 生成并注册一个 Service Worker，更新通过页面提示由用户确认。部署命令已经保留，但正式 Cloudflare 环境、资源绑定与发布流程属于后续 Issue。
+Reader 路由和 PDF.js 从首页 bundle 中拆出，进入 `/reader` 时才加载。PWA 只由
+`vite-plugin-pwa` 生成并注册一个 Service Worker，更新通过页面提示由用户确认。
+生产资源、发布流程和实机门槛见
+[production release runbook](./docs/operations/production-release.md)。
 
 ### 本地身份与合唱团初始化
 

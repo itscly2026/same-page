@@ -96,3 +96,35 @@ export interface AnnotationObjectRecord {
   updatedByDisplayName: string;
   updatedAt: number;
 }
+
+export const annotationLayerSummarySchema = z.object({
+  id: z.uuid(),
+  kind: z.enum(["shared", "personal"]),
+  name: z.string(),
+  sortOrder: z.number().int(),
+  defaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  colorOverride: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
+  visible: z.boolean(),
+  canEdit: z.boolean(),
+});
+
+export const annotationObjectRecordSchema = z.object({
+  id: z.uuid(),
+  layerId: z.uuid(),
+  version: z.number().int().positive(),
+  deleted: z.boolean(),
+  payload: annotationPayloadSchema.nullable(),
+  createdByDisplayName: z.string(),
+  updatedByDisplayName: z.string(),
+  updatedAt: z.number().int().nonnegative(),
+});
+
+export const annotationPullResponseSchema = z.object({
+  cursor: z.number().int().nonnegative(),
+  objects: z.array(annotationObjectRecordSchema),
+});
+
+export const annotationLayerListResponseSchema = z.object({
+  layers: z.array(annotationLayerSummarySchema),
+  permissions: z.object({ canManageLayers: z.boolean() }),
+});
