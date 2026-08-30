@@ -511,6 +511,140 @@ h1 {
   background: #7c2d52;
 }
 
+.annotation-controls {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3.25rem;
+  border-bottom: 1px solid #4f494e;
+  padding: 0.45rem 1rem;
+  color: #d8d0d4;
+  background: #332e32;
+  font-size: 0.86rem;
+}
+
+.annotation-controls button,
+.annotation-controls select,
+.annotation-conflicts button {
+  min-height: 2.25rem;
+  border: 1px solid #6a6268;
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.65rem;
+  color: #eee;
+  background: #40393e;
+}
+
+.annotation-controls button[aria-pressed="true"] {
+  border-color: #f08ab2;
+  background: #7c2d52;
+}
+
+.annotation-controls > label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.annotation-controls details {
+  margin-left: auto;
+}
+
+.annotation-controls summary {
+  cursor: pointer;
+}
+
+.annotation-layer-list {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0.75rem;
+  display: grid;
+  gap: 0.65rem;
+  width: min(28rem, calc(100vw - 1.5rem));
+  max-height: 60dvh;
+  overflow: auto;
+  border: 1px solid #696067;
+  border-radius: 0.75rem;
+  padding: 0.8rem;
+  background: #2e292d;
+  box-shadow: 0 1rem 2rem rgb(0 0 0 / 35%);
+}
+
+.annotation-layer-list > div,
+.annotation-layer-create {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.annotation-layer-list label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.annotation-layer-create input[name="name"] {
+  min-width: 0;
+  min-height: 2.25rem;
+  border: 1px solid #6a6268;
+  border-radius: 0.45rem;
+  padding: 0.35rem 0.55rem;
+}
+
+.shared-layer-editor {
+  margin-left: 0 !important;
+}
+
+.shared-layer-editor form,
+.annotation-grants {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) auto auto;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+}
+
+.shared-layer-editor input {
+  min-width: 0;
+}
+
+.shared-layer-editor button {
+  grid-column: 1 / -1;
+}
+
+.annotation-grants {
+  grid-template-columns: 1fr;
+  width: 100%;
+}
+
+.annotation-conflicts {
+  position: fixed;
+  z-index: 8;
+  right: 1rem;
+  bottom: 1rem;
+  width: min(34rem, calc(100% - 2rem));
+  border: 1px solid #d08a65;
+  border-radius: 0.8rem;
+  padding: 0.85rem;
+  color: #3e261b;
+  background: #fff0df;
+  box-shadow: 0 1rem 2rem rgb(0 0 0 / 25%);
+}
+
+.annotation-conflicts > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.6rem;
+}
+
+.annotation-conflicts button {
+  color: #562b17;
+  background: #fff;
+}
+
 .page-number-control input {
   width: 3.5rem;
   min-height: 2.35rem;
@@ -578,7 +712,7 @@ h1 {
   display: grid;
   grid-template-columns: 3.5rem minmax(0, 1fr) 3.5rem;
   align-items: center;
-  height: calc(100dvh - 12rem);
+  height: calc(100dvh - 15.25rem);
   padding: 1rem;
 }
 
@@ -612,6 +746,85 @@ h1 {
   box-shadow: 0 0.8rem 2rem rgb(0 0 0 / 35%);
 }
 
+.annotated-pdf-page {
+  position: relative;
+  flex: none;
+}
+
+.annotation-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.annotation-overlay svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  touch-action: none;
+}
+
+.annotation-overlay[data-editing] svg {
+  pointer-events: auto;
+}
+
+.annotation-overlay polyline {
+  pointer-events: none;
+}
+
+.annotation-overlay polyline[data-erasable] {
+  pointer-events: stroke;
+  cursor: crosshair;
+}
+
+.annotation-text {
+  position: absolute;
+  max-width: 18rem;
+  border: 0;
+  padding: 0.12rem 0.25rem;
+  color: #a12652;
+  background: rgb(255 255 255 / 78%);
+  font-size: clamp(0.7rem, 1.5vw, 1rem);
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: left;
+  transform: translate(-0.15rem, -50%);
+  white-space: pre-wrap;
+}
+
+.annotation-text:disabled {
+  opacity: 1;
+}
+
+.annotation-overlay[data-editing] .annotation-text:not(:disabled) {
+  pointer-events: auto;
+  cursor: move;
+}
+
+.annotation-text-editor {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  pointer-events: auto;
+  transform: translateY(-50%);
+}
+
+.annotation-text-editor input {
+  min-width: 10rem;
+  border: 2px solid #7c2d52;
+  border-radius: 0.4rem 0 0 0.4rem;
+  padding: 0.35rem 0.45rem;
+}
+
+.annotation-text-editor button {
+  border: 0;
+  border-radius: 0 0.4rem 0.4rem 0;
+  color: #fff;
+  background: #7c2d52;
+}
+
 .pdf-page-canvas canvas {
   display: block;
   background: #fff;
@@ -626,7 +839,7 @@ h1 {
 }
 
 .continuous-reader {
-  height: calc(100dvh - 12rem);
+  height: calc(100dvh - 15.25rem);
   overflow: auto;
   overscroll-behavior: contain;
 }
@@ -683,6 +896,10 @@ h1 {
     justify-content: start;
   }
 
+  .annotation-controls {
+    overflow-x: auto;
+  }
+
   .thumbnail-strip {
     height: 6rem;
   }
@@ -698,7 +915,7 @@ h1 {
 
   .page-reader,
   .continuous-reader {
-    height: calc(100dvh - 17rem);
+    height: calc(100dvh - 20.25rem);
   }
 
   .page-reader {

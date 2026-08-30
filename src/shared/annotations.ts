@@ -1,0 +1,98 @@
+import { z } from "zod";
+
+export const normalizedCoordinateSchema = z.number().finite().min(0).max(1);
+
+const annotationBaseSchema = z.object({
+  pageNumber: z.number().int().positive().max(10_000),
+});
+
+export const textAnnotationPayloadSchema = annotationBaseSchema.extend({
+  kind: z.literal("text"),
+  x: normalizedCoordinateSchema,
+  y: normalizedCoordinateSchema,
+  text: z.string().trim().min(1).max(1_000),
+});
+
+export const inkPointSchema = z.object({
+  x: normalizedCoordinateSchema,
+  y: normalizedCoordinateSchema,
+  pressure: z.number().finite().min(0).max(1).optional(),
+});
+
+export const inkAnnotationPayloadSchema = annotationBaseSchema.extend({
+  kind: z.literal("ink"),
+  points: z.array(inkPointSchema).min(2).max(5_000),
+  strokeWidth: z.literal(0.003),
+});
+
+export const annotationPayloadSchema = z.discriminatedUnion("kind", [
+  textAnnotationPayloadSchema,
+  inkAnnotationPayloadSchema,
+]);
+
+export type AnnotationPayload = z.infer<typeof annotationPayloadSchema>;
+
+export const annotationOperationSchema = z
+  .object({
+    opId: z.uuid(),
+    annotationId: z.uuid(),
+    layerId: z.uuid(),
+    baseVersion: z.number().int().nonnegative(),
+    type: z.enum(["upsert", "delete"]),
+    payload: annotationPayloadSchema.nullable(),
+  })
+  .superRefine((operation, context) => {
+    if (
+      (operation.type === "upsert" && operation.payload === null) ||
+      (operation.type === "delete" && operation.payload !== null)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "payload must match the operation type",
+        path: ["payload"],
+      });
+    }
+  });
+
+export const annotationPushRequestSchema = z.object({
+  operations: z.array(annotationOperationSchema).min(1).max(100),
+});
+
+export const annotationLayerPreferenceSchema = z.object({
+  visible: z.boolean().optional(),
+  colorOverride: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .nullable()
+    .optional(),
+});
+
+export const sharedLayerCreateSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  defaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  sortOrder: z.number().int().min(0).max(10_000).default(0),
+});
+
+export const sharedLayerUpdateSchema = sharedLayerCreateSchema.partial();
+
+export interface AnnotationLayerSummary {
+  id: string;
+  kind: "shared" | "personal";
+  name: string;
+  sortOrder: number;
+  defaultColor: string;
+  colorOverride: string | null;
+  visible: boolean;
+  canEdit: boolean;
+}
+
+export interface AnnotationObjectRecord {
+  id: string;
+  layerId: string;
+  version: number;
+  deleted: boolean;
+  payload: AnnotationPayload | null;
+  createdByDisplayName: string;
+  updatedByDisplayName: string;
+  updatedAt: number;
+}

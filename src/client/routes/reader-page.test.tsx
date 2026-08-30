@@ -2,7 +2,10 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { activateVerifiedOfflineScore } from "../platform/local-database";
+import {
+  activateVerifiedOfflineScore,
+  localDatabase,
+} from "../platform/local-database";
 import ReaderPage from "./reader-page";
 
 vi.mock("@tanstack/react-virtual", () => ({
@@ -38,13 +41,32 @@ vi.mock("../reader/pdf-page", () => ({
   ),
 }));
 
-vi.mock("../platform/local-database", () => ({
-  findActiveOfflineScore: vi.fn().mockResolvedValue(null),
-  activateVerifiedOfflineScore: vi.fn(),
+vi.mock("../platform/local-database", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../platform/local-database")>();
+  return {
+    ...actual,
+    findActiveOfflineScore: vi.fn().mockResolvedValue(null),
+    activateVerifiedOfflineScore: vi.fn(),
+  };
+});
+
+vi.mock("../annotations/sync", () => ({
+  syncAnnotations: vi.fn().mockResolvedValue({ pushed: 0, pulled: 0 }),
 }));
 
+vi.mock("../annotations/local-annotations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../annotations/local-annotations")>();
+  return {
+    ...actual,
+    queueScoreDrafts: vi.fn().mockResolvedValue(0),
+  };
+});
+
 describe("ReaderPage", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await localDatabase.open();
+    await localDatabase.annotationLayers.clear();
+    await localDatabase.annotations.clear();
     const stored = new Map<string, string>();
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => stored.get(key) ?? null,
@@ -63,7 +85,9 @@ describe("ReaderPage", () => {
       "fetch",
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
-          input.includes("/versions/")
+          input.includes("/layers")
+            ? Response.json({ layers: [], permissions: { canManageLayers: false } })
+            : input.includes("/versions/")
             ? new Response(new Uint8Array([1, 2, 3]), {
                 headers: { "content-type": "application/pdf" },
               })
@@ -157,5 +181,90 @@ describe("ReaderPage", () => {
       await screen.findByText("离线下载未完成，现有离线版本没有切换。"),
     ).toBeInTheDocument();
     expect(activateVerifiedOfflineScore).not.toHaveBeenCalled();
+  });
+
+  it("keeps page input read-only until edit is explicit and defaults editing to text", async () => {
+    vi.mocked(fetch).mockImplementation((input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/layers")) {
+        return Promise.resolve(
+          Response.json({
+            layers: [
+              {
+                id: "11111111-1111-4111-8111-111111111111",
+                kind: "personal",
+                name: "我的批注",
+                sortOrder: 10000,
+                defaultColor: "#b4235a",
+                colorOverride: null,
+                visible: true,
+                canEdit: true,
+              },
+            ],
+            permissions: { canManageLayers: false },
+          }),
+        );
+      }
+      return Promise.resolve(
+        Response.json({
+          scores: [
+            {
+              id: "score-1",
+              choirId: "choir-1",
+              title: "练声曲",
+              composer: null,
+              arranger: null,
+              sortOrder: 0,
+              status: "published",
+              updatedAt: 1,
+              currentVersion: {
+                id: "version-1",
+                versionNumber: 1,
+                sizeBytes: 329,
+                sha256: "a".repeat(64),
+                etag: '"etag"',
+                pageCount: 3,
+                createdAt: 1,
+              },
+            },
+          ],
+          storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
+          permissions: { canManage: false },
+        }),
+      );
+    });
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("阅读模式")).toBeInTheDocument();
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    fireEvent.pointerDown(overlay, { clientX: 20, clientY: 20 });
+    expect(screen.queryByLabelText("批注文本")).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    expect(screen.getByText("编辑模式")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "文本" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const editingOverlay = screen.getByLabelText("第 1 页批注层");
+    vi.spyOn(editingOverlay, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 100,
+      bottom: 100,
+      width: 100,
+      height: 100,
+      toJSON: () => ({}),
+    });
+    fireEvent.pointerDown(editingOverlay, { clientX: 20, clientY: 30 });
+    expect(screen.getByLabelText("批注文本")).toBeInTheDocument();
   });
 });

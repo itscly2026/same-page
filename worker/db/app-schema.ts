@@ -200,3 +200,67 @@ export const scoreObjectDeletions = sqliteTable("score_object_deletions", {
     .notNull()
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
 });
+
+export const annotationLayers = sqliteTable(
+  "annotation_layers",
+  {
+    id: text("id").primaryKey(),
+    choirId: text("choir_id").notNull(),
+    scoreId: text("score_id").notNull(),
+    kind: text("kind", { enum: ["shared", "personal"] }).notNull(),
+    ownerUserId: text("owner_user_id"),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    defaultColor: text("default_color").notNull(),
+    createdByMembershipId: text("created_by_membership_id"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    index("annotation_layers_score_sort_idx").on(
+      table.scoreId,
+      table.kind,
+      table.sortOrder,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const annotationLayerPreferences = sqliteTable(
+  "annotation_layer_preferences",
+  {
+    userId: text("user_id").notNull(),
+    layerId: text("layer_id").notNull(),
+    visible: integer("visible", { mode: "boolean" }).notNull().default(true),
+    colorOverride: text("color_override"),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [uniqueIndex("annotation_layer_preferences_uidx").on(table.userId, table.layerId)],
+);
+
+export const annotationObjects = sqliteTable(
+  "annotation_objects",
+  {
+    id: text("id").primaryKey(),
+    choirId: text("choir_id").notNull(),
+    scoreId: text("score_id").notNull(),
+    layerId: text("layer_id").notNull(),
+    version: integer("version").notNull(),
+    deleted: integer("deleted", { mode: "boolean" }).notNull().default(false),
+    payloadJson: text("payload_json"),
+    createdByUserId: text("created_by_user_id"),
+    createdByDisplayName: text("created_by_display_name").notNull(),
+    updatedByUserId: text("updated_by_user_id"),
+    updatedByDisplayName: text("updated_by_display_name").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    index("annotation_objects_score_layer_idx").on(
+      table.scoreId,
+      table.layerId,
+      table.deleted,
+      table.updatedAt,
+    ),
+  ],
+);
