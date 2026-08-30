@@ -13,11 +13,17 @@ import {
   type ScoreListResponse,
   type ScoreSummary,
 } from "../../shared/scores";
+import { authClient } from "../auth/auth-client";
+import { AppHeader } from "../components/app-header";
 
 export default function ChoirPage() {
   const { choirId = "" } = useParams();
+  const session = authClient.useSession();
+  const userId = session.data?.user.id;
   const [choir, setChoir] = useState<ChoirSummary | null>(null);
   const [result, setResult] = useState<ScoreListResponse | null>(null);
+  const [openJoinRequired, setOpenJoinRequired] = useState(false);
+  const [openAdmissionDisplayName, setOpenAdmissionDisplayName] = useState("");
   const [search, setSearch] = useState("");
   const [denied, setDenied] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -41,26 +47,56 @@ export default function ChoirPage() {
   );
 
   useEffect(() => {
+    if (session.isPending) return;
     let active = true;
-    void Promise.all([
-      loadChoirSummary(choirId),
-      fetchScoreList(choirId, ""),
-    ]).then(
-      ([choirSummary, initialResult]) => {
-        if (!active) return;
-        setChoir(choirSummary);
-        if (initialResult) {
-          setResult(initialResult);
-          setDenied(false);
-        } else {
-          setDenied(true);
-        }
-      },
-    );
+    void openChoir(choirId, Boolean(userId)).then((opened) => {
+      if (!active) return;
+      setChoir(opened.choir);
+      setResult(opened.result);
+      setOpenJoinRequired(opened.openJoinRequired);
+      setDenied(opened.denied);
+    });
     return () => {
       active = false;
     };
-  }, [choirId]);
+  }, [choirId, userId, session.isPending]);
+
+  const joinOpenChoir = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/choirs/join", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          admission: "open",
+          choirId,
+          displayName: openAdmissionDisplayName,
+        }),
+      });
+      if (!response.ok) {
+        setMessage(
+          response.status === 403
+            ? "该成员关系需要团管理员恢复。"
+            : "暂时无法加入这个合唱团，请稍后再试。",
+        );
+        return;
+      }
+      const [nextChoir, nextResult] = await Promise.all([
+        loadChoirSummary(choirId),
+        fetchScoreList(choirId, ""),
+      ]);
+      setChoir(nextChoir ?? choir);
+      setResult(nextResult);
+      setOpenJoinRequired(false);
+      setDenied(!nextResult);
+    } catch {
+      setMessage("暂时无法加入这个合唱团，请稍后再试。");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const uploadScore = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -179,27 +215,86 @@ export default function ChoirPage() {
     }
   };
 
+  const headerActions = (
+    <>
+      <Link className="header-action" to="/">
+        其他合唱团
+      </Link>
+      {session.data?.user ? (
+        <span className="account-email">{session.data.user.email}</span>
+      ) : (
+        <Link className="header-action header-action--primary" to="/login">
+          登录 / 注册
+        </Link>
+      )}
+    </>
+  );
+
+  if (openJoinRequired && choir) {
+    return (
+      <div className="app-page">
+        <AppHeader actions={headerActions} />
+        <main className="page-shell compact-page access-page">
+          <p className="eyebrow">开放访问</p>
+          <h1>{choir.name}</h1>
+          <p className="hero__copy">
+            这个合唱团允许直接访问。填写团内显示名后即可加入。
+          </p>
+          <Form className="entry-form" onSubmit={joinOpenChoir}>
+            <TextField
+              isRequired
+              value={openAdmissionDisplayName}
+              onChange={setOpenAdmissionDisplayName}
+              maxLength={40}
+            >
+              <Label>团内显示名</Label>
+              <Input autoComplete="nickname" placeholder="例如：小花" />
+            </TextField>
+            <Button type="submit" isDisabled={busy}>
+              {busy ? "正在加入…" : "加入并进入"}
+            </Button>
+          </Form>
+          {message ? (
+            <p className="form-message" role="alert">
+              {message}
+            </p>
+          ) : null}
+        </main>
+      </div>
+    );
+  }
+
   if (denied) {
     return (
-      <main className="page-shell compact-page">
-        <p className="eyebrow">合唱团</p>
-        <h1>无法访问这个合唱团</h1>
-        <p className="hero__copy">
-          请返回入口重新输入当前邀请码，或使用有成员关系的邮箱登录。
-        </p>
-        <Link className="primary-link" to="/">
-          返回入口
-        </Link>
-      </main>
+      <div className="app-page">
+        <AppHeader actions={headerActions} />
+        <main className="page-shell compact-page access-page">
+          <p className="eyebrow">合唱团</p>
+          <h1>无法访问这个合唱团</h1>
+          <p className="hero__copy">
+            请返回首页输入当前邀请码，或使用有成员关系的邮箱登录。
+          </p>
+          <Link className="primary-link" to="/">
+            返回首页
+          </Link>
+        </main>
+      </div>
     );
   }
 
   if (!result) {
-    return <p className="route-loading">正在打开合唱团…</p>;
+    return (
+      <div className="app-page">
+        <AppHeader actions={headerActions} />
+        <p className="route-loading">正在打开合唱团…</p>
+      </div>
+    );
   }
 
   return (
-    <main className="page-shell choir-page">
+    <div className="app-page">
+      <AppHeader actions={headerActions} />
+      <main className="page-shell choir-page">
       <p className="eyebrow">合唱团</p>
       <h1>{choir?.name ?? "乐谱"}</h1>
       <p className="hero__copy">
@@ -417,11 +512,76 @@ export default function ChoirPage() {
         </>
       ) : null}
 
-      <Link className="back-link" to="/">
-        返回入口
-      </Link>
-    </main>
+        <Link className="back-link" to="/">
+          返回首页
+        </Link>
+      </main>
+    </div>
   );
+}
+
+async function openChoir(
+  choirId: string,
+  signedIn: boolean,
+): Promise<{
+  choir: ChoirSummary | null;
+  result: ScoreListResponse | null;
+  openJoinRequired: boolean;
+  denied: boolean;
+}> {
+  const [choir, result] = await Promise.all([
+    loadChoirSummary(choirId),
+    fetchScoreList(choirId, ""),
+  ]);
+  if (result) {
+    return { choir, result, openJoinRequired: false, denied: false };
+  }
+
+  const openChoirSummary = await loadOpenAdmissionChoir(choirId);
+  if (!openChoirSummary) {
+    return { choir: null, result: null, openJoinRequired: false, denied: true };
+  }
+  if (signedIn) {
+    return {
+      choir: openChoirSummary,
+      result: null,
+      openJoinRequired: true,
+      denied: false,
+    };
+  }
+
+  try {
+    const admission = await fetch("/api/guest/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ admission: "open", choirId }),
+    });
+    if (!admission.ok) {
+      return { choir: null, result: null, openJoinRequired: false, denied: true };
+    }
+    const admittedResult = await fetchScoreList(choirId, "");
+    return {
+      choir: openChoirSummary,
+      result: admittedResult,
+      openJoinRequired: false,
+      denied: !admittedResult,
+    };
+  } catch {
+    return { choir: null, result: null, openJoinRequired: false, denied: true };
+  }
+}
+
+async function loadOpenAdmissionChoir(
+  choirId: string,
+): Promise<ChoirSummary | null> {
+  try {
+    const response = await fetch(`/api/guest/choirs/${choirId}`);
+    if (!response.ok) return null;
+    const payload = (await response.json()) as { choir: unknown };
+    return choirSummarySchema.parse(payload.choir);
+  } catch {
+    return null;
+  }
 }
 
 async function loadChoirSummary(

@@ -11,6 +11,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import { authClient } from "../auth/auth-client";
 import { PASSWORD_POLICY } from "../../shared/auth";
+import { AppHeader } from "../components/app-header";
 
 type AuthView =
   | "sign-in"
@@ -386,21 +387,29 @@ export default function AuthPage() {
   })();
 
   return (
-    <main className="page-shell compact-page">
-      <p className="eyebrow">Same Page · 登录</p>
-      <h1>{viewPanel.title}</h1>
-      <p className="hero__copy">{viewPanel.description}</p>
-      {viewPanel.form}
+    <div className="app-page auth-page">
+      <AppHeader
+        actions={
+          <Link className="header-action" to="/">
+            返回首页
+          </Link>
+        }
+      />
+      <main className="auth-layout">
+        <section className="auth-card" aria-labelledby="auth-title">
+          <p className="dialog-eyebrow">Same Page</p>
+          <h1 id="auth-title">{viewPanel.title}</h1>
+          <p className="auth-description">{viewPanel.description}</p>
+          {viewPanel.form}
 
-      {message ? (
-        <p className="form-message" role="status">
-          {message}
-        </p>
-      ) : null}
-      <Link className="back-link" to="/">
-        返回入口
-      </Link>
-    </main>
+          {message ? (
+            <p className="form-message" role="status">
+              {message}
+            </p>
+          ) : null}
+        </section>
+      </main>
+    </div>
   );
 }
 
