@@ -1,0 +1,3 @@
+# Allow verified offline access without requiring installation
+
+The same Web/PWA product will work across devices without requiring installation. Offline availability is claimed only after the score and required annotation data have been fully stored and verified on that device; an expired online session does not block the last authenticated user from opening or editing that local data, but synchronization requires reauthentication. Explicit logout removes local private data and pending operations after warning about unsynchronized work, while PWA installation remains a strong recommendation rather than an access gate.

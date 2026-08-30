@@ -1,0 +1,3 @@
+# Use object operations with D1 optimistic concurrency
+
+Synchronization will use Dexie for IndexedDB transactions and the local outbox, plus a thin operation protocol backed by D1 optimistic concurrency, rather than a general CRDT. Each idempotent operation names an annotation object and its base version; D1 accepts changes to independent objects, rejects a stale change with the canonical object, and advances a pull cursor for accepted operations. The rejected variant remains a durable local conflict on its submitting device, while Workbox may accelerate retries but is not a reliability boundary. This matches the product's local-only conflict semantics more directly than Yjs, Automerge, or an automatically resolving RxDB conflict handler.
