@@ -5,6 +5,8 @@ import { AuthorizationError } from "./auth/authorization";
 import { createAuth } from "./auth/create-auth";
 import { choirRoutes } from "./choirs/routes";
 import type { AppEnvironment } from "./env";
+import { cleanupExpiredScoreVersions } from "./scores/cleanup";
+import { scoreRoutes } from "./scores/routes";
 
 const app = new Hono<AppEnvironment>();
 
@@ -23,6 +25,7 @@ app.on(["GET", "POST"], "/api/auth/*", (context) => {
 });
 
 app.route("/api", choirRoutes);
+app.route("/api", scoreRoutes);
 
 app.notFound((context) => context.json({ error: "not_found" }, 404));
 
@@ -33,4 +36,9 @@ app.onError((error, context) => {
   return context.json({ error: "internal_error" }, 500);
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  scheduled(_controller, env, context) {
+    context.waitUntil(cleanupExpiredScoreVersions(env));
+  },
+} satisfies ExportedHandler<Cloudflare.Env>;

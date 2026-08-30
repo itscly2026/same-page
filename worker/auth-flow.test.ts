@@ -64,6 +64,9 @@ beforeEach(async () => {
 
   await env.DB.batch(
     [
+      "DELETE FROM score_object_deletions",
+      "DELETE FROM score_versions",
+      "DELETE FROM scores",
       "DELETE FROM shared_layer_edit_grants",
       "DELETE FROM memberships",
       "DELETE FROM choirs",

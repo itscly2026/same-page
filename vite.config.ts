@@ -4,6 +4,12 @@ import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  build: {
+    // The lazy reader contains the PDF.js display API (about 170 KiB gzip).
+    // Keep the warning threshold explicit while the home/auth chunks remain
+    // independent and much smaller.
+    chunkSizeWarningLimit: 600,
+  },
   plugins: [
     react(),
     cloudflare(),
@@ -31,6 +37,12 @@ export default defineConfig({
       workbox: {
         cleanupOutdatedCaches: true,
         navigateFallback: "/index.html",
+        globPatterns: ["**/*.{js,mjs,css,html,ico,png,woff2}"],
+        // PDF.js' worker is slightly larger than Workbox's 2 MiB default.
+        // It is required to open a verified offline PDF, so keep it in the
+        // application-shell precache rather than making offline claims depend
+        // on whether the reader happened to load while online before.
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
     }),
   ],

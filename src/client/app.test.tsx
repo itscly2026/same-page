@@ -15,13 +15,16 @@ describe("AppRoutes", () => {
   beforeEach(() => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation(() =>
+      vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
-          new Response(
-            JSON.stringify({
-              choir: { id: "choir-1", name: "小红花合唱团" },
-            }),
-            { headers: { "content-type": "application/json" } },
+          Response.json(
+            input.includes("/scores")
+              ? {
+                  scores: [],
+                  storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
+                  permissions: { canManage: false },
+                }
+              : { choir: { id: "choir-1", name: "小红花合唱团" } },
           ),
         ),
       ),

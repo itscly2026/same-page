@@ -15,7 +15,10 @@ export function AppRoutes() {
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<AuthPage />} />
         <Route path="/choirs/:choirId" element={<ChoirPage />} />
-        <Route path="/reader" element={<ReaderPage />} />
+        <Route
+          path="/choirs/:choirId/scores/:scoreId"
+          element={<ReaderPage />}
+        />
       </Routes>
     </Suspense>
   );
