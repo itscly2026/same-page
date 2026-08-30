@@ -8,10 +8,11 @@ import AuthPage from "./auth-page";
 vi.mock("../auth/auth-client", () => ({
   authClient: {
     emailOtp: {
-      sendVerificationOtp: vi.fn(),
+      requestPasswordReset: vi.fn(),
+      resetPassword: vi.fn(),
     },
     signIn: {
-      emailOtp: vi.fn(),
+      email: vi.fn(),
     },
   },
 }));
@@ -24,7 +25,15 @@ describe("AuthPage", () => {
         Promise.resolve(new Response(null, { status: 401 })),
       ),
     );
-    vi.mocked(authClient.emailOtp.sendVerificationOtp).mockResolvedValue({
+    vi.mocked(authClient.signIn.email).mockResolvedValue({
+      data: { token: "session", user: {} },
+      error: null,
+    });
+    vi.mocked(authClient.emailOtp.requestPasswordReset).mockResolvedValue({
+      data: { success: true },
+      error: null,
+    });
+    vi.mocked(authClient.emailOtp.resetPassword).mockResolvedValue({
       data: { success: true },
       error: null,
     });
@@ -35,31 +44,26 @@ describe("AuthPage", () => {
     vi.clearAllMocks();
   });
 
-  it("uses a registration-neutral message after requesting an OTP", async () => {
-    render(
-      <MemoryRouter>
-        <AuthPage />
-      </MemoryRouter>,
-    );
+  it("signs in with a normalized email and password without requesting an OTP", async () => {
+    renderAuthPage();
 
     fireEvent.change(screen.getByLabelText("邮箱"), {
       target: { value: "Singer@Example.Test" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送验证码" }));
-
-    expect(
-      await screen.findByText(
-        "如果邮件地址可用，验证码已经发送。请检查收件箱和垃圾邮件。",
-      ),
-    ).toBeInTheDocument();
-    expect(authClient.emailOtp.sendVerificationOtp).toHaveBeenCalledWith({
-      email: "singer@example.test",
-      type: "sign-in",
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "correct horse battery staple" },
     });
-    expect(screen.getByLabelText("六位验证码")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    await vi.waitFor(() => {
+      expect(authClient.signIn.email).toHaveBeenCalledWith({
+        email: "singer@example.test",
+        password: "correct horse battery staple",
+      });
+    });
   });
 
-  it("upgrades an active guest session after OTP verification", async () => {
+  it("verifies a new registration before upgrading an active guest session", async () => {
     const fetchMock = vi.fn().mockImplementation((input: string) => {
       if (input === "/api/guest/session") {
         return Promise.resolve(
@@ -68,39 +72,61 @@ describe("AuthPage", () => {
           }),
         );
       }
+      if (
+        input === "/api/auth/registration/request-otp" ||
+        input === "/api/auth/registration/complete"
+      ) {
+        return Promise.resolve(Response.json({ success: true }));
+      }
       return Promise.resolve(Response.json({ membership: { id: "member-1" } }));
     });
     vi.stubGlobal("fetch", fetchMock);
-    vi.mocked(authClient.signIn.emailOtp).mockResolvedValue({
-      data: { token: "session", user: {} },
-      error: null,
-    });
+    renderAuthPage();
 
-    render(
-      <MemoryRouter>
-        <AuthPage />
-      </MemoryRouter>,
-    );
-
-    expect(
-      await screen.findByText(
-        "验证邮箱后，你将以成员身份加入“小红花合唱团”。",
-      ),
-    ).toBeInTheDocument();
+    await screen.findByText("登录后，你将以成员身份加入“小红花合唱团”。");
+    fireEvent.click(screen.getByRole("button", { name: "注册" }));
     fireEvent.change(screen.getByLabelText("邮箱"), {
-      target: { value: "member@example.test" },
+      target: { value: "New@Example.Test" },
+    });
+    fireEvent.change(screen.getByLabelText("密码（至少 10 位）"), {
+      target: { value: "new secure password" },
+    });
+    fireEvent.change(screen.getByLabelText("确认密码"), {
+      target: { value: "new secure password" },
     });
     fireEvent.change(screen.getByLabelText("团内显示名"), {
       target: { value: "小花" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送验证码" }));
-    await screen.findByLabelText("六位验证码");
+    fireEvent.click(
+      screen.getByRole("button", { name: "注册并发送验证码" }),
+    );
+
+    expect(await screen.findByLabelText("六位验证码")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/auth/registration/request-otp",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ email: "new@example.test" }),
+      }),
+    );
+
     fireEvent.change(screen.getByLabelText("六位验证码"), {
       target: { value: "123456" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    fireEvent.click(screen.getByRole("button", { name: "完成注册" }));
 
     await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/auth/registration/complete",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            email: "new@example.test",
+            otp: "123456",
+            password: "new secure password",
+          }),
+        }),
+      );
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/choirs/join-current-guest",
         expect.objectContaining({
@@ -110,4 +136,56 @@ describe("AuthPage", () => {
       );
     });
   });
+
+  it("sets or resets a password with an OTP and then uses password sign-in", async () => {
+    renderAuthPage();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "首次设置或忘记密码" }),
+    );
+    fireEvent.change(screen.getByLabelText("邮箱"), {
+      target: { value: "Admin@Example.Test" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "发送密码重置验证码" }),
+    );
+
+    expect(await screen.findByLabelText("六位验证码")).toBeInTheDocument();
+    expect(authClient.emailOtp.requestPasswordReset).toHaveBeenCalledWith({
+      email: "admin@example.test",
+    });
+
+    fireEvent.change(screen.getByLabelText("六位验证码"), {
+      target: { value: "654321" },
+    });
+    fireEvent.change(screen.getByLabelText("新密码（至少 10 位）"), {
+      target: { value: "replacement password" },
+    });
+    fireEvent.change(screen.getByLabelText("确认新密码"), {
+      target: { value: "replacement password" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "重设密码并登录" }),
+    );
+
+    await vi.waitFor(() => {
+      expect(authClient.emailOtp.resetPassword).toHaveBeenCalledWith({
+        email: "admin@example.test",
+        otp: "654321",
+        password: "replacement password",
+      });
+      expect(authClient.signIn.email).toHaveBeenCalledWith({
+        email: "admin@example.test",
+        password: "replacement password",
+      });
+    });
+  });
 });
+
+function renderAuthPage() {
+  render(
+    <MemoryRouter>
+      <AuthPage />
+    </MemoryRouter>,
+  );
+}

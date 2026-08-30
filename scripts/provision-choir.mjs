@@ -30,7 +30,7 @@ export function provisionChoirFromCli(argv = process.argv.slice(2)) {
 
   const user = queryAdminUser(options.adminEmail, options.mode);
   if (!user) {
-    throw new Error("The administrator must complete OTP registration first");
+    throw new Error("The administrator must complete registration first");
   }
 
   const choirId = randomUUID();

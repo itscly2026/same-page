@@ -33,12 +33,12 @@ V1 不包含实时协作、WebSocket、自动批注迁移、导出、打印、�
 - 开放准入允许访客从产品入口直接进入，不需要团邀请码。
 - 未注册访客读取已发布乐谱和全部共享层，不形成成员关系，也不出现在成员列表中。
 - 访客可以下载离线副本，但已经下载的内容无法远程追回。
-- 访客完成邮箱 OTP 注册并填写团内显示名后，建立普通成员关系。
+- 访客完成邮箱 OTP 注册、设置密码并填写团内显示名后，建立普通成员关系。
 - 已注册用户可以按目标团的访客准入方式加入多个团。
 
 ## 身份、成员与权限
 
-Same Page 使用邮箱 OTP 登录，不提供密码登录。认证由 Same Page 自己的 Better Auth/D1 边界负责；登录邮件通过独立的 Resend Sending-only key 和发送域发出，不调用或共享现有 Webmail 的 API、Secret 或 Sent 数据。
+Same Page 使用邮箱和密码进行日常登录。注册时使用一次邮箱 OTP 确认邮箱归属；首次设置密码或忘记密码时也使用邮箱 OTP 安全重置。认证由 Same Page 自己的 Better Auth/D1 边界负责；认证邮件通过独立的 Resend Sending-only key 和发送域发出，不调用或共享现有 Webmail 的 API、Secret 或 Sent 数据。
 
 权限只在所属合唱团内生效：
 
@@ -157,10 +157,10 @@ React + TypeScript + Vite
                 │ 同源 HTTPS
                 ▼
 Cloudflare Worker + Hono
-├── Better Auth：邮箱 OTP 与会话
+├── Better Auth：密码、注册/重置 OTP 与会话
 ├── D1：团、成员、权限、乐谱元数据、批注对象和同步记录
 ├── R2：不可变 PDF 版本对象
-└── Resend：独立 Same Page 登录邮件边界
+└── Resend：独立 Same Page 认证邮件边界
 ```
 
 PDF 批注的领域数据不得使用绘图库序列化格式。SVG 必须通过真实高密度笔迹原型；只有它在目标设备上无法达标时才采用 `react-konva`。Workbox Background Sync 只能作为增强能力，不能替代业务 outbox。
@@ -189,7 +189,7 @@ Reader 路由和 PDF.js 从首页 bundle 中拆出，进入 `/reader` 时才加�
 
 将 `.dev.vars.example` 复制为不会提交的 `.dev.vars`，并为
 `BETTER_AUTH_SECRET` 与 `INVITE_SECRET` 分别设置至少 32 个字符的独立随机值。
-Resend key 只用于 Same Page 的登录邮件，不与其他邮件系统共用。应用日志不得记录
+Resend key 只用于 Same Page 的注册及密码重置邮件，不与其他邮件系统共用。应用日志不得记录
 OTP、收件人、邮件正文、邀请码或认证 Secret。
 
 ```bash
@@ -197,7 +197,7 @@ npm run db:migrate:local
 npm run dev
 ```
 
-首位管理员需要先在页面完成一次邮箱 OTP 注册。随后由运维人员在进程环境中提供
+首位管理员需要先在页面设置密码并完成一次邮箱 OTP 注册。随后由运维人员在进程环境中提供
 `INVITE_SECRET`，创建默认的“小红花合唱团”及管理员关系：
 
 ```bash
@@ -273,7 +273,7 @@ SHA-256 指纹来识别相同 `opId` 的响应丢失重试。本机把被拒版�
 4. 断网、强杀、重启、多标签页、会话过期和恢复同步。
 5. 20 MB PDF 的完整下载、校验、缓存替换和存储回收。
 6. iPad Safari、Android 平板和桌面浏览器上的真实手写与手势。
-7. QQ、163、Gmail 和 Outlook 的 OTP 投递及延迟。
+7. QQ、163、Gmail 和 Outlook 的注册/密码重置 OTP 投递及延迟。
 
 自动化使用 Vitest、React Testing Library、Cloudflare Vitest 插件和 Playwright。Playwright WebKit 不能替代真实 Safari；PWA、Service Worker、存储驱逐和手写笔必须保留人工实机验收。
 

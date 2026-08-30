@@ -5,6 +5,10 @@ import { emailOTP } from "better-auth/plugins";
 // worker/auth/create-auth.ts and must never be added here.
 export const auth = betterAuth({
   baseURL: "http://127.0.0.1:5173",
+  emailAndPassword: {
+    enabled: true,
+    requireEmailVerification: true,
+  },
   plugins: [
     emailOTP({
       async sendVerificationOTP() {

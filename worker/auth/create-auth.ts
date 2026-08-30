@@ -2,9 +2,10 @@ import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { betterAuth } from "better-auth/minimal";
 import { emailOTP } from "better-auth/plugins";
 
+import { PASSWORD_POLICY } from "../../src/shared/auth";
 import { createDatabase } from "../db/database";
 import { schema } from "../db/schema";
-import { sendSignInOtp } from "../email/send-otp";
+import { sendAuthOtp } from "../email/send-otp";
 import type { Env, WaitUntilContext } from "../env";
 import { hashRateLimitIdentity } from "../security/join-code";
 import { consumeRateLimit } from "../security/rate-limit";
@@ -22,7 +23,11 @@ export function createAuth(env: Env, executionContext: WaitUntilContext) {
       schema,
     }),
     emailAndPassword: {
-      enabled: false,
+      enabled: true,
+      requireEmailVerification: true,
+      minPasswordLength: PASSWORD_POLICY.minLength,
+      maxPasswordLength: PASSWORD_POLICY.maxLength,
+      revokeSessionsOnPasswordReset: true,
     },
     logger: {
       disabled: true,
@@ -58,12 +63,20 @@ export function createAuth(env: Env, executionContext: WaitUntilContext) {
         expiresIn: 600,
         allowedAttempts: 3,
         storeOTP: "hashed",
+        disableSignUp: false,
         async sendVerificationOTP({ email, otp, type }) {
-          if (type !== "sign-in") {
+          if (type !== "sign-in" && type !== "forget-password") {
             throw new Error("Unsupported OTP type");
           }
 
-          executionContext.waitUntil(sendSignInOtp(env, email, otp));
+          executionContext.waitUntil(
+            sendAuthOtp(
+              env,
+              email,
+              otp,
+              type === "sign-in" ? "registration" : type,
+            ),
+          );
         },
       }),
     ],

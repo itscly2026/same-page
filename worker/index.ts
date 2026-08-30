@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { healthResponseSchema } from "../src/shared/health";
 import { annotationRoutes } from "./annotations/routes";
 import { AuthorizationError } from "./auth/authorization";
-import { createAuth } from "./auth/create-auth";
+import { handleAuthRequest } from "./auth/handler";
 import { choirRoutes } from "./choirs/routes";
 import type { AppEnvironment } from "./env";
 import { cleanupExpiredScoreVersions } from "./scores/cleanup";
@@ -21,9 +21,7 @@ app.get("/api/health", (context) => {
   );
 });
 
-app.on(["GET", "POST"], "/api/auth/*", (context) => {
-  return createAuth(context.env, context.executionCtx).handler(context.req.raw);
-});
+app.on(["GET", "POST"], "/api/auth/*", handleAuthRequest);
 
 app.route("/api", choirRoutes);
 app.route("/api", scoreRoutes);

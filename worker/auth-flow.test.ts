@@ -1,4 +1,5 @@
 import { setupNetwork } from "@msw/cloudflare";
+import { hashPassword } from "better-auth/crypto";
 import { env } from "cloudflare:workers";
 import {
   createExecutionContext,
@@ -26,11 +27,17 @@ import {
 import { provisionChoir } from "./choirs/provision";
 import { createDatabase } from "./db/database";
 import {
+  account,
   choirs,
   memberships,
   sharedLayerEditGrants,
   user,
 } from "./db/schema";
+import {
+  cookieFrom,
+  registerWithPassword,
+  signInWithPassword,
+} from "./test/auth";
 
 const network = setupNetwork();
 const deliveredEmails: Array<{
@@ -88,13 +95,85 @@ afterEach(() => {
 });
 
 describe("authentication and choir boundaries", () => {
-  it("runs OTP registration, guest access, rotation and member authorization", async () => {
+  it("runs verified registration, password login, guest access, rotation and member authorization", async () => {
     const adminEmail = "admin@example.test";
-    const firstOtp = await requestOtp(adminEmail);
-    const firstRequestBody = firstOtp.responseBody;
-    await expectOtpStoredAsHash(firstOtp.otp);
+    const adminRegistration = await registerWithPassword({
+      callWorker,
+      email: adminEmail,
+      latestOtp,
+      afterOtpSent: expectOtpStoredAsHash,
+    });
+    const deliveredAfterRegistration = deliveredEmails.length;
+    expect(deliveredEmails.at(-1)?.subject).toContain("完成 Same Page 注册");
+    const passwordLogin = await signInWithPassword({
+      callWorker,
+      email: adminEmail,
+    });
+    expect(passwordLogin.status).toBe(200);
+    expect(deliveredEmails).toHaveLength(deliveredAfterRegistration);
+    const adminCookie = cookieFrom(passwordLogin);
 
-    const adminCookie = await signIn(adminEmail, firstOtp.otp);
+    const otpSignIn = await callWorker("/api/auth/sign-in/email-otp", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: adminEmail, otp: "123456" }),
+    });
+    expect(otpSignIn.status).toBe(404);
+    const otpSignInWithTrailingSlash = await callWorker(
+      "/api/auth/sign-in/email-otp/",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: adminEmail, otp: "123456" }),
+      },
+    );
+    expect(otpSignInWithTrailingSlash.status).toBe(404);
+    const otpSignInDelivery = await callWorker(
+      "/api/auth/email-otp/send-verification-otp",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: adminEmail, type: "sign-in" }),
+      },
+    );
+    expect(otpSignInDelivery.status).toBe(404);
+    expect(deliveredEmails).toHaveLength(deliveredAfterRegistration);
+
+    const duplicateRegistration = await callWorker(
+      "/api/auth/sign-up/email",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: adminEmail,
+          password: "another secure password",
+          name: "Same Page 用户",
+        }),
+      },
+    );
+    expect(duplicateRegistration.status).toBe(404);
+    const verifiedEmailOtp = await callWorker(
+      "/api/auth/registration/request-otp",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: adminEmail }),
+      },
+    );
+    expect(verifiedEmailOtp.status).toBe(200);
+    expect(deliveredEmails).toHaveLength(deliveredAfterRegistration);
+
+    const unknownEmailReset = await callWorker(
+      "/api/auth/email-otp/request-password-reset",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "unknown@example.test" }),
+      },
+    );
+    expect(unknownEmailReset.status).toBe(200);
+    expect(deliveredEmails).toHaveLength(deliveredAfterRegistration);
+
     const database = createDatabase(env.DB);
     const admin = await database.query.user.findFirst({
       where: eq(user.email, adminEmail),
@@ -112,9 +191,6 @@ describe("authentication and choir boundaries", () => {
       },
     });
     expect(provisioned.joinCode).toBe("AAAAAAAA");
-
-    const existingOtp = await requestOtp(adminEmail);
-    expect(existingOtp.responseBody).toBe(firstRequestBody);
 
     const guestResponse = await callWorker("/api/guest/session", {
       method: "POST",
@@ -173,8 +249,12 @@ describe("authentication and choir boundaries", () => {
     const currentGuestCookie = cookieFrom(currentGuestResponse);
 
     const memberEmail = "member@example.test";
-    const memberOtp = await requestOtp(memberEmail);
-    const memberCookie = await signIn(memberEmail, memberOtp.otp);
+    const memberRegistration = await registerWithPassword({
+      callWorker,
+      email: memberEmail,
+      latestOtp,
+    });
+    const memberCookie = memberRegistration.cookie;
     const joinResponse = await callWorker("/api/choirs/join-current-guest", {
       method: "POST",
       headers: {
@@ -461,7 +541,146 @@ describe("authentication and choir boundaries", () => {
     const loggedOutput = consoleSpies.flatMap((spy) => spy.mock.calls).join(" ");
     expect(loggedOutput).not.toContain(adminEmail);
     expect(loggedOutput).not.toContain(memberEmail);
-    expect(loggedOutput).not.toContain(firstOtp.otp);
+    expect(loggedOutput).not.toContain(adminRegistration.otp);
+  });
+
+  it("sets the first password for a verified account without a credential", async () => {
+    const database = createDatabase(env.DB);
+    const email = "existing-admin@example.test";
+    const userId = crypto.randomUUID();
+    await database.insert(user).values({
+      id: userId,
+      name: "管理员",
+      email,
+      emailVerified: true,
+    });
+
+    const requestReset = await callWorker(
+      "/api/auth/email-otp/request-password-reset",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email }),
+      },
+    );
+    expect(requestReset.status).toBe(200);
+    const otp = latestOtp();
+    expect(deliveredEmails.at(-1)?.subject).toContain("重设 Same Page 密码");
+    await expectOtpStoredAsHash(otp);
+
+    const newPassword = "new secure administrator password";
+    const reset = await callWorker("/api/auth/email-otp/reset-password", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, otp, password: newPassword }),
+    });
+    expect(reset.status).toBe(200);
+
+    const credential = await database.query.account.findFirst({
+      where: eq(account.userId, userId),
+      columns: { password: true, providerId: true },
+    });
+    expect(credential).toMatchObject({ providerId: "credential" });
+    expect(credential?.password).toBeTruthy();
+    expect(credential?.password).not.toBe(newPassword);
+
+    const signIn = await signInWithPassword({
+      callWorker,
+      email,
+      password: newPassword,
+    });
+    expect(signIn.status).toBe(200);
+  });
+
+  it("replaces every unverified pre-existing credential with the mailbox owner's password", async () => {
+    const database = createDatabase(env.DB);
+    const email = "pre-registered@example.test";
+    const userId = crypto.randomUUID();
+    const attackerPassword = "attacker chosen password";
+    await database.insert(user).values({
+      id: userId,
+      name: "Unverified user",
+      email,
+      emailVerified: false,
+    });
+    await database.insert(account).values({
+      id: crypto.randomUUID(),
+      issuer: "credential",
+      accountId: userId,
+      providerId: "credential",
+      userId,
+      password: await hashPassword(attackerPassword),
+    });
+
+    const ownerPassword = "mailbox owner password";
+    const registration = await registerWithPassword({
+      callWorker,
+      email,
+      latestOtp,
+      password: ownerPassword,
+    });
+    expect(registration.cookie).toContain("better-auth.session_token=");
+
+    const credentials = await database.query.account.findMany({
+      where: eq(account.userId, userId),
+    });
+    expect(credentials).toHaveLength(1);
+    expect(credentials[0]).toMatchObject({ providerId: "credential" });
+
+    const attackerSignIn = await signInWithPassword({
+      callWorker,
+      email,
+      password: attackerPassword,
+    });
+    expect(attackerSignIn.status).toBe(401);
+    const ownerSignIn = await signInWithPassword({
+      callWorker,
+      email,
+      password: ownerPassword,
+    });
+    expect(ownerSignIn.status).toBe(200);
+  });
+
+  it("revokes existing sessions and the old password after a password reset", async () => {
+    const email = "password-reset@example.test";
+    const registration = await registerWithPassword({
+      callWorker,
+      email,
+      latestOtp,
+    });
+
+    const requestReset = await callWorker(
+      "/api/auth/email-otp/request-password-reset",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email }),
+      },
+    );
+    expect(requestReset.status).toBe(200);
+
+    const newPassword = "a different secure password";
+    const reset = await callWorker("/api/auth/email-otp/reset-password", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, otp: latestOtp(), password: newPassword }),
+    });
+    expect(reset.status).toBe(200);
+
+    const oldSession = await callWorker("/api/auth/get-session", {
+      headers: { cookie: registration.cookie },
+    });
+    expect(oldSession.status).toBe(200);
+    expect(await oldSession.json()).toBeNull();
+
+    const oldPassword = await signInWithPassword({ callWorker, email });
+    expect(oldPassword.status).toBe(401);
+    const newPasswordSignIn = await signInWithPassword({
+      callWorker,
+      email,
+      password: newPassword,
+    });
+    expect(newPasswordSignIn.status).toBe(200);
   });
 
   it("rate limits invite guesses without storing the raw client address", async () => {
@@ -486,38 +705,10 @@ describe("authentication and choir boundaries", () => {
   });
 });
 
-async function requestOtp(email: string) {
-  const deliveredBefore = deliveredEmails.length;
-  const response = await callWorker(
-    "/api/auth/email-otp/send-verification-otp",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, type: "sign-in" }),
-    },
-  );
-  const responseBody = await response.text();
-  expect(response.status, responseBody).toBe(200);
-  expect(deliveredEmails).toHaveLength(deliveredBefore + 1);
-
-  const delivered = deliveredEmails.at(-1)!;
-  const otp = delivered.subject.match(/^([0-9]{6}) /)?.[1];
+function latestOtp() {
+  const otp = deliveredEmails.at(-1)?.subject.match(/^([0-9]{6}) /)?.[1];
   expect(otp).toBeDefined();
-  return { otp: otp!, responseBody };
-}
-
-async function signIn(email: string, otp: string) {
-  const response = await callWorker("/api/auth/sign-in/email-otp", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      email,
-      otp,
-      name: "Same Page 用户",
-    }),
-  });
-  expect(response.status).toBe(200);
-  return cookieFrom(response);
+  return otp!;
 }
 
 async function expectOtpStoredAsHash(otp: string) {
@@ -537,10 +728,4 @@ async function callWorker(path: string, init: RequestInit = {}) {
   );
   await waitOnExecutionContext(context);
   return response;
-}
-
-function cookieFrom(response: Response) {
-  const setCookie = response.headers.get("set-cookie");
-  expect(setCookie).toBeTruthy();
-  return setCookie!.split(";", 1)[0];
 }

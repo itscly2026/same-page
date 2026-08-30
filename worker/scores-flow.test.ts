@@ -20,6 +20,7 @@ import worker from "./index";
 import { provisionChoir } from "./choirs/provision";
 import { createDatabase } from "./db/database";
 import { choirs, user } from "./db/schema";
+import { cookieFrom, registerWithPassword } from "./test/auth";
 
 const network = setupNetwork();
 let deliveredOtp = "";
@@ -241,22 +242,11 @@ describe("score management and PDF delivery", () => {
 
 async function createAdminChoir() {
   const email = "score-admin@example.test";
-  const otpResponse = await callWorker(
-    "/api/auth/email-otp/send-verification-otp",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, type: "sign-in" }),
-    },
-  );
-  expect(otpResponse.status).toBe(200);
-  expect(deliveredOtp).toMatch(/^\d{6}$/);
-  const signInResponse = await callWorker("/api/auth/sign-in/email-otp", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, otp: deliveredOtp, name: "管理员" }),
+  const registration = await registerWithPassword({
+    callWorker,
+    email,
+    latestOtp: () => deliveredOtp,
   });
-  const adminCookie = cookieFrom(signInResponse);
   const database = createDatabase(env.DB);
   const admin = await database.query.user.findFirst({
     where: eq(user.email, email),
@@ -268,7 +258,7 @@ async function createAdminChoir() {
     inviteSecret: env.INVITE_SECRET,
   });
   return {
-    adminCookie,
+    adminCookie: registration.cookie,
     choirId: provisioned.choirId,
     joinCode: provisioned.joinCode,
   };
@@ -340,10 +330,4 @@ async function callWorker(path: string, init: RequestInit = {}) {
   );
   await waitOnExecutionContext(context);
   return response;
-}
-
-function cookieFrom(response: Response) {
-  const cookie = response.headers.get("set-cookie");
-  expect(cookie).toBeTruthy();
-  return cookie!.split(";", 1)[0];
 }

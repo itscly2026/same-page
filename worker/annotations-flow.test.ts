@@ -20,6 +20,7 @@ import worker from "./index";
 import { provisionChoir } from "./choirs/provision";
 import { createDatabase } from "./db/database";
 import { memberships, user } from "./db/schema";
+import { cookieFrom, registerWithPassword } from "./test/auth";
 
 const network = setupNetwork();
 let deliveredOtp = "";
@@ -226,7 +227,7 @@ describe("annotation layers and object synchronization", () => {
 });
 
 async function createFixture() {
-  const admin = await signIn("annotation-admin@example.test", "管理员");
+  const admin = await signIn("annotation-admin@example.test");
   const provisioned = await provisionChoir({
     binding: env.DB,
     adminUserId: admin.userId,
@@ -258,7 +259,7 @@ async function createFixture() {
 }
 
 async function createMember(joinCode: string, email: string, name: string) {
-  const account = await signIn(email, name);
+  const account = await signIn(email);
   const joined = await callWorker(
     "/api/choirs/join",
     jsonRequest(account.cookie, {
@@ -271,20 +272,16 @@ async function createMember(joinCode: string, email: string, name: string) {
   return account;
 }
 
-async function signIn(email: string, name: string) {
-  await callWorker("/api/auth/email-otp/send-verification-otp", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, type: "sign-in" }),
+async function signIn(email: string) {
+  const registration = await registerWithPassword({
+    callWorker,
+    email,
+    latestOtp: () => deliveredOtp,
   });
-  const response = await callWorker("/api/auth/sign-in/email-otp", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, otp: deliveredOtp, name }),
+  const found = await createDatabase(env.DB).query.user.findFirst({
+    where: eq(user.email, email),
   });
-  const cookie = cookieFrom(response);
-  const found = await createDatabase(env.DB).query.user.findFirst({ where: eq(user.email, email) });
-  return { cookie, userId: found!.id };
+  return { cookie: registration.cookie, userId: found!.id };
 }
 
 async function createGuestCookie(joinCode: string) {
@@ -360,10 +357,4 @@ async function callWorker(path: string, init: RequestInit = {}) {
   const response = await worker.fetch(new Request(`https://same-page.test${path}`, init), env, context);
   await waitOnExecutionContext(context);
   return response;
-}
-
-function cookieFrom(response: Response) {
-  const cookie = response.headers.get("set-cookie");
-  expect(cookie).toBeTruthy();
-  return cookie!.split(";", 1)[0];
 }
