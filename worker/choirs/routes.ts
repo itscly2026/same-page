@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
-import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { deleteCookie, setCookie } from "hono/cookie";
 
 import {
   guestSessionRequestSchema,
@@ -8,7 +8,10 @@ import {
   joinCurrentGuestRequestSchema,
 } from "../../src/shared/choirs";
 import { requireChoirAdmin } from "../auth/authorization";
-import { resolveGuestPrincipal, resolvePrincipal } from "../auth/principal";
+import {
+  resolveContextGuestPrincipal,
+  resolveContextPrincipal,
+} from "../auth/context-principal";
 import { createDatabase } from "../db/database";
 import { choirs, memberships } from "../db/schema";
 import type { AppEnvironment } from "../env";
@@ -72,7 +75,7 @@ choirRoutes.post("/guest/session", async (context) => {
 });
 
 choirRoutes.get("/guest/session", async (context) => {
-  const principal = await currentGuestPrincipal(context);
+  const principal = await resolveContextGuestPrincipal(context);
   if (!principal) {
     deleteCookie(context, GUEST_SESSION_COOKIE, { path: "/" });
     return context.json({ error: "unauthorized" }, 401);
@@ -91,7 +94,7 @@ choirRoutes.get("/guest/session", async (context) => {
 });
 
 choirRoutes.get("/choirs", async (context) => {
-  const principal = await currentPrincipal(context);
+  const principal = await resolveContextPrincipal(context);
   if (!principal || principal.kind !== "user") {
     return context.json({ error: "unauthorized" }, 401);
   }
@@ -130,7 +133,7 @@ choirRoutes.post("/choirs/join", async (context) => {
     return limited;
   }
 
-  const principal = await currentPrincipal(context);
+  const principal = await resolveContextPrincipal(context);
   if (!principal || principal.kind !== "user") {
     return context.json({ error: "unauthorized" }, 401);
   }
@@ -184,12 +187,12 @@ choirRoutes.post("/choirs/join", async (context) => {
 });
 
 choirRoutes.post("/choirs/join-current-guest", async (context) => {
-  const principal = await currentPrincipal(context);
+  const principal = await resolveContextPrincipal(context);
   if (!principal || principal.kind !== "user") {
     return context.json({ error: "unauthorized" }, 401);
   }
 
-  const guest = await currentGuestPrincipal(context);
+  const guest = await resolveContextGuestPrincipal(context);
   if (!guest) {
     return context.json({ error: "guest_session_required" }, 401);
   }
@@ -242,7 +245,7 @@ choirRoutes.post("/choirs/join-current-guest", async (context) => {
 
 choirRoutes.post("/choirs/:choirId/join-code/rotate", async (context) => {
   const database = createDatabase(context.env.DB);
-  const principal = await currentPrincipal(context);
+  const principal = await resolveContextPrincipal(context);
   const choirId = context.req.param("choirId");
   await requireChoirAdmin(database, principal, choirId);
 
@@ -266,24 +269,6 @@ choirRoutes.post("/choirs/:choirId/join-code/rotate", async (context) => {
 
   return context.json({ joinCode, joinCodeVersion: updated.joinCodeVersion });
 });
-
-async function currentPrincipal(
-  context: Context<AppEnvironment>,
-) {
-  return resolvePrincipal({
-    request: context.req.raw,
-    env: context.env,
-    executionContext: context.executionCtx,
-    guestToken: getCookie(context, GUEST_SESSION_COOKIE),
-  });
-}
-
-async function currentGuestPrincipal(context: Context<AppEnvironment>) {
-  return resolveGuestPrincipal({
-    env: context.env,
-    guestToken: getCookie(context, GUEST_SESSION_COOKIE),
-  });
-}
 
 async function enforceInviteRateLimit(
   context: Context<AppEnvironment>,
