@@ -53,13 +53,8 @@ export const scores = sqliteTable(
     choirId: text("choir_id")
       .notNull()
       .references(() => choirs.id, { onDelete: "cascade" }),
-    title: text("title").notNull(),
-    composer: text("composer"),
-    arranger: text("arranger"),
-    sortOrder: integer("sort_order").notNull().default(0),
-    status: text("status", { enum: ["draft", "published", "archived"] })
-      .notNull()
-      .default("draft"),
+    fileName: text("file_name").notNull(),
+    fileNameKey: text("file_name_key").notNull(),
     currentVersionId: text("current_version_id"),
     replacementLockId: text("replacement_lock_id"),
     replacementLockExpiresAt: integer("replacement_lock_expires_at", {
@@ -71,19 +66,24 @@ export const scores = sqliteTable(
     updatedAt: integer("updated_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
-    publishedAt: integer("published_at", { mode: "timestamp_ms" }),
-    archivedAt: integer("archived_at", { mode: "timestamp_ms" }),
+    trashedAt: integer("trashed_at", { mode: "timestamp_ms" }),
+    trashExpiresAt: integer("trash_expires_at", { mode: "timestamp_ms" }),
   },
   (table) => [
-    index("scores_choir_status_sort_idx").on(
-      table.choirId,
-      table.status,
-      table.sortOrder,
-      table.title,
-    ),
+    uniqueIndex("scores_active_filename_uidx")
+      .on(table.choirId, table.fileNameKey)
+      .where(sql`${table.trashedAt} is null`),
+    index("scores_choir_filename_idx")
+      .on(table.choirId, table.fileNameKey)
+      .where(sql`${table.trashedAt} is null`),
+    index("scores_trash_expiry_idx")
+      .on(table.trashExpiresAt)
+      .where(sql`${table.trashedAt} is not null`),
     check(
-      "scores_status_valid",
-      sql`${table.status} in ('draft', 'published', 'archived')`,
+      "scores_trash_dates_valid",
+      sql`(${table.trashedAt} is null and ${table.trashExpiresAt} is null)
+        or (${table.trashedAt} is not null and ${table.trashExpiresAt} is not null
+          and ${table.trashExpiresAt} > ${table.trashedAt})`,
     ),
   ],
 );

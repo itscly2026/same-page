@@ -11,7 +11,11 @@ import {
   annotationLayerListResponseSchema,
   type AnnotationLayerSummary,
 } from "../../shared/annotations";
-import { scoreListResponseSchema, type ScoreSummary } from "../../shared/scores";
+import {
+  scoreCloudStateSchema,
+  scoreListResponseSchema,
+  type ScoreSummary,
+} from "../../shared/scores";
 import type { AnnotationTool } from "../annotations/annotation-overlay";
 import {
   cacheAnnotationLayers,
@@ -73,6 +77,9 @@ export default function ReaderPage() {
   const [tool, setTool] = useState<AnnotationTool>("text");
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [cloudState, setCloudState] = useState<
+    "checking" | "active" | "trashed" | "unavailable"
+  >("checking");
   const [syncing, setSyncing] = useState(false);
   const [canManageLayers, setCanManageLayers] = useState(false);
   const [chromeVisible, setChromeVisible] = useState(false);
@@ -141,6 +148,7 @@ export default function ReaderPage() {
     let active = true;
     void (async () => {
       setLoadingError(null);
+      setCloudState("checking");
       const local = await findActiveOfflineScore(choirId, scoreId).catch(
         () => undefined,
       );
@@ -152,12 +160,32 @@ export default function ReaderPage() {
         if (!response.ok) throw new Error("Score list unavailable");
         const payload = scoreListResponseSchema.parse(await response.json());
         const current = payload.scores.find((item) => item.id === scoreId);
-        if (!current) throw new Error("Score unavailable");
+        if (!current) {
+          const statusResponse = await fetch(
+            `/api/choirs/${choirId}/scores/${scoreId}/status`,
+          );
+          if (statusResponse.ok) {
+            const status = scoreCloudStateSchema.parse(await statusResponse.json());
+            if (status.state === "trashed") {
+              setCloudState("trashed");
+              if (!local) {
+                setLoadingError("这份乐谱已移入回收站，当前设备没有可用的离线副本。");
+                return;
+              }
+              setSyncMessage(
+                "这份乐谱已移入回收站；本机离线副本和未同步批注仍保留，恢复后可继续同步。",
+              );
+            }
+          }
+          throw new Error("Score unavailable");
+        }
         if (!active) return;
+        setCloudState("active");
         setScore(current);
         setSource(`/api/choirs/${choirId}/scores/${scoreId}/pdf`);
       } catch {
         if (!active) return;
+        setCloudState((current) => (current === "trashed" ? current : "unavailable"));
         if (local) {
           setScore(scoreFromOffline(local));
           setSource(await local.blob.arrayBuffer());
@@ -172,6 +200,8 @@ export default function ReaderPage() {
   }, [choirId, scoreId]);
 
   useEffect(() => {
+    if (cloudState === "checking") return;
+    if (cloudState === "trashed") return;
     let active = true;
     void (async () => {
       try {
@@ -206,11 +236,15 @@ export default function ReaderPage() {
     return () => {
       active = false;
     };
-  }, [choirId, scopeKey, scoreId, session.data?.user.id]);
+  }, [choirId, cloudState, scopeKey, scoreId, session.data?.user.id]);
 
   useEffect(() => {
     const drain = () => {
-      if (!navigator.onLine || globalThis.document.visibilityState === "hidden") return;
+      if (
+        cloudState !== "active" ||
+        !navigator.onLine ||
+        globalThis.document.visibilityState === "hidden"
+      ) return;
       void syncAnnotations(choirId, scoreId, { pull: false }).catch(() => undefined);
     };
     window.addEventListener("online", drain);
@@ -219,7 +253,7 @@ export default function ReaderPage() {
       window.removeEventListener("online", drain);
       globalThis.document.removeEventListener("visibilitychange", drain);
     };
-  }, [choirId, scoreId]);
+  }, [choirId, cloudState, scoreId]);
 
   useEffect(() => {
     if (!source) return;
@@ -322,7 +356,7 @@ export default function ReaderPage() {
         choirId,
         scoreId,
         versionId: score.currentVersion.id,
-        title: score.title,
+        fileName: score.fileName,
         sha256: score.currentVersion.sha256,
         pageCount: score.currentVersion.pageCount,
         blob: new Blob([data], { type: "application/pdf" }),
@@ -343,6 +377,10 @@ export default function ReaderPage() {
   };
 
   const beginEditing = () => {
+    if (cloudState === "trashed") {
+      setSyncMessage("乐谱在回收站中，不能继续编辑；本机未同步批注仍会保留。");
+      return;
+    }
     const editableLayer = layers.find((layer) => layer.canEdit);
     if (!editableLayer) return;
     setEditingOrigin({
@@ -391,6 +429,10 @@ export default function ReaderPage() {
       setSyncMessage(`已保存到本机，${queued} 项待同步`);
       return;
     }
+    if (cloudState !== "active") {
+      setSyncMessage(`已保存到本机，${queued} 项待同步`);
+      return;
+    }
     setSyncing(true);
     try {
       await syncAnnotations(choirId, scoreId, { pull: false });
@@ -417,6 +459,10 @@ export default function ReaderPage() {
   };
 
   const manualSync = async () => {
+    if (cloudState === "trashed") {
+      setSyncMessage("乐谱在回收站中，已停止云端同步；本机内容仍然保留。");
+      return;
+    }
     setSyncing(true);
     try {
       await syncAnnotations(choirId, scoreId, { pull: true });
@@ -501,18 +547,23 @@ export default function ReaderPage() {
 
   return (
     <main className="reader-shell">
-      <h1 className="visually-hidden">{score.title}</h1>
+      <h1 className="visually-hidden">{score.fileName}</h1>
+      {cloudState === "trashed" ? (
+        <aside className="reader-alert reader-alert--trash" role="alert">
+          乐谱已移入回收站。本机离线副本和未同步批注仍保留，恢复后可继续同步。
+        </aside>
+      ) : null}
       {!editing && chromeVisible ? (
         <header className="reader-chrome" aria-label="阅读器控制">
           <Link className="reader-chrome__back" to={`/choirs/${choirId}`}>
             返回
           </Link>
-          <strong className="reader-chrome__title">{score.title}</strong>
+          <strong className="reader-chrome__title">{score.fileName}</strong>
           <div className="reader-chrome__actions">
             <Button onPress={() => openReaderPanel("pages")}>
               第 {currentPage} / {document.numPages} 页
             </Button>
-            {layers.some((layer) => layer.canEdit) ? (
+            {cloudState !== "trashed" && layers.some((layer) => layer.canEdit) ? (
               <Button onPress={beginEditing}>编辑</Button>
             ) : null}
             <Button
@@ -550,12 +601,12 @@ export default function ReaderPage() {
               </div>
               <Button onPress={() => openReaderPanel("layers")}>页面与图层</Button>
               <Button
-                isDisabled={downloading}
+                isDisabled={downloading || cloudState === "trashed"}
                 onPress={() => void downloadOffline()}
               >
                 {downloading ? "正在校验…" : "下载离线副本"}
               </Button>
-              <Button isDisabled={syncing} onPress={() => void manualSync()}>
+              <Button isDisabled={syncing || cloudState === "trashed"} onPress={() => void manualSync()}>
                 {syncing ? "同步中…" : "立即同步"}
               </Button>
               <p className="reader-more-menu__status" role="status">
@@ -572,7 +623,7 @@ export default function ReaderPage() {
         <>
           <header className="reader-edit-header">
             <div>
-              <strong>{score.title}</strong>
+              <strong>{score.fileName}</strong>
               <span>编辑模式 · 第 {currentPage} 页</span>
             </div>
             <Button onPress={() => void finishEditing()}>完成</Button>
@@ -1032,11 +1083,7 @@ function scoreFromOffline(record: OfflineScoreRecord): ScoreSummary {
   return {
     id: record.scoreId,
     choirId: record.choirId,
-    title: record.title,
-    composer: null,
-    arranger: null,
-    sortOrder: 0,
-    status: "published",
+    fileName: record.fileName,
     updatedAt: record.verifiedAt,
     currentVersion: {
       id: record.versionId,

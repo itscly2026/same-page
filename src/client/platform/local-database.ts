@@ -16,7 +16,7 @@ export interface OfflineScoreRecord {
   choirId: string;
   scoreId: string;
   versionId: string;
-  title: string;
+  fileName: string;
   sha256: string;
   pageCount: number;
   blob: Blob;

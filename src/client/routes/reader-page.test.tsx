@@ -7,6 +7,7 @@ import {
   findActiveOfflineScore,
   localDatabase,
 } from "../platform/local-database";
+import { syncAnnotations } from "../annotations/sync";
 import ReaderPage from "./reader-page";
 
 const virtualTestState = vi.hoisted(() => ({ itemSize: 100 }));
@@ -107,6 +108,8 @@ describe("ReaderPage", () => {
     await localDatabase.open();
     await localDatabase.annotationLayers.clear();
     await localDatabase.annotations.clear();
+    await localDatabase.annotationOutbox.clear();
+    await localDatabase.annotationConflicts.clear();
     const stored = new Map<string, string>();
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => stored.get(key) ?? null,
@@ -136,11 +139,7 @@ describe("ReaderPage", () => {
             {
               id: "score-1",
               choirId: "choir-1",
-              title: "练声曲",
-              composer: null,
-              arranger: null,
-              sortOrder: 0,
-              status: "published",
+              fileName: "练声曲.pdf",
               updatedAt: 1,
               currentVersion: {
                 id: "version-1",
@@ -181,7 +180,7 @@ describe("ReaderPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("练声曲")).toBeInTheDocument();
+    expect(await screen.findByText("练声曲.pdf")).toBeInTheDocument();
     expect(screen.queryByLabelText("阅读器控制")).not.toBeInTheDocument();
     expect(
       within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 1 页"),
@@ -229,7 +228,7 @@ describe("ReaderPage", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("练声曲");
+    await screen.findByText("练声曲.pdf");
     openMoreMenu();
     fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
     expect(
@@ -247,7 +246,7 @@ describe("ReaderPage", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("练声曲");
+    await screen.findByText("练声曲.pdf");
     const viewport = getPageViewport();
     vi.spyOn(viewport, "getBoundingClientRect").mockReturnValue({
       x: 0,
@@ -423,11 +422,7 @@ describe("ReaderPage", () => {
             {
               id: "score-1",
               choirId: "choir-1",
-              title: "练声曲",
-              composer: null,
-              arranger: null,
-              sortOrder: 0,
-              status: "published",
+              fileName: "练声曲.pdf",
               updatedAt: 1,
               currentVersion: {
                 id: "version-1",
@@ -453,7 +448,7 @@ describe("ReaderPage", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("练声曲");
+    await screen.findByText("练声曲.pdf");
     const overlay = screen.getByLabelText("第 1 页批注层");
     fireEvent.pointerDown(overlay, { clientX: 20, clientY: 20 });
     fireEvent.pointerUp(overlay, { clientX: 20, clientY: 20 });
@@ -558,11 +553,7 @@ describe("ReaderPage", () => {
             {
               id: "score-1",
               choirId: "choir-1",
-              title: "练声曲",
-              composer: null,
-              arranger: null,
-              sortOrder: 0,
-              status: "published",
+              fileName: "练声曲.pdf",
               updatedAt: 1,
               currentVersion: {
                 id: "version-1",
@@ -588,7 +579,7 @@ describe("ReaderPage", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("练声曲");
+    await screen.findByText("练声曲.pdf");
     openMoreMenu();
     fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
     expect(
@@ -611,7 +602,7 @@ describe("ReaderPage", () => {
       choirId: "choir-1",
       scoreId: "score-1",
       versionId: "version-1",
-      title: "离线练声曲",
+      fileName: "离线练声曲.pdf",
       sha256: "a".repeat(64),
       pageCount: 1,
       blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
@@ -646,7 +637,7 @@ describe("ReaderPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("离线练声曲")).toBeInTheDocument();
+    expect(await screen.findByText("离线练声曲.pdf")).toBeInTheDocument();
     toggleChrome();
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
     expect(screen.getByText(/编辑模式/)).toBeInTheDocument();
@@ -654,5 +645,100 @@ describe("ReaderPage", () => {
       "aria-pressed",
       "true",
     );
+  });
+
+  it("keeps a trashed score's offline copy and outbox without editing or syncing", async () => {
+    const scopeKey = "choir-1:score-1";
+    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+      key: "offline-1",
+      choirId: "choir-1",
+      scoreId: "score-1",
+      versionId: "version-1",
+      fileName: "离线练声曲.pdf",
+      sha256: "a".repeat(64),
+      pageCount: 1,
+      blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
+      active: 1,
+      verifiedAt: 1,
+      annotationSnapshot: {
+        layers: [
+          {
+            key: `${scopeKey}:11111111-1111-4111-8111-111111111111`,
+            scopeKey,
+            id: "11111111-1111-4111-8111-111111111111",
+            kind: "personal",
+            name: "我的批注",
+            sortOrder: 10_000,
+            defaultColor: "#b4235a",
+            colorOverride: null,
+            visible: true,
+            canEdit: true,
+          },
+        ],
+        annotations: [],
+        cursor: 0,
+        verifiedAt: 1,
+      },
+    });
+    await localDatabase.annotationOutbox.put({
+      opId: "pending-op",
+      scopeKey,
+      choirId: "choir-1",
+      scoreId: "score-1",
+      annotationId: "annotation-1",
+      layerId: "11111111-1111-4111-8111-111111111111",
+      baseVersion: 0,
+      type: "upsert",
+      payload: {
+        kind: "text",
+        pageNumber: 1,
+        x: 0.1,
+        y: 0.1,
+        text: "待恢复后同步",
+      },
+      attemptedAt: null,
+      createdAt: 1,
+    });
+    const fetchMock = vi.fn().mockImplementation((input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/scores")) {
+        return Promise.resolve(
+          Response.json({
+            scores: [],
+            storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
+            permissions: { canManage: false },
+          }),
+        );
+      }
+      if (url.endsWith("/scores/score-1/status")) {
+        return Promise.resolve(Response.json({ state: "trashed" }));
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("离线练声曲.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "本机离线副本和未同步批注仍保留，恢复后可继续同步",
+    );
+    toggleChrome();
+    expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    expect(screen.getByRole("button", { name: "立即同步" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下载离线副本" })).toBeDisabled();
+    expect(await localDatabase.annotationOutbox.count()).toBe(1);
+    expect(syncAnnotations).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      "/api/choirs/choir-1/scores",
+      "/api/choirs/choir-1/scores/score-1/status",
+    ]);
   });
 });

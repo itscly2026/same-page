@@ -101,7 +101,7 @@ describe("logout local privacy", () => {
       choirId: "choir-1",
       scoreId: "score-1",
       versionId: "version-1",
-      title: "离线乐谱",
+      fileName: "离线乐谱.pdf",
       sha256: "a".repeat(64),
       pageCount: 1,
       blob: new Blob(["pdf"]),

@@ -14,6 +14,12 @@ export class ConcurrentReplacementError extends Error {
   }
 }
 
+export class FilenameConflictError extends Error {
+  constructor() {
+    super("An active score already uses this file name");
+  }
+}
+
 export interface InspectedPdf {
   data: ArrayBuffer;
   sizeBytes: number;
@@ -25,12 +31,8 @@ export async function createScoreVersion(options: {
   env: Env;
   choirId: string;
   membershipId: string;
-  metadata: {
-    title: string;
-    composer: string | null;
-    arranger: string | null;
-    sortOrder: number;
-  };
+  fileName: string;
+  fileNameKey: string;
   pdf: InspectedPdf;
 }) {
   const scoreId = crypto.randomUUID();
@@ -43,16 +45,14 @@ export async function createScoreVersion(options: {
       reserveStorage(options.env.DB, options.choirId, options.pdf.sizeBytes),
       options.env.DB.prepare(
         `INSERT INTO scores
-          (id, choir_id, title, composer, arranger, sort_order, status,
-           current_version_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'draft', NULL, ?, ?)`,
+          (id, choir_id, file_name, file_name_key, current_version_id,
+           created_at, updated_at)
+         VALUES (?, ?, ?, ?, NULL, ?, ?)`,
       ).bind(
         scoreId,
         options.choirId,
-        options.metadata.title,
-        options.metadata.composer,
-        options.metadata.arranger,
-        options.metadata.sortOrder,
+        options.fileName,
+        options.fileNameKey,
         now,
         now,
       ),
@@ -334,6 +334,13 @@ function classifyReservationError(error: unknown): Error {
     error.message.includes("choir_storage_quota_exceeded")
   ) {
     return new StorageQuotaError();
+  }
+  if (
+    error instanceof Error &&
+    (error.message.includes("scores_active_filename_uidx") ||
+      error.message.includes("scores.choir_id, scores.file_name_key"))
+  ) {
+    return new FilenameConflictError();
   }
   return error instanceof Error ? error : new Error("Storage reservation failed");
 }

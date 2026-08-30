@@ -1,27 +1,32 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 
 import {
   MAX_PDF_BYTES,
-  scoreMetadataSchema,
-  scoreUpdateSchema,
+  SCORE_TRASH_RETENTION_DAYS,
+  scoreFileNameKey,
+  scoreFileNameSchema,
+  scoreRenameRequestSchema,
 } from "../../src/shared/scores";
-import {
-  requireChoirAdmin,
-  requireChoirRead,
-} from "../auth/authorization";
+import { requireChoirAdmin, requireChoirRead } from "../auth/authorization";
 import { resolveContextPrincipal } from "../auth/context-principal";
 import { createDatabase } from "../db/database";
 import { scores } from "../db/schema";
 import type { AppEnvironment } from "../env";
-import { cleanupExpiredScoreVersions } from "./cleanup";
 import { PdfValidationError, inspectPdf } from "./pdf-validation";
 import {
   ConcurrentReplacementError,
   createScoreVersion,
+  FilenameConflictError,
   replaceScoreVersion,
   StorageQuotaError,
 } from "./storage";
+
+const TRASH_RETENTION_MS = SCORE_TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const fileNameCollator = new Intl.Collator("zh-CN", {
+  numeric: true,
+  sensitivity: "base",
+});
 
 export const scoreRoutes = new Hono<AppEnvironment>();
 
@@ -29,57 +34,76 @@ scoreRoutes.get("/choirs/:choirId/scores", async (context) => {
   const choirId = context.req.param("choirId");
   const access = await resolveChoirAccess(context, choirId);
   const search = context.req.query("q")?.trim().slice(0, 120) ?? "";
-  const pattern = `%${escapeLike(search.toLocaleLowerCase())}%`;
+  const pattern = `%${escapeLike(scoreFileNameKey(search))}%`;
   const result = await context.env.DB.prepare(
-    `SELECT scores.id, scores.choir_id, scores.title, scores.composer,
-            scores.arranger, scores.sort_order, scores.status, scores.updated_at,
+    `SELECT scores.id, scores.choir_id, scores.file_name, scores.updated_at,
             versions.id AS version_id, versions.version_number,
             versions.size_bytes, versions.sha256, versions.etag,
             versions.page_count, versions.created_at AS version_created_at
      FROM scores
      INNER JOIN score_versions AS versions
        ON versions.id = scores.current_version_id AND versions.state = 'ready'
-     WHERE scores.choir_id = ?
-       AND (? = 1 OR scores.status = 'published')
-       AND (
-         ? = '' OR lower(scores.title) LIKE ? ESCAPE '\\'
-         OR lower(COALESCE(scores.composer, '')) LIKE ? ESCAPE '\\'
-         OR lower(COALESCE(scores.arranger, '')) LIKE ? ESCAPE '\\'
-       )
-     ORDER BY scores.sort_order ASC, scores.title COLLATE NOCASE ASC`,
+     WHERE scores.choir_id = ? AND scores.trashed_at IS NULL
+       AND (? = '' OR scores.file_name_key LIKE ? ESCAPE '\\')`,
   )
-    .bind(
-      choirId,
-      access.canManage ? 1 : 0,
-      search,
-      pattern,
-      pattern,
-      pattern,
-    )
+    .bind(choirId, search, pattern)
     .all<ScoreRow>();
-  const choir = await context.env.DB.prepare(
-    `SELECT storage_used_bytes, storage_limit_bytes FROM choirs WHERE id = ?`,
-  )
-    .bind(choirId)
-    .first<{ storage_used_bytes: number; storage_limit_bytes: number }>();
+  const storage = await loadStorage(context, choirId);
+  const serialized = result.results
+    .map(serializeScoreRow)
+    .sort((left, right) => fileNameCollator.compare(left.fileName, right.fileName));
 
   return context.json({
-    scores: result.results.map(serializeScoreRow),
-    storage: {
-      usedBytes: choir?.storage_used_bytes ?? 0,
-      limitBytes: choir?.storage_limit_bytes ?? 0,
-    },
+    scores: serialized,
+    storage,
     permissions: { canManage: access.canManage },
   });
+});
+
+scoreRoutes.get("/choirs/:choirId/scores/trash", async (context) => {
+  const choirId = context.req.param("choirId");
+  await requireAdmin(context, choirId);
+  const result = await context.env.DB.prepare(
+    `SELECT scores.id, scores.choir_id, scores.file_name, scores.updated_at,
+            scores.trashed_at, scores.trash_expires_at,
+            versions.id AS version_id, versions.version_number,
+            versions.size_bytes, versions.sha256, versions.etag,
+            versions.page_count, versions.created_at AS version_created_at
+     FROM scores
+     INNER JOIN score_versions AS versions
+       ON versions.id = scores.current_version_id AND versions.state = 'ready'
+     WHERE scores.choir_id = ? AND scores.trashed_at IS NOT NULL`,
+  )
+    .bind(choirId)
+    .all<TrashedScoreRow>();
+  const serialized = result.results
+    .map(serializeTrashedScoreRow)
+    .sort((left, right) => fileNameCollator.compare(left.fileName, right.fileName));
+  return context.json({ scores: serialized, storage: await loadStorage(context, choirId) });
+});
+
+scoreRoutes.get("/choirs/:choirId/scores/:scoreId/status", async (context) => {
+  const choirId = context.req.param("choirId");
+  const scoreId = context.req.param("scoreId");
+  await resolveChoirAccess(context, choirId);
+  const row = await context.env.DB.prepare(
+    "SELECT trashed_at, trash_expires_at FROM scores WHERE id = ? AND choir_id = ?",
+  )
+    .bind(scoreId, choirId)
+    .first<{ trashed_at: number | null; trash_expires_at: number | null }>();
+  if (!row) return context.json({ error: "score_not_found" }, 404);
+  return context.json(
+    row.trashed_at === null
+      ? { state: "active" as const }
+      : { state: "trashed" as const, trashExpiresAt: row.trash_expires_at ?? undefined },
+  );
 });
 
 scoreRoutes.post("/choirs/:choirId/scores", async (context) => {
   const choirId = context.req.param("choirId");
   const { membership } = await requireAdmin(context, choirId);
-  const parsed = await parsePdfUpload(context, true);
-  if (parsed instanceof Response) {
-    return parsed;
-  }
+  const parsed = await parsePdfUpload(context);
+  if (parsed instanceof Response) return parsed;
 
   try {
     const inspected = await inspectPdf(parsed.data);
@@ -87,7 +111,8 @@ scoreRoutes.post("/choirs/:choirId/scores", async (context) => {
       env: context.env,
       choirId,
       membershipId: membership.id,
-      metadata: parsed.metadata,
+      fileName: parsed.fileName,
+      fileNameKey: scoreFileNameKey(parsed.fileName),
       pdf: {
         data: parsed.data,
         sizeBytes: parsed.data.byteLength,
@@ -99,8 +124,7 @@ scoreRoutes.post("/choirs/:choirId/scores", async (context) => {
         score: {
           id: created.scoreId,
           choirId,
-          ...parsed.metadata,
-          status: "draft" as const,
+          fileName: parsed.fileName,
           currentVersion: created.version,
           updatedAt: Date.now(),
         },
@@ -112,131 +136,128 @@ scoreRoutes.post("/choirs/:choirId/scores", async (context) => {
   }
 });
 
-scoreRoutes.post(
-  "/choirs/:choirId/scores/:scoreId/versions",
-  async (context) => {
-    const choirId = context.req.param("choirId");
-    const scoreId = context.req.param("scoreId");
-    const { membership } = await requireAdmin(context, choirId);
-    const parsed = await parsePdfUpload(context, false);
-    if (parsed instanceof Response) {
-      return parsed;
-    }
+scoreRoutes.post("/choirs/:choirId/scores/:scoreId/versions", async (context) => {
+  const choirId = context.req.param("choirId");
+  const scoreId = context.req.param("scoreId");
+  const { membership } = await requireAdmin(context, choirId);
+  const parsed = await parsePdfUpload(context);
+  if (parsed instanceof Response) return parsed;
 
-    const database = createDatabase(context.env.DB);
-    const score = await database.query.scores.findFirst({
-      where: and(eq(scores.id, scoreId), eq(scores.choirId, choirId)),
+  const database = createDatabase(context.env.DB);
+  const score = await database.query.scores.findFirst({
+    where: and(
+      eq(scores.id, scoreId),
+      eq(scores.choirId, choirId),
+      isNull(scores.trashedAt),
+    ),
+  });
+  if (!score?.currentVersionId) {
+    return context.json({ error: "score_not_found" }, 404);
+  }
+
+  try {
+    const inspected = await inspectPdf(parsed.data);
+    const version = await replaceScoreVersion({
+      env: context.env,
+      choirId,
+      scoreId,
+      currentVersionId: score.currentVersionId,
+      membershipId: membership.id,
+      pdf: {
+        data: parsed.data,
+        sizeBytes: parsed.data.byteLength,
+        ...inspected,
+      },
     });
-    if (!score?.currentVersionId) {
-      return context.json({ error: "score_not_found" }, 404);
-    }
+    return context.json({ version }, 201);
+  } catch (error) {
+    return uploadError(context, error);
+  }
+});
 
-    try {
-      const inspected = await inspectPdf(parsed.data);
-      const version = await replaceScoreVersion({
-        env: context.env,
-        choirId,
+scoreRoutes.patch("/choirs/:choirId/scores/:scoreId", async (context) => {
+  const choirId = context.req.param("choirId");
+  const scoreId = context.req.param("scoreId");
+  await requireAdmin(context, choirId);
+  const parsed = scoreRenameRequestSchema.safeParse(
+    await context.req.json().catch(() => null),
+  );
+  if (!parsed.success) {
+    return context.json({ error: "invalid_file_name" }, 400);
+  }
+
+  try {
+    const updated = await context.env.DB.prepare(
+      `UPDATE scores SET file_name = ?, file_name_key = ?, updated_at = ?
+       WHERE id = ? AND choir_id = ? RETURNING id, trashed_at`,
+    )
+      .bind(
+        parsed.data.fileName,
+        scoreFileNameKey(parsed.data.fileName),
+        Date.now(),
         scoreId,
-        currentVersionId: score.currentVersionId,
-        membershipId: membership.id,
-        pdf: {
-          data: parsed.data,
-          sizeBytes: parsed.data.byteLength,
-          ...inspected,
-        },
-      });
-      return context.json({ version }, 201);
-    } catch (error) {
-      return uploadError(context, error);
-    }
-  },
-);
-
-scoreRoutes.patch(
-  "/choirs/:choirId/scores/:scoreId",
-  async (context) => {
-    const choirId = context.req.param("choirId");
-    const scoreId = context.req.param("scoreId");
-    await requireAdmin(context, choirId);
-    const parsed = scoreUpdateSchema.safeParse(
-      await context.req.json().catch(() => null),
-    );
-    if (!parsed.success || Object.keys(parsed.data).length === 0) {
-      return context.json({ error: "invalid_score_metadata" }, 400);
-    }
-
-    const database = createDatabase(context.env.DB);
-    const existing = await database.query.scores.findFirst({
-      where: and(eq(scores.id, scoreId), eq(scores.choirId, choirId)),
-    });
-    if (!existing?.currentVersionId) {
-      return context.json({ error: "score_not_found" }, 404);
-    }
-
-    const now = new Date();
-    const nextStatus = parsed.data.status;
-    const [updated] = await database
-      .update(scores)
-      .set({
-        ...withoutUndefined(parsed.data),
-        updatedAt: now,
-        ...(nextStatus === "published"
-          ? { publishedAt: now, archivedAt: null }
-          : nextStatus === "archived"
-            ? { archivedAt: now }
-            : nextStatus === "draft"
-              ? { archivedAt: null }
-              : {}),
-      })
-      .where(and(eq(scores.id, scoreId), eq(scores.choirId, choirId)))
-      .returning();
-
+        choirId,
+      )
+      .first<{ id: string; trashed_at: number | null }>();
+    if (!updated) return context.json({ error: "score_not_found" }, 404);
     return context.json({
       score: {
         id: updated.id,
-        choirId: updated.choirId,
-        title: updated.title,
-        composer: updated.composer,
-        arranger: updated.arranger,
-        sortOrder: updated.sortOrder,
-        status: updated.status,
-        currentVersionId: updated.currentVersionId,
-        updatedAt: updated.updatedAt.getTime(),
+        fileName: parsed.data.fileName,
+        trashed: updated.trashed_at !== null,
       },
     });
-  },
-);
-
-scoreRoutes.delete(
-  "/choirs/:choirId/scores/:scoreId",
-  async (context) => {
-    const choirId = context.req.param("choirId");
-    const scoreId = context.req.param("scoreId");
-    await requireAdmin(context, choirId);
-    const score = await context.env.DB.prepare(
-      "SELECT status FROM scores WHERE id = ? AND choir_id = ?",
-    )
-      .bind(scoreId, choirId)
-      .first<{ status: string }>();
-    if (!score) return context.json({ error: "score_not_found" }, 404);
-    if (score.status !== "draft") {
-      return context.json({ error: "only_drafts_can_be_deleted" }, 409);
+  } catch (error) {
+    if (isFilenameConflictError(error)) {
+      return context.json({ error: "filename_conflict" }, 409);
     }
+    throw error;
+  }
+});
 
-    await context.env.DB.prepare(
-      "DELETE FROM scores WHERE id = ? AND choir_id = ? AND status = 'draft'",
+scoreRoutes.delete("/choirs/:choirId/scores/:scoreId", async (context) => {
+  const choirId = context.req.param("choirId");
+  const scoreId = context.req.param("scoreId");
+  await requireAdmin(context, choirId);
+  const now = Date.now();
+  const moved = await context.env.DB.prepare(
+    `UPDATE scores SET trashed_at = ?, trash_expires_at = ?, updated_at = ?
+     WHERE id = ? AND choir_id = ? AND trashed_at IS NULL`,
+  )
+    .bind(now, now + TRASH_RETENTION_MS, now, scoreId, choirId)
+    .run();
+  if (moved.meta.changes !== 1) {
+    return context.json({ error: "score_not_found" }, 404);
+  }
+  return context.body(null, 204);
+});
+
+scoreRoutes.post("/choirs/:choirId/scores/:scoreId/restore", async (context) => {
+  const choirId = context.req.param("choirId");
+  const scoreId = context.req.param("scoreId");
+  await requireAdmin(context, choirId);
+  try {
+    const restored = await context.env.DB.prepare(
+      `UPDATE scores
+       SET trashed_at = NULL, trash_expires_at = NULL, updated_at = ?
+       WHERE id = ? AND choir_id = ? AND trashed_at IS NOT NULL`,
     )
-      .bind(scoreId, choirId)
+      .bind(Date.now(), scoreId, choirId)
       .run();
-    context.executionCtx.waitUntil(cleanupExpiredScoreVersions(context.env));
+    if (restored.meta.changes !== 1) {
+      return context.json({ error: "score_not_found" }, 404);
+    }
     return context.body(null, 204);
-  },
-);
+  } catch (error) {
+    if (isFilenameConflictError(error)) {
+      return context.json({ error: "filename_conflict" }, 409);
+    }
+    throw error;
+  }
+});
 
-scoreRoutes.on(
-  ["GET", "HEAD"],
-  "/choirs/:choirId/scores/:scoreId/pdf",
-  (context) => serveScorePdf(context),
+scoreRoutes.on(["GET", "HEAD"], "/choirs/:choirId/scores/:scoreId/pdf", (context) =>
+  serveScorePdf(context),
 );
 
 scoreRoutes.on(
@@ -251,20 +272,19 @@ async function serveScorePdf(
 ) {
   const choirId = context.req.param("choirId") ?? "";
   const scoreId = context.req.param("scoreId") ?? "";
-  const access = await resolveChoirAccess(context, choirId);
+  await resolveChoirAccess(context, choirId);
   const row = await context.env.DB.prepare(
-    `SELECT scores.status, scores.current_version_id, versions.id AS version_id,
+    `SELECT scores.current_version_id, versions.id AS version_id,
             versions.object_key, versions.size_bytes, versions.etag,
             versions.sha256
      FROM scores
      INNER JOIN score_versions AS versions
        ON versions.score_id = scores.id AND versions.state = 'ready'
-     WHERE scores.id = ? AND scores.choir_id = ?
+     WHERE scores.id = ? AND scores.choir_id = ? AND scores.trashed_at IS NULL
        AND versions.id = COALESCE(?, scores.current_version_id)
-       AND (? = 1 OR scores.status = 'published')
      LIMIT 1`,
   )
-    .bind(scoreId, choirId, requestedVersionId ?? null, access.canManage ? 1 : 0)
+    .bind(scoreId, choirId, requestedVersionId ?? null)
     .first<PdfRow>();
   if (!row || !row.etag) {
     return context.json({ error: "score_not_found" }, 404);
@@ -321,48 +341,43 @@ async function resolveChoirAccess(
   choirId: string,
 ) {
   const principal = await resolveContextPrincipal(context);
-  const database = createDatabase(context.env.DB);
-  const access = await requireChoirRead(database, principal, choirId);
+  const access = await requireChoirRead(createDatabase(context.env.DB), principal, choirId);
   return {
-    access,
-    canManage:
-      access.kind === "membership" && access.membership.role === "admin",
+    canManage: access.kind === "membership" && access.membership.role === "admin",
   };
 }
 
-async function requireAdmin(
-  context: Context<AppEnvironment>,
-  choirId: string,
-) {
+async function requireAdmin(context: Context<AppEnvironment>, choirId: string) {
   const principal = await resolveContextPrincipal(context);
-  const database = createDatabase(context.env.DB);
-  const membership = await requireChoirAdmin(database, principal, choirId);
+  const membership = await requireChoirAdmin(
+    createDatabase(context.env.DB),
+    principal,
+    choirId,
+  );
   return { membership };
+}
+
+async function loadStorage(context: Context<AppEnvironment>, choirId: string) {
+  const choir = await context.env.DB.prepare(
+    "SELECT storage_used_bytes, storage_limit_bytes FROM choirs WHERE id = ?",
+  )
+    .bind(choirId)
+    .first<{ storage_used_bytes: number; storage_limit_bytes: number }>();
+  return {
+    usedBytes: choir?.storage_used_bytes ?? 0,
+    limitBytes: choir?.storage_limit_bytes ?? 1,
+  };
 }
 
 async function parsePdfUpload(
   context: Context<AppEnvironment>,
-  includeMetadata: boolean,
-): Promise<
-  | Response
-  | {
-      data: ArrayBuffer;
-      metadata: {
-        title: string;
-        composer: string | null;
-        arranger: string | null;
-        sortOrder: number;
-      };
-    }
-> {
+): Promise<Response | { data: ArrayBuffer; fileName: string }> {
   const contentLength = Number(context.req.header("Content-Length") ?? 0);
   if (contentLength > MAX_PDF_BYTES + 1024 * 1024) {
     return context.json({ error: "pdf_too_large" }, 413);
   }
   const form = await context.req.formData().catch(() => null);
-  if (!form) {
-    return context.json({ error: "invalid_upload" }, 400);
-  }
+  if (!form) return context.json({ error: "invalid_upload" }, 400);
   const file = form.get("file");
   if (!(file instanceof File)) {
     return context.json({ error: "pdf_required" }, 400);
@@ -373,24 +388,11 @@ async function parsePdfUpload(
   if (file.type && file.type !== "application/pdf") {
     return context.json({ error: "pdf_required" }, 415);
   }
-
-  const metadata = includeMetadata
-    ? scoreMetadataSchema.safeParse({
-        title: form.get("title"),
-        composer: form.get("composer") ?? "",
-        arranger: form.get("arranger") ?? "",
-        sortOrder: form.get("sortOrder") ?? 0,
-      })
-    : scoreMetadataSchema.safeParse({
-        title: "replacement",
-        composer: "",
-        arranger: "",
-        sortOrder: 0,
-      });
-  if (!metadata.success) {
-    return context.json({ error: "invalid_score_metadata" }, 400);
+  const fileName = scoreFileNameSchema.safeParse(file.name);
+  if (!fileName.success) {
+    return context.json({ error: "invalid_file_name" }, 400);
   }
-  return { data: await file.arrayBuffer(), metadata: metadata.data };
+  return { data: await file.arrayBuffer(), fileName: fileName.data };
 }
 
 function uploadError(context: Context<AppEnvironment>, error: unknown) {
@@ -401,10 +403,21 @@ function uploadError(context: Context<AppEnvironment>, error: unknown) {
   if (error instanceof StorageQuotaError) {
     return context.json({ error: "storage_quota_exceeded" }, 409);
   }
+  if (error instanceof FilenameConflictError) {
+    return context.json({ error: "filename_conflict" }, 409);
+  }
   if (error instanceof ConcurrentReplacementError) {
     return context.json({ error: "replacement_in_progress" }, 409);
   }
   throw error;
+}
+
+function isFilenameConflictError(error: unknown) {
+  return (
+    error instanceof Error &&
+    (error.message.includes("scores_active_filename_uidx") ||
+      error.message.includes("scores.choir_id, scores.file_name_key"))
+  );
 }
 
 function parseRange(
@@ -412,14 +425,10 @@ function parseRange(
   size: number,
 ): { offset: number; length: number } | null {
   const match = /^bytes=(\d*)-(\d*)$/.exec(value.trim());
-  if (!match || (!match[1] && !match[2])) {
-    return null;
-  }
+  if (!match || (!match[1] && !match[2])) return null;
   if (!match[1]) {
     const suffix = Number(match[2]);
-    if (!Number.isSafeInteger(suffix) || suffix <= 0) {
-      return null;
-    }
+    if (!Number.isSafeInteger(suffix) || suffix <= 0) return null;
     const length = Math.min(suffix, size);
     return { offset: size - length, length };
   }
@@ -442,20 +451,10 @@ function escapeLike(value: string) {
   return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
 }
 
-function withoutUndefined<T extends Record<string, unknown>>(value: T) {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined),
-  ) as Partial<T>;
-}
-
 interface ScoreRow {
   id: string;
   choir_id: string;
-  title: string;
-  composer: string | null;
-  arranger: string | null;
-  sort_order: number;
-  status: "draft" | "published" | "archived";
+  file_name: string;
   updated_at: number;
   version_id: string;
   version_number: number;
@@ -466,15 +465,16 @@ interface ScoreRow {
   version_created_at: number;
 }
 
+interface TrashedScoreRow extends ScoreRow {
+  trashed_at: number;
+  trash_expires_at: number;
+}
+
 function serializeScoreRow(row: ScoreRow) {
   return {
     id: row.id,
     choirId: row.choir_id,
-    title: row.title,
-    composer: row.composer,
-    arranger: row.arranger,
-    sortOrder: row.sort_order,
-    status: row.status,
+    fileName: row.file_name,
     updatedAt: row.updated_at,
     currentVersion: {
       id: row.version_id,
@@ -488,8 +488,15 @@ function serializeScoreRow(row: ScoreRow) {
   };
 }
 
+function serializeTrashedScoreRow(row: TrashedScoreRow) {
+  return {
+    ...serializeScoreRow(row),
+    trashedAt: row.trashed_at,
+    trashExpiresAt: row.trash_expires_at,
+  };
+}
+
 interface PdfRow {
-  status: "draft" | "published" | "archived";
   current_version_id: string;
   version_id: string;
   object_key: string;
