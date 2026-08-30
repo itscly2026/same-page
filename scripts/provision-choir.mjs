@@ -60,9 +60,7 @@ export function provisionChoirFromCli(argv = process.argv.slice(2)) {
     rmSync(temporaryDirectory, { recursive: true, force: true });
   }
 
-  process.stdout.write(
-    `Choir created. Save this invite code now: ${joinCode}\n`,
-  );
+  process.stdout.write(formatSuccessMessage(joinCode, options.showJoinCode));
 }
 
 function queryAdminUser(email, mode) {
@@ -91,9 +89,10 @@ function runWrangler(arguments_) {
   return result.stdout;
 }
 
-function parseArguments(argv) {
+export function parseArguments(argv) {
   const values = new Map();
   let mode = "--local";
+  let showJoinCode = false;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--remote") {
@@ -102,6 +101,10 @@ function parseArguments(argv) {
     }
     if (argument === "--local") {
       mode = "--local";
+      continue;
+    }
+    if (argument === "--show-join-code") {
+      showJoinCode = true;
       continue;
     }
     if (argument.startsWith("--")) {
@@ -122,7 +125,17 @@ function parseArguments(argv) {
   if (choirName.length > 80) {
     throw new Error("--choir-name must contain at most 80 characters");
   }
-  return { adminEmail, adminDisplayName, choirName, mode };
+  return { adminEmail, adminDisplayName, choirName, mode, showJoinCode };
+}
+
+export function formatSuccessMessage(joinCode, showJoinCode) {
+  if (showJoinCode) {
+    return `Choir created. Invite code: ${joinCode}\n`;
+  }
+  return (
+    "Choir created. The initial invite code was not displayed. " +
+    "Sign in as the administrator and rotate it before sharing.\n"
+  );
 }
 
 function quote(value) {
