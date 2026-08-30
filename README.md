@@ -180,6 +180,37 @@ npm run check        # 与 CI 相同的完整验证
 
 Reader 路由和 PDF.js 从首页 bundle 中拆出，进入 `/reader` 时才加载。PWA 只由 `vite-plugin-pwa` 生成并注册一个 Service Worker，更新通过页面提示由用户确认。部署命令已经保留，但正式 Cloudflare 环境、资源绑定与发布流程属于后续 Issue。
 
+### 本地身份与合唱团初始化
+
+将 `.dev.vars.example` 复制为不会提交的 `.dev.vars`，并为
+`BETTER_AUTH_SECRET` 与 `INVITE_SECRET` 分别设置至少 32 个字符的独立随机值。
+Resend key 只用于 Same Page 的登录邮件，不与其他邮件系统共用。应用日志不得记录
+OTP、收件人、邮件正文、邀请码或认证 Secret。
+
+```bash
+npm run db:migrate:local
+npm run dev
+```
+
+首位管理员需要先在页面完成一次邮箱 OTP 注册。随后由运维人员在进程环境中提供
+`INVITE_SECRET`，创建默认的“小红花合唱团”及管理员关系：
+
+```bash
+INVITE_SECRET='与 .dev.vars 相同的独立值' npm run provision:choir -- \
+  --admin-email admin@example.com \
+  --admin-display-name 团长 \
+  --local
+```
+
+命令默认只操作本地 D1；生产执行必须显式传入 `--remote`。邀请码只在创建成功时显示
+一次，应通过私密渠道保存和发送，不得粘贴到 Issue、PR 或日志。产品和公开 API 均不
+提供建团入口；新增合唱团沿用同一个受控运维命令。
+
+Better Auth 的数据库定义由官方 CLI 生成。认证配置发生模型变化时运行
+`npm run auth:schema` 并审查生成结果；D1 的实际变更仍通过 `migrations/` 中的迁移执行。
+生产 D1/R2/Worker/Resend 绑定和 QQ、163、Gmail、Outlook 投递验收属于 Issue #9，
+不能用本地自动化结果替代。
+
 ## 原型与发布门槛
 
 实现前优先验证：
