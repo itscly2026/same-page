@@ -186,6 +186,32 @@ npm run build        # 类型检查与生产构建
 npm run check        # 与 CI 相同的完整验证
 ```
 
+### iPad 视觉报告
+
+视觉报告直接运行当前生产构建中的 React 路由、样式、PDF.js 阅读器和交互实现，
+再由 Playwright 在浏览器请求层提供固定的虚构会话、合唱团、权限、PDF、图层和批注。
+它不需要真实账号、邀请码、D1、R2 或私人乐谱，也不维护第二套产品页面。
+
+首次运行前安装 Playwright 的 Chromium：
+
+```bash
+npx playwright install chromium
+npm run visual:report
+```
+
+报告固定生成到 `artifacts/visual-report/index.html`，PNG 位于其
+`screenshots/` 目录，`manifest.json` 记录 commit、场景、App viewport 和实际 PNG
+像素尺寸。每次运行会替换这个忽略提交的生成目录。
+
+场景清单位于 `visual-report/scenarios.mjs`。新增场景时应只声明当前路由、虚构身份、
+iPad 方向、稳定完成条件和必要的用户操作；请求数据统一由
+`visual-report/fixtures.mjs` 提供。未声明的 `/api/*` 请求会直接返回 404，防止报告意外
+访问本地或生产业务数据。
+
+这里的 iPad 是确定性的浏览器设备仿真，适合检查当前 Web UI 和生成视觉报告；它不证明
+真实 iPad Safari 浏览器工具栏、虚拟键盘、PWA 全屏、安全区、Apple Pencil 或实体设备
+交互。真实设备验收仍按 production release runbook 独立记录。
+
 Reader 路由和 PDF.js 从首页 bundle 中拆出，进入 `/reader` 时才加载。PWA 只由
 `vite-plugin-pwa` 生成并注册一个 Service Worker，更新通过页面提示由用户确认。
 生产资源、发布流程和实机门槛见
