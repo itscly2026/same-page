@@ -47,6 +47,7 @@ import {
   updateCachedLayer,
   updateCachedLayerMetadata,
 } from "../annotations/local-annotations";
+import { requestOutboxRecovery } from "../annotations/outbox-recovery";
 import { syncAnnotations } from "../annotations/sync";
 import {
   captureOfflineAnnotationSnapshot,
@@ -346,7 +347,7 @@ export default function ReaderPage() {
   useEffect(() => {
     if (!workspace) return;
     let active = true;
-    const revalidateAndDrain = () => {
+    const revalidateCloudState = () => {
       if (!navigator.onLine || globalThis.document.visibilityState === "hidden") return;
       void lookupScoreCloudState(choirId, scoreId)
         .then(async (lookup) => {
@@ -362,16 +363,21 @@ export default function ReaderPage() {
           setCloudState("active");
           setScore(lookup.score);
           setSource(`/api/choirs/${choirId}/scores/${scoreId}/pdf`);
-          await syncAnnotations(workspace, { pull: false });
         })
         .catch(() => undefined);
     };
-    window.addEventListener("online", revalidateAndDrain);
-    globalThis.document.addEventListener("visibilitychange", revalidateAndDrain);
+    window.addEventListener("online", revalidateCloudState);
+    globalThis.document.addEventListener(
+      "visibilitychange",
+      revalidateCloudState,
+    );
     return () => {
       active = false;
-      window.removeEventListener("online", revalidateAndDrain);
-      globalThis.document.removeEventListener("visibilitychange", revalidateAndDrain);
+      window.removeEventListener("online", revalidateCloudState);
+      globalThis.document.removeEventListener(
+        "visibilitychange",
+        revalidateCloudState,
+      );
     };
   }, [choirId, scoreId, workspace]);
 
@@ -596,6 +602,7 @@ export default function ReaderPage() {
       return;
     }
     setSyncing(true);
+    requestOutboxRecovery();
     try {
       await retryScoreSyncErrors(workspace);
       await queueScoreDrafts(workspace);
