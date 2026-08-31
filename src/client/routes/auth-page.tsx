@@ -221,8 +221,8 @@ export default function AuthPage() {
       setView("join-result");
       setMessage(
         joinStateResponse?.status === 403
-          ? "已经登录，但该成员关系需要团管理员恢复。"
-          : "已经登录，但暂时无法继续加入合唱团。",
+          ? "已经登录，但该成员关系需要云盘管理员恢复。"
+          : "已经登录，但暂时无法继续加入云盘。",
       );
       return;
     }
@@ -231,7 +231,7 @@ export default function AuthPage() {
     );
     if (!joinState.success) {
       setView("join-result");
-      setMessage("已经登录，但暂时无法继续加入合唱团。");
+      setMessage("已经登录，但暂时无法继续加入云盘。");
       return;
     }
     if (joinState.data.status === "joined") {
@@ -256,8 +256,8 @@ export default function AuthPage() {
     if (!response?.ok) {
       setMessage(
         response?.status === 403
-          ? "该成员关系需要团管理员恢复。"
-          : "暂时无法加入这个合唱团，请稍后再试。",
+          ? "该成员关系需要云盘管理员恢复。"
+          : "暂时无法加入这个云盘，请稍后再试。",
       );
       return;
     }
@@ -436,8 +436,8 @@ export default function AuthPage() {
         };
       case "join-choir":
         return {
-          title: "加入合唱团",
-          description: `认证已完成。请设置你在“${joinChoir?.name ?? "这个合唱团"}”中的显示名。`,
+          title: "加入云盘",
+          description: `认证已完成。请设置你在“${joinChoir?.name ?? "这个云盘"}”中的显示名。`,
           form: (
             <Form className="entry-form" onSubmit={joinCurrentGuestChoir}>
               <TextField
@@ -446,7 +446,7 @@ export default function AuthPage() {
                 onChange={setDisplayName}
                 maxLength={40}
               >
-                <Label>团内显示名</Label>
+                <Label>显示名</Label>
                 <Input
                   autoComplete="nickname"
                   placeholder="例如：小花"
@@ -463,7 +463,7 @@ export default function AuthPage() {
       case "join-result":
         return {
           title: "登录完成",
-          description: "你已经登录，但本次加团没有完成。",
+          description: "你已经登录，但本次加入云盘没有完成。",
           form: (
             <Link className="primary-link auth-primary-link" to="/">
               返回首页

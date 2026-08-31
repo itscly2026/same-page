@@ -186,7 +186,7 @@ describe("annotation layers and object synchronization", () => {
     const otherChoir = await provisionChoir({
       binding: env.DB,
       adminUserId: member.userId,
-      adminDisplayName: "另一团管理员",
+      adminDisplayName: "另一云盘管理员",
       inviteSecret: env.INVITE_SECRET,
     });
     const crossChoir = await callWorker(

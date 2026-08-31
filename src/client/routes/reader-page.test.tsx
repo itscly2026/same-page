@@ -195,7 +195,7 @@ describe("ReaderPage", () => {
     ).toBeInTheDocument();
 
     toggleChrome();
-    expect(screen.getByRole("link", { name: "返回合唱团" }).querySelector("svg")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "返回云盘" }).querySelector("svg")).not.toBeNull();
     expect(screen.getByRole("button", { name: "更多" }).querySelector("svg")).not.toBeNull();
     const pageStrip = screen.getByLabelText("页面缩略图");
     expect(pageStrip).toHaveClass("page-preview-strip");

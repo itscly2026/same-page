@@ -166,6 +166,7 @@ choirRoutes.get("/choirs", async (context) => {
       and(
         eq(memberships.userId, principal.userId),
         eq(memberships.status, "active"),
+        eq(choirs.isPreviewEntry, false),
       ),
     );
 

@@ -40,7 +40,11 @@ try {
 
   for (const scenario of visualReportScenarios) {
     const deviceName =
-      scenario.device === "landscape" ? "iPad Pro 11 landscape" : "iPad Pro 11";
+      scenario.device === "landscape"
+        ? "iPad Pro 11 landscape"
+        : scenario.device === "narrow"
+          ? "iPhone 13"
+          : "iPad Pro 11";
     const device = devices[deviceName];
     const context = await browser.newContext({
       ...device,
@@ -171,6 +175,10 @@ async function runActions(page, actions) {
       const box = await locator.boundingBox();
       if (!box) throw new Error(`Cannot click hidden visual report target: ${action.selector}`);
       await locator.click({ position: { x: box.width / 2, y: box.height / 2 } });
+      continue;
+    }
+    if (action.type === "fillLabel") {
+      await page.getByLabel(action.label, { exact: true }).fill(action.value);
       continue;
     }
     throw new Error(`Unknown visual report action: ${action.type}`);

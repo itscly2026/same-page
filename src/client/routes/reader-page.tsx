@@ -554,7 +554,7 @@ export default function ReaderPage() {
           {loadingError}
         </p>
         <Link className="primary-link" to={`/choirs/${choirId}`}>
-          返回合唱团
+          返回云盘
         </Link>
       </main>
     );
@@ -604,7 +604,7 @@ export default function ReaderPage() {
       {!editing && chromeVisible ? (
         <header className="reader-chrome" aria-label="阅读器控制">
           <Link
-            aria-label="返回合唱团"
+            aria-label="返回云盘"
             className="reader-chrome__back reader-icon-button"
             to={`/choirs/${choirId}`}
           >
