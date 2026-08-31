@@ -553,9 +553,28 @@ h1 {
   background: var(--brand-strong);
 }
 
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 2.25rem;
+}
+
 .hero-cta {
   min-width: 9.5rem;
-  margin-top: 2.25rem;
+}
+
+.hero-preview-link {
+  border-radius: 0.55rem;
+  padding: 0.55rem 0.3rem;
+  color: var(--brand);
+  font-weight: 700;
+  text-underline-offset: 0.22em;
+}
+
+.hero-preview-link:hover,
+.hero-preview-link:focus-visible {
+  color: var(--brand-strong);
 }
 
 .secondary-button {
@@ -688,6 +707,20 @@ h1 {
   color: var(--muted);
 }
 
+.membership-empty,
+.membership-login {
+  display: inline-block;
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.membership-login {
+  color: var(--brand);
+  font-weight: 700;
+  text-underline-offset: 0.2em;
+}
+
 .invite-section {
   margin-top: 1.5rem;
   border-top: 1px solid var(--line);
@@ -696,6 +729,81 @@ h1 {
 
 .dialog-form {
   margin-top: 1rem;
+}
+
+.join-display-name {
+  margin-top: 1.75rem;
+}
+
+.join-code-field {
+  width: 100%;
+}
+
+.join-code-control {
+  position: relative;
+  width: 100%;
+  max-width: 27rem;
+}
+
+.entry-form .join-code-input {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  color: transparent;
+  background: transparent;
+  caret-color: transparent;
+  cursor: text;
+  opacity: 0.01;
+}
+
+.entry-form .join-code-input:focus-visible {
+  outline: 0;
+}
+
+.join-code-slots {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(0.45rem, 1.5vw, 0.8rem);
+}
+
+.join-code-group {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(0.25rem, 1vw, 0.45rem);
+}
+
+.join-code-slot {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  height: clamp(2.8rem, 9vw, 3.35rem);
+  border: 1px solid #b9c8c4;
+  border-radius: 0.65rem;
+  color: var(--brand);
+  background: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(1.05rem, 3vw, 1.3rem);
+  font-weight: 750;
+}
+
+.join-code-slot[data-filled] {
+  border-color: #8fa6a0;
+}
+
+.join-code-control:focus-within .join-code-slot[data-active] {
+  border-color: var(--brand);
+  outline: 3px solid rgb(1 70 83 / 18%);
+  outline-offset: 1px;
+}
+
+.join-code-separator {
+  color: var(--muted);
+  font-size: 1.25rem;
 }
 
 .entry-form label {
@@ -1847,8 +1955,20 @@ h1 {
     max-width: 18rem;
   }
 
+  .hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
   .hero-cta {
     width: 100%;
+  }
+
+  .hero-preview-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .modal-overlay {

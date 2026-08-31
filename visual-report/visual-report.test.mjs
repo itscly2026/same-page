@@ -8,12 +8,12 @@ import {
   visualReportScenarios,
 } from "./scenarios.mjs";
 
-test("visual report scenarios have stable unique ids and cover both iPad orientations", () => {
+test("visual report scenarios have stable unique ids and cover iPad plus narrow layouts", () => {
   assert.equal(validateVisualReportScenarios(), visualReportScenarios);
-  assert.equal(new Set(visualReportScenarios.map((scenario) => scenario.id)).size, 9);
+  assert.equal(new Set(visualReportScenarios.map((scenario) => scenario.id)).size, 11);
   assert.deepEqual(
     new Set(visualReportScenarios.map((scenario) => scenario.device)),
-    new Set(["portrait", "landscape"]),
+    new Set(["portrait", "landscape", "narrow"]),
   );
 });
 
@@ -28,6 +28,11 @@ test("fixture resolver isolates guest and member sessions", () => {
   });
   assert.equal(JSON.parse(guest.body), null);
   assert.equal(JSON.parse(member.body).user.email, "member@visual.invalid");
+  const preview = resolveFixtureRequest({
+    pathname: "/api/guest/preview-choir",
+    identity: "guest",
+  });
+  assert.equal(JSON.parse(preview.body).choir.name, "公开体验云盘");
 });
 
 test("fixture resolver returns current score shapes and a generated PDF without secrets", () => {

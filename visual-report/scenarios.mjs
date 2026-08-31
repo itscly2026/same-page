@@ -11,14 +11,44 @@ export const visualReportScenarios = [
   },
   {
     id: "home-entry-dialog",
-    title: "首页 · 进入合唱团",
-    description: "匿名用户使用邀请码进入合唱团的弹窗。",
+    title: "首页 · 进入云盘",
+    description: "匿名用户查看已加入云盘与邀请码入口的弹窗。",
     device: "portrait",
     identity: "guest",
     route: "/",
-    ready: { type: "role", role: "dialog", name: "进入合唱团" },
+    ready: { type: "role", role: "dialog", name: "进入云盘" },
     actions: [
-      { type: "clickRole", role: "button", name: "进入合唱团" },
+      { type: "clickRole", role: "button", name: "进入云盘" },
+    ],
+  },
+  {
+    id: "home-entry-dialog-filled",
+    title: "首页 · 邀请码填写",
+    description: "横向 iPad 中邀请码以单一输入呈现 4–4 分组。",
+    device: "landscape",
+    identity: "guest",
+    route: "/",
+    ready: {
+      type: "selector",
+      selector: ".join-code-group:last-child .join-code-slot:last-child[data-filled]",
+    },
+    actions: [
+      { type: "clickRole", role: "button", name: "进入云盘" },
+      { type: "fillLabel", label: "邀请码", value: "ABCD EFGH" },
+    ],
+  },
+  {
+    id: "home-entry-dialog-error",
+    title: "首页 · 邀请码错误",
+    description: "窄屏中邀请码错误显示在整组控件下方。",
+    device: "narrow",
+    identity: "guest",
+    route: "/",
+    ready: { type: "text", text: "邀请码无效或已失效。" },
+    actions: [
+      { type: "clickRole", role: "button", name: "进入云盘" },
+      { type: "fillLabel", label: "邀请码", value: "ABCD-EFGH" },
+      { type: "clickRole", role: "button", name: "进入" },
     ],
   },
   {
@@ -28,7 +58,7 @@ export const visualReportScenarios = [
     device: "portrait",
     identity: "guest",
     route: "/login",
-    ready: { type: "text", text: "使用邮箱和密码登录；日常登录不发送验证码。" },
+    ready: { type: "text", text: "输入邮箱，我们会自动进入登录或注册流程。" },
     actions: [],
   },
   {
@@ -114,7 +144,7 @@ export function validateVisualReportScenarios(scenarios = visualReportScenarios)
       throw new Error(`Duplicate visual report scenario id: ${scenario.id}`);
     }
     ids.add(scenario.id);
-    if (!new Set(["portrait", "landscape"]).has(scenario.device)) {
+    if (!new Set(["portrait", "landscape", "narrow"]).has(scenario.device)) {
       throw new Error(`Invalid device for scenario ${scenario.id}`);
     }
     if (!new Set(["guest", "member", "admin"]).has(scenario.identity)) {

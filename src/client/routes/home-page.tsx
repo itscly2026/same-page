@@ -14,6 +14,8 @@ import { Link, useNavigate } from "react-router-dom";
 
 import {
   choirMembershipsResponseSchema,
+  guestJoinStateResponseSchema,
+  guestSessionResponseSchema,
   previewChoirResponseSchema,
   type ChoirSummary,
   type MembershipSummary,
@@ -25,16 +27,24 @@ import {
   type LogoutLocalSummary,
 } from "../auth/logout-local-data";
 import { AppHeader } from "../components/app-header";
+import { JoinCodeField } from "../components/join-code-field";
+import { JOIN_CODE_LENGTH } from "../components/join-code";
+
+type JoinStep =
+  | { kind: "invite" }
+  | { kind: "display-name"; choir: ChoirSummary };
 
 export function HomePage() {
   const navigate = useNavigate();
   const session = authClient.useSession();
   const [joinOpen, setJoinOpen] = useState(false);
+  const [joinStep, setJoinStep] = useState<JoinStep>({ kind: "invite" });
   const [joinCode, setJoinCode] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [memberships, setMemberships] = useState<MembershipSummary[]>([]);
   const [previewChoir, setPreviewChoir] = useState<ChoirSummary | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [clearingGuestSession, setClearingGuestSession] = useState(false);
   const [joinMessage, setJoinMessage] = useState<string | null>(null);
   const [pageMessage, setPageMessage] = useState<string | null>(null);
   const [logoutSummary, setLogoutSummary] =
@@ -66,49 +76,121 @@ export function HomePage() {
     };
   }, [session.isPending, userId]);
 
-  const enterInviteChoir = async (event: FormEvent) => {
+  const resetJoinFlow = () => {
+    setJoinStep({ kind: "invite" });
+    setJoinCode("");
+    setDisplayName("");
+    setJoinMessage(null);
+  };
+
+  const finishJoinDialog = () => {
+    setJoinOpen(false);
+    resetJoinFlow();
+  };
+
+  const clearActiveGuestSession = async () => {
+    setClearingGuestSession(true);
+    await clearGuestSession();
+    setClearingGuestSession(false);
+  };
+
+  const dismissJoinDialog = () => {
+    if (userId && joinStep.kind === "display-name") {
+      void clearActiveGuestSession();
+    }
+    finishJoinDialog();
+  };
+
+  const enterInviteDrive = async (event: FormEvent) => {
     event.preventDefault();
+    if (clearingGuestSession) return;
     setSubmitting(true);
     setJoinMessage(null);
+    let createdGuestSession = false;
 
     try {
-      const response = await fetch(
-        session.data?.user ? "/api/choirs/join" : "/api/guest/session",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(
-            session.data?.user
-              ? { admission: "invite", joinCode, displayName }
-              : { admission: "invite", joinCode },
-          ),
-        },
-      );
+      const response = await fetch("/api/guest/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ admission: "invite", joinCode }),
+      });
 
       if (!response.ok) {
         setJoinMessage(
           response.status === 429
             ? "尝试次数过多，请稍后再试。"
-            : response.status === 403 && session.data?.user
-              ? "该成员关系需要团管理员恢复。"
-              : "邀请码无效或已失效。",
+            : "邀请码无效或已失效。",
         );
         return;
       }
+      createdGuestSession = true;
 
-      const payload = (await response.json()) as {
-        choir?: { id: string };
-        membership?: { choir: { id: string } };
-      };
-      const choirId = payload.membership?.choir.id ?? payload.choir?.id;
-      if (!choirId) {
-        setJoinMessage("暂时无法进入这个合唱团，请稍后再试。");
+      const admitted = guestSessionResponseSchema.parse(await response.json());
+      if (!userId) {
+        finishJoinDialog();
+        await navigate(`/choirs/${admitted.choir.id}`);
         return;
       }
-      setJoinOpen(false);
+
+      const joinStateResponse = await fetch("/api/choirs/current-guest/join-state");
+      if (!joinStateResponse.ok) {
+        await clearActiveGuestSession();
+        createdGuestSession = false;
+        setJoinMessage(
+          joinStateResponse.status === 403
+            ? "该成员关系需要云盘管理员恢复。"
+            : "暂时无法进入这个云盘，请稍后再试。",
+        );
+        return;
+      }
+      const joinState = guestJoinStateResponseSchema.parse(
+        await joinStateResponse.json(),
+      );
+      if (joinState.status === "joined") {
+        await clearActiveGuestSession();
+        createdGuestSession = false;
+        finishJoinDialog();
+        await navigate(`/choirs/${joinState.choir.id}`);
+        return;
+      }
+      setJoinStep({ kind: "display-name", choir: joinState.choir });
+    } catch {
+      if (createdGuestSession) await clearActiveGuestSession();
+      setJoinMessage("暂时无法进入这个云盘，请稍后再试。");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const joinValidatedDrive = async (event: FormEvent) => {
+    event.preventDefault();
+    if (joinStep.kind !== "display-name") return;
+    setSubmitting(true);
+    setJoinMessage(null);
+
+    try {
+      const response = await fetch("/api/choirs/join-current-guest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ displayName }),
+      });
+      if (!response.ok) {
+        if (response.status === 403) {
+          await clearActiveGuestSession();
+          setJoinStep({ kind: "invite" });
+        }
+        setJoinMessage(
+          response.status === 403
+            ? "该成员关系需要云盘管理员恢复。"
+            : "暂时无法加入这个云盘，请稍后再试。",
+        );
+        return;
+      }
+      const choirId = joinStep.choir.id;
+      finishJoinDialog();
       await navigate(`/choirs/${choirId}`);
     } catch {
-      setJoinMessage("暂时无法进入这个合唱团，请稍后再试。");
+      setJoinMessage("暂时无法加入这个云盘，请稍后再试。");
     } finally {
       setSubmitting(false);
     }
@@ -151,19 +233,9 @@ export function HomePage() {
               </Button>
             </>
           ) : session.isPending ? null : (
-            <>
-              {previewChoir ? (
-                <Link
-                  className="header-action"
-                  to={`/choirs/${previewChoir.id}`}
-                >
-                  抢先体验
-                </Link>
-              ) : null}
-              <Link className="header-action header-action--primary" to="/login">
-                登录或注册
-              </Link>
-            </>
+            <Link className="header-action header-action--primary" to="/login">
+              登录
+            </Link>
           )
         }
       />
@@ -172,10 +244,17 @@ export function HomePage() {
         <p className="hero-mark">Same Page</p>
         <h1 id="page-title">Every voice, on the same page.</h1>
         <p className="hero-zh">同页共谱，众声一心。</p>
-        <p className="hero-description">为合唱排练而设计的共享乐谱与批注空间。</p>
-        <Button className="primary-button hero-cta" onPress={() => setJoinOpen(true)}>
-          进入合唱团
-        </Button>
+        <p className="hero-description">为合唱排练而设计的乐谱云盘。</p>
+        <div className="hero-actions">
+          <Button className="primary-button hero-cta" onPress={() => setJoinOpen(true)}>
+            进入云盘
+          </Button>
+          {!userId && previewChoir ? (
+            <Link className="hero-preview-link" to={`/choirs/${previewChoir.id}`}>
+              访问公开体验云盘
+            </Link>
+          ) : null}
+        </div>
         {pageMessage ? (
           <p className="form-message page-message" role="alert">
             {pageMessage}
@@ -186,7 +265,10 @@ export function HomePage() {
       <ModalOverlay
         className="modal-overlay"
         isOpen={joinOpen}
-        onOpenChange={setJoinOpen}
+        onOpenChange={(open) => {
+          if (open) setJoinOpen(true);
+          else dismissJoinDialog();
+        }}
         isDismissable
       >
         <Modal className="app-modal">
@@ -196,80 +278,123 @@ export function HomePage() {
                 <div className="dialog-heading">
                   <div>
                     <p className="dialog-eyebrow">Same Page</p>
-                    <Heading slot="title">进入合唱团</Heading>
+                    <Heading slot="title">
+                      {joinStep.kind === "invite"
+                        ? "进入云盘"
+                        : `加入「${joinStep.choir.name}」`}
+                    </Heading>
                   </div>
                   <Button className="icon-button" aria-label="关闭" onPress={close}>
                     ×
                   </Button>
                 </div>
 
-                {visibleMemberships.length > 0 ? (
-                  <section className="membership-picker" aria-labelledby="membership-title">
-                    <h3 id="membership-title">我的合唱团</h3>
-                    <div className="membership-list">
-                      {visibleMemberships.map((membership) => (
-                        <Link
-                          className="membership-row"
-                          key={membership.id}
-                          to={`/choirs/${membership.choir.id}`}
-                          onClick={() => setJoinOpen(false)}
-                        >
-                          <span>
-                            <strong>{membership.choir.name}</strong>
-                            <small>{membership.displayName}</small>
-                          </span>
-                          <span aria-hidden="true">→</span>
-                        </Link>
-                      ))}
-                    </div>
-                  </section>
-                ) : null}
-
-                <section className={visibleMemberships.length ? "invite-section" : undefined}>
-                  <h3>{session.data?.user ? "使用邀请码加入" : "使用邀请码访问"}</h3>
-                  <p className="dialog-copy">
-                    {session.data?.user
-                      ? "输入合唱团提供的八位邀请码。"
-                      : "无需注册，也可以访客身份只读访问。"}
-                  </p>
-                  <Form className="entry-form dialog-form" onSubmit={enterInviteChoir}>
-                    <TextField
-                      isRequired
-                      value={joinCode}
-                      onChange={(value) => setJoinCode(value.toUpperCase())}
-                      minLength={8}
-                      maxLength={8}
+                {joinStep.kind === "invite" ? (
+                  <>
+                    <section
+                      className="membership-picker"
+                      aria-labelledby="membership-title"
                     >
-                      <Label>八位邀请码</Label>
-                      <Input
-                        autoFocus
-                        autoCapitalize="characters"
-                        autoComplete="off"
-                        placeholder="ABCDEFGH"
-                        pattern="[A-HJ-NP-Z2-9]{8}"
-                      />
-                    </TextField>
-                    {session.data?.user ? (
+                      <h3 id="membership-title">我已加入的云盘</h3>
+                      {userId ? (
+                        visibleMemberships.length > 0 ? (
+                          <div className="membership-list">
+                            {visibleMemberships.map((membership) => (
+                              <Link
+                                className="membership-row"
+                                key={membership.id}
+                                to={`/choirs/${membership.choir.id}`}
+                                onClick={finishJoinDialog}
+                              >
+                                <span>
+                                  <strong>{membership.choir.name}</strong>
+                                  <small>{membership.displayName}</small>
+                                </span>
+                                <span aria-hidden="true">→</span>
+                              </Link>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="membership-empty">还没有已加入的云盘。</p>
+                        )
+                      ) : (
+                        <Link
+                          className="membership-login"
+                          to="/login"
+                          onClick={finishJoinDialog}
+                        >
+                          登录后查看
+                        </Link>
+                      )}
+                    </section>
+
+                    <section
+                      className="invite-section"
+                      aria-labelledby="invite-entry-title"
+                    >
+                      <h3 id="invite-entry-title">使用邀请码进入新的云盘</h3>
+                      <Form
+                        className="entry-form dialog-form"
+                        onSubmit={enterInviteDrive}
+                      >
+                        <JoinCodeField
+                          autoFocus
+                          value={joinCode}
+                          onChange={setJoinCode}
+                        />
+                        <Button
+                          type="submit"
+                          isDisabled={
+                            joinCode.length !== JOIN_CODE_LENGTH ||
+                            submitting ||
+                            clearingGuestSession ||
+                            session.isPending
+                          }
+                        >
+                          {submitting || clearingGuestSession ? "正在验证…" : "进入"}
+                        </Button>
+                      </Form>
+                    </section>
+                  </>
+                ) : (
+                  <section className="join-display-name">
+                    <p className="dialog-copy">
+                      设置你在这个云盘中显示的名字。
+                    </p>
+                    <Form className="entry-form dialog-form" onSubmit={joinValidatedDrive}>
                       <TextField
                         isRequired
                         value={displayName}
                         onChange={setDisplayName}
                         maxLength={40}
                       >
-                        <Label>团内显示名</Label>
-                        <Input autoComplete="nickname" placeholder="例如：小花" />
+                        <Label>显示名</Label>
+                        <Input autoComplete="nickname" placeholder="例如：小花" autoFocus />
                       </TextField>
-                    ) : null}
-                    <Button type="submit" isDisabled={submitting || session.isPending}>
-                      {submitting ? "正在验证…" : "继续"}
-                    </Button>
-                  </Form>
-                  {joinMessage ? (
-                    <p className="form-message" role="alert">
-                      {joinMessage}
-                    </p>
-                  ) : null}
-                </section>
+                      <Button type="submit" isDisabled={submitting}>
+                        {submitting ? "正在加入…" : "加入并进入"}
+                      </Button>
+                      <Button
+                        type="button"
+                        className="text-button"
+                        isDisabled={clearingGuestSession}
+                        onPress={async () => {
+                          await clearActiveGuestSession();
+                          setJoinStep({ kind: "invite" });
+                          setDisplayName("");
+                          setJoinMessage(null);
+                        }}
+                      >
+                        返回输入邀请码
+                      </Button>
+                    </Form>
+                  </section>
+                )}
+                {joinMessage ? (
+                  <p className="form-message" role="alert">
+                    {joinMessage}
+                  </p>
+                ) : null}
               </>
             )}
           </Dialog>
@@ -331,6 +456,10 @@ async function loadMemberships(): Promise<MembershipSummary[]> {
   } catch {
     return [];
   }
+}
+
+async function clearGuestSession() {
+  await fetch("/api/guest/session", { method: "DELETE" }).catch(() => null);
 }
 
 async function loadPreviewChoir(): Promise<ChoirSummary | null> {

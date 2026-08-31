@@ -12,7 +12,7 @@ export function uploadMessage(status: number, payload: unknown) {
     return "文件库已有同名文件。请重命名，或在原文件上执行替换 PDF。";
   }
   if (error === "invalid_file_name") return "文件名无效。";
-  if (error === "storage_quota_exceeded") return "合唱团的 1 GB 文件配额已用完。";
+  if (error === "storage_quota_exceeded") return "云盘的 1 GB 文件配额已用完。";
   if (error === "replacement_in_progress") return "另一项 PDF 替换正在进行，请稍后再试。";
   return "操作没有完成，现有文件保持不变。";
 }

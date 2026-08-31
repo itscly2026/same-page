@@ -1,6 +1,6 @@
 import { hashJoinCode, generateJoinCode } from "../security/join-code";
 
-export const DEFAULT_CHOIR_NAME = "小红花合唱团";
+export const DEFAULT_CHOIR_NAME = "小红花云盘";
 export const CHOIR_STORAGE_LIMIT_BYTES = 1_073_741_824;
 
 export async function provisionChoir(options: {

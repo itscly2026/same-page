@@ -100,8 +100,8 @@ export default function ChoirPage() {
       if (!response.ok) {
         setMessage(
           response.status === 403
-            ? "该成员关系需要团管理员恢复。"
-            : "暂时无法加入这个合唱团，请稍后再试。",
+            ? "该成员关系需要云盘管理员恢复。"
+            : "暂时无法加入这个云盘，请稍后再试。",
         );
         return;
       }
@@ -115,7 +115,7 @@ export default function ChoirPage() {
           : { kind: "denied" },
       );
     } catch {
-      setMessage("暂时无法加入这个合唱团，请稍后再试。");
+      setMessage("暂时无法加入这个云盘，请稍后再试。");
     } finally {
       setBusy(false);
     }
@@ -147,7 +147,7 @@ export default function ChoirPage() {
   const headerActions = (
     <>
       <Link className="header-action" to="/">
-        其他合唱团
+        其他云盘
       </Link>
       {session.data?.user ? (
         <span className="account-email">{session.data.user.email}</span>
@@ -166,7 +166,7 @@ export default function ChoirPage() {
         <main className="page-shell compact-page access-page">
           <p className="eyebrow">开放准入</p>
           <h1>{access.choir.name}</h1>
-          <p className="hero__copy">填写团内显示名后即可加入。</p>
+          <p className="hero__copy">填写你在这个云盘中的显示名后即可加入。</p>
           <Form className="entry-form" onSubmit={joinOpenChoir}>
             <TextField
               isRequired
@@ -174,7 +174,7 @@ export default function ChoirPage() {
               onChange={setOpenAdmissionDisplayName}
               maxLength={40}
             >
-              <Label>团内显示名</Label>
+              <Label>显示名</Label>
               <Input autoComplete="nickname" placeholder="例如：小花" />
             </TextField>
             <Button type="submit" isDisabled={busy}>
@@ -191,8 +191,8 @@ export default function ChoirPage() {
       <div className="app-page">
         <AppHeader actions={headerActions} />
         <main className="page-shell compact-page access-page">
-          <p className="eyebrow">合唱团</p>
-          <h1>无法访问这个合唱团</h1>
+          <p className="eyebrow">云盘</p>
+          <h1>无法访问这个云盘</h1>
           <p className="hero__copy">请返回首页输入当前邀请码，或使用有成员关系的邮箱登录。</p>
           <Link className="primary-link" to="/">返回首页</Link>
         </main>
@@ -204,7 +204,7 @@ export default function ChoirPage() {
     return (
       <div className="app-page">
         <AppHeader actions={headerActions} />
-        <p className="route-loading">正在打开合唱团…</p>
+        <p className="route-loading">正在打开云盘…</p>
       </div>
     );
   }
@@ -218,7 +218,7 @@ export default function ChoirPage() {
       <main className="page-shell file-library">
         <div className="library-heading">
           <div>
-            <p className="eyebrow">合唱团</p>
+            <p className="eyebrow">云盘</p>
             <h1>{choir?.name ?? "乐谱"}</h1>
           </div>
           {result.permissions.canManage ? (
@@ -234,7 +234,7 @@ export default function ChoirPage() {
                   >
                     <MenuItem id="trash">回收站</MenuItem>
                     <MenuItem id="storage" isDisabled>
-                      团存储：{formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}
+                      云盘存储：{formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}
                     </MenuItem>
                   </Menu>
                 </Popover>
@@ -262,7 +262,7 @@ export default function ChoirPage() {
 
         {result.permissions.canManage && (storageRatio >= 0.8 || quotaBlocked) ? (
           <p className="storage-warning" role="status">
-            团存储已使用 {formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}。
+            云盘存储已使用 {formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}。
             {quotaBlocked ? " 请先释放空间后再上传。" : " 接近上限，请留意后续上传。"}
           </p>
         ) : null}
@@ -304,7 +304,7 @@ export default function ChoirPage() {
         {result.permissions.canManage && choir?.guestAdmissionMode === "invite" ? (
           <section className="invite-admin" aria-labelledby="invite-title">
             <div>
-              <h2 id="invite-title">团邀请码</h2>
+              <h2 id="invite-title">邀请码</h2>
               <p>轮换会立即停用旧邀请码；新邀请码只在本次操作后显示。</p>
             </div>
             <Button isDisabled={busy} onPress={() => void rotateJoinCode()}>轮换邀请码</Button>

@@ -57,7 +57,7 @@ describe("AuthPage", () => {
     expect(emailField).toHaveFocus();
     expect(screen.queryByLabelText("密码")).not.toBeInTheDocument();
     expect(screen.queryByText("忘记密码")).not.toBeInTheDocument();
-    expect(screen.queryByText("团内显示名")).not.toBeInTheDocument();
+    expect(screen.queryByText("显示名")).not.toBeInTheDocument();
 
     fireEvent.change(emailField, {
       target: { value: "Singer@Example.Test" },
@@ -107,7 +107,7 @@ describe("AuthPage", () => {
             Response.json({
               choir: {
                 id: "choir-1",
-                name: "小红花合唱团",
+                name: "小红花云盘",
                 guestAdmissionMode: "invite",
               },
               entryKind: "admission",
@@ -120,7 +120,7 @@ describe("AuthPage", () => {
               status: "display-name-required",
               choir: {
                 id: "choir-1",
-                name: "小红花合唱团",
+                name: "小红花云盘",
                 guestAdmissionMode: "invite",
               },
             }),
@@ -137,7 +137,7 @@ describe("AuthPage", () => {
 
     await identify("New@Example.Test");
     expect(await screen.findByRole("heading", { name: "注册" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("团内显示名")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("密码（至少 10 位）"), {
       target: { value: "new secure password" },
     });
@@ -151,8 +151,8 @@ describe("AuthPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "完成注册" }));
 
-    const displayName = await screen.findByLabelText("团内显示名");
-    expect(screen.getByText(/认证已完成/)).toHaveTextContent("小红花合唱团");
+    const displayName = await screen.findByLabelText("显示名");
+    expect(screen.getByText(/认证已完成/)).toHaveTextContent("小红花云盘");
     fireEvent.change(displayName, { target: { value: "小花" } });
     fireEvent.click(screen.getByRole("button", { name: "加入并进入" }));
 
@@ -178,7 +178,7 @@ describe("AuthPage", () => {
             Response.json({
               choir: {
                 id: "preview-choir",
-                name: "公开合唱团",
+                name: "公开体验云盘",
                 guestAdmissionMode: "open",
               },
               entryKind: "preview",
@@ -209,7 +209,7 @@ describe("AuthPage", () => {
       "/api/choirs/join-current-guest",
       expect.anything(),
     );
-    expect(screen.queryByLabelText("团内显示名")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
   });
 
   it("shows forgot password only after an existing email is identified", async () => {
@@ -245,7 +245,7 @@ describe("AuthPage", () => {
             Response.json({
               choir: {
                 id: "choir-1",
-                name: "小红花合唱团",
+                name: "小红花云盘",
                 guestAdmissionMode: "invite",
               },
               entryKind: "admission",
@@ -275,7 +275,7 @@ describe("AuthPage", () => {
       expect(screen.getByRole("heading", { name: "登录完成" })).toHaveFocus();
     });
     expect(screen.getByRole("status")).toHaveTextContent(
-      "该成员关系需要团管理员恢复",
+      "该成员关系需要云盘管理员恢复",
     );
   });
 });

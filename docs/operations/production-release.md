@@ -30,9 +30,9 @@
 5. 在 GitHub `production` environment 中设置 `CLOUDFLARE_API_TOKEN` 与
    `CLOUDFLARE_ACCOUNT_ID`。
 6. 运行 `npm run verify:deployment -- https://samepage.clyapps.com`。
-7. 首位管理员完成 OTP 注册后，通过受控命令创建“小红花合唱团”。自动化命令不显示
-   初始邀请码；管理员首次登录后在团页面轮换，并立即通过私密渠道交付新码。
-8. 如需启用“抢先体验”，使用 `--guest-admission open --preview-entry` 创建唯一的体验入口合唱团；已有开放准入合唱团必须通过受控 SQL 明确设置 `is_preview_entry = 1`，不得按名称自动匹配。
+7. 首位管理员完成 OTP 注册后，通过受控命令创建“小红花云盘”。自动化命令不显示
+   初始邀请码；管理员首次登录后在云盘页面轮换，并立即通过私密渠道交付新码。
+8. 如需启用“公开体验”，使用 `--guest-admission open --preview-entry` 创建唯一的公开体验云盘；已有开放准入云盘必须通过受控 SQL 明确设置 `is_preview_entry = 1`，不得按名称自动匹配。
 
 后续 `main` 发布必须先通过 CI 的 lint、typecheck、客户端测试、Worker 测试和生产构建。
 deploy job 随后执行 D1 migrations、Wrangler deploy 与线上机器验证；迁移或验证失败时

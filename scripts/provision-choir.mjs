@@ -122,7 +122,7 @@ export function parseArguments(argv) {
 
   const adminEmail = values.get("--admin-email")?.trim().toLowerCase();
   const adminDisplayName = values.get("--admin-display-name")?.trim();
-  const choirName = values.get("--choir-name")?.trim() || "小红花合唱团";
+  const choirName = values.get("--choir-name")?.trim() || "小红花云盘";
   const guestAdmission = values.get("--guest-admission")?.trim() || "invite";
   if (!adminEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
     throw new Error("--admin-email is required");

@@ -119,7 +119,7 @@ describe("authentication and choir boundaries", () => {
       binding: env.DB,
       adminUserId,
       adminDisplayName: "管理员",
-      choirName: "公开合唱团",
+      choirName: "公开体验云盘",
       guestAdmissionMode: "open",
       isPreviewEntry: true,
       inviteSecret: env.INVITE_SECRET,
@@ -329,7 +329,7 @@ describe("authentication and choir boundaries", () => {
     expect(await guestSessionResponse.json()).toEqual({
       choir: {
         id: provisioned.choirId,
-        name: "小红花合唱团",
+        name: "小红花云盘",
         guestAdmissionMode: "invite",
       },
       entryKind: "admission",
@@ -409,7 +409,7 @@ describe("authentication and choir boundaries", () => {
         {
           displayName: "小花",
           role: "member",
-          choir: { id: provisioned.choirId, name: "小红花合唱团" },
+          choir: { id: provisioned.choirId, name: "小红花云盘" },
         },
       ],
     });
@@ -418,7 +418,7 @@ describe("authentication and choir boundaries", () => {
       binding: env.DB,
       adminUserId: admin!.id,
       adminDisplayName: "管理员",
-      choirName: "第二合唱团",
+      choirName: "第二云盘",
       inviteSecret: env.INVITE_SECRET,
       getRandomValues(array) {
         array.fill(1);
@@ -463,7 +463,7 @@ describe("authentication and choir boundaries", () => {
       binding: env.DB,
       adminUserId: admin!.id,
       adminDisplayName: "管理员",
-      choirName: "公开合唱团",
+      choirName: "公开体验云盘",
       guestAdmissionMode: "open",
       isPreviewEntry: true,
       inviteSecret: env.INVITE_SECRET,
@@ -487,17 +487,42 @@ describe("authentication and choir boundaries", () => {
     expect(await previewChoirResponse.json()).toEqual({
       choir: {
         id: choirWithOpenGuestAdmission.choirId,
-        name: "公开合唱团",
+        name: "公开体验云盘",
         guestAdmissionMode: "open",
       },
     });
+    const adminDriveListResponse = await callWorker("/api/choirs", {
+      headers: { cookie: adminCookie },
+    });
+    const adminDriveList = (await adminDriveListResponse.json()) as {
+      memberships: Array<{ choir: { id: string } }>;
+    };
+    expect(adminDriveList.memberships).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          choir: expect.objectContaining({ id: provisioned.choirId }),
+        }),
+        expect.objectContaining({
+          choir: expect.objectContaining({ id: secondChoir.choirId }),
+        }),
+      ]),
+    );
+    expect(adminDriveList.memberships).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          choir: expect.objectContaining({
+            id: choirWithOpenGuestAdmission.choirId,
+          }),
+        }),
+      ]),
+    );
     const openChoirDetailResponse = await callWorker(
       `/api/guest/choirs/${choirWithOpenGuestAdmission.choirId}`,
     );
     expect(await openChoirDetailResponse.json()).toEqual({
       choir: {
         id: choirWithOpenGuestAdmission.choirId,
-        name: "公开合唱团",
+        name: "公开体验云盘",
         guestAdmissionMode: "open",
       },
       entryKind: "preview",

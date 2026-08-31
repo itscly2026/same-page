@@ -35,9 +35,19 @@ try {
     file: join(repositoryRoot, "migrations", "0006_default_shared_layer_slots.sql"),
     targetArgs,
   });
+  executeD1({
+    file: join(repositoryRoot, "migrations", "0006_preview_entry.sql"),
+    targetArgs,
+  });
+  executeD1({ command: legacyPreviewFixtureSql(), targetArgs });
+  executeD1({
+    file: join(repositoryRoot, "migrations", "0007_rename_product_drives.sql"),
+    targetArgs,
+  });
 
   verifySchema();
   verifyMigratedNames();
+  verifyDriveNames();
   verifyDefaultSharedLayers();
   verifyRelatedRecords();
   process.stdout.write("Verified legacy score schema migration.\n");
@@ -94,6 +104,16 @@ function verifyMigratedNames() {
     ],
   );
   assert.equal(rows[3].file_name, "Untitled.pdf");
+}
+
+function verifyDriveNames() {
+  assert.deepEqual(
+    query("SELECT id, name FROM choirs ORDER BY id"),
+    [
+      { id: "choir", name: "示例云盘" },
+      { id: "preview", name: "公开体验云盘" },
+    ],
+  );
 }
 
 function verifyRelatedRecords() {
@@ -154,7 +174,7 @@ function legacyFixtureSql() {
     INSERT INTO choirs
       (id, name, guest_admission_mode, guest_session_version, join_code_hash,
        storage_limit_bytes, storage_used_bytes, created_at)
-    VALUES ('choir', 'Choir', 'open', 1, NULL, 1073741824, 100, 1);
+    VALUES ('choir', '示例合唱团', 'open', 1, NULL, 1073741824, 100, 1);
     INSERT INTO memberships
       (id, choir_id, user_id, display_name, role, status, joined_at)
     VALUES ('membership', 'choir', 'user', 'Admin', 'admin', 'active', 1);
@@ -184,5 +204,15 @@ function legacyFixtureSql() {
     VALUES
       ('annotation', 'choir', 'a', 'layer', 1, 0, '{}', 'user', 'Admin',
        'user', 'Admin', 1, 1);
+  `;
+}
+
+function legacyPreviewFixtureSql() {
+  return `
+    INSERT INTO choirs
+      (id, name, guest_admission_mode, guest_session_version, join_code_hash,
+       storage_limit_bytes, storage_used_bytes, is_preview_entry, created_at)
+    VALUES
+      ('preview', '旧公开合唱团', 'open', 1, NULL, 1073741824, 0, 1, 1);
   `;
 }

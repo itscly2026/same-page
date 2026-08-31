@@ -6,8 +6,14 @@ const samplePdfSha256 = createHash("sha256").update(samplePdf).digest("hex");
 
 const choir = {
   id: "visual-choir",
-  name: "示例合唱团",
+  name: "示例云盘",
   guestAdmissionMode: "invite",
+};
+
+const previewChoir = {
+  id: "visual-preview-choir",
+  name: "公开体验云盘",
+  guestAdmissionMode: "open",
 };
 
 const score = {
@@ -82,6 +88,10 @@ export function resolveFixtureRequest({ pathname, method = "GET", identity = "gu
     return json({ error: "no_guest_session" }, 404);
   }
 
+  if (method === "GET" && pathname === "/api/guest/preview-choir") {
+    return json({ choir: previewChoir });
+  }
+
   if (method === "GET" && pathname.startsWith("/api/guest/choirs/")) {
     return json({ error: "not_found" }, 404);
   }
@@ -150,6 +160,7 @@ export function resolveFixtureRequest({ pathname, method = "GET", identity = "gu
 
 export const visualFixture = Object.freeze({
   choir,
+  previewChoir,
   score,
   samplePdfSha256,
 });
