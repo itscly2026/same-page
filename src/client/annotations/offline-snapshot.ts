@@ -10,17 +10,21 @@ import {
 import {
   assertLocalWorkspaceActive,
   type LocalWorkspace,
+  withLocalWorkspaceTransaction,
 } from "../platform/local-workspace";
 
 export async function captureOfflineAnnotationSnapshot(
   workspace: LocalWorkspace,
 ): Promise<OfflineAnnotationSnapshot> {
   await assertLocalWorkspaceActive(workspace);
-  return localDatabase.transaction(
+  return withLocalWorkspaceTransaction(
+    workspace,
     "r",
-    localDatabase.annotationLayers,
-    localDatabase.annotations,
-    localDatabase.annotationSyncCursors,
+    [
+      localDatabase.annotationLayers,
+      localDatabase.annotations,
+      localDatabase.annotationSyncCursors,
+    ],
     async () => {
       const layers = await localDatabase.annotationLayers
         .where("scopeKey")
@@ -58,11 +62,14 @@ export async function restoreOfflineAnnotationSnapshot(
   for (const annotation of snapshot.annotations) {
     if (annotation.payload) annotationPayloadSchema.parse(annotation.payload);
   }
-  await localDatabase.transaction(
+  await withLocalWorkspaceTransaction(
+    workspace,
     "rw",
-    localDatabase.annotationLayers,
-    localDatabase.annotations,
-    localDatabase.annotationSyncCursors,
+    [
+      localDatabase.annotationLayers,
+      localDatabase.annotations,
+      localDatabase.annotationSyncCursors,
+    ],
     async () => {
       for (const layer of snapshot.layers) {
         if (!(await localDatabase.annotationLayers.get(layer.key))) {

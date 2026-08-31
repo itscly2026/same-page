@@ -168,6 +168,29 @@ describe("local workspace identity transitions", () => {
       "local_workspace_owner_changed",
     );
   });
+
+  it("keeps two guest choir workspaces active until a user signs in", async () => {
+    const first = await resolveLocalWorkspace({
+      authenticatedUserId: null,
+      choirId: "choir-1",
+      scoreId: "score-1",
+    });
+    const second = await resolveLocalWorkspace({
+      authenticatedUserId: null,
+      choirId: "choir-2",
+      scoreId: "score-2",
+    });
+
+    await expect(assertLocalWorkspaceActive(first)).resolves.toBeUndefined();
+    await expect(assertLocalWorkspaceActive(second)).resolves.toBeUndefined();
+    await activateAuthenticatedLocalOwner("user-1");
+    await expect(assertLocalWorkspaceActive(first)).rejects.toThrow(
+      "local_workspace_owner_changed",
+    );
+    await expect(assertLocalWorkspaceActive(second)).rejects.toThrow(
+      "local_workspace_owner_changed",
+    );
+  });
 });
 
 async function seedLegacyDatabase(userId: string | null) {

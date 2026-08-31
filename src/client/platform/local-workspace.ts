@@ -1,3 +1,5 @@
+import type { Table } from "dexie";
+
 import {
   ACTIVE_LOCAL_OWNER_KEY,
   guestOwnerSystemKey,
@@ -70,10 +72,37 @@ export function localWorkspaceRecordKey(
 }
 
 export async function assertLocalWorkspaceActive(workspace: LocalWorkspace) {
-  const activeOwner = await currentLocalOwnerKey();
-  if (activeOwner !== workspace.ownerKey) {
+  if (!(await isLocalWorkspaceActive(workspace))) {
     throw new LocalWorkspaceOwnerChangedError();
   }
+}
+
+export async function isLocalWorkspaceActive(workspace: LocalWorkspace) {
+  const activeOwner = await currentLocalOwnerKey();
+  if (workspace.ownerKey.startsWith("user:")) {
+    return activeOwner === workspace.ownerKey;
+  }
+  if (activeOwner?.startsWith("user:")) return false;
+  const guestOwner = await localDatabase.system.get(
+    guestOwnerSystemKey(workspace.choirId),
+  );
+  return guestOwner?.value === workspace.ownerKey;
+}
+
+export function withLocalWorkspaceTransaction<T>(
+  workspace: LocalWorkspace,
+  mode: "r" | "rw",
+  tables: Table[],
+  action: () => T | PromiseLike<T>,
+) {
+  return localDatabase.transaction(
+    mode,
+    [localDatabase.system, ...tables],
+    async () => {
+      await assertLocalWorkspaceActive(workspace);
+      return action();
+    },
+  );
 }
 
 export async function currentLocalOwnerKey() {

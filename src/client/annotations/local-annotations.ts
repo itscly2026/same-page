@@ -67,6 +67,27 @@ export async function updateCachedLayer(
   );
 }
 
+export async function updateCachedLayerMetadata(
+  workspace: LocalWorkspace,
+  layerId: string,
+  changes: Partial<
+    Pick<AnnotationLayerSummary, "name" | "defaultColor" | "sortOrder">
+  >,
+) {
+  await assertLocalWorkspaceActive(workspace);
+  await localDatabase.transaction(
+    "rw",
+    [localDatabase.system, localDatabase.annotationLayers],
+    async () => {
+      await assertLocalWorkspaceActive(workspace);
+      await localDatabase.annotationLayers.update(
+        localWorkspaceRecordKey(workspace, layerId),
+        changes,
+      );
+    },
+  );
+}
+
 export async function saveAnnotationDraft(
   workspace: LocalWorkspace,
   input: DraftInput,

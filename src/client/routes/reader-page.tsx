@@ -42,6 +42,7 @@ import {
   reapplyAnnotationConflict,
   retryScoreSyncErrors,
   updateCachedLayer,
+  updateCachedLayerMetadata,
 } from "../annotations/local-annotations";
 import { syncAnnotations } from "../annotations/sync";
 import {
@@ -63,7 +64,7 @@ import {
   type OfflineScoreRecord,
 } from "../platform/local-database";
 import {
-  currentLocalOwnerKey,
+  isLocalWorkspaceActive,
   localWorkspaceRecordKey,
   resolveLocalWorkspace,
   type LocalWorkspace,
@@ -92,7 +93,13 @@ export default function ReaderPage() {
   const [resolvedWorkspace, setResolvedWorkspace] =
     useState<LocalWorkspace | null>(null);
   const [loadedScopeKey, setLoadedScopeKey] = useState<string | null>(null);
-  const activeOwnerKey = useLiveQuery(() => currentLocalOwnerKey(), [], undefined);
+  const workspaceIsActive = useLiveQuery(
+    () => resolvedWorkspace
+      ? isLocalWorkspaceActive(resolvedWorkspace)
+      : false,
+    [resolvedWorkspace?.scopeKey],
+    false,
+  );
   const [score, setScore] = useState<ScoreSummary | null>(null);
   const [offline, setOffline] = useState<OfflineScoreRecord | null>(null);
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
@@ -145,7 +152,7 @@ export default function ReaderPage() {
   }, [choirId, scoreId, session.data?.user.id, session.isPending]);
 
   const workspace =
-    resolvedWorkspace && activeOwnerKey === resolvedWorkspace.ownerKey
+    resolvedWorkspace && workspaceIsActive
       ? resolvedWorkspace
       : null;
   const layerQuery = useLiveQuery(
@@ -1207,10 +1214,7 @@ function SharedLayerEditor({
             },
           ).then(async (response) => {
             if (!response.ok) throw new Error("layer_update_failed");
-            await localDatabase.annotationLayers.update(
-              localWorkspaceRecordKey(workspace, layer.id),
-              update,
-            );
+            await updateCachedLayerMetadata(workspace, layer.id, update);
           });
         }}
       >

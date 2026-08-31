@@ -7,7 +7,10 @@ import {
   saveAnnotationDraft,
   type DraftInput,
 } from "./local-annotations";
-import { type LocalWorkspace } from "../platform/local-workspace";
+import {
+  type LocalWorkspace,
+  withLocalWorkspaceTransaction,
+} from "../platform/local-workspace";
 
 interface HistoryEntry {
   before: LocalAnnotationRecord | null;
@@ -84,10 +87,17 @@ async function restore(
   record: LocalAnnotationRecord | null,
   annotationId: string,
 ) {
-  const key = annotationRecordKey(workspace.scopeKey, annotationId);
-  if (!record) {
-    await localDatabase.annotations.delete(key);
-  } else {
-    await localDatabase.annotations.put(record);
-  }
+  await withLocalWorkspaceTransaction(
+    workspace,
+    "rw",
+    [localDatabase.annotations],
+    async () => {
+      const key = annotationRecordKey(workspace.scopeKey, annotationId);
+      if (!record) {
+        await localDatabase.annotations.delete(key);
+      } else {
+        await localDatabase.annotations.put(record);
+      }
+    },
+  );
 }

@@ -207,22 +207,35 @@ export async function verifyLocalDatabase(): Promise<void> {
 export async function activateVerifiedOfflineScore(
   record: Omit<OfflineScoreRecord, "active" | "verifiedAt">,
 ) {
-  await localDatabase.transaction("rw", localDatabase.offlineScores, async () => {
-    const existing = await localDatabase.offlineScores
-      .where("[ownerKey+choirId+scoreId]")
-      .equals([record.ownerKey, record.choirId, record.scoreId])
-      .toArray();
-    await Promise.all(
-      existing.map((entry) =>
-        localDatabase.offlineScores.update(entry.key, { active: 0 }),
-      ),
-    );
-    await localDatabase.offlineScores.put({
-      ...record,
-      active: 1,
-      verifiedAt: Date.now(),
-    });
-  });
+  await localDatabase.transaction(
+    "rw",
+    [localDatabase.system, localDatabase.offlineScores],
+    async () => {
+      const activeOwner = await localDatabase.system.get(ACTIVE_LOCAL_OWNER_KEY);
+      const guestOwner = record.ownerKey.startsWith("guest:")
+        ? await localDatabase.system.get(guestOwnerSystemKey(record.choirId))
+        : null;
+      const ownerIsActive = record.ownerKey.startsWith("user:")
+        ? activeOwner?.value === record.ownerKey
+        : !activeOwner?.value.startsWith("user:") &&
+          guestOwner?.value === record.ownerKey;
+      if (!ownerIsActive) throw new Error("local_workspace_owner_changed");
+      const existing = await localDatabase.offlineScores
+        .where("[ownerKey+choirId+scoreId]")
+        .equals([record.ownerKey, record.choirId, record.scoreId])
+        .toArray();
+      await Promise.all(
+        existing.map((entry) =>
+          localDatabase.offlineScores.update(entry.key, { active: 0 }),
+        ),
+      );
+      await localDatabase.offlineScores.put({
+        ...record,
+        active: 1,
+        verifiedAt: Date.now(),
+      });
+    },
+  );
 }
 
 export function findActiveOfflineScore(

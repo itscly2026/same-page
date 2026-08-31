@@ -8,7 +8,9 @@ import {
 } from "../platform/local-database";
 import {
   assertLocalWorkspaceActive,
+  LocalWorkspaceOwnerChangedError,
   type LocalWorkspace,
+  withLocalWorkspaceTransaction,
 } from "../platform/local-workspace";
 import { applyPulledAnnotations, applyPushResults } from "./local-annotations";
 
@@ -42,22 +44,33 @@ export async function drainAnnotationOutbox(workspace: LocalWorkspace) {
   await assertLocalWorkspaceActive(workspace);
   let pushed = 0;
   while (true) {
-    const operations = await localDatabase.annotationOutbox
-      .where("scopeKey")
-      .equals(workspace.scopeKey)
-      .sortBy("createdAt");
-    const seenAnnotationIds = new Set<string>();
-    const batch = operations
-      .filter((operation) => {
-        if (seenAnnotationIds.has(operation.annotationId)) return false;
-        seenAnnotationIds.add(operation.annotationId);
-        return true;
-      })
-      .slice(0, 100);
-    if (batch.length === 0) return pushed;
-    await localDatabase.annotationOutbox.bulkUpdate(
-      batch.map((operation) => ({ key: operation.opId, changes: { attemptedAt: Date.now() } })),
+    const batch = await withLocalWorkspaceTransaction(
+      workspace,
+      "rw",
+      [localDatabase.annotationOutbox],
+      async () => {
+        const operations = await localDatabase.annotationOutbox
+          .where("scopeKey")
+          .equals(workspace.scopeKey)
+          .sortBy("createdAt");
+        const seenAnnotationIds = new Set<string>();
+        const selected = operations
+          .filter((operation) => {
+            if (seenAnnotationIds.has(operation.annotationId)) return false;
+            seenAnnotationIds.add(operation.annotationId);
+            return true;
+          })
+          .slice(0, 100);
+        await localDatabase.annotationOutbox.bulkUpdate(
+          selected.map((operation) => ({
+            key: operation.opId,
+            changes: { attemptedAt: Date.now() },
+          })),
+        );
+        return selected;
+      },
     );
+    if (batch.length === 0) return pushed;
     await assertLocalWorkspaceActive(workspace);
     const expectedUserId = authenticatedUserId(workspace);
     if (!expectedUserId) throw new Error("annotation_push_requires_user_owner");
@@ -101,25 +114,37 @@ export async function withScoreSyncLock<T>(
     return navigator.locks.request(`same-page:sync:${scopeKey}`, action);
   }
   const owner = crypto.randomUUID();
-  const acquired = await localDatabase.transaction("rw", localDatabase.syncLeases, async () => {
-    const current = await localDatabase.syncLeases.get(scopeKey);
-    if (current && current.expiresAt > Date.now()) return false;
-    await localDatabase.syncLeases.put({
-      ...workspace,
-      lockOwner: owner,
-      expiresAt: Date.now() + 120_000,
-    });
-    return true;
-  });
+  const acquired = await withLocalWorkspaceTransaction(
+    workspace,
+    "rw",
+    [localDatabase.syncLeases],
+    async () => {
+      const current = await localDatabase.syncLeases.get(scopeKey);
+      if (current && current.expiresAt > Date.now()) return false;
+      await localDatabase.syncLeases.put({
+        ...workspace,
+        lockOwner: owner,
+        expiresAt: Date.now() + 120_000,
+      });
+      return true;
+    },
+  );
   if (!acquired) return undefined;
   try {
     return await action();
   } finally {
-    await localDatabase.transaction("rw", localDatabase.syncLeases, async () => {
-      const current = await localDatabase.syncLeases.get(scopeKey);
-      if (current?.lockOwner === owner) {
-        await localDatabase.syncLeases.delete(scopeKey);
-      }
+    await withLocalWorkspaceTransaction(
+      workspace,
+      "rw",
+      [localDatabase.syncLeases],
+      async () => {
+        const current = await localDatabase.syncLeases.get(scopeKey);
+        if (current?.lockOwner === owner) {
+          await localDatabase.syncLeases.delete(scopeKey);
+        }
+      },
+    ).catch((error: unknown) => {
+      if (!(error instanceof LocalWorkspaceOwnerChangedError)) throw error;
     });
   }
 }
