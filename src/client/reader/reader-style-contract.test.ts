@@ -28,4 +28,22 @@ describe("reader control style contract", () => {
       /\.annotation-controls \.annotation-tool-button,[\s\S]*?width: 2\.75rem;[\s\S]*?min-height: 2\.75rem;/,
     );
   });
+
+  it("renders completed text as pure text while keeping a dimmed input composer", () => {
+    expect(styles).toMatch(
+      /\.annotation-text \{[\s\S]*?background: transparent;/,
+    );
+    expect(styles).toMatch(
+      /\.annotation-text-composer\[data-active\] \{[\s\S]*?background: rgb\(34 34 34 \/ 28%\);/,
+    );
+    expect(styles).toMatch(
+      /\.annotation-font-scale__track \{[\s\S]*?clip-path: polygon\(0 0, 100% 0, 50% 100%\);/,
+    );
+    expect(styles).toMatch(
+      /\.annotation-delete-zone \{[\s\S]*?border-radius: 50%;[\s\S]*?background: rgb\(218 216 217 \/ 72%\);/,
+    );
+    expect(styles).not.toMatch(
+      /\.annotation-delete-zone\[data-active\][\s\S]*?#b4233f/,
+    );
+  });
 });

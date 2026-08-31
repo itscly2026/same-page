@@ -1,13 +1,18 @@
 import {
   type PointerEvent as ReactPointerEvent,
+  useEffect,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { Trash2 } from "lucide-react";
 
-import type {
-  AnnotationLayerSummary,
-  AnnotationPayload,
+import {
+  DEFAULT_TEXT_FONT_SCALE,
+  MAX_TEXT_FONT_SCALE,
+  MIN_TEXT_FONT_SCALE,
+  type AnnotationLayerSummary,
+  type AnnotationPayload,
 } from "../../shared/annotations";
 import type { LocalAnnotationRecord } from "../platform/local-database";
 import type { LocalWorkspace } from "../platform/local-workspace";
@@ -17,11 +22,43 @@ import {
 } from "./edit-history";
 
 export type AnnotationTool = "text" | "ink" | "eraser";
+export type AnnotationOverlayInteraction =
+  | "idle"
+  | "composing-text"
+  | "transforming-text";
 
 type TextPayload = Extract<AnnotationPayload, { kind: "text" }>;
 
 const ERASER_HIT_RADIUS_PX = 14;
-const TEXT_DRAG_THRESHOLD = 0.006;
+const TEXT_DRAG_THRESHOLD_PX = 6;
+
+interface TextEditorBase {
+  id: string;
+  x: number;
+  y: number;
+  initial: string;
+  fontScale: number;
+  pageWidth: number;
+}
+
+type TextEditorState = TextEditorBase &
+  ({ source: "new" } | { source: "existing" });
+
+interface TextTransformState {
+  id: string;
+  layerId: string;
+  payload: TextPayload;
+  preview: TextPayload;
+  element: HTMLButtonElement;
+  pointers: Map<number, { startX: number; startY: number; x: number; y: number }>;
+  pinch: {
+    distance: number;
+    centerX: number;
+    centerY: number;
+    payload: TextPayload;
+  } | null;
+  moved: boolean;
+}
 
 export function AnnotationOverlay({
   workspace,
@@ -31,6 +68,7 @@ export function AnnotationOverlay({
   editing,
   tool,
   activeLayerId,
+  onInteractionChange,
 }: {
   workspace: LocalWorkspace;
   pageNumber: number;
@@ -39,49 +77,63 @@ export function AnnotationOverlay({
   editing: boolean;
   tool: AnnotationTool;
   activeLayerId: string | null;
+  onInteractionChange?(interaction: AnnotationOverlayInteraction): void;
 }) {
+  const overlayRef = useRef<HTMLDivElement>(null);
   const [draftStroke, setDraftStroke] = useState<Extract<AnnotationPayload, { kind: "ink" }> | null>(null);
-  const [textEditor, setTextEditor] = useState<{
-    id: string;
-    x: number;
-    y: number;
-    initial: string;
-  } | null>(null);
-  const textInputRef = useRef<HTMLInputElement>(null);
-  const suppressTextBlur = useRef(false);
+  const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
+  const [editorText, setEditorText] = useState("");
+  const [editorFontScale, setEditorFontScale] = useState(DEFAULT_TEXT_FONT_SCALE);
+  const [fontScaleAdjusting, setFontScaleAdjusting] = useState(false);
+  const textInputRef = useRef<HTMLTextAreaElement>(null);
   const currentStrokeId = useRef<string | null>(null);
   const strokeHistoryStarted = useRef(false);
   const eraserPointerId = useRef<number | null>(null);
   const erasedStrokeIds = useRef(new Set<string>());
-  const dragText = useRef<{
+  const textTransform = useRef<TextTransformState | null>(null);
+  const [textTransformPreview, setTextTransformPreview] = useState<{
     id: string;
-    pointerId: number;
-    startX: number;
-    startY: number;
     payload: TextPayload;
-    moved: boolean;
   } | null>(null);
-  const [textDragPreview, setTextDragPreview] = useState<{
-    id: string;
-    x: number;
-    y: number;
-    originX: number;
-    originY: number;
-  } | null>(null);
+  const [transformingText, setTransformingText] = useState(false);
+  const interactionRef = useRef<AnnotationOverlayInteraction>("idle");
+  const [deleteActive, setDeleteActive] = useState(false);
+  const deleteActiveRef = useRef(false);
+  const deleteTargetRef = useRef<HTMLDivElement>(null);
+  const visualViewport = useVisualViewport();
   const visibleLayerIds = new Set(
     layers
-      .filter((layer) =>
-        editing ? layer.id === activeLayerId : layer.visible,
-      )
+      .filter((layer) => (editing ? layer.id === activeLayerId : layer.visible))
       .map((layer) => layer.id),
   );
   const layerColors = new Map(
     layers.map((layer) => [layer.id, layer.colorOverride ?? layer.defaultColor]),
   );
+  const activeLayerColor = layerColors.get(activeLayerId ?? "") ?? "#a12652";
+  const editorFontSize = textEditor
+    ? clampRange(textEditor.pageWidth * editorFontScale, 12, 96)
+    : 12;
+  const editorFontScaleProgress =
+    (editorFontScale - MIN_TEXT_FONT_SCALE) /
+    (MAX_TEXT_FONT_SCALE - MIN_TEXT_FONT_SCALE);
   const pageAnnotations = annotations.filter(
     (annotation) =>
       annotation.payload?.pageNumber === pageNumber &&
       visibleLayerIds.has(annotation.layerId),
+  );
+
+  const updateInteraction = (interaction: AnnotationOverlayInteraction) => {
+    if (interactionRef.current === interaction) return;
+    interactionRef.current = interaction;
+    setTransformingText(interaction === "transforming-text");
+    onInteractionChange?.(interaction);
+  };
+
+  useEffect(
+    () => () => {
+      if (interactionRef.current !== "idle") onInteractionChange?.("idle");
+    },
+    [onInteractionChange],
   );
 
   const point = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -96,10 +148,7 @@ export function AnnotationOverlay({
   const eraseAt = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (!activeLayerId) return;
     const bounds = event.currentTarget.getBoundingClientRect();
-    const pointer = {
-      x: event.clientX - bounds.left,
-      y: event.clientY - bounds.top,
-    };
+    const pointer = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
     for (const annotation of pageAnnotations) {
       const payload = annotation.payload;
       if (
@@ -124,75 +173,242 @@ export function AnnotationOverlay({
     }
   };
 
-  const openTextEditor = (editor: NonNullable<typeof textEditor>) => {
+  const openTextEditor = (editor: TextEditorState) => {
     const input = textInputRef.current;
     if (input) input.value = editor.initial;
+    setEditorText(editor.initial);
+    setEditorFontScale(editor.fontScale);
+    setFontScaleAdjusting(false);
     setTextEditor(editor);
-    // WebKit only opens the software keyboard when focus happens directly in
-    // the user gesture call stack. Keep this input mounted between edits so we
-    // do not have to rely on a later autoFocus render.
+    updateInteraction("composing-text");
+    // iPadOS WebKit opens the software keyboard only when focus remains in the
+    // direct user-gesture stack. The textarea stays mounted between edits.
     input?.focus({ preventScroll: true });
   };
 
-  const closeTextEditor = (blur = true) => {
+  const closeTextEditor = () => {
+    setFontScaleAdjusting(false);
     setTextEditor(null);
+    updateInteraction("idle");
     const input = textInputRef.current;
-    if (blur && input && input === document.activeElement) {
-      suppressTextBlur.current = true;
-      input.blur();
+    if (input && input === document.activeElement) input.blur();
+  };
+
+  const cancelTextEditor = () => closeTextEditor();
+
+  const finishTextEditor = async () => {
+    if (!textEditor || !activeLayerId) return;
+    const editor = textEditor;
+    const text = editorText.trim();
+    closeTextEditor();
+    if (!text) {
+      if (editor.source === "existing") {
+        await saveDraftWithHistory(workspace, {
+          id: editor.id,
+          layerId: activeLayerId,
+          payload: null,
+          deleted: true,
+        });
+      }
+      return;
+    }
+    await saveDraftWithHistory(workspace, {
+      id: editor.id,
+      layerId: activeLayerId,
+      payload: {
+        kind: "text",
+        pageNumber,
+        x: editor.x,
+        y: editor.y,
+        fontScale: editorFontScale,
+        text,
+      },
+    });
+  };
+
+  const addTransformPointer = (
+    event: ReactPointerEvent<Element>,
+    transform: TextTransformState,
+  ) => {
+    event.preventDefault();
+    capturePointer(event.currentTarget, event.pointerId);
+    transform.pointers.set(event.pointerId, {
+      startX: event.clientX,
+      startY: event.clientY,
+      x: event.clientX,
+      y: event.clientY,
+    });
+    if (transform.pointers.size === 2) {
+      const [first, second] = [...transform.pointers.values()];
+      transform.pinch = {
+        distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+        centerX: (first.x + second.x) / 2,
+        centerY: (first.y + second.y) / 2,
+        payload: transform.preview,
+      };
     }
   };
 
-  const finishTextEditor = async (blur = true) => {
-    if (!textEditor || !activeLayerId) return;
-    const editor = textEditor;
-    const layerId = activeLayerId;
-    const text = textInputRef.current?.value.trim() ?? "";
-    closeTextEditor(blur);
-    if (text) {
-      await saveDraftWithHistory(workspace, {
-        id: editor.id,
-        layerId,
-        payload: {
-          kind: "text",
-          pageNumber,
-          x: editor.x,
-          y: editor.y,
-          text,
-        },
-      });
+  const beginTextTransform = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    annotation: LocalAnnotationRecord,
+    payload: TextPayload,
+  ) => {
+    if (!editing || annotation.layerId !== activeLayerId || tool !== "text") return;
+    if (textEditor) return;
+    const active = textTransform.current;
+    if (active?.id === annotation.id) {
+      addTransformPointer(event, active);
+      return;
     }
+    const transform: TextTransformState = {
+      id: annotation.id,
+      layerId: annotation.layerId,
+      payload,
+      preview: payload,
+      element: event.currentTarget,
+      pointers: new Map(),
+      pinch: null,
+      moved: false,
+    };
+    textTransform.current = transform;
+    setTextTransformPreview(null);
+    addTransformPointer(event, transform);
+  };
+
+  const updateTextTransform = (event: ReactPointerEvent<Element>) => {
+    const transform = textTransform.current;
+    const pointer = transform?.pointers.get(event.pointerId);
+    const bounds = overlayRef.current?.getBoundingClientRect();
+    if (!transform || !pointer || !bounds || bounds.width <= 0 || bounds.height <= 0) return;
+    pointer.x = event.clientX;
+    pointer.y = event.clientY;
+
+    let next: TextPayload;
+    const entries = [...transform.pointers.values()];
+    if (entries.length >= 2 && transform.pinch) {
+      const [first, second] = entries;
+      const centerX = (first.x + second.x) / 2;
+      const centerY = (first.y + second.y) / 2;
+      const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
+      next = {
+        ...transform.pinch.payload,
+        x: transform.pinch.payload.x + (centerX - transform.pinch.centerX) / bounds.width,
+        y: transform.pinch.payload.y + (centerY - transform.pinch.centerY) / bounds.height,
+        fontScale: clampRange(
+          transform.pinch.payload.fontScale * (distance / transform.pinch.distance),
+          MIN_TEXT_FONT_SCALE,
+          MAX_TEXT_FONT_SCALE,
+        ),
+      };
+      transform.moved = true;
+    } else {
+      const distance = Math.hypot(pointer.x - pointer.startX, pointer.y - pointer.startY);
+      if (!transform.moved && distance <= TEXT_DRAG_THRESHOLD_PX) return;
+      transform.moved = true;
+      next = {
+        ...transform.preview,
+        x: transform.preview.x + (pointer.x - pointer.startX) / bounds.width,
+        y: transform.preview.y + (pointer.y - pointer.startY) / bounds.height,
+      };
+      pointer.startX = pointer.x;
+      pointer.startY = pointer.y;
+    }
+
+    const clamped = clampTextToPage(next, transform.element, bounds);
+    transform.preview = clamped;
+    setTextTransformPreview({ id: transform.id, payload: clamped });
+    updateInteraction("transforming-text");
+    const centerX = entries.reduce((total, entry) => total + entry.x, 0) / entries.length;
+    const centerY = entries.reduce((total, entry) => total + entry.y, 0) / entries.length;
+    const deleteBounds = deleteTargetRef.current?.getBoundingClientRect();
+    const inDeleteZone = deleteBounds
+      ? Math.hypot(
+          centerX - (deleteBounds.left + deleteBounds.width / 2),
+          centerY - (deleteBounds.top + deleteBounds.height / 2),
+        ) <= Math.min(deleteBounds.width, deleteBounds.height) / 2
+      : false;
+    deleteActiveRef.current = inDeleteZone;
+    setDeleteActive(inDeleteZone);
+  };
+
+  const finishTextTransform = (event: ReactPointerEvent<Element>) => {
+    const transform = textTransform.current;
+    if (!transform?.pointers.has(event.pointerId)) return;
+    transform.pointers.delete(event.pointerId);
+    if (transform.pointers.size > 0) {
+      const [remaining] = transform.pointers.values();
+      remaining.startX = remaining.x;
+      remaining.startY = remaining.y;
+      transform.pinch = null;
+      return;
+    }
+    textTransform.current = null;
+    setTextTransformPreview(null);
+    updateInteraction("idle");
+    setDeleteActive(false);
+    const shouldDelete = deleteActiveRef.current;
+    deleteActiveRef.current = false;
+    if (!transform.moved) {
+      const bounds = overlayRef.current?.getBoundingClientRect();
+      openTextEditor({
+        id: transform.id,
+        x: transform.payload.x,
+        y: transform.payload.y,
+        initial: transform.payload.text,
+        fontScale: transform.payload.fontScale,
+        pageWidth: bounds?.width ?? 640,
+        source: "existing",
+      });
+      return;
+    }
+    void saveDraftWithHistory(workspace, {
+      id: transform.id,
+      layerId: transform.layerId,
+      payload: shouldDelete ? null : transform.preview,
+      deleted: shouldDelete,
+    });
+  };
+
+  const cancelTextTransform = () => {
+    textTransform.current = null;
+    setTextTransformPreview(null);
+    updateInteraction("idle");
+    setDeleteActive(false);
+    deleteActiveRef.current = false;
   };
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (!editing || !activeLayerId) return;
-    const position = point(event);
     if (tool === "text") {
-      if (textEditor) {
-        void finishTextEditor();
+      if (textTransform.current) {
+        addTransformPointer(event, textTransform.current);
         return;
       }
+      if (textEditor) return;
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const position = point(event);
       openTextEditor({
         id: crypto.randomUUID(),
         x: position.x,
         y: position.y,
         initial: "",
+        fontScale: DEFAULT_TEXT_FONT_SCALE,
+        pageWidth: bounds.width,
+        source: "new",
       });
       return;
     }
     if (tool === "eraser") {
-      if (typeof event.currentTarget.setPointerCapture === "function") {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }
+      capturePointer(event.currentTarget, event.pointerId);
       eraserPointerId.current = event.pointerId;
       erasedStrokeIds.current.clear();
       eraseAt(event);
       return;
     }
     if (tool !== "ink") return;
-    if (typeof event.currentTarget.setPointerCapture === "function") {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }
+    capturePointer(event.currentTarget, event.pointerId);
+    const position = point(event);
     currentStrokeId.current = crypto.randomUUID();
     strokeHistoryStarted.current = false;
     setDraftStroke({
@@ -204,11 +420,11 @@ export function AnnotationOverlay({
   };
 
   const pointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (
-      editing &&
-      tool === "eraser" &&
-      eraserPointerId.current === event.pointerId
-    ) {
+    if (textTransform.current?.pointers.has(event.pointerId)) {
+      updateTextTransform(event);
+      return;
+    }
+    if (editing && tool === "eraser" && eraserPointerId.current === event.pointerId) {
       eraseAt(event);
       return;
     }
@@ -217,11 +433,7 @@ export function AnnotationOverlay({
     setDraftStroke((current) => {
       if (!current) return current;
       const next = { ...current, points: [...current.points, position] };
-      const input = {
-        id: currentStrokeId.current!,
-        layerId: activeLayerId,
-        payload: next,
-      };
+      const input = { id: currentStrokeId.current!, layerId: activeLayerId, payload: next };
       if (strokeHistoryStarted.current) {
         void updateLatestHistoryDraft(workspace, input);
       } else {
@@ -233,14 +445,12 @@ export function AnnotationOverlay({
   };
 
   const pointerUp = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (
-      eraserPointerId.current === event.pointerId ||
-      currentStrokeId.current !== null
-    ) {
-      if (
-        typeof event.currentTarget.hasPointerCapture === "function" &&
-        event.currentTarget.hasPointerCapture(event.pointerId)
-      ) {
+    if (textTransform.current?.pointers.has(event.pointerId)) {
+      finishTextTransform(event);
+      return;
+    }
+    if (eraserPointerId.current === event.pointerId || currentStrokeId.current !== null) {
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
     }
@@ -252,11 +462,13 @@ export function AnnotationOverlay({
   };
 
   return (
-    <div
-      className="annotation-overlay"
-      data-editing={editing || undefined}
-      data-tool={editing ? tool : undefined}
-    >
+    <>
+      <div
+        className="annotation-overlay"
+        data-editing={editing || undefined}
+        data-tool={editing ? tool : undefined}
+        ref={overlayRef}
+      >
       <svg
         aria-label={`第 ${pageNumber} 页批注层`}
         viewBox="0 0 1000 1000"
@@ -264,48 +476,47 @@ export function AnnotationOverlay({
         onPointerDown={pointerDown}
         onPointerMove={pointerMove}
         onPointerUp={pointerUp}
-        onPointerCancel={pointerUp}
+        onPointerCancel={(event) => {
+          if (textTransform.current?.pointers.has(event.pointerId)) cancelTextTransform();
+          else pointerUp(event);
+        }}
       >
         {pageAnnotations.map((annotation) => {
           const payload = annotation.payload;
           const color = layerColors.get(annotation.layerId) ?? "#a12652";
-          if (payload?.kind === "ink") {
-            return (
-              <g key={annotation.id}>
-                {editing &&
-                tool === "eraser" &&
-                annotation.layerId === activeLayerId ? (
-                  <polyline
-                    aria-hidden="true"
-                    data-eraser-hit-target
-                    points={payload.points.map((entry) => `${entry.x * 1000},${entry.y * 1000}`).join(" ")}
-                    fill="none"
-                    stroke="transparent"
-                    strokeWidth={ERASER_HIT_RADIUS_PX * 2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                ) : null}
+          if (payload?.kind !== "ink") return null;
+          return (
+            <g key={annotation.id}>
+              {editing && tool === "eraser" && annotation.layerId === activeLayerId ? (
                 <polyline
+                  aria-hidden="true"
+                  data-eraser-hit-target
                   points={payload.points.map((entry) => `${entry.x * 1000},${entry.y * 1000}`).join(" ")}
                   fill="none"
-                  stroke={color}
-                  strokeWidth={payload.strokeWidth * 1000}
+                  stroke="transparent"
+                  strokeWidth={ERASER_HIT_RADIUS_PX * 2}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   vectorEffect="non-scaling-stroke"
                 />
-              </g>
-            );
-          }
-          return null;
+              ) : null}
+              <polyline
+                points={payload.points.map((entry) => `${entry.x * 1000},${entry.y * 1000}`).join(" ")}
+                fill="none"
+                stroke={color}
+                strokeWidth={payload.strokeWidth * 1000}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            </g>
+          );
         })}
         {editing && draftStroke ? (
           <polyline
             points={draftStroke.points.map((entry) => `${entry.x * 1000},${entry.y * 1000}`).join(" ")}
             fill="none"
-            stroke={layerColors.get(activeLayerId ?? "") ?? "#a12652"}
+            stroke={activeLayerColor}
             strokeWidth={draftStroke.strokeWidth * 1000}
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -313,15 +524,13 @@ export function AnnotationOverlay({
           />
         ) : null}
       </svg>
+
       {pageAnnotations.map((annotation) => {
         const payload = annotation.payload;
         if (payload?.kind !== "text") return null;
-        const position =
-          textDragPreview?.id === annotation.id &&
-          textDragPreview.originX === payload.x &&
-          textDragPreview.originY === payload.y
-            ? textDragPreview
-            : payload;
+        const position = textTransformPreview?.id === annotation.id
+          ? textTransformPreview.payload
+          : payload;
         return (
           <button
             className="annotation-text"
@@ -329,99 +538,14 @@ export function AnnotationOverlay({
               left: `${position.x * 100}%`,
               top: `${position.y * 100}%`,
               color: layerColors.get(annotation.layerId) ?? "#a12652",
+              fontSize: `${position.fontScale * 100}cqw`,
             }}
             key={annotation.id}
             disabled={!editing || annotation.layerId !== activeLayerId}
-            onPointerDown={(event) => {
-              if (!editing || annotation.layerId !== activeLayerId || tool !== "text") return;
-              if (textEditor) {
-                void finishTextEditor();
-                return;
-              }
-              dragText.current = {
-                id: annotation.id,
-                pointerId: event.pointerId,
-                startX: event.clientX,
-                startY: event.clientY,
-                payload,
-                moved: false,
-              };
-              setTextDragPreview(null);
-              if (typeof event.currentTarget.setPointerCapture === "function") {
-                event.currentTarget.setPointerCapture(event.pointerId);
-              }
-            }}
-            onPointerMove={(event) => {
-              const drag = dragText.current;
-              if (!drag || drag.pointerId !== event.pointerId || tool !== "text") return;
-              const bounds = event.currentTarget.parentElement!.getBoundingClientRect();
-              const dx = (event.clientX - drag.startX) / bounds.width;
-              const dy = (event.clientY - drag.startY) / bounds.height;
-              if (!drag.moved && Math.hypot(dx, dy) <= TEXT_DRAG_THRESHOLD) return;
-              drag.moved = true;
-              setTextDragPreview({
-                id: drag.id,
-                x: clamp(drag.payload.x + dx),
-                y: clamp(drag.payload.y + dy),
-                originX: drag.payload.x,
-                originY: drag.payload.y,
-              });
-            }}
-            onPointerUp={(event) => {
-              const drag = dragText.current;
-              dragText.current = null;
-              if (!drag || drag.pointerId !== event.pointerId || tool !== "text") {
-                setTextDragPreview(null);
-                return;
-              }
-              if (
-                typeof event.currentTarget.hasPointerCapture === "function" &&
-                event.currentTarget.hasPointerCapture(event.pointerId)
-              ) {
-                event.currentTarget.releasePointerCapture(event.pointerId);
-              }
-              const bounds = event.currentTarget.parentElement!.getBoundingClientRect();
-              const dx = (event.clientX - drag.startX) / bounds.width;
-              const dy = (event.clientY - drag.startY) / bounds.height;
-              if (drag.moved) {
-                const finalPosition = {
-                  id: drag.id,
-                  x: clamp(drag.payload.x + dx),
-                  y: clamp(drag.payload.y + dy),
-                  originX: drag.payload.x,
-                  originY: drag.payload.y,
-                };
-                setTextDragPreview(finalPosition);
-                void saveDraftWithHistory(workspace, {
-                  id: annotation.id,
-                  layerId: annotation.layerId,
-                  payload: {
-                    ...drag.payload,
-                    x: finalPosition.x,
-                    y: finalPosition.y,
-                  },
-                });
-              } else {
-                setTextDragPreview(null);
-                openTextEditor({
-                  id: annotation.id,
-                  x: payload.x,
-                  y: payload.y,
-                  initial: payload.text,
-                });
-              }
-            }}
-            onPointerCancel={(event) => {
-              if (dragText.current?.pointerId !== event.pointerId) return;
-              dragText.current = null;
-              setTextDragPreview(null);
-              if (
-                typeof event.currentTarget.hasPointerCapture === "function" &&
-                event.currentTarget.hasPointerCapture(event.pointerId)
-              ) {
-                event.currentTarget.releasePointerCapture(event.pointerId);
-              }
-            }}
+            onPointerDown={(event) => beginTextTransform(event, annotation, payload)}
+            onPointerMove={updateTextTransform}
+            onPointerUp={finishTextTransform}
+            onPointerCancel={cancelTextTransform}
             onKeyDown={(event) => {
               if (event.key === "Delete" || event.key === "Backspace") {
                 void saveDraftWithHistory(workspace, {
@@ -437,74 +561,170 @@ export function AnnotationOverlay({
           </button>
         );
       })}
-      {editing && tool === "text" ? (
-        <form
-          className="annotation-text-editor"
-          data-active={textEditor ? "true" : undefined}
-          style={
-            textEditor
-              ? { left: `${textEditor.x * 100}%`, top: `${textEditor.y * 100}%` }
-              : undefined
-          }
-          onSubmit={(event) => {
-            event.preventDefault();
-            void finishTextEditor();
-          }}
-        >
-          <input
-            aria-label={textEditor ? "批注文本" : undefined}
-            name="text"
-            ref={textInputRef}
-            tabIndex={textEditor ? 0 : -1}
-            inputMode="text"
-            enterKeyHint="done"
-            maxLength={1000}
-            onBlur={() => {
-              if (suppressTextBlur.current) {
-                suppressTextBlur.current = false;
-                return;
-              }
-              void finishTextEditor(false);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                closeTextEditor();
-              } else if (event.key === "Enter") {
-                event.preventDefault();
-                void finishTextEditor();
-              }
-            }}
-          />
-          {textEditor?.initial ? (
-            <button
-              aria-label="删除文本"
-              type="button"
-              onPointerDown={() => {
-                suppressTextBlur.current = true;
-              }}
-              onClick={() => {
-                if (!activeLayerId) return;
-                void saveDraftWithHistory(workspace, {
-                  id: textEditor.id,
-                  layerId: activeLayerId,
-                  payload: null,
-                  deleted: true,
-                });
-                closeTextEditor();
-              }}
-            >
-              <Trash2 aria-hidden="true" size={18} />
-            </button>
+
+      </div>
+      {createPortal(
+        <>
+          {editing && tool === "text" && !textEditor && !transformingText ? (
+            <p className="annotation-text-hint" role="status">轻点任意位置添加文字</p>
           ) : null}
-        </form>
-      ) : null}
-    </div>
+
+          <div
+            aria-hidden={transformingText ? undefined : "true"}
+            aria-label="拖到这里删除"
+            className="annotation-delete-zone"
+            data-active={deleteActive || undefined}
+            data-visible={transformingText || undefined}
+            ref={deleteTargetRef}
+            role="status"
+          >
+            <Trash2 aria-hidden="true" />
+          </div>
+
+          <form
+        aria-label={textEditor ? "文字输入" : undefined}
+        aria-hidden={textEditor ? undefined : "true"}
+        className="annotation-text-composer"
+        data-active={textEditor ? "true" : undefined}
+        style={{
+          top: visualViewport.top,
+          left: visualViewport.left,
+          width: visualViewport.width,
+          height: visualViewport.height,
+        }}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void finishTextEditor();
+        }}
+      >
+        <header>
+          <button
+            tabIndex={textEditor ? 0 : -1}
+            type="button"
+            onClick={cancelTextEditor}
+          >
+            取消
+          </button>
+          <button tabIndex={textEditor ? 0 : -1} type="submit">完成</button>
+        </header>
+        <textarea
+          aria-label={textEditor ? "批注文本" : undefined}
+          name="text"
+          ref={textInputRef}
+          tabIndex={textEditor ? 0 : -1}
+          inputMode="text"
+          maxLength={1000}
+          rows={1}
+          style={{
+            color: activeLayerColor,
+            fontSize: textEditor ? editorFontSize : undefined,
+          }}
+          onChange={(event) => setEditorText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              cancelTextEditor();
+            } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              void finishTextEditor();
+            }
+          }}
+        />
+        <label className="annotation-font-scale">
+          <output
+            aria-hidden={fontScaleAdjusting ? undefined : "true"}
+            className="annotation-font-scale__value"
+            data-visible={fontScaleAdjusting || undefined}
+          >
+            {Math.round(editorFontSize)}
+          </output>
+          <span className="annotation-font-scale__control">
+            <span aria-hidden="true" className="annotation-font-scale__track" />
+            <span
+              aria-hidden="true"
+              className="annotation-font-scale__thumb"
+              style={{ bottom: `${editorFontScaleProgress * 100}%` }}
+            />
+            <input
+              aria-label="字号"
+              type="range"
+              min={MIN_TEXT_FONT_SCALE}
+              max={MAX_TEXT_FONT_SCALE}
+              step="0.001"
+              value={editorFontScale}
+              onChange={(event) => setEditorFontScale(Number(event.target.value))}
+              onPointerDown={() => setFontScaleAdjusting(true)}
+              onPointerCancel={() => setFontScaleAdjusting(false)}
+              onPointerUp={() => {
+                setFontScaleAdjusting(false);
+                textInputRef.current?.focus({ preventScroll: true });
+              }}
+            />
+          </span>
+        </label>
+          </form>
+        </>,
+        document.body,
+      )}
+    </>
   );
 }
 
+function capturePointer(element: Element, pointerId: number) {
+  try {
+    element.setPointerCapture?.(pointerId);
+  } catch {
+    // Synthetic pointer events used by tests and visual QA have no active browser pointer.
+  }
+}
+
+function useVisualViewport() {
+  const read = () => ({
+    top: window.visualViewport?.offsetTop ?? 0,
+    left: window.visualViewport?.offsetLeft ?? 0,
+    width: window.visualViewport?.width ?? window.innerWidth,
+    height: window.visualViewport?.height ?? window.innerHeight,
+  });
+  const [viewport, setViewport] = useState(read);
+  useEffect(() => {
+    const target = window.visualViewport;
+    const update = () => setViewport(read());
+    target?.addEventListener("resize", update);
+    target?.addEventListener("scroll", update);
+    window.addEventListener("resize", update);
+    return () => {
+      target?.removeEventListener("resize", update);
+      target?.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+  return viewport;
+}
+
+function clampTextToPage(payload: TextPayload, element: HTMLElement, pageBounds: DOMRect): TextPayload {
+  const previousFontSize = element.style.fontSize;
+  let textBounds: DOMRect;
+  try {
+    element.style.fontSize = `${payload.fontScale * 100}cqw`;
+    textBounds = element.getBoundingClientRect();
+  } finally {
+    element.style.fontSize = previousFontSize;
+  }
+  const halfWidth = Math.min(0.49, textBounds.width / pageBounds.width / 2);
+  const halfHeight = Math.min(0.49, textBounds.height / pageBounds.height / 2);
+  return {
+    ...payload,
+    x: clampRange(payload.x, halfWidth, 1 - halfWidth),
+    y: clampRange(payload.y, halfHeight, 1 - halfHeight),
+  };
+}
+
 function clamp(value: number) {
-  return Math.min(1, Math.max(0, value));
+  return clampRange(value, 0, 1);
+}
+
+function clampRange(value: number, minimum: number, maximum: number) {
+  return Math.min(maximum, Math.max(minimum, value));
 }
 
 function distanceToPolyline(
@@ -513,10 +733,7 @@ function distanceToPolyline(
 ) {
   let closest = Number.POSITIVE_INFINITY;
   for (let index = 1; index < points.length; index += 1) {
-    closest = Math.min(
-      closest,
-      distanceToSegment(point, points[index - 1]!, points[index]!),
-    );
+    closest = Math.min(closest, distanceToSegment(point, points[index - 1]!, points[index]!));
   }
   return closest;
 }
@@ -530,8 +747,7 @@ function distanceToSegment(
   const dy = end.y - start.y;
   if (dx === 0 && dy === 0) return Math.hypot(point.x - start.x, point.y - start.y);
   const ratio = clamp(
-    ((point.x - start.x) * dx + (point.y - start.y) * dy) /
-      (dx * dx + dy * dy),
+    ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy),
   );
   return Math.hypot(
     point.x - (start.x + ratio * dx),

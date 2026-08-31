@@ -941,7 +941,7 @@ describe("AppRoutes", () => {
         kind: "text",
         pageNumber: 1,
         x: 0.1,
-        y: 0.1,
+        y: 0.1, fontScale: 0.024,
         text: "待同步",
       },
       attemptedAt: null,

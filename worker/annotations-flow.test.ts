@@ -90,6 +90,32 @@ describe("annotation layers and object synchronization", () => {
       ],
     });
 
+    const legacyId = crypto.randomUUID();
+    const legacyOperation = {
+      opId: crypto.randomUUID(),
+      annotationId: legacyId,
+      layerId: fixture.layerId,
+      baseVersion: 0,
+      type: "upsert" as const,
+      payload: {
+        kind: "text" as const,
+        pageNumber: 1,
+        x: 0.2,
+        y: 0.3,
+        text: "迁移窗口旧客户端",
+      },
+    };
+    const legacyResponse = await push(fixture, [legacyOperation]);
+    expect(await legacyResponse.json()).toMatchObject({
+      results: [
+        {
+          opId: legacyOperation.opId,
+          status: "accepted",
+          object: { payload: { text: "迁移窗口旧客户端", fontScale: 0.024 } },
+        },
+      ],
+    });
+
     const winning = operation(firstId, fixture.layerId, 1, "云端先接受");
     const stale = operation(firstId, fixture.layerId, 1, "本机冲突");
     const independent = operation(secondId, fixture.layerId, 1, "另一对象照常成功");
@@ -99,11 +125,17 @@ describe("annotation layers and object synchronization", () => {
         { status: "accepted", object: { version: 2 } },
         {
           status: "conflict",
-          object: { version: 2, payload: { text: "云端先接受" } },
+          object: {
+            version: 2,
+            payload: { text: "云端先接受", fontScale: 0.024 },
+          },
         },
         {
           status: "accepted",
-          object: { version: 2, payload: { text: "另一对象照常成功" } },
+          object: {
+            version: 2,
+            payload: { text: "另一对象照常成功", fontScale: 0.024 },
+          },
         },
       ],
     });
@@ -112,6 +144,35 @@ describe("annotation layers and object synchronization", () => {
     expect(await retry.json()).toMatchObject({
       results: [{ opId: winning.opId, status: "accepted", object: { version: 2 } }],
     });
+    const legacyPayloadHash = await sha256(
+      `upsert:${JSON.stringify({
+        pageNumber: 1,
+        kind: "text",
+        x: 0.2,
+        y: 0.3,
+        text: "云端先接受",
+      })}`,
+    );
+    await env.DB.prepare(
+      "UPDATE annotation_sync_operations SET payload_hash = ? WHERE op_id = ?",
+    )
+      .bind(legacyPayloadHash, winning.opId)
+      .run();
+    const migratedRetry = await push(fixture, [winning]);
+    expect(await migratedRetry.json()).toMatchObject({
+      results: [{ opId: winning.opId, status: "accepted", object: { version: 2 } }],
+    });
+    const changedReuse = await push(fixture, [
+      { ...winning, payload: { ...winning.payload, text: "不是同一操作" } },
+    ]);
+    expect(await changedReuse.json()).toEqual({
+      results: [{ opId: winning.opId, status: "op_id_reused" }],
+    });
+    await env.DB.prepare(
+      "UPDATE annotation_objects SET payload_json = json_remove(payload_json, '$.fontScale') WHERE id = ?",
+    )
+      .bind(legacyId)
+      .run();
     expect(
       await env.DB.prepare(
         "SELECT COUNT(*) AS count FROM annotation_sync_operations WHERE op_id = ?",
@@ -132,7 +193,10 @@ describe("annotation layers and object synchronization", () => {
         {
           opId: stale.opId,
           status: "conflict",
-          object: { version: 2, payload: { text: "云端先接受" } },
+          object: {
+            version: 2,
+            payload: { text: "云端先接受", fontScale: 0.024 },
+          },
         },
       ],
     });
@@ -143,13 +207,33 @@ describe("annotation layers and object synchronization", () => {
     );
     const pulled = (await pull.json()) as {
       cursor: number;
-      objects: Array<{ id: string; version: number; payload: { text: string } }>;
+      objects: Array<{
+        id: string;
+        version: number;
+        payload: { text: string; fontScale: number };
+      }>;
     };
     expect(pulled.cursor).toBeGreaterThan(0);
     expect(pulled.objects).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: firstId, version: 2, payload: expect.objectContaining({ text: "云端先接受" }) }),
-        expect.objectContaining({ id: secondId, version: 2, payload: expect.objectContaining({ text: "另一对象照常成功" }) }),
+        expect.objectContaining({
+          id: firstId,
+          version: 2,
+          payload: expect.objectContaining({ text: "云端先接受", fontScale: 0.024 }),
+        }),
+        expect.objectContaining({
+          id: secondId,
+          version: 2,
+          payload: expect.objectContaining({ text: "另一对象照常成功", fontScale: 0.024 }),
+        }),
+        expect.objectContaining({
+          id: legacyId,
+          version: 1,
+          payload: expect.objectContaining({
+            text: "迁移窗口旧客户端",
+            fontScale: 0.024,
+          }),
+        }),
       ]),
     );
   });
@@ -318,7 +402,14 @@ function operation(annotationId: string, layerId: string, baseVersion: number, t
     layerId,
     baseVersion,
     type: "upsert" as const,
-    payload: { kind: "text" as const, pageNumber: 1, x: 0.2, y: 0.3, text },
+    payload: {
+      kind: "text" as const,
+      pageNumber: 1,
+      x: 0.2,
+      y: 0.3,
+      fontScale: 0.024,
+      text,
+    },
   };
 }
 
@@ -380,4 +471,14 @@ async function callWorker(path: string, init: RequestInit = {}) {
   const response = await worker.fetch(new Request(`https://same-page.test${path}`, init), env, context);
   await waitOnExecutionContext(context);
   return response;
+}
+
+async function sha256(value: string) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }

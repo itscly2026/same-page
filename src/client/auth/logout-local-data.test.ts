@@ -74,7 +74,7 @@ describe("logout local privacy", () => {
         kind: "text" as const,
         pageNumber: 1,
         x: 0.1,
-        y: 0.2,
+        y: 0.2, fontScale: 0.024,
         text: id,
       },
       state,

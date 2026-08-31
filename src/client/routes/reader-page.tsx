@@ -34,7 +34,10 @@ import {
   scoreListResponseSchema,
   type ScoreSummary,
 } from "../../shared/scores";
-import type { AnnotationTool } from "../annotations/annotation-overlay";
+import type {
+  AnnotationOverlayInteraction,
+  AnnotationTool,
+} from "../annotations/annotation-overlay";
 import {
   cacheAnnotationLayers,
   discardAnnotationConflict,
@@ -110,6 +113,8 @@ export default function ReaderPage() {
   const [downloading, setDownloading] = useState(false);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [annotationInteraction, setAnnotationInteraction] =
+    useState<AnnotationOverlayInteraction>("idle");
   const [tool, setTool] = useState<AnnotationTool>("text");
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -493,7 +498,13 @@ export default function ReaderPage() {
       setSyncMessage("乐谱在回收站中，不能继续编辑；本机未同步批注仍会保留。");
       return;
     }
-    const editableLayer = layers.find((layer) => layer.canEdit);
+    if (!workspace) return;
+    const preferenceKey = `reader-edit-layer:${workspace.scopeKey}`;
+    const rememberedLayerId = readStringPreference(preferenceKey);
+    const editableLayer =
+      layers.find((layer) => layer.id === rememberedLayerId && layer.canEdit) ??
+      layers.find((layer) => layer.kind === "personal" && layer.canEdit) ??
+      layers.find((layer) => layer.canEdit);
     if (!editableLayer) return;
     setEditingOrigin({
       layout,
@@ -516,6 +527,7 @@ export default function ReaderPage() {
     setMoreOpen(false);
     setReaderPanel(null);
     setActiveLayerId(editableLayer.id);
+    writeStringPreference(preferenceKey, editableLayer.id);
     setTool("text");
     beginAnnotationEditSession();
     setEditing(true);
@@ -667,6 +679,11 @@ export default function ReaderPage() {
     setMoreOpen(false);
     setReaderPanel(panel);
   };
+  const selectEditingLayer = (layerId: string) => {
+    if (!workspace) return;
+    setActiveLayerId(layerId);
+    writeStringPreference(`reader-edit-layer:${workspace.scopeKey}`, layerId);
+  };
   const annotationPageProps: AnnotationPageProps = {
     workspace,
     layers,
@@ -674,6 +691,7 @@ export default function ReaderPage() {
     editing,
     tool,
     activeLayerId,
+    onInteractionChange: setAnnotationInteraction,
   };
 
   return (
@@ -695,6 +713,14 @@ export default function ReaderPage() {
           </Link>
           <strong className="reader-chrome__title">{score.fileName}</strong>
           <div className="reader-chrome__actions">
+            <Button
+              aria-label="图层"
+              aria-expanded={readerPanel === "layers"}
+              className="reader-icon-button"
+              onPress={() => openReaderPanel("layers")}
+            >
+              <Layers aria-hidden="true" size={21} />
+            </Button>
             {cloudState !== "trashed" && layers.some((layer) => layer.canEdit) ? (
               <Button
                 aria-label="编辑"
@@ -750,10 +776,6 @@ export default function ReaderPage() {
                   <Plus aria-hidden="true" size={18} />
                 </Button>
               </div>
-              <Button onPress={() => openReaderPanel("layers")}>
-                <Layers aria-hidden="true" size={18} />
-                <span>图层</span>
-              </Button>
               <Button
                 isDisabled={downloading || cloudState === "trashed"}
                 onPress={() => void downloadOffline()}
@@ -791,16 +813,20 @@ export default function ReaderPage() {
               <strong>{score.fileName}</strong>
               <span>编辑模式 · 第 {currentPage} 页</span>
             </div>
-            <Button onPress={() => void finishEditing()}>完成</Button>
+            {annotationInteraction !== "composing-text" ? (
+              <Button onPress={() => void finishEditing()}>完成</Button>
+            ) : null}
           </header>
-          <EditingControls
-            workspace={workspace}
-            layers={layers}
-            tool={tool}
-            activeLayerId={activeLayerId}
-            onToolChange={setTool}
-            onLayerChange={setActiveLayerId}
-          />
+          {annotationInteraction !== "transforming-text" ? (
+            <EditingControls
+              workspace={workspace}
+              layers={layers}
+              tool={tool}
+              activeLayerId={activeLayerId}
+              onToolChange={setTool}
+              onLayerChange={selectEditingLayer}
+            />
+          ) : null}
         </>
       ) : null}
 
@@ -1304,6 +1330,22 @@ function readBooleanPreference(key: string) {
     return localStorage.getItem(key) === "true";
   } catch {
     return false;
+  }
+}
+
+function readStringPreference(key: string) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStringPreference(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Editing remains available when persistent preferences are unavailable.
   }
 }
 
