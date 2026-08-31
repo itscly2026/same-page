@@ -18,6 +18,10 @@ test("visual report scenarios have stable unique ids and cover iPad plus narrow 
 });
 
 test("fixture resolver isolates guest and member sessions", () => {
+  const socialProviders = resolveFixtureRequest({
+    pathname: "/api/auth/social-providers",
+    identity: "guest",
+  });
   const guest = resolveFixtureRequest({
     pathname: "/api/auth/get-session",
     identity: "guest",
@@ -28,6 +32,9 @@ test("fixture resolver isolates guest and member sessions", () => {
   });
   assert.equal(JSON.parse(guest.body), null);
   assert.equal(JSON.parse(member.body).user.email, "member@visual.invalid");
+  assert.deepEqual(JSON.parse(socialProviders.body), {
+    providers: ["google", "wechat"],
+  });
   const preview = resolveFixtureRequest({
     pathname: "/api/guest/preview-choir",
     identity: "guest",

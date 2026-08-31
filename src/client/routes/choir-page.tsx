@@ -12,6 +12,7 @@ import {
 } from "react-aria-components";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { isInternalAuthEmail } from "../../shared/auth";
 import {
   choirMembershipsResponseSchema,
   choirSummarySchema,
@@ -149,13 +150,13 @@ export default function ChoirPage() {
       <Link className="header-action" to="/">
         其他云盘
       </Link>
-      {session.data?.user ? (
+      {session.data?.user && !isInternalAuthEmail(session.data.user.email) ? (
         <span className="account-email">{session.data.user.email}</span>
-      ) : (
+      ) : !session.data?.user ? (
         <Link className="header-action header-action--primary" to="/login">
           登录或注册
         </Link>
-      )}
+      ) : null}
     </>
   );
 

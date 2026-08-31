@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 
+import { isInternalAuthEmail } from "../../src/shared/auth";
 import type { Env } from "../env";
 
 export type AuthOtpPurpose = "registration" | "forget-password";
@@ -10,6 +11,9 @@ export async function sendAuthOtp(
   otp: string,
   purpose: AuthOtpPurpose,
 ): Promise<void> {
+  if (isInternalAuthEmail(email)) {
+    throw new Error("OTP delivery blocked for internal authentication email");
+  }
   const action =
     purpose === "registration" ? "完成 Same Page 注册" : "重设 Same Page 密码";
   const resend = new Resend(env.RESEND_API_KEY);

@@ -9,6 +9,7 @@ import { sendAuthOtp } from "../email/send-otp";
 import type { Env, WaitUntilContext } from "../env";
 import { hashRateLimitIdentity } from "../security/join-code";
 import { consumeRateLimit } from "../security/rate-limit";
+import { createSocialProviderOptions } from "./social-providers";
 
 export function createAuth(env: Env, executionContext: WaitUntilContext) {
   const database = createDatabase(env.DB);
@@ -22,6 +23,13 @@ export function createAuth(env: Env, executionContext: WaitUntilContext) {
       provider: "sqlite",
       schema,
     }),
+    account: {
+      encryptOAuthTokens: true,
+    },
+    onAPIError: {
+      errorURL: "/login?oauth=error",
+    },
+    socialProviders: createSocialProviderOptions(env),
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,

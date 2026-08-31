@@ -6,6 +6,10 @@ export interface Env {
   RESEND_API_KEY: string;
   AUTH_EMAIL_FROM: string;
   INVITE_SECRET: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  WECHAT_CLIENT_ID?: string;
+  WECHAT_CLIENT_SECRET?: string;
 }
 
 export interface AppEnvironment {

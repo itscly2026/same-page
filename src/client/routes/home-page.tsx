@@ -12,6 +12,7 @@ import {
 } from "react-aria-components";
 import { Link, useNavigate } from "react-router-dom";
 
+import { isInternalAuthEmail } from "../../shared/auth";
 import {
   choirMembershipsResponseSchema,
   guestJoinStateResponseSchema,
@@ -224,7 +225,9 @@ export function HomePage() {
         actions={
           session.data?.user ? (
             <>
-              <span className="account-email">{session.data.user.email}</span>
+              {!isInternalAuthEmail(session.data.user.email) ? (
+                <span className="account-email">{session.data.user.email}</span>
+              ) : null}
               <Button
                 className="header-action"
                 onPress={() => void getLogoutLocalSummary().then(setLogoutSummary)}

@@ -3,3 +3,8 @@ BETTER_AUTH_URL=http://127.0.0.1:5173
 RESEND_API_KEY=re_replace_me
 AUTH_EMAIL_FROM=Same Page <login@example.com>
 INVITE_SECRET=replace-with-a-separate-32-character-secret
+# Optional. A provider appears only when both values in its pair are set.
+GOOGLE_CLIENT_ID=replace-with-google-web-client-id
+GOOGLE_CLIENT_SECRET=replace-with-google-web-client-secret
+WECHAT_CLIENT_ID=replace-with-wechat-website-app-id
+WECHAT_CLIENT_SECRET=replace-with-wechat-website-app-secret

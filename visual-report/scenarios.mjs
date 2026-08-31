@@ -54,11 +54,11 @@ export const visualReportScenarios = [
   {
     id: "auth-email-entry",
     title: "身份 · 登录或注册",
-    description: "邮箱优先认证流程的统一入口。",
+    description: "邮箱仍为主入口，Google 与微信作为下方次要选项。",
     device: "portrait",
     identity: "guest",
     route: "/login",
-    ready: { type: "text", text: "输入邮箱，我们会自动进入登录或注册流程。" },
+    ready: { type: "text", text: "其他登录方式" },
     actions: [],
   },
   {

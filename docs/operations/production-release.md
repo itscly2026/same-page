@@ -25,7 +25,9 @@
 1. 创建生产 D1 与 R2，并核对区域、名称和绑定。
 2. 对生产 D1 执行全部 `migrations/`。
 3. 在 Worker Secret 中设置彼此独立的 `BETTER_AUTH_SECRET`、`INVITE_SECRET` 与
-   `RESEND_API_KEY`。
+   `RESEND_API_KEY`。需要启用第三方登录时，再设置完整的 `GOOGLE_CLIENT_ID` /
+   `GOOGLE_CLIENT_SECRET` 和 `WECHAT_CLIENT_ID` / `WECHAT_CLIENT_SECRET`；缺少任意一项时
+   对应入口会保持隐藏。
 4. 部署 Worker 与静态资源；Wrangler 的 custom domain 配置负责创建 DNS 记录和证书。
 5. 在 GitHub `production` environment 中设置 `CLOUDFLARE_API_TOKEN` 与
    `CLOUDFLARE_ACCOUNT_ID`。
@@ -33,6 +35,19 @@
 7. 首位管理员完成 OTP 注册后，通过受控命令创建“小红花云盘”。自动化命令不显示
    初始邀请码；管理员首次登录后在云盘页面轮换，并立即通过私密渠道交付新码。
 8. 如需启用“公开体验”，使用 `--guest-admission open --preview-entry` 创建唯一的公开体验云盘；已有开放准入云盘必须通过受控 SQL 明确设置 `is_preview_entry = 1`，不得按名称自动匹配。
+
+## 第三方登录配置
+
+- Google 使用 Web application OAuth client，授权回调固定为
+  `https://samepage.clyapps.com/api/auth/callback/google`，只申请 `openid`、`email`、
+  `profile`。上线前单独确认 consent screen、允许域名和测试/发布状态。
+- 微信只使用开放平台“网站应用”扫码登录，授权回调为
+  `https://samepage.clyapps.com/api/auth/callback/wechat`，scope 必须是 `snsapi_login`；
+  公众号网页授权不能替代该资质和配置。
+- Client ID 与 Client Secret 都以 Worker Secret 管理。不得把 Secret 放入 `wrangler.jsonc`、
+  `.dev.vars.example` 的实际值、GitHub Issue、PR 或发布日志。
+- 部署代码、平台审核通过、生产 Secret 完整、真实账号授权成功是四个独立门槛。只有最后一项
+  通过后，才能把对应提供方记为生产可用。
 
 后续 `main` 发布必须先通过 CI 的 lint、typecheck、客户端测试、Worker 测试和生产构建。
 deploy job 随后执行 D1 migrations、Wrangler deploy 与线上机器验证；迁移或验证失败时
@@ -48,6 +63,7 @@ workflow 失败，不能记为发布成功。
 | CI | verify 与 deploy job 的 workflow URL 和结论 |
 | Cloudflare | Worker deployment ID、D1 migration 状态、R2 绑定 |
 | 生产 URL | HTTPS、应用壳、manifest、Service Worker、`/api/health`、未登录 401 |
+| 第三方登录 | 提供方审核状态、回调配置、入口可见性、真实 Google/微信各一次成功与取消返回 |
 | DNS | `samepage.clyapps.com` 的解析与证书；不得改动根域邮件记录 |
 | 邮件 | QQ、163、Gmail、Outlook 各一次真实 OTP 到达与延迟；不记录 OTP |
 | 人工验收 | iPad Safari、Android 平板、大陆真实网络的设备、浏览器版本与结论 |
@@ -68,5 +84,6 @@ workflow 失败，不能记为发布成功。
 10. 分别验证访客进入注册用户、同一用户多标签页和主动退出后的路径；确认工作区不互相提升，主动退出后仅保留只读共享离线内容。
 11. 在乐谱 A、B 分别离线编辑并退出阅读器；恢复网络或把应用切回前台，不重新打开 A、B，确认两份待上传内容都到达云端。随后让 A 暂时不可用并重复，确认 A 的原 `opId` 与 payload 留在本机、B 仍可完成同步，且没有自动 pull 未打开乐谱的新批注。
 12. 发布新版本后保留旧页面，确认出现明确更新提示，用户确认后才刷新。
+13. 在认证首屏确认邮箱表单仍在上方；分别完成 Google 与微信登录，并各取消一次；确认成功后续接原访客云盘流程，取消后邮箱草稿和原入口上下文仍保留。
 
 真实 Safari、PWA 存储驱逐、手写笔和大陆网络表现不能由桌面自动化或 WebKit 模拟替代。
