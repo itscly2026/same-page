@@ -1,16 +1,52 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
+import { OutboxRecoveryCoordinator } from "../annotations/outbox-recovery-coordinator";
 import { authClient } from "../auth/auth-client";
-import { activateAuthenticatedLocalOwner } from "./local-workspace";
+import {
+  activateAuthenticatedLocalOwner,
+  type LocalWorkspaceOwnerKey,
+} from "./local-workspace";
 
 export function LocalIdentityObserver() {
   const session = authClient.useSession();
+  const userId = session.data?.user.id;
+  const [identityState, setIdentityState] = useState<{
+    observedUserId: string | undefined;
+    activation: number;
+    recoveryOwner: LocalWorkspaceOwnerKey | null;
+  }>({ observedUserId: userId, activation: 0, recoveryOwner: null });
 
   useEffect(() => {
-    const userId = session.data?.user.id;
+    let active = true;
     if (!userId) return;
-    void activateAuthenticatedLocalOwner(userId);
-  }, [session.data?.user.id]);
+    const activation = identityState.activation;
+    void activateAuthenticatedLocalOwner(userId).then((ownerKey) => {
+      if (!active) return;
+      setIdentityState((current) =>
+        current.observedUserId === userId &&
+        current.activation === activation
+          ? { ...current, recoveryOwner: ownerKey }
+          : current,
+      );
+    });
+    return () => {
+      active = false;
+    };
+  }, [identityState.activation, userId]);
 
-  return null;
+  if (identityState.observedUserId !== userId) {
+    setIdentityState({
+      observedUserId: userId,
+      activation: identityState.activation + 1,
+      recoveryOwner: null,
+    });
+    return null;
+  }
+
+  return userId && identityState.recoveryOwner ? (
+    <OutboxRecoveryCoordinator
+      key={identityState.activation}
+      ownerKey={identityState.recoveryOwner}
+    />
+  ) : null;
 }

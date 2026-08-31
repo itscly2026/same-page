@@ -40,10 +40,30 @@ export async function syncAnnotations(
   });
 }
 
-export async function drainAnnotationOutbox(workspace: LocalWorkspace) {
+export class AnnotationPushError extends Error {
+  constructor(readonly responseStatus: number) {
+    super("annotation_push_failed");
+  }
+}
+
+export async function pushPendingAnnotations(
+  workspace: LocalWorkspace,
+  options: { maxOperations: number },
+) {
+  await assertLocalWorkspaceActive(workspace);
+  return withScoreSyncLock(workspace, () =>
+    drainAnnotationOutbox(workspace, options),
+  );
+}
+
+async function drainAnnotationOutbox(
+  workspace: LocalWorkspace,
+  options: { maxOperations?: number } = {},
+) {
   await assertLocalWorkspaceActive(workspace);
   let pushed = 0;
-  while (true) {
+  const maxOperations = options.maxOperations ?? Number.POSITIVE_INFINITY;
+  while (pushed < maxOperations) {
     const batch = await withLocalWorkspaceTransaction(
       workspace,
       "rw",
@@ -60,7 +80,7 @@ export async function drainAnnotationOutbox(workspace: LocalWorkspace) {
             seenAnnotationIds.add(operation.annotationId);
             return true;
           })
-          .slice(0, 100);
+          .slice(0, Math.min(100, maxOperations - pushed));
         await localDatabase.annotationOutbox.bulkUpdate(
           selected.map((operation) => ({
             key: operation.opId,
@@ -85,7 +105,7 @@ export async function drainAnnotationOutbox(workspace: LocalWorkspace) {
         body: JSON.stringify({ operations: batch.map(toWireOperation) }),
       },
     );
-    if (!response.ok) throw new Error("annotation_push_failed");
+    if (!response.ok) throw new AnnotationPushError(response.status);
     const body = (await response.json()) as {
       results: Array<{
         opId: string;
@@ -97,6 +117,7 @@ export async function drainAnnotationOutbox(workspace: LocalWorkspace) {
     await applyPushResults(workspace, batch, body.results);
     pushed += batch.length;
   }
+  return pushed;
 }
 
 function authenticatedUserId(workspace: LocalWorkspace) {
