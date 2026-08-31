@@ -47,7 +47,7 @@ async function verifyManifest() {
   assert.equal(response.status, 200, "web app manifest must return 200");
   const manifest = await response.json();
   assert.equal(manifest.name, "Same Page");
-  assert.equal(manifest.display, "standalone");
+  assert.equal(manifest.display, "fullscreen");
 }
 
 async function verifyServiceWorker() {
