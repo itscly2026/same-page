@@ -10,7 +10,10 @@ import {
 
 test("visual report scenarios have stable unique ids and cover iPad plus narrow layouts", () => {
   assert.equal(validateVisualReportScenarios(), visualReportScenarios);
-  assert.equal(new Set(visualReportScenarios.map((scenario) => scenario.id)).size, 14);
+  assert.equal(
+    new Set(visualReportScenarios.map((scenario) => scenario.id)).size,
+    visualReportScenarios.length,
+  );
   assert.deepEqual(
     new Set(visualReportScenarios.map((scenario) => scenario.device)),
     new Set(["portrait", "landscape", "narrow"]),

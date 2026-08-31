@@ -89,7 +89,7 @@ import {
   useReaderPreferences,
 } from "../reader/use-reader-preferences";
 
-type ReaderPanel = "layers";
+type ReaderPanel = "layers" | "pages";
 
 type ReaderLoadState =
   | { kind: "resolving-workspace" }
@@ -750,6 +750,14 @@ export default function ReaderPage() {
           <strong className="reader-chrome__title">{score.fileName}</strong>
           <div className="reader-chrome__actions">
             <Button
+              aria-label="页面位置"
+              aria-expanded={readerPanel === "pages"}
+              className="reader-page-button"
+              onPress={() => openReaderPanel("pages")}
+            >
+              {currentPage} / {document.numPages}
+            </Button>
+            <Button
               aria-label="图层"
               aria-expanded={readerPanel === "layers"}
               className="reader-icon-button"
@@ -834,11 +842,14 @@ export default function ReaderPage() {
         </header>
       ) : null}
 
-      {!editing && chromeVisible ? (
+      {!editing && chromeVisible && readerPanel === "pages" ? (
         <PageNavigatorPanel
           document={document}
           currentPage={currentPage}
-          onSelect={goToPage}
+          onSelect={(page) => {
+            goToPage(page);
+            setReaderPanel(null);
+          }}
         />
       ) : null}
 
@@ -879,7 +890,7 @@ export default function ReaderPage() {
           云端已有新版本；完整下载并校验前，原离线副本会继续保留。
         </aside>
       ) : null}
-      {readerPanel ? (
+      {readerPanel === "layers" ? (
         <div
           className="reader-panel-backdrop"
           role="presentation"

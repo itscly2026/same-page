@@ -267,12 +267,16 @@ describe("ReaderPage", () => {
     expect(screen.getByRole("link", { name: "返回云盘" }).querySelector("svg")).not.toBeNull();
     expect(screen.getByRole("button", { name: "图层" }).querySelector("svg")).not.toBeNull();
     expect(screen.getByRole("button", { name: "更多" }).querySelector("svg")).not.toBeNull();
+    expect(screen.queryByLabelText("页面缩略图")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "页面位置" }));
     const pageStrip = screen.getByLabelText("页面缩略图");
     expect(pageStrip).toHaveClass("page-preview-strip");
     expect(screen.getByRole("button", { name: "前往第 2 页" })).toHaveAttribute(
       "data-current",
     );
-    expect(screen.getByText("2 / 3")).toHaveClass("page-preview-strip__position");
+    expect(within(pageStrip).getByText("2 / 3")).toHaveClass(
+      "page-preview-strip__position",
+    );
     expect(virtualTestState.scrollToIndex).toHaveBeenCalledWith(1, {
       align: "auto",
     });
@@ -280,6 +284,7 @@ describe("ReaderPage", () => {
     expect(
       within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 3 页"),
     ).toBeInTheDocument();
+    expect(screen.queryByLabelText("页面缩略图")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "图层" }));
     expect(screen.getByLabelText("图层显示与颜色")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭页面与图层" }));
@@ -290,7 +295,7 @@ describe("ReaderPage", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "连续滚动" }));
     expect(screen.getByLabelText("连续滚动阅读")).toBeInTheDocument();
-    expect(screen.getByText("3 / 3")).toHaveClass("page-preview-strip__position");
+    expect(screen.getByRole("button", { name: "页面位置" })).toHaveTextContent("3 / 3");
     expect(
       screen.getByText("轻点页面中央显示控制，上下滑动连续浏览"),
     ).toBeInTheDocument();

@@ -17,9 +17,12 @@ describe("reader control style contract", () => {
     );
   });
 
-  it("uses opaque white bars with black controls", () => {
+  it("uses compact floating reader controls instead of a full-width white bar", () => {
     expect(styles).toMatch(
-      /\.reader-chrome,[\s\S]*?color: #000;[\s\S]*?background: #fff;/,
+      /\.reader-chrome \{[\s\S]*?pointer-events: none;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/,
+    );
+    expect(styles).toMatch(
+      /\.reader-chrome__back,[\s\S]*?background: rgb\(255 255 255 \/ 96%\);/,
     );
     expect(styles).toMatch(
       /\.annotation-controls \{[\s\S]*?color: #000;[\s\S]*?background: #fff;/,
