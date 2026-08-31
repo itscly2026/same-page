@@ -91,12 +91,20 @@ import {
 
 type ReaderPanel = "layers";
 
+type ReaderLoadState =
+  | { kind: "resolving-workspace" }
+  | { kind: "loading"; scopeKey: string }
+  | { kind: "ready"; scopeKey: string }
+  | { kind: "error"; scopeKey: string; message: string };
+
 export default function ReaderPage() {
   const { choirId = "", scoreId = "" } = useParams();
   const session = authClient.useSession();
   const [resolvedWorkspace, setResolvedWorkspace] =
     useState<LocalWorkspace | null>(null);
-  const [loadedScopeKey, setLoadedScopeKey] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<ReaderLoadState>({
+    kind: "resolving-workspace",
+  });
   const workspaceIsActive = useLiveQuery(
     () => resolvedWorkspace
       ? isLocalWorkspaceActive(resolvedWorkspace)
@@ -109,7 +117,6 @@ export default function ReaderPage() {
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [documentScopeKey, setDocumentScopeKey] = useState<string | null>(null);
   const [source, setSource] = useState<string | ArrayBuffer | null>(null);
-  const [loadingError, setLoadingError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [downloading, setDownloading] = useState(false);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
@@ -258,7 +265,7 @@ export default function ReaderPage() {
       setEditing(false);
       setActiveLayerId(null);
       endAnnotationEditSession();
-      setLoadingError(null);
+      setLoadState({ kind: "loading", scopeKey: workspace.scopeKey });
       setCloudState("checking");
       const local = await findActiveOfflineScore(workspace.ownerKey, choirId, scoreId).catch(
         () => undefined,
@@ -271,8 +278,11 @@ export default function ReaderPage() {
         if (lookup.state === "trashed") {
           setCloudState("trashed");
           if (!local) {
-            setLoadedScopeKey(workspace.scopeKey);
-            setLoadingError("这份乐谱已移入回收站，当前设备没有可用的离线副本。");
+            setLoadState({
+              kind: "error",
+              scopeKey: workspace.scopeKey,
+              message: "这份乐谱已移入回收站，当前设备没有可用的离线副本。",
+            });
             return;
           }
           setSyncMessage(
@@ -283,19 +293,20 @@ export default function ReaderPage() {
         if (lookup.state !== "active") throw new Error("Score unavailable");
         if (!active) return;
         setCloudState("active");
-        setLoadedScopeKey(workspace.scopeKey);
         setScore(lookup.score);
         setSource(`/api/choirs/${choirId}/scores/${scoreId}/pdf`);
       } catch {
         if (!active) return;
         setCloudState((current) => (current === "trashed" ? current : "unavailable"));
         if (local) {
-          setLoadedScopeKey(workspace.scopeKey);
           setScore(scoreFromOffline(local));
           setSource(await local.blob.arrayBuffer());
         } else {
-          setLoadedScopeKey(workspace.scopeKey);
-          setLoadingError("无法打开乐谱。请检查网络与当前访问权限。");
+          setLoadState({
+            kind: "error",
+            scopeKey: workspace.scopeKey,
+            message: "无法打开乐谱。请检查网络与当前访问权限。",
+          });
         }
       }
     })();
@@ -392,11 +403,20 @@ export default function ReaderPage() {
         if (active) {
           setDocument(nextDocument);
           setDocumentScopeKey(workspace?.scopeKey ?? null);
+          if (workspace) {
+            setLoadState({ kind: "ready", scopeKey: workspace.scopeKey });
+          }
           setCurrentPage((page) => Math.min(page, nextDocument.numPages));
         }
       })
       .catch(() => {
-        if (active) setLoadingError("PDF 无法解析或文件暂时不可用。");
+        if (active && workspace) {
+          setLoadState({
+            kind: "error",
+            scopeKey: workspace.scopeKey,
+            message: "PDF 无法解析或文件暂时不可用。",
+          });
+        }
       });
     return () => {
       active = false;
@@ -647,14 +667,17 @@ export default function ReaderPage() {
     }
   };
 
-  if (!workspace || loadedScopeKey !== workspace.scopeKey || loadingError) {
-    if (!workspace) return <p className="route-loading">正在打开本机工作区…</p>;
+  if (!workspace) {
+    return <p className="route-loading">正在打开本机工作区…</p>;
+  }
+
+  if (loadState.kind === "error" && loadState.scopeKey === workspace.scopeKey) {
     return (
       <main className="page-shell compact-page">
         <p className="eyebrow">乐谱阅读器</p>
         <h1>无法打开</h1>
         <p className="hero__copy" role="alert">
-          {loadingError}
+          {loadState.message}
         </p>
         <Link className="primary-link" to={`/choirs/${choirId}`}>
           返回云盘
@@ -663,7 +686,13 @@ export default function ReaderPage() {
     );
   }
 
-  if (!score || !document || documentScopeKey !== workspace.scopeKey) {
+  if (
+    loadState.kind !== "ready" ||
+    loadState.scopeKey !== workspace.scopeKey ||
+    !score ||
+    !document ||
+    documentScopeKey !== workspace.scopeKey
+  ) {
     return <p className="route-loading">正在加载乐谱…</p>;
   }
 

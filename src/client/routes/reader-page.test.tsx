@@ -182,6 +182,62 @@ describe("ReaderPage", () => {
     vi.restoreAllMocks();
   });
 
+  it("keeps a delayed cloud lookup in a loading state without flashing an error", async () => {
+    let releaseLookup!: (response: Response) => void;
+    const delayedLookup = new Promise<Response>((resolve) => {
+      releaseLookup = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) => {
+        if (input.includes("/scores") && !input.includes("/layers")) {
+          return delayedLookup;
+        }
+        return Promise.resolve(
+          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+        );
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("正在加载乐谱…")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "无法打开" })).not.toBeInTheDocument();
+    releaseLookup(
+      Response.json({
+        scores: [
+          {
+            id: "score-1",
+            choirId: "choir-1",
+            fileName: "练声曲.pdf",
+            updatedAt: 1,
+            currentVersion: {
+              id: "version-1",
+              versionNumber: 1,
+              sizeBytes: 329,
+              sha256: "a".repeat(64),
+              etag: '"etag"',
+              pageCount: 3,
+              createdAt: 1,
+            },
+          },
+        ],
+        storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
+        permissions: { canManage: false },
+      }),
+    );
+    expect(await screen.findByText("练声曲.pdf")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
+    });
+  });
+
   it("opens with score-only chrome and switches layouts without entering edit mode", async () => {
     render(
       <MemoryRouter

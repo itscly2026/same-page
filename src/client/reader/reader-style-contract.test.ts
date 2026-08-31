@@ -8,6 +8,15 @@ import { describe, expect, it } from "vitest";
 const styles = readFileSync(resolve(process.cwd(), "src/client/styles.css"), "utf8");
 
 describe("reader control style contract", () => {
+  it("centers fitted pages without changing oversized-page scrolling", () => {
+    expect(styles).toMatch(
+      /\.page-reader__canvas-stage \{[\s\S]*?place-items: center;/,
+    );
+    expect(styles).toMatch(
+      /\.continuous-reader__page \{[\s\S]*?justify-content: center;/,
+    );
+  });
+
   it("uses opaque white bars with black controls", () => {
     expect(styles).toMatch(
       /\.reader-chrome,[\s\S]*?color: #000;[\s\S]*?background: #fff;/,
