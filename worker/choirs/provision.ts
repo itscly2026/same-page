@@ -10,10 +10,14 @@ export async function provisionChoir(options: {
   inviteSecret: string;
   choirName?: string;
   guestAdmissionMode?: "invite" | "open";
+  isPreviewEntry?: boolean;
   getRandomValues?: (array: Uint8Array) => Uint8Array;
 }) {
   const choirId = crypto.randomUUID();
   const guestAdmissionMode = options.guestAdmissionMode ?? "invite";
+  if (options.isPreviewEntry && guestAdmissionMode !== "open") {
+    throw new Error("Preview entry choir must use open guest admission");
+  }
   const joinCode =
     guestAdmissionMode === "invite"
       ? generateJoinCode(options.getRandomValues)
@@ -27,13 +31,14 @@ export async function provisionChoir(options: {
       .prepare(
         `INSERT INTO choirs
           (id, name, guest_admission_mode, guest_session_version,
-           join_code_hash, storage_limit_bytes)
-         VALUES (?, ?, ?, 1, ?, ?)`,
+           is_preview_entry, join_code_hash, storage_limit_bytes)
+         VALUES (?, ?, ?, 1, ?, ?, ?)`,
       )
       .bind(
         choirId,
         options.choirName ?? DEFAULT_CHOIR_NAME,
         guestAdmissionMode,
+        options.isPreviewEntry ? 1 : 0,
         joinCodeHash,
         CHOIR_STORAGE_LIMIT_BYTES,
       ),

@@ -38,7 +38,7 @@ export function provisionChoirFromCli(argv = process.argv.slice(2)) {
   const joinCode = options.guestAdmission === "invite" ? generateJoinCode() : null;
   const joinCodeHash = joinCode ? hashJoinCode(joinCode, inviteSecret) : null;
   const sql = [
-    `INSERT INTO choirs (id, name, guest_admission_mode, guest_session_version, join_code_hash, storage_limit_bytes) VALUES (${quote(choirId)}, ${quote(options.choirName)}, ${quote(options.guestAdmission)}, 1, ${quoteNullable(joinCodeHash)}, 1073741824);`,
+    `INSERT INTO choirs (id, name, guest_admission_mode, guest_session_version, is_preview_entry, join_code_hash, storage_limit_bytes) VALUES (${quote(choirId)}, ${quote(options.choirName)}, ${quote(options.guestAdmission)}, 1, ${options.previewEntry ? 1 : 0}, ${quoteNullable(joinCodeHash)}, 1073741824);`,
     `INSERT INTO memberships (id, choir_id, user_id, display_name, role, status) VALUES (${quote(membershipId)}, ${quote(choirId)}, ${quote(user.id)}, ${quote(options.adminDisplayName)}, 'admin', 'active');`,
   ].join("\n");
 
@@ -95,6 +95,7 @@ export function parseArguments(argv) {
   const values = new Map();
   let mode = "--local";
   let showJoinCode = false;
+  let previewEntry = false;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--remote") {
@@ -107,6 +108,10 @@ export function parseArguments(argv) {
     }
     if (argument === "--show-join-code") {
       showJoinCode = true;
+      continue;
+    }
+    if (argument === "--preview-entry") {
+      previewEntry = true;
       continue;
     }
     if (argument.startsWith("--")) {
@@ -131,12 +136,16 @@ export function parseArguments(argv) {
   if (guestAdmission !== "invite" && guestAdmission !== "open") {
     throw new Error("--guest-admission must be invite or open");
   }
+  if (previewEntry && guestAdmission !== "open") {
+    throw new Error("--preview-entry requires --guest-admission open");
+  }
   return {
     adminEmail,
     adminDisplayName,
     choirName,
     guestAdmission,
     mode,
+    previewEntry,
     showJoinCode,
   };
 }

@@ -21,9 +21,15 @@ describe("AuthPage", () => {
   beforeEach(() => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation(() =>
-        Promise.resolve(new Response(null, { status: 401 })),
-      ),
+      vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+        if (input === "/api/auth/flow") {
+          return Promise.resolve(Response.json({ flow: "sign-in" }));
+        }
+        if (input === "/api/guest/session" && !init?.method) {
+          return Promise.resolve(new Response(null, { status: 401 }));
+        }
+        return Promise.resolve(new Response(null, { status: 404 }));
+      }),
     );
     vi.mocked(authClient.signIn.email).mockResolvedValue({
       data: { token: "session", user: {} },
@@ -44,18 +50,37 @@ describe("AuthPage", () => {
     vi.clearAllMocks();
   });
 
-  it("signs in with a normalized email and password without requesting an OTP", async () => {
+  it("starts with only email and routes an existing user to password sign-in", async () => {
     renderAuthPage();
 
-    fireEvent.change(screen.getByLabelText("邮箱"), {
+    const emailField = screen.getByLabelText("邮箱");
+    expect(emailField).toHaveFocus();
+    expect(screen.queryByLabelText("密码")).not.toBeInTheDocument();
+    expect(screen.queryByText("忘记密码")).not.toBeInTheDocument();
+    expect(screen.queryByText("团内显示名")).not.toBeInTheDocument();
+
+    fireEvent.change(emailField, {
       target: { value: "Singer@Example.Test" },
     });
-    fireEvent.change(screen.getByLabelText("密码"), {
+    fireEvent.click(screen.getByRole("button", { name: "登录或注册" }));
+
+    const passwordField = await screen.findByLabelText("密码");
+    await vi.waitFor(() => {
+      expect(screen.getByRole("heading", { name: "登录" })).toHaveFocus();
+    });
+    expect(screen.getByRole("button", { name: "忘记密码" })).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/flow",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ email: "singer@example.test" }),
+      }),
+    );
+
+    fireEvent.change(passwordField, {
       target: { value: "correct horse battery staple" },
     });
-    const loginButton = screen.getByRole("button", { name: "登录" });
-    await vi.waitFor(() => expect(loginButton).toBeEnabled());
-    fireEvent.click(loginButton);
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
 
     await vi.waitFor(() => {
       expect(authClient.signIn.email).toHaveBeenCalledWith({
@@ -65,114 +90,73 @@ describe("AuthPage", () => {
     });
   });
 
-  it("waits for guest-session discovery before allowing password sign-in", async () => {
-    let resolveGuestSession!: (response: Response) => void;
-    const fetchMock = vi.fn().mockImplementation((input: string) => {
-      if (input === "/api/guest/session") {
-        return new Promise<Response>((resolve) => {
-          resolveGuestSession = resolve;
-        });
-      }
-      return Promise.resolve(Response.json({ membership: { id: "member-1" } }));
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    renderAuthPage();
-
-    fireEvent.change(screen.getByLabelText("邮箱"), {
-      target: { value: "singer@example.test" },
-    });
-    fireEvent.change(screen.getByLabelText("密码"), {
-      target: { value: "correct horse battery staple" },
-    });
-    const loginButton = screen.getByRole("button", { name: "登录" });
-    expect(loginButton).toBeDisabled();
-    fireEvent.click(loginButton);
-    expect(authClient.signIn.email).not.toHaveBeenCalled();
-
-    resolveGuestSession(
-      Response.json({ choir: { id: "choir-1", name: "小红花合唱团" } }),
+  it("registers first and only then asks for an invite choir display name", async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      (input: string, init?: RequestInit) => {
+        if (input === "/api/auth/flow") {
+          return Promise.resolve(Response.json({ flow: "sign-up" }));
+        }
+        if (
+          input === "/api/auth/registration/request-otp" ||
+          input === "/api/auth/registration/complete"
+        ) {
+          return Promise.resolve(Response.json({ success: true }));
+        }
+        if (input === "/api/guest/session" && !init?.method) {
+          return Promise.resolve(
+            Response.json({
+              choir: {
+                id: "choir-1",
+                name: "小红花合唱团",
+                guestAdmissionMode: "invite",
+              },
+              entryKind: "admission",
+            }),
+          );
+        }
+        if (input === "/api/choirs/current-guest/join-state") {
+          return Promise.resolve(
+            Response.json({
+              status: "display-name-required",
+              choir: {
+                id: "choir-1",
+                name: "小红花合唱团",
+                guestAdmissionMode: "invite",
+              },
+            }),
+          );
+        }
+        if (input === "/api/choirs/join-current-guest") {
+          return Promise.resolve(Response.json({ membership: { id: "member-1" } }));
+        }
+        return Promise.resolve(new Response(null, { status: 404 }));
+      },
     );
-    await screen.findByText("登录后，你将以成员身份加入“小红花合唱团”。");
-    fireEvent.change(screen.getByLabelText("团内显示名"), {
-      target: { value: "小花" },
-    });
-    fireEvent.click(loginButton);
-
-    await vi.waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/choirs/join-current-guest",
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({ displayName: "小花" }),
-        }),
-      );
-    });
-  });
-
-  it("verifies a new registration before upgrading an active guest session", async () => {
-    const fetchMock = vi.fn().mockImplementation((input: string) => {
-      if (input === "/api/guest/session") {
-        return Promise.resolve(
-          Response.json({
-            choir: { id: "choir-1", name: "小红花合唱团" },
-          }),
-        );
-      }
-      if (
-        input === "/api/auth/registration/request-otp" ||
-        input === "/api/auth/registration/complete"
-      ) {
-        return Promise.resolve(Response.json({ success: true }));
-      }
-      return Promise.resolve(Response.json({ membership: { id: "member-1" } }));
-    });
     vi.stubGlobal("fetch", fetchMock);
     renderAuthPage();
 
-    await screen.findByText("登录后，你将以成员身份加入“小红花合唱团”。");
-    fireEvent.click(screen.getByRole("button", { name: "注册" }));
-    fireEvent.change(screen.getByLabelText("邮箱"), {
-      target: { value: "New@Example.Test" },
-    });
+    await identify("New@Example.Test");
+    expect(await screen.findByRole("heading", { name: "注册" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("团内显示名")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("密码（至少 10 位）"), {
       target: { value: "new secure password" },
     });
     fireEvent.change(screen.getByLabelText("确认密码"), {
       target: { value: "new secure password" },
     });
-    fireEvent.change(screen.getByLabelText("团内显示名"), {
-      target: { value: "小花" },
-    });
-    fireEvent.click(
-      screen.getByRole("button", { name: "注册并发送验证码" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "发送验证码" }));
 
-    expect(await screen.findByLabelText("六位验证码")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/auth/registration/request-otp",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ email: "new@example.test" }),
-      }),
-    );
-
-    fireEvent.change(screen.getByLabelText("六位验证码"), {
+    fireEvent.change(await screen.findByLabelText("六位验证码"), {
       target: { value: "123456" },
     });
     fireEvent.click(screen.getByRole("button", { name: "完成注册" }));
 
+    const displayName = await screen.findByLabelText("团内显示名");
+    expect(screen.getByText(/认证已完成/)).toHaveTextContent("小红花合唱团");
+    fireEvent.change(displayName, { target: { value: "小花" } });
+    fireEvent.click(screen.getByRole("button", { name: "加入并进入" }));
+
     await vi.waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/auth/registration/complete",
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({
-            email: "new@example.test",
-            otp: "123456",
-            password: "new secure password",
-          }),
-        }),
-      );
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/choirs/join-current-guest",
         expect.objectContaining({
@@ -183,52 +167,131 @@ describe("AuthPage", () => {
     });
   });
 
-  it("sets or resets a password with an OTP and then uses password sign-in", async () => {
+  it("clears a preview guest session after login without offering membership", async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      (input: string, init?: RequestInit) => {
+        if (input === "/api/auth/flow") {
+          return Promise.resolve(Response.json({ flow: "sign-in" }));
+        }
+        if (input === "/api/guest/session" && !init?.method) {
+          return Promise.resolve(
+            Response.json({
+              choir: {
+                id: "preview-choir",
+                name: "公开合唱团",
+                guestAdmissionMode: "open",
+              },
+              entryKind: "preview",
+            }),
+          );
+        }
+        if (input === "/api/guest/session" && init?.method === "DELETE") {
+          return Promise.resolve(new Response(null, { status: 204 }));
+        }
+        return Promise.resolve(new Response(null, { status: 404 }));
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
     renderAuthPage();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "首次设置或忘记密码" }),
-    );
-    fireEvent.change(screen.getByLabelText("邮箱"), {
-      target: { value: "Admin@Example.Test" },
+    await identify("member@example.test");
+    fireEvent.change(await screen.findByLabelText("密码"), {
+      target: { value: "correct horse battery staple" },
     });
-    const resetRequestButton = screen.getByRole("button", {
-      name: "发送密码重置验证码",
-    });
-    await vi.waitFor(() => expect(resetRequestButton).toBeEnabled());
-    fireEvent.click(resetRequestButton);
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
 
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", {
+        method: "DELETE",
+      });
+    });
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/choirs/join-current-guest",
+      expect.anything(),
+    );
+    expect(screen.queryByLabelText("团内显示名")).not.toBeInTheDocument();
+  });
+
+  it("shows forgot password only after an existing email is identified", async () => {
+    renderAuthPage();
+    expect(screen.queryByRole("button", { name: "忘记密码" })).not.toBeInTheDocument();
+
+    await identify("Admin@Example.Test");
+    fireEvent.click(await screen.findByRole("button", { name: "忘记密码" }));
+    await vi.waitFor(() => {
+      expect(screen.getByRole("heading", { name: "忘记密码" })).toHaveFocus();
+    });
+    expect(screen.queryByLabelText("邮箱")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("邮箱：admin@example.test")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "发送密码重置验证码" }),
+    );
     expect(await screen.findByLabelText("六位验证码")).toBeInTheDocument();
     expect(authClient.emailOtp.requestPasswordReset).toHaveBeenCalledWith({
       email: "admin@example.test",
     });
+  });
 
-    fireEvent.change(screen.getByLabelText("六位验证码"), {
-      target: { value: "654321" },
-    });
-    fireEvent.change(screen.getByLabelText("新密码（至少 10 位）"), {
-      target: { value: "replacement password" },
-    });
-    fireEvent.change(screen.getByLabelText("确认新密码"), {
-      target: { value: "replacement password" },
-    });
-    fireEvent.click(
-      screen.getByRole("button", { name: "重设密码并登录" }),
+  it("moves focus to the result heading when post-authentication joining fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+        if (input === "/api/auth/flow") {
+          return Promise.resolve(Response.json({ flow: "sign-in" }));
+        }
+        if (input === "/api/guest/session" && !init?.method) {
+          return Promise.resolve(
+            Response.json({
+              choir: {
+                id: "choir-1",
+                name: "小红花合唱团",
+                guestAdmissionMode: "invite",
+              },
+              entryKind: "admission",
+            }),
+          );
+        }
+        if (input === "/api/choirs/current-guest/join-state") {
+          return Promise.resolve(
+            Response.json(
+              { error: "membership_requires_admin" },
+              { status: 403 },
+            ),
+          );
+        }
+        return Promise.resolve(new Response(null, { status: 404 }));
+      }),
     );
+    renderAuthPage();
+
+    await identify("member@example.test");
+    fireEvent.change(await screen.findByLabelText("密码"), {
+      target: { value: "correct horse battery staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
 
     await vi.waitFor(() => {
-      expect(authClient.emailOtp.resetPassword).toHaveBeenCalledWith({
-        email: "admin@example.test",
-        otp: "654321",
-        password: "replacement password",
-      });
-      expect(authClient.signIn.email).toHaveBeenCalledWith({
-        email: "admin@example.test",
-        password: "replacement password",
-      });
+      expect(screen.getByRole("heading", { name: "登录完成" })).toHaveFocus();
     });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "该成员关系需要团管理员恢复",
+    );
   });
 });
+
+async function identify(email: string) {
+  fireEvent.change(screen.getByLabelText("邮箱"), {
+    target: { value: email },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "登录或注册" }));
+  await vi.waitFor(() => {
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/flow",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+}
 
 function renderAuthPage() {
   render(

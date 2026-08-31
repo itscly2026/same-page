@@ -14,6 +14,8 @@ import { Link, useNavigate } from "react-router-dom";
 
 import {
   choirMembershipsResponseSchema,
+  previewChoirResponseSchema,
+  type ChoirSummary,
   type MembershipSummary,
 } from "../../shared/choirs";
 import { authClient } from "../auth/auth-client";
@@ -31,6 +33,7 @@ export function HomePage() {
   const [joinCode, setJoinCode] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [memberships, setMemberships] = useState<MembershipSummary[]>([]);
+  const [previewChoir, setPreviewChoir] = useState<ChoirSummary | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [joinMessage, setJoinMessage] = useState<string | null>(null);
   const [pageMessage, setPageMessage] = useState<string | null>(null);
@@ -51,6 +54,17 @@ export function HomePage() {
       active = false;
     };
   }, [userId]);
+
+  useEffect(() => {
+    if (session.isPending || userId) return;
+    let active = true;
+    void loadPreviewChoir().then((choir) => {
+      if (active) setPreviewChoir(choir);
+    });
+    return () => {
+      active = false;
+    };
+  }, [session.isPending, userId]);
 
   const enterInviteChoir = async (event: FormEvent) => {
     event.preventDefault();
@@ -136,10 +150,20 @@ export function HomePage() {
                 退出登录
               </Button>
             </>
-          ) : (
-            <Link className="header-action" to="/login">
-              登录 / 注册
-            </Link>
+          ) : session.isPending ? null : (
+            <>
+              {previewChoir ? (
+                <Link
+                  className="header-action"
+                  to={`/choirs/${previewChoir.id}`}
+                >
+                  抢先体验
+                </Link>
+              ) : null}
+              <Link className="header-action header-action--primary" to="/login">
+                登录或注册
+              </Link>
+            </>
           )
         }
       />
@@ -306,5 +330,15 @@ async function loadMemberships(): Promise<MembershipSummary[]> {
     return choirMembershipsResponseSchema.parse(await response.json()).memberships;
   } catch {
     return [];
+  }
+}
+
+async function loadPreviewChoir(): Promise<ChoirSummary | null> {
+  try {
+    const response = await fetch("/api/guest/preview-choir");
+    if (!response.ok) return null;
+    return previewChoirResponseSchema.parse(await response.json()).choir;
+  } catch {
+    return null;
   }
 }

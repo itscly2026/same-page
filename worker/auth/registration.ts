@@ -6,10 +6,12 @@ import { PASSWORD_POLICY } from "../../src/shared/auth";
 import { createDatabase } from "../db/database";
 import { user } from "../db/schema";
 import type { AppEnvironment } from "../env";
+import { hashRateLimitIdentity } from "../security/join-code";
+import { consumeRateLimit } from "../security/rate-limit";
 import type { Auth } from "./create-auth";
 
 const registrationRequestSchema = z.object({
-  email: z.email(),
+  email: z.string().trim().toLowerCase().pipe(z.email()),
 });
 
 const registrationCompletionSchema = registrationRequestSchema.extend({
@@ -19,6 +21,21 @@ const registrationCompletionSchema = registrationRequestSchema.extend({
     .min(PASSWORD_POLICY.minLength)
     .max(PASSWORD_POLICY.maxLength),
 });
+
+export async function resolveAuthFlow(context: Context<AppEnvironment>) {
+  const body = await parseJson(context);
+  const parsed = registrationRequestSchema.safeParse(body);
+  if (!parsed.success) return context.json({ error: "invalid_request" }, 400);
+
+  const email = normalizeEmail(parsed.data.email);
+  const limited = await enforceAuthFlowRateLimit(context, email);
+  if (limited) return limited;
+
+  const existingUser = await findUserByEmail(context, email);
+  return context.json({
+    flow: existingUser?.emailVerified ? "sign-in" : "sign-up",
+  });
+}
 
 export async function requestRegistrationOtp(
   context: Context<AppEnvironment>,
@@ -120,6 +137,39 @@ async function parseJson(context: Context<AppEnvironment>) {
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+async function enforceAuthFlowRateLimit(
+  context: Context<AppEnvironment>,
+  email: string,
+) {
+  const clientIdentity =
+    context.req.header("CF-Connecting-IP") ?? "local-development";
+  const ipKey = await hashRateLimitIdentity(
+    `auth-flow:ip:${clientIdentity}`,
+    context.env.INVITE_SECRET,
+  );
+  const ipResult = await consumeRateLimit(context.env.DB, ipKey, {
+    maxAttempts: 30,
+    windowMs: 60_000,
+  });
+  if (!ipResult.allowed) {
+    context.header("Retry-After", String(ipResult.retryAfterSeconds));
+    return context.json({ error: "try_again_later" }, 429);
+  }
+
+  const emailKey = await hashRateLimitIdentity(
+    `auth-flow:email:${email}`,
+    context.env.INVITE_SECRET,
+  );
+  const emailResult = await consumeRateLimit(context.env.DB, emailKey, {
+    maxAttempts: 10,
+    windowMs: 60_000,
+  });
+  if (emailResult.allowed) return null;
+
+  context.header("Retry-After", String(emailResult.retryAfterSeconds));
+  return context.json({ error: "try_again_later" }, 429);
 }
 
 function cookieFromSetCookie(setCookie: string | null) {

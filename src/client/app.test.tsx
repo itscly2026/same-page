@@ -24,7 +24,9 @@ describe("AppRoutes", () => {
       "fetch",
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
-          Response.json(
+          input === "/api/guest/preview-choir"
+            ? Response.json({}, { status: 404 })
+            : Response.json(
             input === "/api/choirs"
               ? { memberships: [] }
               : input.includes("/scores")
@@ -40,7 +42,7 @@ describe("AppRoutes", () => {
                     guestAdmissionMode: "invite",
                   },
                 },
-          ),
+            ),
         ),
       ),
     );
@@ -61,13 +63,43 @@ describe("AppRoutes", () => {
       screen.getByRole("heading", { name: "Every voice, on the same page." }),
     ).toBeInTheDocument();
     expect(screen.getByText("同页共谱，众声一心。")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "登录 / 注册" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "登录或注册" })).toBeInTheDocument();
     expect(screen.queryByLabelText("八位邀请码")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "进入合唱团" }));
     expect(screen.getByRole("dialog", { name: "进入合唱团" })).toBeInTheDocument();
     expect(screen.getByLabelText("八位邀请码")).toBeInTheDocument();
     expect(screen.getByText("无需注册，也可以访客身份只读访问。")).toBeInTheDocument();
     expect(screen.queryByText("创建合唱团")).not.toBeInTheDocument();
+    expect(screen.queryByText("公开合唱团")).not.toBeInTheDocument();
+  });
+
+  it("exposes the preview choir through the single signed-out entry", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) =>
+        Promise.resolve(
+          input === "/api/guest/preview-choir"
+            ? Response.json({
+                choir: {
+                  id: "preview-choir",
+                  name: "公开合唱团",
+                  guestAdmissionMode: "open",
+                },
+              })
+            : Response.json({ memberships: [] }),
+        ),
+      ),
+    );
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("link", { name: "抢先体验" })).toHaveAttribute(
+      "href",
+      "/choirs/preview-choir",
+    );
     expect(screen.queryByText("公开合唱团")).not.toBeInTheDocument();
   });
 
@@ -246,6 +278,7 @@ describe("AppRoutes", () => {
                 name: "公开合唱团",
                 guestAdmissionMode: "open",
               },
+              entryKind: "admission",
             }),
           );
         }
@@ -258,6 +291,7 @@ describe("AppRoutes", () => {
                 name: "公开合唱团",
                 guestAdmissionMode: "open",
               },
+              entryKind: "admission",
             }),
           );
         }
@@ -313,6 +347,7 @@ describe("AppRoutes", () => {
                 name: "公开合唱团",
                 guestAdmissionMode: "open",
               },
+              entryKind: "admission",
             }),
           );
         }
@@ -394,6 +429,51 @@ describe("AppRoutes", () => {
         displayName: "小花",
       }),
     });
+  });
+
+  it("returns a signed-in non-member from the preview choir to the home entry", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "user-1", email: "member@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) => {
+        if (
+          input === "/api/guest/preview-choir" ||
+          input === "/api/guest/choirs/preview-choir"
+        ) {
+          return Promise.resolve(
+            Response.json({
+              choir: {
+                id: "preview-choir",
+                name: "公开合唱团",
+                guestAdmissionMode: "open",
+              },
+              entryKind: "preview",
+            }),
+          );
+        }
+        if (input === "/api/choirs") {
+          return Promise.resolve(Response.json({ memberships: [] }));
+        }
+        return Promise.resolve(Response.json({}, { status: 403 }));
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/preview-choir"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Every voice, on the same page.",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("团内显示名")).not.toBeInTheDocument();
+    expect(screen.queryByText("公开合唱团")).not.toBeInTheDocument();
   });
 
   it("lets an administrator rotate and then hide a one-time join code", async () => {

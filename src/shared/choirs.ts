@@ -44,6 +44,26 @@ export const choirSummarySchema = z.object({
   guestAdmissionMode: guestAdmissionModeSchema,
 });
 
+export const guestSessionResponseSchema = z.object({
+  choir: choirSummarySchema,
+  entryKind: z.enum(["admission", "preview"]),
+});
+
+export const guestJoinStateResponseSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("joined"),
+    choir: choirSummarySchema,
+  }),
+  z.object({
+    status: z.literal("display-name-required"),
+    choir: choirSummarySchema,
+  }),
+]);
+
+export const previewChoirResponseSchema = z.object({
+  choir: choirSummarySchema,
+});
+
 export const membershipSummarySchema = z.object({
   id: z.string(),
   displayName: z.string(),
@@ -60,3 +80,4 @@ export type GuestAdmissionRequest = z.infer<
   typeof guestSessionRequestSchema
 >;
 export type ChoirSummary = z.infer<typeof choirSummarySchema>;
+export type GuestSessionResponse = z.infer<typeof guestSessionResponseSchema>;
