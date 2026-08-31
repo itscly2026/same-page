@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { canonicalScoreFileNameKey } from "./score-file-name-key.mjs";
+
 export const MAX_PDF_BYTES = 20 * 1024 * 1024;
 export const SCORE_TRASH_RETENTION_DAYS = 30;
 
@@ -11,7 +13,7 @@ export const scoreFileNameSchema = z
   .refine((value) => value !== "." && value !== "..", "invalid file name");
 
 export function scoreFileNameKey(fileName: string) {
-  return fileName.normalize("NFC").toLocaleLowerCase("zh-CN");
+  return canonicalScoreFileNameKey(fileName);
 }
 
 export const scoreRenameRequestSchema = z.object({

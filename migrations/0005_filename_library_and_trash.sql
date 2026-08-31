@@ -5,12 +5,10 @@ ALTER TABLE scores ADD COLUMN file_name_key TEXT NOT NULL DEFAULT '';
 ALTER TABLE scores ADD COLUMN trashed_at INTEGER;
 ALTER TABLE scores ADD COLUMN trash_expires_at INTEGER;
 
-UPDATE scores
-SET file_name = CASE
-  WHEN lower(substr(file_name, -4)) = '.pdf' THEN file_name
-  ELSE file_name || '.pdf'
-END;
-UPDATE scores SET file_name_key = lower(file_name);
+-- JavaScript performs the final NFC + locale-aware filename migration after
+-- this schema migration. Stable per-row placeholders let this migration apply
+-- even when the legacy table contains duplicate or case-equivalent titles.
+UPDATE scores SET file_name_key = 'legacy-score:' || id;
 
 ALTER TABLE scores DROP COLUMN composer;
 ALTER TABLE scores DROP COLUMN arranger;
