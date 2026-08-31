@@ -10,7 +10,10 @@ import {
 import { syncAnnotations } from "../annotations/sync";
 import ReaderPage from "./reader-page";
 
-const virtualTestState = vi.hoisted(() => ({ itemSize: 100 }));
+const virtualTestState = vi.hoisted(() => ({
+  itemSize: 100,
+  scrollToIndex: vi.fn(),
+}));
 
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: (options: { count: number }) => ({
@@ -24,7 +27,7 @@ vi.mock("@tanstack/react-virtual", () => ({
         size: virtualTestState.itemSize,
       })),
     measureElement: vi.fn(),
-    scrollToIndex: vi.fn(),
+    scrollToIndex: virtualTestState.scrollToIndex,
   }),
 }));
 
@@ -192,8 +195,22 @@ describe("ReaderPage", () => {
     ).toBeInTheDocument();
 
     toggleChrome();
-    fireEvent.click(screen.getByRole("button", { name: "第 2 / 3 页" }));
-    expect(screen.getByLabelText("页面缩略图")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "返回合唱团" }).querySelector("svg")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "更多" }).querySelector("svg")).not.toBeNull();
+    const pageStrip = screen.getByLabelText("页面缩略图");
+    expect(pageStrip).toHaveClass("page-preview-strip");
+    expect(screen.getByRole("button", { name: "前往第 2 页" })).toHaveAttribute(
+      "data-current",
+    );
+    expect(screen.getByText("2 / 3")).toHaveClass("page-preview-strip__position");
+    expect(virtualTestState.scrollToIndex).toHaveBeenCalledWith(1, {
+      align: "auto",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "前往第 3 页" }));
+    expect(
+      within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 3 页"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
     fireEvent.click(screen.getByRole("button", { name: "图层" }));
     expect(screen.getByLabelText("图层显示与颜色")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭页面与图层" }));
@@ -204,7 +221,7 @@ describe("ReaderPage", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "连续滚动" }));
     expect(screen.getByLabelText("连续滚动阅读")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "第 2 / 3 页" })).toBeInTheDocument();
+    expect(screen.getByText("3 / 3")).toHaveClass("page-preview-strip__position");
     expect(
       screen.getByText("轻点页面中央显示控制，上下滑动连续浏览"),
     ).toBeInTheDocument();

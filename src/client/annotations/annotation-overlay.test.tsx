@@ -53,20 +53,107 @@ beforeEach(async () => {
 });
 
 describe("AnnotationOverlay", () => {
-  it("cancels an open text input when the score is tapped elsewhere", async () => {
+  it("saves non-empty text at its original point when the score is tapped elsewhere", async () => {
     renderOverlay([], "text");
     const overlay = screen.getByLabelText("第 1 页批注层");
     mockBounds(overlay);
 
     fireEvent.pointerDown(overlay, { pointerId: 1, clientX: 20, clientY: 30 });
     expect(screen.getByLabelText("批注文本")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("批注文本"), {
-      target: { value: "尚未保存" },
-    });
+    const input = screen.getByLabelText("批注文本");
+    expect(input).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "自动确认" } });
 
     fireEvent.pointerDown(overlay, { pointerId: 2, clientX: 80, clientY: 70 });
     expect(screen.queryByLabelText("批注文本")).not.toBeInTheDocument();
+    await waitFor(async () => {
+      const saved = await localDatabase.annotations.toCollection().first();
+      expect(saved).toMatchObject({
+        state: "draft",
+        payload: { kind: "text", x: 0.2, y: 0.3, text: "自动确认" },
+      });
+    });
+  });
+
+  it("cancels empty new text and Escape without creating a draft", async () => {
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    mockBounds(overlay);
+
+    fireEvent.pointerDown(overlay, { pointerId: 1, clientX: 20, clientY: 30 });
+    fireEvent.pointerDown(overlay, { pointerId: 2, clientX: 80, clientY: 70 });
+    expect(screen.queryByLabelText("批注文本")).not.toBeInTheDocument();
     expect(await localDatabase.annotations.count()).toBe(0);
+
+    fireEvent.pointerDown(overlay, { pointerId: 3, clientX: 40, clientY: 50 });
+    fireEvent.change(screen.getByLabelText("批注文本"), {
+      target: { value: "应被取消" },
+    });
+    fireEvent.keyDown(screen.getByLabelText("批注文本"), { key: "Escape" });
+    expect(screen.queryByLabelText("批注文本")).not.toBeInTheDocument();
+    expect(await localDatabase.annotations.count()).toBe(0);
+  });
+
+  it("confirms non-empty text when focus moves to another control", async () => {
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    mockBounds(overlay);
+
+    fireEvent.pointerDown(overlay, { pointerId: 1, clientX: 25, clientY: 35 });
+    const input = screen.getByLabelText("批注文本");
+    fireEvent.change(input, { target: { value: "失焦确认" } });
+    fireEvent.blur(input);
+
+    expect(screen.queryByLabelText("批注文本")).not.toBeInTheDocument();
+    await waitFor(async () => {
+      expect(await localDatabase.annotations.toCollection().first()).toMatchObject({
+        payload: { kind: "text", x: 0.25, y: 0.35, text: "失焦确认" },
+      });
+    });
+  });
+
+  it("keeps an existing annotation when cleared and confirmed elsewhere", async () => {
+    const text = annotation("text-1", activeLayerId, {
+      kind: "text",
+      pageNumber: 1,
+      x: 0.2,
+      y: 0.3,
+      text: "保留原文",
+    });
+    await localDatabase.annotations.put(text);
+    renderOverlay([text], "text");
+    const button = screen.getByRole("button", { name: "保留原文" });
+
+    fireEvent.pointerDown(button, { pointerId: 1, clientX: 20, clientY: 30 });
+    fireEvent.pointerUp(button, { pointerId: 1, clientX: 20, clientY: 30 });
+    fireEvent.change(screen.getByLabelText("批注文本"), { target: { value: "" } });
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    mockBounds(overlay);
+    fireEvent.pointerDown(overlay, { pointerId: 2, clientX: 80, clientY: 70 });
+
+    expect(screen.queryByLabelText("批注文本")).not.toBeInTheDocument();
+    expect(await localDatabase.annotations.get(text.key)).toMatchObject({
+      state: "synced",
+      payload: { text: "保留原文" },
+    });
+  });
+
+  it("confirms text with Enter", async () => {
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    mockBounds(overlay);
+
+    fireEvent.pointerDown(overlay, { pointerId: 1, clientX: 20, clientY: 30 });
+    const input = screen.getByLabelText("批注文本");
+    fireEvent.change(input, { target: { value: "回车确认" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(async () => {
+      expect(await localDatabase.annotations.toCollection().first()).toMatchObject({
+        payload: { text: "回车确认" },
+      });
+    });
   });
 
   it("moves text with the pointer before saving its final position", async () => {
@@ -128,9 +215,17 @@ describe("AnnotationOverlay", () => {
     expect(screen.getByLabelText("批注文本")).toHaveValue("原始文本");
     const overlay = screen.getByLabelText("第 1 页批注层");
     mockBounds(overlay);
+    fireEvent.change(screen.getByLabelText("批注文本"), {
+      target: { value: "修改后的文本" },
+    });
     fireEvent.pointerDown(overlay, { pointerId: 7, clientX: 90, clientY: 90 });
     expect(screen.queryByLabelText("批注文本")).not.toBeInTheDocument();
-    expect(await localDatabase.annotations.get(text.key)).toEqual(text);
+    await waitFor(async () => {
+      expect(await localDatabase.annotations.get(text.key)).toMatchObject({
+        state: "draft",
+        payload: { x: 0.2, y: 0.3, text: "修改后的文本" },
+      });
+    });
   });
 
   it("erases nearby ink reliably but never text or another layer", async () => {

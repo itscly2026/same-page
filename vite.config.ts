@@ -29,7 +29,7 @@ export default defineConfig({
         description: "合唱乐谱与排练批注",
         theme_color: "#014653",
         background_color: "#ffffff",
-        display: "standalone",
+        display: "fullscreen",
         start_url: "/",
         icons: [
           {

@@ -3,6 +3,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Trash2 } from "lucide-react";
 
 import type {
   AnnotationLayerSummary,
@@ -47,6 +48,8 @@ export function AnnotationOverlay({
     y: number;
     initial: string;
   } | null>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
+  const suppressTextBlur = useRef(false);
   const currentStrokeId = useRef<string | null>(null);
   const strokeHistoryStarted = useRef(false);
   const eraserPointerId = useRef<number | null>(null);
@@ -122,15 +125,60 @@ export function AnnotationOverlay({
     }
   };
 
+  const openTextEditor = (editor: NonNullable<typeof textEditor>) => {
+    const input = textInputRef.current;
+    if (input) input.value = editor.initial;
+    setTextEditor(editor);
+    // WebKit only opens the software keyboard when focus happens directly in
+    // the user gesture call stack. Keep this input mounted between edits so we
+    // do not have to rely on a later autoFocus render.
+    input?.focus({ preventScroll: true });
+  };
+
+  const closeTextEditor = (blur = true) => {
+    setTextEditor(null);
+    const input = textInputRef.current;
+    if (blur && input && input === document.activeElement) {
+      suppressTextBlur.current = true;
+      input.blur();
+    }
+  };
+
+  const finishTextEditor = async (blur = true) => {
+    if (!textEditor || !activeLayerId) return;
+    const editor = textEditor;
+    const layerId = activeLayerId;
+    const text = textInputRef.current?.value.trim() ?? "";
+    closeTextEditor(blur);
+    if (text) {
+      await saveDraftWithHistory(choirId, scoreId, {
+        id: editor.id,
+        layerId,
+        payload: {
+          kind: "text",
+          pageNumber,
+          x: editor.x,
+          y: editor.y,
+          text,
+        },
+      });
+    }
+  };
+
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (!editing || !activeLayerId) return;
     const position = point(event);
     if (tool === "text") {
       if (textEditor) {
-        setTextEditor(null);
+        void finishTextEditor();
         return;
       }
-      setTextEditor({ id: crypto.randomUUID(), x: position.x, y: position.y, initial: "" });
+      openTextEditor({
+        id: crypto.randomUUID(),
+        x: position.x,
+        y: position.y,
+        initial: "",
+      });
       return;
     }
     if (tool === "eraser") {
@@ -202,25 +250,6 @@ export function AnnotationOverlay({
     strokeHistoryStarted.current = false;
     eraserPointerId.current = null;
     erasedStrokeIds.current.clear();
-  };
-
-  const saveText = async (value: string) => {
-    if (!textEditor || !activeLayerId) return;
-    const text = value.trim();
-    if (text) {
-      await saveDraftWithHistory(choirId, scoreId, {
-        id: textEditor.id,
-        layerId: activeLayerId,
-        payload: {
-          kind: "text",
-          pageNumber,
-          x: textEditor.x,
-          y: textEditor.y,
-          text,
-        },
-      });
-    }
-    setTextEditor(null);
   };
 
   return (
@@ -306,6 +335,10 @@ export function AnnotationOverlay({
             disabled={!editing || annotation.layerId !== activeLayerId}
             onPointerDown={(event) => {
               if (!editing || annotation.layerId !== activeLayerId || tool !== "text") return;
+              if (textEditor) {
+                void finishTextEditor();
+                return;
+              }
               dragText.current = {
                 id: annotation.id,
                 pointerId: event.pointerId,
@@ -371,7 +404,12 @@ export function AnnotationOverlay({
                 });
               } else {
                 setTextDragPreview(null);
-                setTextEditor({ id: annotation.id, x: payload.x, y: payload.y, initial: payload.text });
+                openTextEditor({
+                  id: annotation.id,
+                  x: payload.x,
+                  y: payload.y,
+                  initial: payload.text,
+                });
               }
             }}
             onPointerCancel={(event) => {
@@ -400,32 +438,52 @@ export function AnnotationOverlay({
           </button>
         );
       })}
-      {editing && tool === "text" && textEditor ? (
+      {editing && tool === "text" ? (
         <form
           className="annotation-text-editor"
-          style={{ left: `${textEditor.x * 100}%`, top: `${textEditor.y * 100}%` }}
+          data-active={textEditor ? "true" : undefined}
+          style={
+            textEditor
+              ? { left: `${textEditor.x * 100}%`, top: `${textEditor.y * 100}%` }
+              : undefined
+          }
           onSubmit={(event) => {
             event.preventDefault();
-            const data = new FormData(event.currentTarget);
-            void saveText(String(data.get("text") ?? ""));
+            void finishTextEditor();
           }}
         >
           <input
-            aria-label="批注文本"
+            aria-label={textEditor ? "批注文本" : undefined}
             name="text"
-            defaultValue={textEditor.initial}
-            autoFocus
+            ref={textInputRef}
+            tabIndex={textEditor ? 0 : -1}
+            inputMode="text"
+            enterKeyHint="done"
             maxLength={1000}
+            onBlur={() => {
+              if (suppressTextBlur.current) {
+                suppressTextBlur.current = false;
+                return;
+              }
+              void finishTextEditor(false);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
-                setTextEditor(null);
+                event.preventDefault();
+                closeTextEditor();
+              } else if (event.key === "Enter") {
+                event.preventDefault();
+                void finishTextEditor();
               }
             }}
           />
-          <button type="submit">保存</button>
-          {textEditor.initial ? (
+          {textEditor?.initial ? (
             <button
+              aria-label="删除文本"
               type="button"
+              onPointerDown={() => {
+                suppressTextBlur.current = true;
+              }}
               onClick={() => {
                 if (!activeLayerId) return;
                 void saveDraftWithHistory(choirId, scoreId, {
@@ -434,10 +492,10 @@ export function AnnotationOverlay({
                   payload: null,
                   deleted: true,
                 });
-                setTextEditor(null);
+                closeTextEditor();
               }}
             >
-              删除
+              <Trash2 aria-hidden="true" size={18} />
             </button>
           ) : null}
         </form>

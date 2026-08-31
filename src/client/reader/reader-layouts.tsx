@@ -7,6 +7,7 @@ import { AnnotationOverlay, type AnnotationTool } from "../annotations/annotatio
 import type { LocalAnnotationRecord } from "../platform/local-database";
 import type { PDFDocumentProxy } from "./pdf-document";
 import { PdfPageCanvas } from "./pdf-page";
+import { calculateFittedPageWidth } from "./reader-dimensions";
 import { useReaderGestures } from "./use-reader-gestures";
 
 export interface AnnotationPageProps {
@@ -46,9 +47,10 @@ export function PageLayout({
   const containerRef = useRef<HTMLDivElement>(null);
   const size = useElementSize(containerRef);
   const pageRatio = usePdfPageAspectRatio(document, currentPage);
-  const fitWidth = Math.min(
-    Math.max(1, size.width - 64),
-    Math.max(1, size.height - 48) * pageRatio,
+  const fitWidth = calculateFittedPageWidth(
+    size.width,
+    size.height,
+    pageRatio,
   );
   const renderedWidth = Math.max(1, fitWidth * zoom);
   const renderedHeight = renderedWidth / pageRatio;
@@ -77,14 +79,16 @@ export function PageLayout({
     <section className="page-reader" aria-label="翻页阅读">
       <div
         className="page-reader__viewport"
+        data-zoom={zoom}
         ref={containerRef}
         {...gestureHandlers}
       >
         <div
           className="page-reader__canvas-stage"
+          data-underfit={zoom < 1 || undefined}
           style={{
-            width: Math.max(size.width, renderedWidth + 64),
-            height: Math.max(size.height, renderedHeight + 48),
+            width: Math.max(size.width, renderedWidth),
+            height: Math.max(size.height, renderedHeight),
           }}
         >
           <AnnotatedPdfPage
@@ -140,13 +144,13 @@ export function ContinuousLayout({
   const scrollRef = useRef<HTMLDivElement>(null);
   const skipNextPageAlignment = useRef(false);
   const size = useElementSize(scrollRef);
-  const pageWidth = Math.max(1, (size.width - 32) * zoom);
+  const pageWidth = Math.max(1, size.width * zoom);
   // TanStack Virtual intentionally exposes mutable measurement functions.
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: document.numPages,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => pageWidth * 1.35 + 24,
+    estimateSize: () => pageWidth * 1.35 + 8,
     overscan: 2,
   });
 
@@ -208,6 +212,8 @@ export function ContinuousLayout({
   return (
     <section
       className="continuous-reader"
+      data-underfit={zoom < 1 || undefined}
+      data-zoom={zoom}
       ref={scrollRef}
       {...gestureHandlers}
       onScroll={() => {
@@ -266,8 +272,9 @@ export function PageNavigatorPanel({
   const virtualizer = useVirtualizer({
     count: document.numPages,
     getScrollElement: () => panelRef.current,
-    estimateSize: () => 152,
-    overscan: 3,
+    estimateSize: () => 64,
+    horizontal: true,
+    overscan: 5,
   });
 
   useEffect(() => {
@@ -275,29 +282,34 @@ export function PageNavigatorPanel({
   }, [currentPage, virtualizer]);
 
   return (
-    <nav className="page-navigator" ref={panelRef} aria-label="页面缩略图">
-      <div
-        className="page-navigator__inner"
-        style={{ height: virtualizer.getTotalSize() }}
-      >
-        {virtualizer.getVirtualItems().map((item) => (
-          <button
-            className="page-navigator__button"
-            data-current={item.index + 1 === currentPage || undefined}
-            key={item.key}
-            onClick={() => onSelect(item.index + 1)}
-            style={{ transform: `translateY(${item.start}px)` }}
-            aria-label={`前往第 ${item.index + 1} 页`}
-          >
-            <PdfPageCanvas
-              className="pdf-thumbnail"
-              document={document}
-              pageNumber={item.index + 1}
-              width={72}
-            />
-            <span>{item.index + 1}</span>
-          </button>
-        ))}
+    <nav className="page-preview-strip" aria-label="页面缩略图">
+      <output className="page-preview-strip__position" aria-live="polite">
+        {currentPage} / {document.numPages}
+      </output>
+      <div className="page-preview-strip__track" ref={panelRef}>
+        <div
+          className="page-preview-strip__inner"
+          style={{ width: virtualizer.getTotalSize() }}
+        >
+          {virtualizer.getVirtualItems().map((item) => (
+            <button
+              className="page-preview-strip__button"
+              data-current={item.index + 1 === currentPage || undefined}
+              key={item.key}
+              onClick={() => onSelect(item.index + 1)}
+              style={{ transform: `translateX(${item.start}px)` }}
+              aria-label={`前往第 ${item.index + 1} 页`}
+            >
+              <PdfPageCanvas
+                className="pdf-thumbnail"
+                document={document}
+                pageNumber={item.index + 1}
+                width={42}
+              />
+              <span>{item.index + 1}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </nav>
   );

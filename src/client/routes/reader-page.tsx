@@ -1,5 +1,20 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { Eraser, Pencil, Type } from "lucide-react";
+import {
+  ArrowLeft,
+  Download,
+  Ellipsis,
+  Eraser,
+  Layers,
+  Maximize2,
+  Minus,
+  Pencil,
+  Plus,
+  Redo2,
+  RefreshCw,
+  Rows3,
+  Type,
+  Undo2,
+} from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -64,7 +79,7 @@ import {
   useReaderPreferences,
 } from "../reader/use-reader-preferences";
 
-type ReaderPanel = "pages" | "layers";
+type ReaderPanel = "layers";
 
 export default function ReaderPage() {
   const { choirId = "", scoreId = "" } = useParams();
@@ -588,22 +603,31 @@ export default function ReaderPage() {
       ) : null}
       {!editing && chromeVisible ? (
         <header className="reader-chrome" aria-label="阅读器控制">
-          <Link className="reader-chrome__back" to={`/choirs/${choirId}`}>
-            返回
+          <Link
+            aria-label="返回合唱团"
+            className="reader-chrome__back reader-icon-button"
+            to={`/choirs/${choirId}`}
+          >
+            <ArrowLeft aria-hidden="true" size={22} />
           </Link>
           <strong className="reader-chrome__title">{score.fileName}</strong>
           <div className="reader-chrome__actions">
-            <Button onPress={() => openReaderPanel("pages")}>
-              第 {currentPage} / {document.numPages} 页
-            </Button>
             {cloudState !== "trashed" && layers.some((layer) => layer.canEdit) ? (
-              <Button onPress={beginEditing}>编辑</Button>
+              <Button
+                aria-label="编辑"
+                className="reader-icon-button"
+                onPress={beginEditing}
+              >
+                <Pencil aria-hidden="true" size={21} />
+              </Button>
             ) : null}
             <Button
+              aria-label="更多"
               aria-expanded={moreOpen}
+              className="reader-icon-button"
               onPress={() => setMoreOpen((open) => !open)}
             >
-              更多
+              <Ellipsis aria-hidden="true" size={23} />
             </Button>
           </div>
           {moreOpen ? (
@@ -613,33 +637,49 @@ export default function ReaderPage() {
                   aria-pressed={layout === "page"}
                   onPress={() => selectLayout("page")}
                 >
-                  翻页
+                  <Maximize2 aria-hidden="true" size={18} />
+                  <span>翻页</span>
                 </Button>
                 <Button
                   aria-pressed={layout === "continuous"}
                   onPress={() => selectLayout("continuous")}
                 >
-                  连续滚动
+                  <Rows3 aria-hidden="true" size={18} />
+                  <span>连续滚动</span>
                 </Button>
               </div>
               <div className="reader-more-menu__zoom" aria-label="缩放控制">
-                <Button onPress={() => setZoom(1)}>适合页面</Button>
-                <Button onPress={() => setZoom((value) => Math.max(1, value - 0.25))}>
-                  缩小
+                <Button aria-label="适合页面" onPress={() => setZoom(1)}>
+                  <Maximize2 aria-hidden="true" size={18} />
+                  <span>适合页面</span>
+                </Button>
+                <Button
+                  aria-label="缩小"
+                  onPress={() => setZoom((value) => Math.max(1, value - 0.25))}
+                >
+                  <Minus aria-hidden="true" size={18} />
                 </Button>
                 <span aria-live="polite">{Math.round(zoom * 100)}%</span>
-                <Button onPress={() => setZoom((value) => Math.min(3, value + 0.25))}>
-                  放大
+                <Button
+                  aria-label="放大"
+                  onPress={() => setZoom((value) => Math.min(3, value + 0.25))}
+                >
+                  <Plus aria-hidden="true" size={18} />
                 </Button>
               </div>
-              <Button onPress={() => openReaderPanel("layers")}>页面与图层</Button>
+              <Button onPress={() => openReaderPanel("layers")}>
+                <Layers aria-hidden="true" size={18} />
+                <span>图层</span>
+              </Button>
               <Button
                 isDisabled={downloading || cloudState === "trashed"}
                 onPress={() => void downloadOffline()}
               >
+                <Download aria-hidden="true" size={18} />
                 {downloading ? "正在校验…" : "下载离线副本"}
               </Button>
               <Button isDisabled={syncing || cloudState === "trashed"} onPress={() => void manualSync()}>
+                <RefreshCw aria-hidden="true" size={18} />
                 {syncing ? "同步中…" : "立即同步"}
               </Button>
               <p className="reader-more-menu__status" role="status">
@@ -651,6 +691,14 @@ export default function ReaderPage() {
             </aside>
           ) : null}
         </header>
+      ) : null}
+
+      {!editing && chromeVisible ? (
+        <PageNavigatorPanel
+          document={document}
+          currentPage={currentPage}
+          onSelect={goToPage}
+        />
       ) : null}
 
       {editing ? (
@@ -695,47 +743,23 @@ export default function ReaderPage() {
         >
           <aside
             className="reader-panel"
-            aria-label="页面与图层"
+            aria-label="图层"
             onClick={(event) => event.stopPropagation()}
           >
             <header className="reader-panel__header">
-              <div className="segmented-control" aria-label="辅助面板">
-                <Button
-                  aria-pressed={readerPanel === "pages"}
-                  onPress={() => setReaderPanel("pages")}
-                >
-                  页面
-                </Button>
-                <Button
-                  aria-pressed={readerPanel === "layers"}
-                  onPress={() => setReaderPanel("layers")}
-                >
-                  图层
-                </Button>
-              </div>
+              <strong>图层</strong>
               <Button aria-label="关闭页面与图层" onPress={() => setReaderPanel(null)}>
                 关闭
               </Button>
             </header>
-            {readerPanel === "pages" ? (
-              <PageNavigatorPanel
-                document={document}
-                currentPage={currentPage}
-                onSelect={(page) => {
-                  goToPage(page);
-                  setReaderPanel(null);
-                }}
-              />
-            ) : (
-              <LayerPanel
-                choirId={choirId}
-                scoreId={scoreId}
-                scopeKey={scopeKey}
-                layers={layers}
-                canManageLayers={canManageLayers}
-                signedIn={Boolean(session.data?.user.id)}
-              />
-            )}
+            <LayerPanel
+              choirId={choirId}
+              scoreId={scoreId}
+              scopeKey={scopeKey}
+              layers={layers}
+              canManageLayers={canManageLayers}
+              signedIn={Boolean(session.data?.user.id)}
+            />
           </aside>
         </div>
       ) : null}
@@ -890,22 +914,26 @@ function EditingControls({
         ))}
       </div>
       <Button
+        aria-label="撤销"
+        className="annotation-tool-button"
         onPress={() =>
           activeLayerId
             ? void undoAnnotationEdit(choirId, scoreId, activeLayerId)
             : undefined
         }
       >
-        撤销
+        <Undo2 aria-hidden="true" size={20} />
       </Button>
       <Button
+        aria-label="重做"
+        className="annotation-tool-button"
         onPress={() =>
           activeLayerId
             ? void redoAnnotationEdit(choirId, scoreId, activeLayerId)
             : undefined
         }
       >
-        重做
+        <Redo2 aria-hidden="true" size={20} />
       </Button>
     </section>
   );
