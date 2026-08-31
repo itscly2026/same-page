@@ -12,26 +12,22 @@ END;
 CREATE TABLE scores (
   id TEXT PRIMARY KEY NOT NULL,
   choir_id TEXT NOT NULL REFERENCES choirs(id) ON DELETE CASCADE,
-  file_name TEXT NOT NULL,
-  file_name_key TEXT NOT NULL,
+  title TEXT NOT NULL,
+  composer TEXT,
+  arranger TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft', 'published', 'archived')),
   current_version_id TEXT,
   replacement_lock_id TEXT,
   replacement_lock_expires_at INTEGER,
   created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsecond') * 1000 AS INTEGER)),
   updated_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsecond') * 1000 AS INTEGER)),
-  trashed_at INTEGER,
-  trash_expires_at INTEGER,
-  CHECK (
-    (trashed_at IS NULL AND trash_expires_at IS NULL) OR
-    (trashed_at IS NOT NULL AND trash_expires_at IS NOT NULL AND trash_expires_at > trashed_at)
-  )
+  published_at INTEGER,
+  archived_at INTEGER
 );
-CREATE UNIQUE INDEX scores_active_filename_uidx
-  ON scores(choir_id, file_name_key) WHERE trashed_at IS NULL;
-CREATE INDEX scores_choir_filename_idx
-  ON scores(choir_id, file_name_key) WHERE trashed_at IS NULL;
-CREATE INDEX scores_trash_expiry_idx
-  ON scores(trash_expires_at) WHERE trashed_at IS NOT NULL;
+CREATE INDEX scores_choir_status_sort_idx
+  ON scores(choir_id, status, sort_order, title);
 
 CREATE TABLE score_versions (
   id TEXT PRIMARY KEY NOT NULL,
