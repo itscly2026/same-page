@@ -3,14 +3,16 @@ import { localDatabase } from "../platform/local-database";
 export interface LogoutLocalSummary {
   pendingOperations: number;
   conflicts: number;
+  syncErrors: number;
 }
 
 export async function getLogoutLocalSummary(): Promise<LogoutLocalSummary> {
-  const [pendingOperations, conflicts] = await Promise.all([
+  const [pendingOperations, conflicts, syncErrors] = await Promise.all([
     localDatabase.annotationOutbox.count(),
     localDatabase.annotationConflicts.count(),
+    localDatabase.annotations.filter((annotation) => annotation.state === "sync-error").count(),
   ]);
-  return { pendingOperations, conflicts };
+  return { pendingOperations, conflicts, syncErrors };
 }
 
 export async function clearPrivateLocalDataAfterLogout() {

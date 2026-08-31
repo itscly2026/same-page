@@ -1,5 +1,22 @@
 import { z } from "zod";
 
+export const defaultSharedLayerSlots = ["G", "S", "A", "T", "B"] as const;
+export const defaultSharedLayerSlotSchema = z.enum(defaultSharedLayerSlots);
+export type DefaultSharedLayerSlot = z.infer<typeof defaultSharedLayerSlotSchema>;
+
+export const defaultSharedLayers: ReadonlyArray<{
+  slot: DefaultSharedLayerSlot;
+  name: string;
+  defaultColor: string;
+  sortOrder: number;
+}> = [
+  { slot: "G", name: "G", defaultColor: "#a12652", sortOrder: 0 },
+  { slot: "S", name: "S", defaultColor: "#c2415d", sortOrder: 1 },
+  { slot: "A", name: "A", defaultColor: "#8a5a00", sortOrder: 2 },
+  { slot: "T", name: "T", defaultColor: "#0f766e", sortOrder: 3 },
+  { slot: "B", name: "B", defaultColor: "#3157a4", sortOrder: 4 },
+];
+
 export const normalizedCoordinateSchema = z.number().finite().min(0).max(1);
 
 const annotationBaseSchema = z.object({
@@ -78,6 +95,7 @@ export const sharedLayerUpdateSchema = sharedLayerCreateSchema.partial();
 export interface AnnotationLayerSummary {
   id: string;
   kind: "shared" | "personal";
+  defaultSlot: DefaultSharedLayerSlot | null;
   name: string;
   sortOrder: number;
   defaultColor: string;
@@ -100,6 +118,7 @@ export interface AnnotationObjectRecord {
 export const annotationLayerSummarySchema = z.object({
   id: z.uuid(),
   kind: z.enum(["shared", "personal"]),
+  defaultSlot: defaultSharedLayerSlotSchema.nullable(),
   name: z.string(),
   sortOrder: z.number().int(),
   defaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),

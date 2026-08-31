@@ -1282,6 +1282,59 @@ h1 {
   gap: 0.45rem;
 }
 
+.annotation-layer-switcher {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.annotation-controls .annotation-layer-slot,
+.annotation-controls .annotation-tool-button,
+.annotation-custom-layer-select select {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.75rem;
+  width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+}
+
+.annotation-controls .annotation-layer-slot {
+  position: relative;
+  overflow: hidden;
+  font-weight: 800;
+}
+
+.annotation-layer-slot i {
+  position: absolute;
+  right: 0.28rem;
+  bottom: 0.24rem;
+  left: 0.28rem;
+  height: 0.16rem;
+  border-radius: 999px;
+}
+
+.annotation-layer-slot[aria-pressed="true"] {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+  background: rgb(255 255 255 / 24%);
+}
+
+.annotation-layer-slot[data-disabled],
+.annotation-tool-button[data-disabled] {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.annotation-custom-layer-select {
+  display: inline-flex !important;
+}
+
+.annotation-custom-layer-select select {
+  appearance: none;
+  text-align: center;
+}
+
 .annotation-layer-list {
   display: grid;
   gap: 0.65rem;
@@ -1558,9 +1611,12 @@ h1 {
   pointer-events: none;
 }
 
-.annotation-overlay polyline[data-erasable] {
-  pointer-events: stroke;
+.annotation-overlay[data-tool="eraser"] svg {
   cursor: crosshair;
+}
+
+.annotation-overlay polyline[data-eraser-hit-target] {
+  pointer-events: none;
 }
 
 .annotation-text {
@@ -1576,6 +1632,7 @@ h1 {
   text-align: left;
   transform: translate(-0.15rem, -50%);
   white-space: pre-wrap;
+  touch-action: none;
 }
 
 .annotation-text:disabled {

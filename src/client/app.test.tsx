@@ -678,6 +678,7 @@ describe("AppRoutes", () => {
       scopeKey: "choir-1:score-1",
       id: "personal-layer",
       kind: "personal",
+      defaultSlot: null,
       name: "我的批注",
       sortOrder: 10_000,
       defaultColor: "#b4235a",

@@ -1,4 +1,5 @@
 import { useLiveQuery } from "dexie-react-hooks";
+import { Eraser, Pencil, Type } from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -9,7 +10,9 @@ import { Link, useParams } from "react-router-dom";
 
 import {
   annotationLayerListResponseSchema,
+  defaultSharedLayerSlots,
   type AnnotationLayerSummary,
+  type DefaultSharedLayerSlot,
 } from "../../shared/annotations";
 import {
   scoreCloudStateSchema,
@@ -22,6 +25,7 @@ import {
   discardAnnotationConflict,
   queueScoreDrafts,
   reapplyAnnotationConflict,
+  retryScoreSyncErrors,
   updateCachedLayer,
 } from "../annotations/local-annotations";
 import { syncAnnotations } from "../annotations/sync";
@@ -125,6 +129,15 @@ export default function ReaderPage() {
     () => localDatabase.annotationConflicts.where("scopeKey").equals(scopeKey).toArray(),
     [scopeKey],
     [],
+  );
+  const syncErrorCount = useLiveQuery(
+    () =>
+      localDatabase.annotations
+        .where("[scopeKey+state]")
+        .equals([scopeKey, "sync-error"])
+        .count(),
+    [scopeKey],
+    0,
   );
   const { layout, currentPage, setLayout, setCurrentPage } =
     useReaderPreferences({
@@ -448,9 +461,15 @@ export default function ReaderPage() {
         .where("scopeKey")
         .equals(scopeKey)
         .count();
+      const syncErrors = await localDatabase.annotations
+        .where("[scopeKey+state]")
+        .equals([scopeKey, "sync-error"])
+        .count();
       setSyncMessage(
         conflictCount > 0
           ? `${conflictCount} 项只保留在本机，需要处理冲突`
+          : syncErrors > 0
+            ? `${syncErrors} 项批注同步异常，本机版本仍然保留`
           : remaining > 0
             ? `${remaining} 项待同步`
             : "保存成功，批注已同步",
@@ -469,8 +488,18 @@ export default function ReaderPage() {
     }
     setSyncing(true);
     try {
+      await retryScoreSyncErrors(choirId, scoreId);
+      await queueScoreDrafts(choirId, scoreId);
       await syncAnnotations(choirId, scoreId, { pull: true });
-      setSyncMessage("批注已同步");
+      const remainingErrors = await localDatabase.annotations
+        .where("[scopeKey+state]")
+        .equals([scopeKey, "sync-error"])
+        .count();
+      setSyncMessage(
+        remainingErrors > 0
+          ? `${remainingErrors} 项批注同步异常，稍后可重试`
+          : "批注已同步",
+      );
     } catch {
       setSyncMessage("同步未完成，本机内容仍然保留");
     } finally {
@@ -617,6 +646,7 @@ export default function ReaderPage() {
                 {downloadMessage ?? syncMessage ?? "尚未同步批注"}
                 {pendingCount > 0 ? ` · ${pendingCount} 项待同步` : ""}
                 {conflicts.length > 0 ? ` · ${conflicts.length} 项本地冲突` : ""}
+                {syncErrorCount > 0 ? ` · ${syncErrorCount} 项同步异常` : ""}
               </p>
             </aside>
           ) : null}
@@ -715,7 +745,7 @@ export default function ReaderPage() {
           <strong>{conflicts.length} 项修改没有上传</strong>
           {conflicts.map((conflict) => (
             <div key={conflict.opId}>
-              <span>同一批注已被其他编辑者修改。</span>
+              <span>同一批注的云端版本已经变化。</span>
               <Button
                 onPress={() => void resolveConflict(conflict.opId, "discard")}
               >
@@ -733,6 +763,17 @@ export default function ReaderPage() {
               </Button>
             </div>
           ))}
+        </aside>
+      ) : null}
+      {syncErrorCount > 0 ? (
+        <aside className="annotation-conflicts" aria-label="批注同步异常">
+          <strong>{syncErrorCount} 项批注同步异常</strong>
+          <div>
+            <span>这不是协同编辑冲突；本机版本仍然保留。</span>
+            <Button isDisabled={syncing} onPress={() => void manualSync()}>
+              重试同步
+            </Button>
+          </div>
         </aside>
       ) : null}
       <div className="reader-stage">
@@ -784,31 +825,67 @@ function EditingControls({
   onToolChange(tool: AnnotationTool): void;
   onLayerChange(layerId: string): void;
 }) {
+  const defaultLayers = new Map(
+    layers
+      .filter((layer) => layer.defaultSlot !== null)
+      .map((layer) => [layer.defaultSlot, layer]),
+  );
+  const personalLayer = layers.find((layer) => layer.kind === "personal");
+  const customLayers = layers.filter(
+    (layer) => layer.kind === "shared" && layer.defaultSlot === null,
+  );
+  const activeCustom = customLayers.some((layer) => layer.id === activeLayerId)
+    ? activeLayerId
+    : "";
+
   return (
     <section className="annotation-controls" aria-label="批注工具">
-      <label>
-        编辑层
-        <select
-          value={activeLayerId ?? ""}
-          onChange={(event) => onLayerChange(event.target.value)}
-        >
-          {layers
-            .filter((layer) => layer.canEdit)
-            .map((layer) => (
-              <option value={layer.id} key={layer.id}>
-                {layer.name}
-              </option>
-            ))}
-        </select>
-      </label>
+      <div className="annotation-layer-switcher" aria-label="编辑层">
+        {defaultSharedLayerSlots.map((slot) => (
+          <LayerSlotButton
+            key={slot}
+            slot={slot}
+            layer={defaultLayers.get(slot)}
+            activeLayerId={activeLayerId}
+            onLayerChange={onLayerChange}
+          />
+        ))}
+        <LayerSlotButton
+          slot="U"
+          layer={personalLayer}
+          activeLayerId={activeLayerId}
+          onLayerChange={onLayerChange}
+        />
+        {customLayers.length > 0 ? (
+          <label className="annotation-custom-layer-select">
+            <span className="visually-hidden">其他编辑层</span>
+            <select
+              aria-label="其他编辑层"
+              value={activeCustom ?? ""}
+              onChange={(event) => {
+                if (event.target.value) onLayerChange(event.target.value);
+              }}
+            >
+              <option value="">…</option>
+              {customLayers.map((layer) => (
+                <option value={layer.id} key={layer.id} disabled={!layer.canEdit}>
+                  {layer.name}{layer.canEdit ? "" : "（只读）"}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
       <div className="segmented-control" aria-label="批注工具">
         {(["text", "ink", "eraser"] as const).map((entry) => (
           <Button
+            aria-label={{ text: "文本", ink: "画笔", eraser: "整条橡皮" }[entry]}
             aria-pressed={tool === entry}
+            className="annotation-tool-button"
             key={entry}
             onPress={() => onToolChange(entry)}
           >
-            {{ text: "文本", ink: "画笔", eraser: "整条橡皮" }[entry]}
+            <AnnotationToolIcon tool={entry} />
           </Button>
         ))}
       </div>
@@ -832,6 +909,50 @@ function EditingControls({
       </Button>
     </section>
   );
+}
+
+function LayerSlotButton({
+  slot,
+  layer,
+  activeLayerId,
+  onLayerChange,
+}: {
+  slot: DefaultSharedLayerSlot | "U";
+  layer: AnnotationLayerSummary | undefined;
+  activeLayerId: string | null;
+  onLayerChange(layerId: string): void;
+}) {
+  const label =
+    slot === "U"
+      ? "U，我的批注"
+      : `${slot}，${{
+          G: "共同关注",
+          S: "女高音",
+          A: "女低音",
+          T: "男高音",
+          B: "男低音",
+        }[slot]}共享层`;
+  return (
+    <Button
+      aria-label={`${label}${layer?.canEdit ? "" : "，只读"}`}
+      aria-pressed={layer?.id === activeLayerId}
+      className="annotation-layer-slot"
+      isDisabled={!layer?.canEdit}
+      onPress={() => (layer ? onLayerChange(layer.id) : undefined)}
+    >
+      <span>{slot}</span>
+      <i
+        aria-hidden="true"
+        style={{ background: layer?.colorOverride ?? layer?.defaultColor ?? "transparent" }}
+      />
+    </Button>
+  );
+}
+
+function AnnotationToolIcon({ tool }: { tool: AnnotationTool }) {
+  if (tool === "text") return <Type aria-hidden="true" size={20} strokeWidth={2} />;
+  if (tool === "ink") return <Pencil aria-hidden="true" size={20} strokeWidth={2} />;
+  return <Eraser aria-hidden="true" size={20} strokeWidth={2} />;
 }
 
 function LayerPanel({
@@ -933,7 +1054,14 @@ function LayerPanel({
                   .then(async (response) => {
                     if (!response.ok) throw new Error("layer_create_failed");
                     const body = (await response.json()) as {
-                      layer: { id: string; kind: "shared"; name: string; defaultColor: string; sortOrder: number };
+                      layer: {
+                        id: string;
+                        kind: "shared";
+                        defaultSlot: null;
+                        name: string;
+                        defaultColor: string;
+                        sortOrder: number;
+                      };
                     };
                     await cacheAnnotationLayers(choirId, scoreId, [
                       ...layers,
@@ -1136,6 +1264,13 @@ function clamp(value: number, minimum: number, maximum: number) {
 
 function compareLayers(left: AnnotationLayerSummary, right: AnnotationLayerSummary) {
   if (left.kind !== right.kind) return left.kind === "shared" ? -1 : 1;
+  const leftDefault = left.defaultSlot
+    ? defaultSharedLayerSlots.indexOf(left.defaultSlot)
+    : Number.POSITIVE_INFINITY;
+  const rightDefault = right.defaultSlot
+    ? defaultSharedLayerSlots.indexOf(right.defaultSlot)
+    : Number.POSITIVE_INFINITY;
+  if (leftDefault !== rightDefault) return leftDefault - rightDefault;
   return left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, "zh-CN");
 }
 

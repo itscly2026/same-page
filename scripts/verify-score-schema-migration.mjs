@@ -31,9 +31,14 @@ try {
   });
   assert.equal(backfillLegacyScoreFileNames(targetArgs), 4);
   assert.equal(backfillLegacyScoreFileNames(targetArgs), 0);
+  executeD1({
+    file: join(repositoryRoot, "migrations", "0006_default_shared_layer_slots.sql"),
+    targetArgs,
+  });
 
   verifySchema();
   verifyMigratedNames();
+  verifyDefaultSharedLayers();
   verifyRelatedRecords();
   process.stdout.write("Verified legacy score schema migration.\n");
 } finally {
@@ -59,6 +64,14 @@ function verifySchema() {
   assert(indexes.includes("scores_active_filename_uidx"));
   assert(indexes.includes("scores_choir_filename_idx"));
   assert(indexes.includes("scores_trash_expiry_idx"));
+  const layerColumns = query("PRAGMA table_info(annotation_layers)").map(
+    (row) => row.name,
+  );
+  assert(layerColumns.includes("default_slot"));
+  const layerIndexes = query("PRAGMA index_list(annotation_layers)").map(
+    (row) => row.name,
+  );
+  assert(layerIndexes.includes("annotation_layers_default_slot_uidx"));
 }
 
 function verifyMigratedNames() {
@@ -85,9 +98,48 @@ function verifyMigratedNames() {
 
 function verifyRelatedRecords() {
   assert.equal(query("SELECT id FROM score_versions").length, 1);
-  assert.equal(query("SELECT id FROM annotation_layers").length, 1);
+  assert.equal(query("SELECT id FROM annotation_layers").length, 21);
   assert.equal(query("SELECT id FROM annotation_objects").length, 1);
   assert.deepEqual(query("PRAGMA foreign_key_check"), []);
+}
+
+function verifyDefaultSharedLayers() {
+  const legacy = query(
+    "SELECT name, default_slot FROM annotation_layers WHERE id = 'layer'",
+  );
+  assert.deepEqual(legacy, [{ name: "Shared", default_slot: null }]);
+  const defaults = query(
+    `SELECT score_id, default_slot, kind, name
+     FROM annotation_layers
+     WHERE default_slot IS NOT NULL
+     ORDER BY score_id, sort_order`,
+  );
+  assert.equal(defaults.length, 20);
+  for (const scoreId of ["a", "b", "c", "d"]) {
+    assert.deepEqual(
+      defaults.filter((row) => row.score_id === scoreId),
+      ["G", "S", "A", "T", "B"].map((slot) => ({
+        score_id: scoreId,
+        default_slot: slot,
+        kind: "shared",
+        name: slot,
+      })),
+    );
+  }
+  executeD1({
+    command: `INSERT OR IGNORE INTO annotation_layers
+      (id, choir_id, score_id, kind, default_slot, name, sort_order,
+       default_color, created_at, updated_at)
+      VALUES ('duplicate-g', 'choir', 'a', 'shared', 'G', 'G duplicate', 99,
+              '#000000', 1, 1)`,
+    targetArgs,
+  });
+  assert.equal(
+    query(
+      "SELECT id FROM annotation_layers WHERE score_id = 'a' AND default_slot = 'G'",
+    ).length,
+    1,
+  );
 }
 
 function query(command) {

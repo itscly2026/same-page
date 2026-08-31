@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { defaultSharedLayers } from "../../src/shared/annotations";
 
 const OLD_VERSION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -79,6 +80,25 @@ export async function createScoreVersion(options: {
         options.pdf.pageCount,
         options.membershipId,
         now,
+      ),
+      ...defaultSharedLayers.map((layer) =>
+        options.env.DB.prepare(
+          `INSERT INTO annotation_layers
+            (id, choir_id, score_id, kind, owner_user_id, default_slot, name,
+             sort_order, default_color, created_by_membership_id, created_at, updated_at)
+           VALUES (?, ?, ?, 'shared', NULL, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          crypto.randomUUID(),
+          options.choirId,
+          scoreId,
+          layer.slot,
+          layer.name,
+          layer.sortOrder,
+          layer.defaultColor,
+          options.membershipId,
+          now,
+          now,
+        ),
       ),
     ]);
   } catch (error) {

@@ -48,7 +48,7 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
   }
 
   const rows = await context.env.DB.prepare(
-    `SELECT layers.id, layers.kind, layers.name, layers.sort_order,
+    `SELECT layers.id, layers.kind, layers.default_slot, layers.name, layers.sort_order,
             layers.default_color, preferences.color_override,
             COALESCE(preferences.visible, 1) AS visible,
             CASE
@@ -84,6 +84,7 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
     layers: rows.results.map((row) => ({
       id: row.id,
       kind: row.kind,
+      defaultSlot: row.default_slot,
       name: row.name,
       sortOrder: row.sort_order,
       defaultColor: row.default_color,
@@ -133,7 +134,7 @@ annotationRoutes.post("/choirs/:choirId/scores/:scoreId/layers", async (context)
       now,
     )
     .run();
-  return context.json({ layer: { id, kind: "shared", ...parsed.data } }, 201);
+  return context.json({ layer: { id, kind: "shared", defaultSlot: null, ...parsed.data } }, 201);
 });
 
 annotationRoutes.patch("/choirs/:choirId/scores/:scoreId/layers/:layerId", async (context) => {
@@ -149,10 +150,16 @@ annotationRoutes.patch("/choirs/:choirId/scores/:scoreId/layers/:layerId", async
     return context.json({ error: "invalid_layer" }, 400);
   }
   const existing = await context.env.DB.prepare(
-    "SELECT id, name, sort_order, default_color FROM annotation_layers WHERE id = ? AND choir_id = ? AND score_id = ? AND kind = 'shared'",
+    "SELECT id, default_slot, name, sort_order, default_color FROM annotation_layers WHERE id = ? AND choir_id = ? AND score_id = ? AND kind = 'shared'",
   )
     .bind(layerId, choirId, scoreId)
-    .first<{ id: string; name: string; sort_order: number; default_color: string }>();
+    .first<{
+      id: string;
+      default_slot: "G" | "S" | "A" | "T" | "B" | null;
+      name: string;
+      sort_order: number;
+      default_color: string;
+    }>();
   if (!existing) return context.json({ error: "layer_not_found" }, 404);
   const next = {
     name: parsed.data.name ?? existing.name,
@@ -164,7 +171,14 @@ annotationRoutes.patch("/choirs/:choirId/scores/:scoreId/layers/:layerId", async
   )
     .bind(next.name, next.sortOrder, next.defaultColor, Date.now(), layerId)
     .run();
-  return context.json({ layer: { id: layerId, kind: "shared", ...next } });
+  return context.json({
+    layer: {
+      id: layerId,
+      kind: "shared",
+      defaultSlot: existing.default_slot,
+      ...next,
+    },
+  });
 });
 
 annotationRoutes.put("/choirs/:choirId/scores/:scoreId/layers/:layerId/preference", async (context) => {
@@ -659,6 +673,7 @@ interface ResolvedScoreAccess {
 interface LayerRow {
   id: string;
   kind: "shared" | "personal";
+  default_slot: "G" | "S" | "A" | "T" | "B" | null;
   name: string;
   sort_order: number;
   default_color: string;

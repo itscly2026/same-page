@@ -263,10 +263,13 @@ export function HomePage() {
         <Modal className="app-modal app-modal--compact">
           <Dialog className="app-dialog">
             <Heading slot="title">确认退出登录</Heading>
-            {logoutSummary?.pendingOperations || logoutSummary?.conflicts ? (
+            {logoutSummary?.pendingOperations ||
+            logoutSummary?.conflicts ||
+            logoutSummary?.syncErrors ? (
               <p className="dialog-copy">
                 本机还有 {logoutSummary?.pendingOperations ?? 0} 项待同步操作和{" "}
-                {logoutSummary?.conflicts ?? 0} 项本地冲突。继续会永久丢弃这些内容。
+                {logoutSummary?.conflicts ?? 0} 项本地冲突、
+                {logoutSummary?.syncErrors ?? 0} 项同步异常。继续会永久丢弃这些内容。
               </p>
             ) : (
               <p className="dialog-copy">
@@ -282,7 +285,9 @@ export function HomePage() {
                 isDisabled={loggingOut}
                 onPress={() => void finishLogout()}
               >
-                {logoutSummary?.pendingOperations || logoutSummary?.conflicts
+                {logoutSummary?.pendingOperations ||
+                logoutSummary?.conflicts ||
+                logoutSummary?.syncErrors
                   ? "丢弃并退出"
                   : "退出并清除"}
               </Button>

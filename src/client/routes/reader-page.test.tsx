@@ -401,9 +401,32 @@ describe("ReaderPage", () => {
         return Promise.resolve(
           Response.json({
             layers: [
+              ...(["G", "S", "A", "T", "B"] as const).map((slot, index) => ({
+                id: `00000000-0000-4000-8000-00000000000${index}`,
+                kind: "shared" as const,
+                defaultSlot: slot,
+                name: slot,
+                sortOrder: index,
+                defaultColor: "#a12652",
+                colorOverride: null,
+                visible: slot === "G" || slot === "B",
+                canEdit: slot === "G",
+              })),
+              {
+                id: "33333333-3333-4333-8333-333333333333",
+                kind: "shared",
+                defaultSlot: null,
+                name: "指挥提示",
+                sortOrder: 5,
+                defaultColor: "#6b3fa0",
+                colorOverride: null,
+                visible: false,
+                canEdit: true,
+              },
               {
                 id: "11111111-1111-4111-8111-111111111111",
                 kind: "personal",
+                defaultSlot: null,
                 name: "我的批注",
                 sortOrder: 10000,
                 defaultColor: "#b4235a",
@@ -476,6 +499,32 @@ describe("ReaderPage", () => {
       "aria-pressed",
       "true",
     );
+    expect(screen.getByRole("button", { name: "文本" }).querySelector("svg")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "画笔" }).querySelector("svg")).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "整条橡皮" }).querySelector("svg"),
+    ).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "G，共同关注共享层" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      Array.from(
+        screen
+          .getByLabelText("编辑层")
+          .querySelectorAll<HTMLButtonElement>(".annotation-layer-slot"),
+        (button) => button.textContent,
+      ),
+    ).toEqual(["G", "S", "A", "T", "B", "U"]);
+    expect(
+      screen.getByRole("button", { name: "S，女高音共享层，只读" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "U，我的批注" }));
+    expect(screen.getByRole("button", { name: "U，我的批注" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("combobox", { name: "其他编辑层" })).toHaveValue("");
+    expect(screen.getByRole("option", { name: "指挥提示" })).toBeInTheDocument();
     const editingOverlay = screen.getByLabelText("第 1 页批注层");
     vi.spyOn(editingOverlay, "getBoundingClientRect").mockReturnValue({
       x: 0,
@@ -528,6 +577,7 @@ describe("ReaderPage", () => {
               {
                 id: "11111111-1111-4111-8111-111111111111",
                 kind: "shared",
+                defaultSlot: null,
                 name: "指挥",
                 sortOrder: 0,
                 defaultColor: "#a12652",
@@ -615,6 +665,7 @@ describe("ReaderPage", () => {
             scopeKey,
             id: "11111111-1111-4111-8111-111111111111",
             kind: "personal",
+            defaultSlot: null,
             name: "我的批注",
             sortOrder: 10000,
             defaultColor: "#b4235a",
@@ -667,6 +718,7 @@ describe("ReaderPage", () => {
             scopeKey,
             id: "11111111-1111-4111-8111-111111111111",
             kind: "personal",
+            defaultSlot: null,
             name: "我的批注",
             sortOrder: 10_000,
             defaultColor: "#b4235a",

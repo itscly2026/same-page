@@ -32,7 +32,14 @@ export interface OfflineAnnotationSnapshot {
   verifiedAt: number;
 }
 
-export type LocalAnnotationState = "synced" | "draft" | "pending" | "conflict";
+export type LocalAnnotationState =
+  | "synced"
+  | "draft"
+  | "pending"
+  | "conflict"
+  | "sync-error";
+
+export type AnnotationSyncErrorCode = "op_id_reused";
 
 export interface LocalAnnotationRecord {
   key: string;
@@ -47,6 +54,7 @@ export interface LocalAnnotationRecord {
   payload: AnnotationPayload | null;
   state: LocalAnnotationState;
   lastOpId: string | null;
+  syncErrorCode: AnnotationSyncErrorCode | null;
   updatedAt: number;
 }
 

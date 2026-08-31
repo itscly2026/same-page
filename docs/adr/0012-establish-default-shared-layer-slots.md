@@ -1,0 +1,3 @@
+# Establish stable default shared-layer slots
+
+Every score will contain one shared layer for each stable slot G, S, A, T and B, while administrators may continue to create additional custom shared layers. G has the same visibility, grant, attribution and synchronization behavior as the other default slots; it is only the conventional place for annotations everyone should notice. Slot identity is stored independently from the editable display name, so existing or custom layers with matching names are never silently reclassified. Per-user layer visibility remains a subscription preference rather than a voice membership or edit grant.

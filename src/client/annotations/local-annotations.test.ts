@@ -9,6 +9,7 @@ import {
   applyPushResults,
   queueScoreDrafts,
   reapplyAnnotationConflict,
+  retryScoreSyncErrors,
   saveAnnotationDraft,
 } from "./local-annotations";
 import { withScoreSyncLock } from "./sync";
@@ -111,6 +112,43 @@ describe("local annotation durability", () => {
     expect(second).toBeUndefined();
     release();
     await expect(first).resolves.toBe("first");
+  });
+
+  it("keeps an operation-id reuse as a retryable sync error, not an edit conflict", async () => {
+    const choirId = "choir-1";
+    const scoreId = "score-1";
+    const annotationId = crypto.randomUUID();
+    const layerId = crypto.randomUUID();
+    await saveAnnotationDraft(choirId, scoreId, {
+      id: annotationId,
+      layerId,
+      payload: {
+        kind: "text",
+        pageNumber: 1,
+        x: 0.2,
+        y: 0.3,
+        text: "本机修改",
+      },
+    });
+    await queueScoreDrafts(choirId, scoreId);
+    const operation = (await localDatabase.annotationOutbox.toArray())[0]!;
+
+    await applyPushResults([operation], [
+      { opId: operation.opId, status: "op_id_reused" },
+    ]);
+
+    expect(await localDatabase.annotationConflicts.count()).toBe(0);
+    expect(await localDatabase.annotationOutbox.count()).toBe(0);
+    expect(await localDatabase.annotations.toCollection().first()).toMatchObject({
+      state: "sync-error",
+      syncErrorCode: "op_id_reused",
+      payload: { text: "本机修改" },
+    });
+
+    expect(await retryScoreSyncErrors(choirId, scoreId)).toBe(1);
+    expect(await queueScoreDrafts(choirId, scoreId)).toBe(1);
+    const retried = (await localDatabase.annotationOutbox.toArray())[0]!;
+    expect(retried.opId).not.toBe(operation.opId);
   });
 
   it("serializes repeated local edits to one object and advances the later base version", async () => {

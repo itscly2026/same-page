@@ -319,7 +319,7 @@ function AnnotatedPdfPage({
       <PdfPageCanvas document={document} pageNumber={pageNumber} width={width} />
       <AnnotationOverlay
         {...annotationProps}
-        key={`${pageNumber}:${annotationProps.editing ? "edit" : "read"}`}
+        key={`${pageNumber}:${annotationProps.editing ? `edit:${annotationProps.activeLayerId}:${annotationProps.tool}` : "read"}`}
         pageNumber={pageNumber}
       />
     </div>

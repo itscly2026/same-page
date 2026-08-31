@@ -16,6 +16,11 @@ import {
 
 export type AnnotationTool = "text" | "ink" | "eraser";
 
+type TextPayload = Extract<AnnotationPayload, { kind: "text" }>;
+
+const ERASER_HIT_RADIUS_PX = 14;
+const TEXT_DRAG_THRESHOLD = 0.006;
+
 export function AnnotationOverlay({
   choirId,
   scoreId,
@@ -44,8 +49,30 @@ export function AnnotationOverlay({
   } | null>(null);
   const currentStrokeId = useRef<string | null>(null);
   const strokeHistoryStarted = useRef(false);
-  const dragText = useRef<{ id: string; startX: number; startY: number; payload: Extract<AnnotationPayload, { kind: "text" }> } | null>(null);
-  const visibleLayerIds = new Set(layers.filter((layer) => layer.visible).map((layer) => layer.id));
+  const eraserPointerId = useRef<number | null>(null);
+  const erasedStrokeIds = useRef(new Set<string>());
+  const dragText = useRef<{
+    id: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    payload: TextPayload;
+    moved: boolean;
+  } | null>(null);
+  const [textDragPreview, setTextDragPreview] = useState<{
+    id: string;
+    x: number;
+    y: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
+  const visibleLayerIds = new Set(
+    layers
+      .filter((layer) =>
+        editing ? layer.id === activeLayerId : layer.visible,
+      )
+      .map((layer) => layer.id),
+  );
   const layerColors = new Map(
     layers.map((layer) => [layer.id, layer.colorOverride ?? layer.defaultColor]),
   );
@@ -64,15 +91,61 @@ export function AnnotationOverlay({
     };
   };
 
+  const eraseAt = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (!activeLayerId) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const pointer = {
+      x: event.clientX - bounds.left,
+      y: event.clientY - bounds.top,
+    };
+    for (const annotation of pageAnnotations) {
+      const payload = annotation.payload;
+      if (
+        annotation.layerId !== activeLayerId ||
+        payload?.kind !== "ink" ||
+        erasedStrokeIds.current.has(annotation.id)
+      ) {
+        continue;
+      }
+      const points = payload.points.map((entry) => ({
+        x: entry.x * bounds.width,
+        y: entry.y * bounds.height,
+      }));
+      if (distanceToPolyline(pointer, points) > ERASER_HIT_RADIUS_PX) continue;
+      erasedStrokeIds.current.add(annotation.id);
+      void saveDraftWithHistory(choirId, scoreId, {
+        id: annotation.id,
+        layerId: annotation.layerId,
+        payload: null,
+        deleted: true,
+      }).catch(() => erasedStrokeIds.current.delete(annotation.id));
+    }
+  };
+
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (!editing || !activeLayerId) return;
     const position = point(event);
     if (tool === "text") {
+      if (textEditor) {
+        setTextEditor(null);
+        return;
+      }
       setTextEditor({ id: crypto.randomUUID(), x: position.x, y: position.y, initial: "" });
       return;
     }
+    if (tool === "eraser") {
+      if (typeof event.currentTarget.setPointerCapture === "function") {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+      eraserPointerId.current = event.pointerId;
+      erasedStrokeIds.current.clear();
+      eraseAt(event);
+      return;
+    }
     if (tool !== "ink") return;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    if (typeof event.currentTarget.setPointerCapture === "function") {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
     currentStrokeId.current = crypto.randomUUID();
     strokeHistoryStarted.current = false;
     setDraftStroke({
@@ -84,6 +157,14 @@ export function AnnotationOverlay({
   };
 
   const pointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (
+      editing &&
+      tool === "eraser" &&
+      eraserPointerId.current === event.pointerId
+    ) {
+      eraseAt(event);
+      return;
+    }
     if (!editing || tool !== "ink" || !currentStrokeId.current || !activeLayerId) return;
     const position = point(event);
     setDraftStroke((current) => {
@@ -104,10 +185,23 @@ export function AnnotationOverlay({
     });
   };
 
-  const pointerUp = () => {
+  const pointerUp = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (
+      eraserPointerId.current === event.pointerId ||
+      currentStrokeId.current !== null
+    ) {
+      if (
+        typeof event.currentTarget.hasPointerCapture === "function" &&
+        event.currentTarget.hasPointerCapture(event.pointerId)
+      ) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    }
     setDraftStroke(null);
     currentStrokeId.current = null;
     strokeHistoryStarted.current = false;
+    eraserPointerId.current = null;
+    erasedStrokeIds.current.clear();
   };
 
   const saveText = async (value: string) => {
@@ -130,7 +224,11 @@ export function AnnotationOverlay({
   };
 
   return (
-    <div className="annotation-overlay" data-editing={editing || undefined}>
+    <div
+      className="annotation-overlay"
+      data-editing={editing || undefined}
+      data-tool={editing ? tool : undefined}
+    >
       <svg
         aria-label={`第 ${pageNumber} 页批注层`}
         viewBox="0 0 1000 1000"
@@ -145,27 +243,32 @@ export function AnnotationOverlay({
           const color = layerColors.get(annotation.layerId) ?? "#a12652";
           if (payload?.kind === "ink") {
             return (
-              <polyline
-                key={annotation.id}
-                points={payload.points.map((entry) => `${entry.x * 1000},${entry.y * 1000}`).join(" ")}
-                fill="none"
-                stroke={color}
-                strokeWidth={payload.strokeWidth * 1000}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                vectorEffect="non-scaling-stroke"
-                data-erasable={editing && tool === "eraser" || undefined}
-                onPointerDown={(event) => {
-                  if (!editing || tool !== "eraser" || annotation.layerId !== activeLayerId) return;
-                  event.stopPropagation();
-                  void saveDraftWithHistory(choirId, scoreId, {
-                    id: annotation.id,
-                    layerId: annotation.layerId,
-                    payload: null,
-                    deleted: true,
-                  });
-                }}
-              />
+              <g key={annotation.id}>
+                {editing &&
+                tool === "eraser" &&
+                annotation.layerId === activeLayerId ? (
+                  <polyline
+                    aria-hidden="true"
+                    data-eraser-hit-target
+                    points={payload.points.map((entry) => `${entry.x * 1000},${entry.y * 1000}`).join(" ")}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth={ERASER_HIT_RADIUS_PX * 2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ) : null}
+                <polyline
+                  points={payload.points.map((entry) => `${entry.x * 1000},${entry.y * 1000}`).join(" ")}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={payload.strokeWidth * 1000}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </g>
             );
           }
           return null;
@@ -185,12 +288,18 @@ export function AnnotationOverlay({
       {pageAnnotations.map((annotation) => {
         const payload = annotation.payload;
         if (payload?.kind !== "text") return null;
+        const position =
+          textDragPreview?.id === annotation.id &&
+          textDragPreview.originX === payload.x &&
+          textDragPreview.originY === payload.y
+            ? textDragPreview
+            : payload;
         return (
           <button
             className="annotation-text"
             style={{
-              left: `${payload.x * 100}%`,
-              top: `${payload.y * 100}%`,
+              left: `${position.x * 100}%`,
+              top: `${position.y * 100}%`,
               color: layerColors.get(annotation.layerId) ?? "#a12652",
             }}
             key={annotation.id}
@@ -199,26 +308,81 @@ export function AnnotationOverlay({
               if (!editing || annotation.layerId !== activeLayerId || tool !== "text") return;
               dragText.current = {
                 id: annotation.id,
+                pointerId: event.pointerId,
                 startX: event.clientX,
                 startY: event.clientY,
                 payload,
+                moved: false,
               };
+              setTextDragPreview(null);
+              if (typeof event.currentTarget.setPointerCapture === "function") {
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }
+            }}
+            onPointerMove={(event) => {
+              const drag = dragText.current;
+              if (!drag || drag.pointerId !== event.pointerId || tool !== "text") return;
+              const bounds = event.currentTarget.parentElement!.getBoundingClientRect();
+              const dx = (event.clientX - drag.startX) / bounds.width;
+              const dy = (event.clientY - drag.startY) / bounds.height;
+              if (!drag.moved && Math.hypot(dx, dy) <= TEXT_DRAG_THRESHOLD) return;
+              drag.moved = true;
+              setTextDragPreview({
+                id: drag.id,
+                x: clamp(drag.payload.x + dx),
+                y: clamp(drag.payload.y + dy),
+                originX: drag.payload.x,
+                originY: drag.payload.y,
+              });
             }}
             onPointerUp={(event) => {
               const drag = dragText.current;
               dragText.current = null;
-              if (!drag || tool !== "text") return;
+              if (!drag || drag.pointerId !== event.pointerId || tool !== "text") {
+                setTextDragPreview(null);
+                return;
+              }
+              if (
+                typeof event.currentTarget.hasPointerCapture === "function" &&
+                event.currentTarget.hasPointerCapture(event.pointerId)
+              ) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }
               const bounds = event.currentTarget.parentElement!.getBoundingClientRect();
               const dx = (event.clientX - drag.startX) / bounds.width;
               const dy = (event.clientY - drag.startY) / bounds.height;
-              if (Math.hypot(dx, dy) > 0.006) {
+              if (drag.moved) {
+                const finalPosition = {
+                  id: drag.id,
+                  x: clamp(drag.payload.x + dx),
+                  y: clamp(drag.payload.y + dy),
+                  originX: drag.payload.x,
+                  originY: drag.payload.y,
+                };
+                setTextDragPreview(finalPosition);
                 void saveDraftWithHistory(choirId, scoreId, {
                   id: annotation.id,
                   layerId: annotation.layerId,
-                  payload: { ...payload, x: clamp(payload.x + dx), y: clamp(payload.y + dy) },
+                  payload: {
+                    ...drag.payload,
+                    x: finalPosition.x,
+                    y: finalPosition.y,
+                  },
                 });
               } else {
+                setTextDragPreview(null);
                 setTextEditor({ id: annotation.id, x: payload.x, y: payload.y, initial: payload.text });
+              }
+            }}
+            onPointerCancel={(event) => {
+              if (dragText.current?.pointerId !== event.pointerId) return;
+              dragText.current = null;
+              setTextDragPreview(null);
+              if (
+                typeof event.currentTarget.hasPointerCapture === "function" &&
+                event.currentTarget.hasPointerCapture(event.pointerId)
+              ) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
               }
             }}
             onKeyDown={(event) => {
@@ -236,7 +400,7 @@ export function AnnotationOverlay({
           </button>
         );
       })}
-      {editing && textEditor ? (
+      {editing && tool === "text" && textEditor ? (
         <form
           className="annotation-text-editor"
           style={{ left: `${textEditor.x * 100}%`, top: `${textEditor.y * 100}%` }}
@@ -284,4 +448,36 @@ export function AnnotationOverlay({
 
 function clamp(value: number) {
   return Math.min(1, Math.max(0, value));
+}
+
+function distanceToPolyline(
+  point: { x: number; y: number },
+  points: Array<{ x: number; y: number }>,
+) {
+  let closest = Number.POSITIVE_INFINITY;
+  for (let index = 1; index < points.length; index += 1) {
+    closest = Math.min(
+      closest,
+      distanceToSegment(point, points[index - 1]!, points[index]!),
+    );
+  }
+  return closest;
+}
+
+function distanceToSegment(
+  point: { x: number; y: number },
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  if (dx === 0 && dy === 0) return Math.hypot(point.x - start.x, point.y - start.y);
+  const ratio = clamp(
+    ((point.x - start.x) * dx + (point.y - start.y) * dy) /
+      (dx * dx + dy * dy),
+  );
+  return Math.hypot(
+    point.x - (start.x + ratio * dx),
+    point.y - (start.y + ratio * dy),
+  );
 }

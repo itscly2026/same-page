@@ -67,6 +67,7 @@ export async function saveAnnotationDraft(
     payload: input.payload,
     state: "draft",
     lastOpId: null,
+    syncErrorCode: null,
     updatedAt: now,
   });
 }
@@ -196,7 +197,7 @@ export async function applyPushResults(
               changes: { baseVersion: result.object!.version },
             })),
           );
-        } else {
+        } else if (result.status === "conflict") {
           const relatedOperations = await localDatabase.annotationOutbox
             .where("[scopeKey+annotationId]")
             .equals([operation.scopeKey, operation.annotationId])
@@ -214,7 +215,25 @@ export async function applyPushResults(
           };
           await localDatabase.annotationConflicts.put(conflict);
           if (local) {
-            await localDatabase.annotations.update(key, { state: "conflict" });
+            await localDatabase.annotations.update(key, {
+              state: "conflict",
+              syncErrorCode: null,
+            });
+          }
+          await localDatabase.annotationOutbox.bulkDelete(
+            relatedOperations.map((entry) => entry.opId),
+          );
+        } else {
+          const relatedOperations = await localDatabase.annotationOutbox
+            .where("[scopeKey+annotationId]")
+            .equals([operation.scopeKey, operation.annotationId])
+            .toArray();
+          if (local) {
+            await localDatabase.annotations.update(key, {
+              state: "sync-error",
+              lastOpId: null,
+              syncErrorCode: "op_id_reused",
+            });
           }
           await localDatabase.annotationOutbox.bulkDelete(
             relatedOperations.map((entry) => entry.opId),
@@ -287,11 +306,31 @@ export async function reapplyAnnotationConflict(opId: string, keepBoth = false) 
         payload: conflict.localPayload,
         state: "draft",
         lastOpId: null,
+        syncErrorCode: null,
         updatedAt: Date.now(),
       });
       await localDatabase.annotationConflicts.delete(opId);
     },
   );
+}
+
+export async function retryScoreSyncErrors(choirId: string, scoreId: string) {
+  const scopeKey = annotationScopeKey(choirId, scoreId);
+  const errors = await localDatabase.annotations
+    .where("[scopeKey+state]")
+    .equals([scopeKey, "sync-error"])
+    .toArray();
+  await localDatabase.annotations.bulkUpdate(
+    errors.map((annotation) => ({
+      key: annotation.key,
+      changes: {
+        state: "draft" as const,
+        lastOpId: null,
+        syncErrorCode: null,
+      },
+    })),
+  );
+  return errors.length;
 }
 
 export function visibleLocalAnnotations(scopeKey: string) {
@@ -321,6 +360,7 @@ function fromCanonical(
     payload: object.payload,
     state: "synced",
     lastOpId: null,
+    syncErrorCode: null,
     updatedAt: object.updatedAt,
   };
 }

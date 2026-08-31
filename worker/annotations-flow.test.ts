@@ -201,7 +201,13 @@ describe("annotation layers and object synchronization", () => {
       { headers: { cookie: guestCookie } },
     );
     expect(await guestLayers.json()).toMatchObject({
-      layers: [{ id: fixture.layerId, kind: "shared", canEdit: false }],
+      layers: expect.arrayContaining([
+        expect.objectContaining({
+          id: fixture.layerId,
+          kind: "shared",
+          canEdit: false,
+        }),
+      ]),
     });
     const guestPush = await callWorker(
       `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/annotations/push`,

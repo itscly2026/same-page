@@ -70,6 +70,21 @@ describe("PDF file library and delivery", () => {
       "练习 2.pdf",
       createMinimalPdf(400, 400),
     );
+    const defaultLayers = await env.DB.prepare(
+      `SELECT default_slot, kind, name
+       FROM annotation_layers
+       WHERE score_id = ? AND default_slot IS NOT NULL
+       ORDER BY sort_order`,
+    )
+      .bind(tenUpload.id)
+      .all<{ default_slot: string; kind: string; name: string }>();
+    expect(defaultLayers.results).toEqual(
+      ["G", "S", "A", "T", "B"].map((slot) => ({
+        default_slot: slot,
+        kind: "shared",
+        name: slot,
+      })),
+    );
 
     const duplicate = await callWorker(
       `/api/choirs/${choirId}/scores`,

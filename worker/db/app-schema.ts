@@ -223,6 +223,7 @@ export const annotationLayers = sqliteTable(
     scoreId: text("score_id").notNull(),
     kind: text("kind", { enum: ["shared", "personal"] }).notNull(),
     ownerUserId: text("owner_user_id"),
+    defaultSlot: text("default_slot", { enum: ["G", "S", "A", "T", "B"] }),
     name: text("name").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
     defaultColor: text("default_color").notNull(),
@@ -236,6 +237,13 @@ export const annotationLayers = sqliteTable(
       table.kind,
       table.sortOrder,
       table.createdAt,
+    ),
+    uniqueIndex("annotation_layers_default_slot_uidx")
+      .on(table.scoreId, table.defaultSlot)
+      .where(sql`${table.defaultSlot} is not null`),
+    check(
+      "annotation_layers_default_slot_requires_shared",
+      sql`${table.defaultSlot} is null or ${table.kind} = 'shared'`,
     ),
   ],
 );

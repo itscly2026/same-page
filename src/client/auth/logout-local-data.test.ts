@@ -29,6 +29,7 @@ describe("logout local privacy", () => {
       scopeKey,
       id: "shared-layer",
       kind: "shared" as const,
+      defaultSlot: null,
       name: "指挥",
       sortOrder: 0,
       defaultColor: "#112233",
@@ -44,7 +45,11 @@ describe("logout local privacy", () => {
       name: "我的批注",
     };
     await localDatabase.annotationLayers.bulkPut([sharedLayer, personalLayer]);
-    const annotation = (id: string, layerId: string, state: "synced" | "pending") => ({
+    const annotation = (
+      id: string,
+      layerId: string,
+      state: "synced" | "pending" | "sync-error",
+    ) => ({
       key: annotationRecordKey(scopeKey, id),
       scopeKey,
       choirId: "choir-1",
@@ -63,14 +68,21 @@ describe("logout local privacy", () => {
       },
       state,
       lastOpId: null,
+      syncErrorCode: state === "sync-error" ? ("op_id_reused" as const) : null,
       updatedAt: 1,
     });
     const sharedSynced = annotation("shared-synced", sharedLayer.id, "synced");
     const sharedPending = annotation("shared-pending", sharedLayer.id, "pending");
+    const sharedSyncError = annotation(
+      "shared-sync-error",
+      sharedLayer.id,
+      "sync-error",
+    );
     const personalSynced = annotation("personal-synced", personalLayer.id, "synced");
     await localDatabase.annotations.bulkPut([
       sharedSynced,
       sharedPending,
+      sharedSyncError,
       personalSynced,
     ]);
     await localDatabase.annotationOutbox.put({
@@ -118,6 +130,7 @@ describe("logout local privacy", () => {
     await expect(getLogoutLocalSummary()).resolves.toEqual({
       pendingOperations: 1,
       conflicts: 1,
+      syncErrors: 1,
     });
     await clearPrivateLocalDataAfterLogout();
 
