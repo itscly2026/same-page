@@ -90,11 +90,13 @@ describe("logout local privacy", () => {
       "sync-error",
     );
     const personalSynced = annotation("personal-synced", personalLayer.id, "synced");
+    const orphanSynced = annotation("orphan-synced", "missing-layer", "synced");
     await localDatabase.annotations.bulkPut([
       sharedSynced,
       sharedPending,
       sharedSyncError,
       personalSynced,
+      orphanSynced,
     ]);
     await localDatabase.annotationOutbox.put({
       opId: "op-1",
@@ -129,7 +131,7 @@ describe("logout local privacy", () => {
       verifiedAt: 1,
       annotationSnapshot: {
         layers: [sharedLayer, personalLayer],
-        annotations: [sharedSynced, personalSynced],
+        annotations: [sharedSynced, personalSynced, orphanSynced],
         cursor: 2,
         verifiedAt: 1,
       },

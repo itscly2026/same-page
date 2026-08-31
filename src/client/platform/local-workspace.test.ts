@@ -128,6 +128,7 @@ describe("local workspace identity transitions", () => {
       choirId: "choir-1",
       scoreId: "score-1",
     });
+    await expect(assertLocalWorkspaceActive(guest)).resolves.toBeUndefined();
     await localDatabase.annotations.put({
       ...guest,
       key: JSON.stringify([guest.scopeKey, "guest-draft"]),

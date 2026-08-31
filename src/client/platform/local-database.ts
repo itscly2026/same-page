@@ -9,6 +9,7 @@ import type { LocalWorkspaceOwnerKey } from "./local-workspace";
 
 export const LAST_AUTHENTICATED_OWNER_KEY =
   "local-workspace:last-authenticated-owner";
+export const ACTIVE_LOCAL_OWNER_KEY = "local-workspace:active-owner";
 export const LEGACY_LAST_AUTHENTICATED_USER_ID_KEY =
   "last-authenticated-user-id";
 export const guestOwnerSystemKey = (choirId: string) =>
@@ -436,6 +437,7 @@ async function migrateLegacyLocalWorkspaces(transaction: Transaction) {
       });
     }
     await system.put({ key: LAST_AUTHENTICATED_OWNER_KEY, value: knownOwner });
+    await system.put({ key: ACTIVE_LOCAL_OWNER_KEY, value: knownOwner });
   } else {
     await Promise.all([
       tables.annotationOutbox.clear(),

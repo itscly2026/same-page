@@ -54,17 +54,15 @@ export async function clearPrivateLocalDataAfterLogout() {
         .where("ownerKey")
         .equals(ownerKey)
         .toArray();
-      const personalLayerIds = new Set(
-        layers.filter((layer) => layer.kind === "personal").map((layer) => layer.id),
-      );
       const annotations = await localDatabase.annotations
         .where("ownerKey")
         .equals(ownerKey)
         .toArray();
       const sharedLayers = layers.filter((layer) => layer.kind === "shared");
+      const sharedLayerIds = new Set(sharedLayers.map((layer) => layer.id));
       const sharedAnnotations = annotations.filter(
         (annotation) =>
-          !personalLayerIds.has(annotation.layerId) &&
+          sharedLayerIds.has(annotation.layerId) &&
           annotation.state === "synced",
       );
       const offlineScores = await localDatabase.offlineScores
@@ -119,6 +117,11 @@ export async function clearPrivateLocalDataAfterLogout() {
             .filter((layer) => layer.kind === "personal")
             .map((layer) => layer.id),
         );
+        const snapshotSharedIds = new Set(
+          score.annotationSnapshot.layers
+            .filter((layer) => layer.kind === "shared")
+            .map((layer) => layer.id),
+        );
         nextOfflineScores.push({
           ...score,
           ...workspace,
@@ -137,6 +140,7 @@ export async function clearPrivateLocalDataAfterLogout() {
               })),
             annotations: score.annotationSnapshot.annotations.filter(
               (annotation) =>
+                snapshotSharedIds.has(annotation.layerId) &&
                 !snapshotPersonalIds.has(annotation.layerId) &&
                 annotation.state === "synced",
             ).map((annotation) => ({

@@ -91,10 +91,12 @@ export default function ReaderPage() {
   const session = authClient.useSession();
   const [resolvedWorkspace, setResolvedWorkspace] =
     useState<LocalWorkspace | null>(null);
+  const [loadedScopeKey, setLoadedScopeKey] = useState<string | null>(null);
   const activeOwnerKey = useLiveQuery(() => currentLocalOwnerKey(), [], undefined);
   const [score, setScore] = useState<ScoreSummary | null>(null);
   const [offline, setOffline] = useState<OfflineScoreRecord | null>(null);
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
+  const [documentScopeKey, setDocumentScopeKey] = useState<string | null>(null);
   const [source, setSource] = useState<string | ArrayBuffer | null>(null);
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -146,48 +148,72 @@ export default function ReaderPage() {
     resolvedWorkspace && activeOwnerKey === resolvedWorkspace.ownerKey
       ? resolvedWorkspace
       : null;
-  const layers = useLiveQuery(
-    () => workspace
-      ? localDatabase.annotationLayers
+  const layerQuery = useLiveQuery(
+    async () => ({
+      scopeKey: workspace?.scopeKey ?? null,
+      entries: workspace
+      ? await localDatabase.annotationLayers
         .where("scopeKey")
         .equals(workspace.scopeKey)
         .toArray()
         .then((entries) => entries.sort(compareLayers))
       : [],
+    }),
     [workspace?.scopeKey],
-    [],
+    { scopeKey: null, entries: [] },
   );
-  const annotations = useLiveQuery(
-    () => workspace
-      ? localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey).toArray()
-      : [],
+  const annotationQuery = useLiveQuery(
+    async () => ({
+      scopeKey: workspace?.scopeKey ?? null,
+      entries: workspace
+        ? await localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey).toArray()
+        : [],
+    }),
     [workspace?.scopeKey],
-    [],
+    { scopeKey: null, entries: [] },
   );
-  const pendingCount = useLiveQuery(
-    () => workspace
-      ? localDatabase.annotationOutbox.where("scopeKey").equals(workspace.scopeKey).count()
-      : 0,
+  const pendingQuery = useLiveQuery(
+    async () => ({
+      scopeKey: workspace?.scopeKey ?? null,
+      count: workspace
+        ? await localDatabase.annotationOutbox.where("scopeKey").equals(workspace.scopeKey).count()
+        : 0,
+    }),
     [workspace?.scopeKey],
-    0,
+    { scopeKey: null, count: 0 },
   );
-  const conflicts = useLiveQuery(
-    () => workspace
-      ? localDatabase.annotationConflicts.where("scopeKey").equals(workspace.scopeKey).toArray()
-      : [],
+  const conflictQuery = useLiveQuery(
+    async () => ({
+      scopeKey: workspace?.scopeKey ?? null,
+      entries: workspace
+        ? await localDatabase.annotationConflicts.where("scopeKey").equals(workspace.scopeKey).toArray()
+        : [],
+    }),
     [workspace?.scopeKey],
-    [],
+    { scopeKey: null, entries: [] },
   );
-  const syncErrorCount = useLiveQuery(
-    () => workspace
-      ? localDatabase.annotations
+  const syncErrorQuery = useLiveQuery(
+    async () => ({
+      scopeKey: workspace?.scopeKey ?? null,
+      count: workspace
+      ? await localDatabase.annotations
         .where("[scopeKey+state]")
         .equals([workspace.scopeKey, "sync-error"])
         .count()
       : 0,
+    }),
     [workspace?.scopeKey],
-    0,
+    { scopeKey: null, count: 0 },
   );
+  const layers = layerQuery.scopeKey === workspace?.scopeKey ? layerQuery.entries : [];
+  const annotations =
+    annotationQuery.scopeKey === workspace?.scopeKey ? annotationQuery.entries : [];
+  const pendingCount =
+    pendingQuery.scopeKey === workspace?.scopeKey ? pendingQuery.count : 0;
+  const conflicts =
+    conflictQuery.scopeKey === workspace?.scopeKey ? conflictQuery.entries : [];
+  const syncErrorCount =
+    syncErrorQuery.scopeKey === workspace?.scopeKey ? syncErrorQuery.count : 0;
   const { layout, currentPage, setLayout, setCurrentPage } =
     useReaderPreferences({
       identity: session.data?.user.id ?? "guest",
@@ -213,6 +239,12 @@ export default function ReaderPage() {
       setScore(null);
       setOffline(null);
       setSource(null);
+      setDocument(null);
+      setDocumentScopeKey(null);
+      setCanManageLayers(false);
+      setEditing(false);
+      setActiveLayerId(null);
+      endAnnotationEditSession();
       setLoadingError(null);
       setCloudState("checking");
       const local = await findActiveOfflineScore(workspace.ownerKey, choirId, scoreId).catch(
@@ -226,6 +258,7 @@ export default function ReaderPage() {
         if (lookup.state === "trashed") {
           setCloudState("trashed");
           if (!local) {
+            setLoadedScopeKey(workspace.scopeKey);
             setLoadingError("这份乐谱已移入回收站，当前设备没有可用的离线副本。");
             return;
           }
@@ -237,15 +270,18 @@ export default function ReaderPage() {
         if (lookup.state !== "active") throw new Error("Score unavailable");
         if (!active) return;
         setCloudState("active");
+        setLoadedScopeKey(workspace.scopeKey);
         setScore(lookup.score);
         setSource(`/api/choirs/${choirId}/scores/${scoreId}/pdf`);
       } catch {
         if (!active) return;
         setCloudState((current) => (current === "trashed" ? current : "unavailable"));
         if (local) {
+          setLoadedScopeKey(workspace.scopeKey);
           setScore(scoreFromOffline(local));
           setSource(await local.blob.arrayBuffer());
         } else {
+          setLoadedScopeKey(workspace.scopeKey);
           setLoadingError("无法打开乐谱。请检查网络与当前访问权限。");
         }
       }
@@ -337,6 +373,7 @@ export default function ReaderPage() {
         destroyOpened = opened.destroy;
         if (active) {
           setDocument(nextDocument);
+          setDocumentScopeKey(workspace?.scopeKey ?? null);
           setCurrentPage((page) => Math.min(page, nextDocument.numPages));
         }
       })
@@ -347,8 +384,9 @@ export default function ReaderPage() {
       active = false;
       void destroyOpened?.();
       setDocument(null);
+      setDocumentScopeKey(null);
     };
-  }, [setCurrentPage, source]);
+  }, [setCurrentPage, source, workspace?.scopeKey]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -583,7 +621,7 @@ export default function ReaderPage() {
     }
   };
 
-  if (!workspace || loadingError) {
+  if (!workspace || loadedScopeKey !== workspace.scopeKey || loadingError) {
     if (!workspace) return <p className="route-loading">正在打开本机工作区…</p>;
     return (
       <main className="page-shell compact-page">
@@ -599,7 +637,7 @@ export default function ReaderPage() {
     );
   }
 
-  if (!score || !document) {
+  if (!score || !document || documentScopeKey !== workspace.scopeKey) {
     return <p className="route-loading">正在加载乐谱…</p>;
   }
 

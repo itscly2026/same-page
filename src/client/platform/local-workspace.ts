@@ -1,4 +1,5 @@
 import {
+  ACTIVE_LOCAL_OWNER_KEY,
   guestOwnerSystemKey,
   LAST_AUTHENTICATED_OWNER_KEY,
   localDatabase,
@@ -30,10 +31,10 @@ export function authenticatedLocalOwnerKey(
 
 export async function activateAuthenticatedLocalOwner(userId: string) {
   const ownerKey = authenticatedLocalOwnerKey(userId);
-  await localDatabase.system.put({
-    key: LAST_AUTHENTICATED_OWNER_KEY,
-    value: ownerKey,
-  });
+  await localDatabase.system.bulkPut([
+    { key: LAST_AUTHENTICATED_OWNER_KEY, value: ownerKey },
+    { key: ACTIVE_LOCAL_OWNER_KEY, value: ownerKey },
+  ]);
   return ownerKey;
 }
 
@@ -76,24 +77,42 @@ export async function assertLocalWorkspaceActive(workspace: LocalWorkspace) {
 }
 
 export async function currentLocalOwnerKey() {
-  const record = await localDatabase.system.get(LAST_AUTHENTICATED_OWNER_KEY);
+  const record = await localDatabase.system.get(ACTIVE_LOCAL_OWNER_KEY);
   return (record?.value as LocalWorkspaceOwnerKey | undefined) ?? null;
 }
 
 export async function clearCurrentAuthenticatedLocalOwner() {
   const ownerKey = await currentLocalOwnerKey();
   if (!ownerKey?.startsWith("user:")) return null;
-  await localDatabase.system.delete(LAST_AUTHENTICATED_OWNER_KEY);
+  await localDatabase.system.bulkDelete([
+    LAST_AUTHENTICATED_OWNER_KEY,
+    ACTIVE_LOCAL_OWNER_KEY,
+  ]);
   return ownerKey;
 }
 
 async function resolveOfflineOwner(choirId: string) {
-  const lastAuthenticated = await currentLocalOwnerKey();
-  if (lastAuthenticated) return lastAuthenticated;
-  const key = guestOwnerSystemKey(choirId);
-  const existing = await localDatabase.system.get(key);
-  if (existing) return existing.value as LocalWorkspaceOwnerKey;
-  const ownerKey = `guest:${crypto.randomUUID()}` as LocalWorkspaceOwnerKey;
-  await localDatabase.system.put({ key, value: ownerKey });
-  return ownerKey;
+  return localDatabase.transaction("rw", localDatabase.system, async () => {
+    const lastAuthenticated = await localDatabase.system.get(
+      LAST_AUTHENTICATED_OWNER_KEY,
+    );
+    if (lastAuthenticated) {
+      const ownerKey = lastAuthenticated.value as LocalWorkspaceOwnerKey;
+      await localDatabase.system.put({
+        key: ACTIVE_LOCAL_OWNER_KEY,
+        value: ownerKey,
+      });
+      return ownerKey;
+    }
+    const key = guestOwnerSystemKey(choirId);
+    const existing = await localDatabase.system.get(key);
+    const ownerKey = existing
+      ? (existing.value as LocalWorkspaceOwnerKey)
+      : (`guest:${crypto.randomUUID()}` as LocalWorkspaceOwnerKey);
+    await localDatabase.system.bulkPut([
+      { key, value: ownerKey },
+      { key: ACTIVE_LOCAL_OWNER_KEY, value: ownerKey },
+    ]);
+    return ownerKey;
+  });
 }

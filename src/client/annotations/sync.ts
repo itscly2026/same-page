@@ -58,11 +58,17 @@ export async function drainAnnotationOutbox(workspace: LocalWorkspace) {
     await localDatabase.annotationOutbox.bulkUpdate(
       batch.map((operation) => ({ key: operation.opId, changes: { attemptedAt: Date.now() } })),
     );
+    await assertLocalWorkspaceActive(workspace);
+    const expectedUserId = authenticatedUserId(workspace);
+    if (!expectedUserId) throw new Error("annotation_push_requires_user_owner");
     const response = await fetch(
       `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/annotations/push`,
       {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "x-same-page-owner-user-id": expectedUserId,
+        },
         body: JSON.stringify({ operations: batch.map(toWireOperation) }),
       },
     );
@@ -78,6 +84,12 @@ export async function drainAnnotationOutbox(workspace: LocalWorkspace) {
     await applyPushResults(workspace, batch, body.results);
     pushed += batch.length;
   }
+}
+
+function authenticatedUserId(workspace: LocalWorkspace) {
+  return workspace.ownerKey.startsWith("user:")
+    ? workspace.ownerKey.slice("user:".length)
+    : null;
 }
 
 export async function withScoreSyncLock<T>(

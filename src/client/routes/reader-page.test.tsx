@@ -726,6 +726,37 @@ describe("ReaderPage", () => {
     );
   });
 
+  it("hides A's loaded reader state as soon as another tab activates B", async () => {
+    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+      key: "offline-a",
+      ...localWorkspace,
+      versionId: "version-a",
+      fileName: "A 的离线乐谱.pdf",
+      sha256: "a".repeat(64),
+      pageCount: 1,
+      blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
+      active: 1,
+      verifiedAt: 1,
+      annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 },
+    });
+    vi.mocked(fetch).mockRejectedValue(new Error("offline"));
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("A 的离线乐谱.pdf")).toBeInTheDocument();
+
+    await activateAuthenticatedLocalOwner("user-b");
+
+    await waitFor(() => {
+      expect(screen.queryByText("A 的离线乐谱.pdf")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("正在打开本机工作区…")).toBeInTheDocument();
+  });
+
   it("keeps a trashed score's offline copy and outbox without editing or syncing", async () => {
     vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
       key: "offline-1",
