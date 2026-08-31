@@ -1823,11 +1823,19 @@ h1 {
   place-items: center;
 }
 
-.page-reader__canvas-stage > .annotated-pdf-page {
+.page-reader__content,
+.continuous-reader__inner {
   transform: translate(
-    var(--reader-pinch-offset-x, 0),
-    var(--reader-pinch-offset-y, 0)
-  );
+      var(--reader-gesture-x, 0),
+      var(--reader-gesture-y, 0)
+    )
+    scale(var(--reader-gesture-scale, 1));
+  transform-origin: 0 0;
+}
+
+.page-reader__content[data-gesture-preview],
+.continuous-reader__inner[data-gesture-preview] {
+  will-change: transform;
 }
 
 .pdf-page-canvas {
@@ -2119,10 +2127,6 @@ h1 {
 .continuous-reader__inner {
   position: relative;
   min-width: 100%;
-  transform: translate(
-    var(--reader-pinch-offset-x, 0),
-    var(--reader-pinch-offset-y, 0)
-  );
 }
 
 .continuous-reader__page {

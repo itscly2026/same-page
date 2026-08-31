@@ -50,6 +50,7 @@ export function PageLayout({
   annotationProps,
 }: ReaderLayoutProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const size = useElementSize(containerRef);
   const pageRatio = usePdfPageAspectRatio(document, currentPage);
   const fitWidth = calculateFittedPageWidth(
@@ -61,6 +62,7 @@ export function PageLayout({
   const renderedHeight = renderedWidth / pageRatio;
   const gestureHandlers = useReaderGestures({
     containerRef,
+    contentRef,
     disabled: annotationProps.editing,
     zoom,
     onZoomChange,
@@ -96,12 +98,14 @@ export function PageLayout({
             height: Math.max(size.height, renderedHeight),
           }}
         >
-          <AnnotatedPdfPage
-            document={document}
-            pageNumber={currentPage}
-            width={renderedWidth}
-            annotationProps={annotationProps}
-          />
+          <div className="page-reader__content" ref={contentRef}>
+            <AnnotatedPdfPage
+              document={document}
+              pageNumber={currentPage}
+              width={renderedWidth}
+              annotationProps={annotationProps}
+            />
+          </div>
         </div>
       </div>
       {!annotationProps.editing ? (
@@ -147,6 +151,7 @@ export function ContinuousLayout({
   onRestoreComplete(): void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const skipNextPageAlignment = useRef(false);
   const size = useElementSize(scrollRef);
   const pageWidth = Math.max(1, size.width * zoom);
@@ -207,6 +212,7 @@ export function ContinuousLayout({
 
   const gestureHandlers = useReaderGestures({
     containerRef: scrollRef,
+    contentRef,
     disabled: annotationProps.editing,
     zoom,
     onZoomChange,
@@ -239,6 +245,7 @@ export function ContinuousLayout({
     >
       <div
         className="continuous-reader__inner"
+        ref={contentRef}
         style={{ height: virtualizer.getTotalSize() }}
       >
         {virtualizer.getVirtualItems().map((item) => (
