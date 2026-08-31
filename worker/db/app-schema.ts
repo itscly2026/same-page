@@ -21,6 +21,9 @@ export const choirs = sqliteTable(
       .notNull()
       .default("invite"),
     guestSessionVersion: integer("guest_session_version").notNull().default(1),
+    isPreviewEntry: integer("is_preview_entry", { mode: "boolean" })
+      .notNull()
+      .default(false),
     joinCodeHash: text("join_code_hash"),
     storageLimitBytes: integer("storage_limit_bytes")
       .notNull()
@@ -32,6 +35,9 @@ export const choirs = sqliteTable(
   },
   (table) => [
     uniqueIndex("choirs_join_code_hash_uidx").on(table.joinCodeHash),
+    uniqueIndex("choirs_preview_entry_uidx")
+      .on(table.isPreviewEntry)
+      .where(sql`${table.isPreviewEntry} = 1`),
     check(
       "choirs_guest_admission_mode_valid",
       sql`${table.guestAdmissionMode} in ('invite', 'open')`,
@@ -40,6 +46,10 @@ export const choirs = sqliteTable(
       "choirs_guest_admission_mode_matches_join_code",
       sql`(${table.guestAdmissionMode} = 'invite' and ${table.joinCodeHash} is not null)
         or (${table.guestAdmissionMode} = 'open' and ${table.joinCodeHash} is null)`,
+    ),
+    check(
+      "choirs_preview_entry_requires_open_admission",
+      sql`${table.isPreviewEntry} = 0 or ${table.guestAdmissionMode} = 'open'`,
     ),
     check("choirs_storage_limit_positive", sql`${table.storageLimitBytes} > 0`),
     check("choirs_storage_used_nonnegative", sql`${table.storageUsedBytes} >= 0`),

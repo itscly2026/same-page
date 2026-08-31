@@ -10,11 +10,12 @@ import {
   Popover,
   TextField,
 } from "react-aria-components";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   choirMembershipsResponseSchema,
   choirSummarySchema,
+  guestSessionResponseSchema,
   rotateJoinCodeResponseSchema,
   type ChoirSummary,
 } from "../../shared/choirs";
@@ -36,6 +37,7 @@ import { UploadDialog } from "../score-library/upload-dialog";
 
 export default function ChoirPage() {
   const { choirId = "" } = useParams();
+  const navigate = useNavigate();
   const session = authClient.useSession();
   const userId = session.data?.user.id;
   const [access, setAccess] = useState<ChoirAccessState>({ kind: "loading" });
@@ -69,12 +71,17 @@ export default function ChoirPage() {
     if (session.isPending) return;
     let active = true;
     void openChoir(choirId, Boolean(userId)).then((opened) => {
-      if (active) setAccess(opened);
+      if (!active) return;
+      if (opened.kind === "preview-redirect") {
+        void navigate("/", { replace: true });
+        return;
+      }
+      setAccess(opened);
     });
     return () => {
       active = false;
     };
-  }, [choirId, userId, session.isPending]);
+  }, [choirId, navigate, userId, session.isPending]);
 
   const joinOpenChoir = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -146,7 +153,7 @@ export default function ChoirPage() {
         <span className="account-email">{session.data.user.email}</span>
       ) : (
         <Link className="header-action header-action--primary" to="/login">
-          登录 / 注册
+          登录或注册
         </Link>
       )}
     </>
@@ -159,7 +166,7 @@ export default function ChoirPage() {
         <main className="page-shell compact-page access-page">
           <p className="eyebrow">开放准入</p>
           <h1>{access.choir.name}</h1>
-          <p className="hero__copy">这个合唱团采用开放准入。填写团内显示名后即可加入。</p>
+          <p className="hero__copy">填写团内显示名后即可加入。</p>
           <Form className="entry-form" onSubmit={joinOpenChoir}>
             <TextField
               isRequired
@@ -346,15 +353,21 @@ export default function ChoirPage() {
 async function openChoir(
   choirId: string,
   signedIn: boolean,
-): Promise<Exclude<ChoirAccessState, { kind: "loading" }>> {
+): Promise<
+  Exclude<ChoirAccessState, { kind: "loading" }> | { kind: "preview-redirect" }
+> {
   const [choir, result] = await Promise.all([
     loadChoirSummary(choirId),
     fetchScoreList(choirId, ""),
   ]);
   if (result) return { kind: "opened", choir, result };
-  const openChoirSummary = await loadOpenAdmissionChoir(choirId);
-  if (!openChoirSummary) return { kind: "denied" };
-  if (signedIn) return { kind: "join-required", choir: openChoirSummary };
+  const openAdmission = await loadOpenAdmissionChoir(choirId);
+  if (!openAdmission) return { kind: "denied" };
+  if (signedIn) {
+    return openAdmission.entryKind === "preview"
+      ? { kind: "preview-redirect" }
+      : { kind: "join-required", choir: openAdmission.choir };
+  }
   try {
     const admission = await fetch("/api/guest/session", {
       method: "POST",
@@ -364,7 +377,7 @@ async function openChoir(
     if (!admission.ok) return { kind: "denied" };
     const admittedResult = await fetchScoreList(choirId, "");
     return admittedResult
-      ? { kind: "opened", choir: openChoirSummary, result: admittedResult }
+      ? { kind: "opened", choir: openAdmission.choir, result: admittedResult }
       : { kind: "denied" };
   } catch {
     return { kind: "denied" };
@@ -381,8 +394,7 @@ async function loadOpenAdmissionChoir(choirId: string) {
   try {
     const response = await fetch(`/api/guest/choirs/${choirId}`);
     if (!response.ok) return null;
-    const payload = (await response.json()) as { choir: unknown };
-    return choirSummarySchema.parse(payload.choir);
+    return guestSessionResponseSchema.parse(await response.json());
   } catch {
     return null;
   }

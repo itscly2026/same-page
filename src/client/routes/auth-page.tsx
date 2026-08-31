@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
   Button,
   FieldError,
@@ -9,80 +9,73 @@ import {
 } from "react-aria-components";
 import { Link, useNavigate } from "react-router-dom";
 
+import { authFlowResponseSchema, PASSWORD_POLICY } from "../../shared/auth";
+import {
+  guestJoinStateResponseSchema,
+  guestSessionResponseSchema,
+  type ChoirSummary,
+} from "../../shared/choirs";
 import { authClient } from "../auth/auth-client";
-import { PASSWORD_POLICY } from "../../shared/auth";
 import { AppHeader } from "../components/app-header";
 
 type AuthView =
+  | "identify"
   | "sign-in"
   | "sign-up"
   | "verify-registration"
   | "request-reset"
-  | "reset-password";
+  | "reset-password"
+  | "join-choir"
+  | "join-result";
 
 export default function AuthPage() {
   const navigate = useNavigate();
-  const [view, setView] = useState<AuthView>("sign-in");
+  const [view, setView] = useState<AuthView>("identify");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [otp, setOtp] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [guestChoir, setGuestChoir] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
-  const [guestSessionPending, setGuestSessionPending] = useState(true);
+  const [joinChoir, setJoinChoir] = useState<ChoirSummary | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const previousViewRef = useRef<AuthView>(view);
 
   useEffect(() => {
-    let active = true;
-    void (async () => {
-      try {
-        const response = await fetch("/api/guest/session");
-        if (!active || !response.ok) return;
-        const payload = (await response.json()) as {
-          choir: { id: string; name: string };
-        };
-        if (active) setGuestChoir(payload.choir);
-      } catch {
-        // Authentication remains available when the optional guest lookup fails.
-      } finally {
-        if (active) setGuestSessionPending(false);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const finishAuthentication = async () => {
-    if (!guestChoir) {
-      await navigate("/");
-      return true;
+    if (previousViewRef.current !== view) {
+      titleRef.current?.focus();
+      previousViewRef.current = view;
     }
+  }, [view]);
 
-    const joinResponse = await fetch("/api/choirs/join-current-guest", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ displayName }),
+  const identifyEmail = async (event: FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setMessage(null);
+    const response = await postJson("/api/auth/flow", {
+      email: normalizedEmail(email),
     });
-    if (!joinResponse.ok) {
+    setSubmitting(false);
+    if (!response?.ok) {
       setMessage(
-        joinResponse.status === 403
-          ? "已经登录，但该成员关系需要团管理员恢复。"
-          : "已经登录，但暂时无法加入合唱团，请返回入口重试。",
+        response?.status === 429
+          ? "尝试次数过多，请稍后再试。"
+          : "暂时无法继续，请稍后再试。",
       );
-      return false;
+      return;
     }
-    await navigate(`/choirs/${guestChoir.id}`);
-    return true;
+
+    const parsed = authFlowResponseSchema.safeParse(await response.json());
+    if (!parsed.success) {
+      setMessage("暂时无法继续，请稍后再试。");
+      return;
+    }
+    setView(parsed.data.flow);
   };
 
   const signIn = async (event: FormEvent) => {
     event.preventDefault();
-    if (guestSessionPending) return;
     setSubmitting(true);
     setMessage(null);
     const { error } = await authClient.signIn.email({
@@ -100,7 +93,6 @@ export default function AuthPage() {
 
   const signUp = async (event: FormEvent) => {
     event.preventDefault();
-    if (guestSessionPending) return;
     if (!validPasswordConfirmation(password, passwordConfirmation)) {
       setMessage(passwordValidationMessage(password, passwordConfirmation));
       return;
@@ -108,26 +100,21 @@ export default function AuthPage() {
 
     setSubmitting(true);
     setMessage(null);
-    const registrationEmail = normalizedEmail(email);
     const delivery = await postJson("/api/auth/registration/request-otp", {
-      email: registrationEmail,
+      email: normalizedEmail(email),
     });
+    setSubmitting(false);
     if (!delivery?.ok) {
-      setSubmitting(false);
       setMessage("暂时无法发送验证码，请稍后再试。");
       return;
     }
 
-    setSubmitting(false);
     setView("verify-registration");
-    setMessage(
-      "如果该邮箱可以注册，验证码已经发送。请检查收件箱和垃圾邮件；已注册用户请直接登录或重设密码。",
-    );
+    setMessage("验证码已经发送，请检查收件箱和垃圾邮件。");
   };
 
   const verifyRegistration = async (event: FormEvent) => {
     event.preventDefault();
-    if (guestSessionPending) return;
     setSubmitting(true);
     setMessage(null);
     const registration = await postJson("/api/auth/registration/complete", {
@@ -154,13 +141,12 @@ export default function AuthPage() {
     setMessage(
       !delivery?.ok
         ? "暂时无法发送验证码，请稍后再试。"
-        : "如果该邮箱仍需验证，新的验证码已经发送。",
+        : "新的验证码已经发送。",
     );
   };
 
   const requestPasswordReset = async (event: FormEvent) => {
     event.preventDefault();
-    if (guestSessionPending) return;
     setSubmitting(true);
     setMessage(null);
     const { error } = await authClient.emailOtp.requestPasswordReset({
@@ -172,12 +158,11 @@ export default function AuthPage() {
       return;
     }
     setView("reset-password");
-    setMessage("如果该邮箱已注册，密码重置验证码已经发送。");
+    setMessage("密码重置验证码已经发送。");
   };
 
   const resetPassword = async (event: FormEvent) => {
     event.preventDefault();
-    if (guestSessionPending) return;
     if (!validPasswordConfirmation(password, passwordConfirmation)) {
       setMessage(passwordValidationMessage(password, passwordConfirmation));
       return;
@@ -210,63 +195,128 @@ export default function AuthPage() {
     setSubmitting(false);
   };
 
-  const switchView = (nextView: AuthView) => {
-    setView(nextView);
-    setOtp("");
+  const finishAuthentication = async () => {
+    const guestResponse = await fetch("/api/guest/session").catch(() => null);
+    if (!guestResponse?.ok) {
+      await navigate("/");
+      return;
+    }
+    const guest = guestSessionResponseSchema.safeParse(
+      await guestResponse.json(),
+    );
+    if (!guest.success) {
+      await navigate("/");
+      return;
+    }
+    if (guest.data.entryKind === "preview") {
+      await clearGuestSession();
+      await navigate("/");
+      return;
+    }
+
+    const joinStateResponse = await fetch(
+      "/api/choirs/current-guest/join-state",
+    ).catch(() => null);
+    if (!joinStateResponse?.ok) {
+      setView("join-result");
+      setMessage(
+        joinStateResponse?.status === 403
+          ? "已经登录，但该成员关系需要团管理员恢复。"
+          : "已经登录，但暂时无法继续加入合唱团。",
+      );
+      return;
+    }
+    const joinState = guestJoinStateResponseSchema.safeParse(
+      await joinStateResponse.json(),
+    );
+    if (!joinState.success) {
+      setView("join-result");
+      setMessage("已经登录，但暂时无法继续加入合唱团。");
+      return;
+    }
+    if (joinState.data.status === "joined") {
+      await clearGuestSession();
+      await navigate(`/choirs/${joinState.data.choir.id}`);
+      return;
+    }
+
+    setJoinChoir(joinState.data.choir);
+    setView("join-choir");
+  };
+
+  const joinCurrentGuestChoir = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!joinChoir) return;
+    setSubmitting(true);
+    setMessage(null);
+    const response = await postJson("/api/choirs/join-current-guest", {
+      displayName,
+    });
+    setSubmitting(false);
+    if (!response?.ok) {
+      setMessage(
+        response?.status === 403
+          ? "该成员关系需要团管理员恢复。"
+          : "暂时无法加入这个合唱团，请稍后再试。",
+      );
+      return;
+    }
+    await navigate(`/choirs/${joinChoir.id}`);
+  };
+
+  const changeEmail = () => {
+    setView("identify");
     setPassword("");
     setPasswordConfirmation("");
+    setOtp("");
     setMessage(null);
   };
 
-  const guestDisplayNameField = guestChoir ? (
-    <TextField
-      isRequired
-      value={displayName}
-      onChange={setDisplayName}
-      maxLength={40}
-    >
-      <Label>团内显示名</Label>
-      <Input autoComplete="nickname" placeholder="例如：小花" />
-      <FieldError />
-    </TextField>
-  ) : null;
-
   const viewPanel = (() => {
     switch (view) {
+      case "identify":
+        return {
+          title: "登录或注册",
+          description: "输入邮箱，我们会自动进入登录或注册流程。",
+          form: (
+            <Form className="entry-form" onSubmit={identifyEmail}>
+              <EmailField value={email} onChange={setEmail} autoFocus />
+              <Button type="submit" isDisabled={submitting}>
+                {submitting ? "正在继续…" : "登录或注册"}
+              </Button>
+            </Form>
+          ),
+        };
       case "sign-in":
         return {
-          title: "密码登录",
-          description: guestSessionPending
-            ? "正在确认访问来源…"
-            : guestChoir
-            ? `登录后，你将以成员身份加入“${guestChoir.name}”。`
-            : "使用邮箱和密码登录；日常登录不发送验证码。",
+          title: "登录",
+          description: "使用密码登录 Same Page。",
           form: (
             <Form className="entry-form" onSubmit={signIn}>
-              <EmailField value={email} onChange={setEmail} />
+              <EmailSummary email={email} />
               <PasswordField
                 label="密码"
                 value={password}
                 onChange={setPassword}
                 autoComplete="current-password"
+                autoFocus
               />
-              {guestDisplayNameField}
-              <Button type="submit" isDisabled={submitting || guestSessionPending}>
+              <Button type="submit" isDisabled={submitting}>
                 {submitting ? "正在登录…" : "登录"}
               </Button>
               <Button
                 type="button"
                 className="text-button"
-                onPress={() => switchView("request-reset")}
+                onPress={() => {
+                  setView("request-reset");
+                  setPassword("");
+                  setMessage(null);
+                }}
               >
-                首次设置或忘记密码
+                忘记密码
               </Button>
-              <Button
-                type="button"
-                className="text-button"
-                onPress={() => switchView("sign-up")}
-              >
-                注册
+              <Button type="button" className="text-button" onPress={changeEmail}>
+                更换邮箱
               </Button>
             </Form>
           ),
@@ -274,17 +324,16 @@ export default function AuthPage() {
       case "sign-up":
         return {
           title: "注册",
-          description: guestChoir
-            ? `完成注册后，你将以成员身份加入“${guestChoir.name}”。`
-            : "设置密码后，我们只用一次邮箱验证码确认邮箱归属。",
+          description: "设置密码后，我们会发送验证码确认邮箱归属。",
           form: (
             <Form className="entry-form" onSubmit={signUp}>
-              <EmailField value={email} onChange={setEmail} />
+              <EmailSummary email={email} />
               <PasswordField
                 label={`密码（至少 ${PASSWORD_POLICY.minLength} 位）`}
                 value={password}
                 onChange={setPassword}
                 autoComplete="new-password"
+                autoFocus
               />
               <PasswordField
                 label="确认密码"
@@ -292,16 +341,11 @@ export default function AuthPage() {
                 onChange={setPasswordConfirmation}
                 autoComplete="new-password"
               />
-              {guestDisplayNameField}
-              <Button type="submit" isDisabled={submitting || guestSessionPending}>
-                {submitting ? "正在注册…" : "注册并发送验证码"}
+              <Button type="submit" isDisabled={submitting}>
+                {submitting ? "正在发送…" : "发送验证码"}
               </Button>
-              <Button
-                type="button"
-                className="text-button"
-                onPress={() => switchView("sign-in")}
-              >
-                返回密码登录
+              <Button type="button" className="text-button" onPress={changeEmail}>
+                更换邮箱
               </Button>
             </Form>
           ),
@@ -309,13 +353,11 @@ export default function AuthPage() {
       case "verify-registration":
         return {
           title: "验证邮箱",
-          description: guestChoir
-            ? `完成注册后，你将以成员身份加入“${guestChoir.name}”。`
-            : "输入邮件中的验证码完成注册。",
+          description: `输入发送至 ${normalizedEmail(email)} 的验证码。`,
           form: (
             <Form className="entry-form" onSubmit={verifyRegistration}>
-              <OtpField value={otp} onChange={setOtp} />
-              <Button type="submit" isDisabled={submitting || guestSessionPending}>
+              <OtpField value={otp} onChange={setOtp} autoFocus />
+              <Button type="submit" isDisabled={submitting}>
                 {submitting ? "正在验证…" : "完成注册"}
               </Button>
               <Button
@@ -326,11 +368,7 @@ export default function AuthPage() {
               >
                 重新发送验证码
               </Button>
-              <Button
-                type="button"
-                className="text-button"
-                onPress={() => switchView("sign-up")}
-              >
+              <Button type="button" className="text-button" onPress={changeEmail}>
                 更换邮箱
               </Button>
             </Form>
@@ -338,36 +376,35 @@ export default function AuthPage() {
         };
       case "request-reset":
         return {
-          title: "设置或重设密码",
-          description: guestChoir
-            ? `登录后，你将以成员身份加入“${guestChoir.name}”。`
-            : "已有用户首次设置密码或忘记密码时，需要验证邮箱。",
+          title: "忘记密码",
+          description: "我们会向这个邮箱发送密码重置验证码。",
           form: (
             <Form className="entry-form" onSubmit={requestPasswordReset}>
-              <EmailField value={email} onChange={setEmail} />
-              {guestDisplayNameField}
-              <Button type="submit" isDisabled={submitting || guestSessionPending}>
+              <EmailSummary email={email} />
+              <Button type="submit" isDisabled={submitting}>
                 {submitting ? "正在发送…" : "发送密码重置验证码"}
               </Button>
               <Button
                 type="button"
                 className="text-button"
-                onPress={() => switchView("sign-in")}
+                onPress={() => {
+                  setView("sign-in");
+                  setMessage(null);
+                }}
               >
-                返回密码登录
+                返回登录
               </Button>
             </Form>
           ),
         };
       case "reset-password":
         return {
-          title: "输入验证码和新密码",
-          description: guestChoir
-            ? `登录后，你将以成员身份加入“${guestChoir.name}”。`
-            : "验证成功后，旧密码和其他登录会话将立即失效。",
+          title: "重设密码",
+          description: "验证成功后，旧密码和其他登录会话将立即失效。",
           form: (
             <Form className="entry-form" onSubmit={resetPassword}>
-              <OtpField value={otp} onChange={setOtp} />
+              <EmailSummary email={email} />
+              <OtpField value={otp} onChange={setOtp} autoFocus />
               <PasswordField
                 label={`新密码（至少 ${PASSWORD_POLICY.minLength} 位）`}
                 value={password}
@@ -380,17 +417,57 @@ export default function AuthPage() {
                 onChange={setPasswordConfirmation}
                 autoComplete="new-password"
               />
-              <Button type="submit" isDisabled={submitting || guestSessionPending}>
+              <Button type="submit" isDisabled={submitting}>
                 {submitting ? "正在重设…" : "重设密码并登录"}
               </Button>
               <Button
                 type="button"
                 className="text-button"
-                onPress={() => switchView("request-reset")}
+                onPress={() => {
+                  setView("request-reset");
+                  setOtp("");
+                  setMessage(null);
+                }}
               >
                 重新获取验证码
               </Button>
             </Form>
+          ),
+        };
+      case "join-choir":
+        return {
+          title: "加入合唱团",
+          description: `认证已完成。请设置你在“${joinChoir?.name ?? "这个合唱团"}”中的显示名。`,
+          form: (
+            <Form className="entry-form" onSubmit={joinCurrentGuestChoir}>
+              <TextField
+                isRequired
+                value={displayName}
+                onChange={setDisplayName}
+                maxLength={40}
+              >
+                <Label>团内显示名</Label>
+                <Input
+                  autoComplete="nickname"
+                  placeholder="例如：小花"
+                  autoFocus
+                />
+                <FieldError />
+              </TextField>
+              <Button type="submit" isDisabled={submitting}>
+                {submitting ? "正在加入…" : "加入并进入"}
+              </Button>
+            </Form>
+          ),
+        };
+      case "join-result":
+        return {
+          title: "登录完成",
+          description: "你已经登录，但本次加团没有完成。",
+          form: (
+            <Link className="primary-link auth-primary-link" to="/">
+              返回首页
+            </Link>
           ),
         };
     }
@@ -408,7 +485,9 @@ export default function AuthPage() {
       <main className="auth-layout">
         <section className="auth-card" aria-labelledby="auth-title">
           <p className="dialog-eyebrow">Same Page</p>
-          <h1 id="auth-title">{viewPanel.title}</h1>
+          <h1 id="auth-title" ref={titleRef} tabIndex={-1}>
+            {viewPanel.title}
+          </h1>
           <p className="auth-description">{viewPanel.description}</p>
           {viewPanel.form}
 
@@ -426,6 +505,7 @@ export default function AuthPage() {
 function EmailField(props: {
   value: string;
   onChange: (value: string) => void;
+  autoFocus?: boolean;
 }) {
   return (
     <TextField
@@ -435,9 +515,21 @@ function EmailField(props: {
       onChange={props.onChange}
     >
       <Label>邮箱</Label>
-      <Input autoComplete="email" placeholder="name@example.com" />
+      <Input
+        autoComplete="email"
+        placeholder="name@example.com"
+        autoFocus={props.autoFocus}
+      />
       <FieldError />
     </TextField>
+  );
+}
+
+function EmailSummary({ email }: { email: string }) {
+  return (
+    <p className="auth-email" aria-label={`邮箱：${normalizedEmail(email)}`}>
+      {normalizedEmail(email)}
+    </p>
   );
 }
 
@@ -446,6 +538,7 @@ function PasswordField(props: {
   value: string;
   onChange: (value: string) => void;
   autoComplete: "current-password" | "new-password";
+  autoFocus?: boolean;
 }) {
   return (
     <TextField
@@ -457,7 +550,7 @@ function PasswordField(props: {
       maxLength={PASSWORD_POLICY.maxLength}
     >
       <Label>{props.label}</Label>
-      <Input autoComplete={props.autoComplete} />
+      <Input autoComplete={props.autoComplete} autoFocus={props.autoFocus} />
       <FieldError />
     </TextField>
   );
@@ -466,6 +559,7 @@ function PasswordField(props: {
 function OtpField(props: {
   value: string;
   onChange: (value: string) => void;
+  autoFocus?: boolean;
 }) {
   return (
     <TextField
@@ -481,6 +575,7 @@ function OtpField(props: {
         inputMode="numeric"
         pattern="[0-9]{6}"
         placeholder="000000"
+        autoFocus={props.autoFocus}
       />
       <FieldError />
     </TextField>
@@ -501,6 +596,10 @@ async function postJson(path: string, body: unknown) {
   } catch {
     return null;
   }
+}
+
+async function clearGuestSession() {
+  await fetch("/api/guest/session", { method: "DELETE" }).catch(() => null);
 }
 
 function validPasswordConfirmation(password: string, confirmation: string) {

@@ -21,6 +21,7 @@ describe("choir provisioning output", () => {
 
     expect(options.showJoinCode).toBe(false);
     expect(options.guestAdmission).toBe("invite");
+    expect(options.previewEntry).toBe(false);
     expect(message).not.toContain("ABCDEFGH");
     expect(message).toContain("was not displayed");
   });
@@ -50,6 +51,23 @@ describe("choir provisioning output", () => {
         options.guestAdmission,
       ),
     ).toBe("Choir created with open guest admission.\n");
+  });
+
+  it("marks one open-admission choir as the preview entry", () => {
+    const options = parseArguments([
+      ...baseArguments,
+      "--guest-admission",
+      "open",
+      "--preview-entry",
+    ]);
+
+    expect(options.previewEntry).toBe(true);
+  });
+
+  it("does not allow an invite choir to become the preview entry", () => {
+    expect(() =>
+      parseArguments([...baseArguments, "--preview-entry"]),
+    ).toThrow("--preview-entry requires --guest-admission open");
   });
 
   it("rejects an unknown guest admission mode", () => {

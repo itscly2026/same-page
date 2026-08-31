@@ -72,12 +72,20 @@ choirRoutes.post("/guest/session", async (context) => {
   });
 
   return context.json({
-    choir: {
-      id: choir.id,
-      name: choir.name,
-      guestAdmissionMode: choir.guestAdmissionMode,
-    },
+    choir: serializeChoir(choir),
+    entryKind: choir.isPreviewEntry ? "preview" : "admission",
   });
+});
+
+choirRoutes.get("/guest/preview-choir", async (context) => {
+  const choir = await createDatabase(context.env.DB).query.choirs.findFirst({
+    where: and(
+      eq(choirs.isPreviewEntry, true),
+      eq(choirs.guestAdmissionMode, "open"),
+    ),
+  });
+  if (!choir) return context.json({ error: "not_found" }, 404);
+  return context.json({ choir: serializeChoir(choir) });
 });
 
 choirRoutes.get("/guest/choirs/:choirId", async (context) => {
@@ -87,13 +95,21 @@ choirRoutes.get("/guest/choirs/:choirId", async (context) => {
       eq(choirs.id, context.req.param("choirId")),
       eq(choirs.guestAdmissionMode, "open"),
     ),
-    columns: { id: true, name: true, guestAdmissionMode: true },
+    columns: {
+      id: true,
+      name: true,
+      guestAdmissionMode: true,
+      isPreviewEntry: true,
+    },
   });
 
   if (!choir) {
     return context.json({ error: "not_found" }, 404);
   }
-  return context.json({ choir });
+  return context.json({
+    choir: serializeChoir(choir),
+    entryKind: choir.isPreviewEntry ? "preview" : "admission",
+  });
 });
 
 choirRoutes.get("/guest/session", async (context) => {
@@ -106,13 +122,26 @@ choirRoutes.get("/guest/session", async (context) => {
   const database = createDatabase(context.env.DB);
   const choir = await database.query.choirs.findFirst({
     where: eq(choirs.id, principal.choirId),
-    columns: { id: true, name: true, guestAdmissionMode: true },
+    columns: {
+      id: true,
+      name: true,
+      guestAdmissionMode: true,
+      isPreviewEntry: true,
+    },
   });
   if (!choir) {
     deleteCookie(context, GUEST_SESSION_COOKIE, { path: "/" });
     return context.json({ error: "unauthorized" }, 401);
   }
-  return context.json({ choir });
+  return context.json({
+    choir: serializeChoir(choir),
+    entryKind: choir.isPreviewEntry ? "preview" : "admission",
+  });
+});
+
+choirRoutes.delete("/guest/session", (context) => {
+  deleteCookie(context, GUEST_SESSION_COOKIE, { path: "/" });
+  return context.body(null, 204);
 });
 
 choirRoutes.get("/choirs", async (context) => {
@@ -195,6 +224,9 @@ choirRoutes.post("/choirs/join", async (context) => {
   if (existing) {
     return context.json({ membership: serializeMembership(existing, choir) });
   }
+  if (choir.isPreviewEntry) {
+    return context.json({ error: "preview_membership_not_available" }, 403);
+  }
 
   const membership = {
     id: crypto.randomUUID(),
@@ -210,6 +242,42 @@ choirRoutes.post("/choirs/join", async (context) => {
     { membership: serializeMembership(membership, choir) },
     201,
   );
+});
+
+choirRoutes.get("/choirs/current-guest/join-state", async (context) => {
+  const principal = await resolveContextPrincipal(context);
+  if (!principal || principal.kind !== "user") {
+    return context.json({ error: "unauthorized" }, 401);
+  }
+  const guest = await resolveContextGuestPrincipal(context);
+  if (!guest) {
+    return context.json({ error: "guest_session_required" }, 401);
+  }
+
+  const database = createDatabase(context.env.DB);
+  const choir = await database.query.choirs.findFirst({
+    where: eq(choirs.id, guest.choirId),
+  });
+  if (!choir) {
+    return context.json({ error: "guest_session_required" }, 401);
+  }
+  if (choir.isPreviewEntry) {
+    return context.json({ error: "preview_membership_not_available" }, 403);
+  }
+
+  const existing = await database.query.memberships.findFirst({
+    where: and(
+      eq(memberships.choirId, choir.id),
+      eq(memberships.userId, principal.userId),
+    ),
+  });
+  if (existing?.status === "removed") {
+    return context.json({ error: "membership_requires_admin" }, 403);
+  }
+  return context.json({
+    status: existing ? "joined" : "display-name-required",
+    choir: serializeChoir(choir),
+  });
 });
 
 choirRoutes.post("/choirs/join-current-guest", async (context) => {
@@ -250,6 +318,9 @@ choirRoutes.post("/choirs/join-current-guest", async (context) => {
   if (existing) {
     deleteCookie(context, GUEST_SESSION_COOKIE, { path: "/" });
     return context.json({ membership: serializeMembership(existing, choir) });
+  }
+  if (choir.isPreviewEntry) {
+    return context.json({ error: "preview_membership_not_available" }, 403);
   }
 
   const membership = {
@@ -355,5 +426,17 @@ function serializeMembership(
       name: choir.name,
       guestAdmissionMode: choir.guestAdmissionMode,
     },
+  };
+}
+
+function serializeChoir(choir: {
+  id: string;
+  name: string;
+  guestAdmissionMode: "invite" | "open";
+}) {
+  return {
+    id: choir.id,
+    name: choir.name,
+    guestAdmissionMode: choir.guestAdmissionMode,
   };
 }
