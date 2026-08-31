@@ -4,10 +4,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import {
   annotationRecordKey,
-  annotationScopeKey,
   localDatabase,
   type LocalAnnotationRecord,
 } from "../platform/local-database";
+import {
+  activateAuthenticatedLocalOwner,
+  authenticatedLocalOwnerKey,
+  createLocalWorkspace,
+} from "../platform/local-workspace";
 import {
   beginAnnotationEditSession,
   endAnnotationEditSession,
@@ -17,7 +21,12 @@ import { AnnotationOverlay, type AnnotationTool } from "./annotation-overlay";
 
 const choirId = "choir-1";
 const scoreId = "score-1";
-const scopeKey = annotationScopeKey(choirId, scoreId);
+const workspace = createLocalWorkspace(
+  authenticatedLocalOwnerKey("user-1"),
+  choirId,
+  scoreId,
+);
+const scopeKey = workspace.scopeKey;
 const activeLayerId = "11111111-1111-4111-8111-111111111111";
 const otherLayerId = "22222222-2222-4222-8222-222222222222";
 
@@ -49,6 +58,7 @@ const layers: AnnotationLayerSummary[] = [
 beforeEach(async () => {
   await localDatabase.open();
   await localDatabase.annotations.clear();
+  await activateAuthenticatedLocalOwner("user-1");
   beginAnnotationEditSession();
 });
 
@@ -183,8 +193,8 @@ describe("AnnotationOverlay", () => {
       expect(stored.payload.x).toBeCloseTo(0.6);
       expect(stored.payload.y).toBeCloseTo(0.7);
     });
-    expect(await undoAnnotationEdit(choirId, scoreId, activeLayerId)).toBe(true);
-    expect(await undoAnnotationEdit(choirId, scoreId, activeLayerId)).toBe(false);
+    expect(await undoAnnotationEdit(workspace, activeLayerId)).toBe(true);
+    expect(await undoAnnotationEdit(workspace, activeLayerId)).toBe(false);
   });
 
   it("restores text on pointer cancel and treats a tap as editing", async () => {
@@ -289,8 +299,8 @@ describe("AnnotationOverlay", () => {
       deleted: false,
       payload: { kind: "ink" },
     });
-    expect(await undoAnnotationEdit(choirId, scoreId, activeLayerId)).toBe(true);
-    expect(await undoAnnotationEdit(choirId, scoreId, activeLayerId)).toBe(false);
+    expect(await undoAnnotationEdit(workspace, activeLayerId)).toBe(true);
+    expect(await undoAnnotationEdit(workspace, activeLayerId)).toBe(false);
   });
 
   it("shows only the active layer while editing and subscriptions while reading", () => {
@@ -314,8 +324,7 @@ describe("AnnotationOverlay", () => {
 
     view.rerender(
       <AnnotationOverlay
-        choirId={choirId}
-        scoreId={scoreId}
+        workspace={workspace}
         pageNumber={1}
         layers={layers}
         annotations={[active, other]}
@@ -329,8 +338,7 @@ describe("AnnotationOverlay", () => {
 
     view.rerender(
       <AnnotationOverlay
-        choirId={choirId}
-        scoreId={scoreId}
+        workspace={workspace}
         pageNumber={1}
         layers={layers}
         annotations={[active, other]}
@@ -347,8 +355,7 @@ describe("AnnotationOverlay", () => {
 function renderOverlay(annotations: LocalAnnotationRecord[], tool: AnnotationTool) {
   return render(
     <AnnotationOverlay
-      choirId={choirId}
-      scoreId={scoreId}
+      workspace={workspace}
       pageNumber={1}
       layers={layers}
       annotations={annotations}
@@ -366,9 +373,7 @@ function annotation(
 ): LocalAnnotationRecord {
   return {
     key: annotationRecordKey(scopeKey, id),
-    scopeKey,
-    choirId,
-    scoreId,
+    ...workspace,
     id,
     layerId,
     version: 1,

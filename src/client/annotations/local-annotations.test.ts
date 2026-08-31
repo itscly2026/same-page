@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { AnnotationObjectRecord } from "../../shared/annotations";
+import { localDatabase } from "../platform/local-database";
 import {
-  annotationScopeKey,
-  localDatabase,
-} from "../platform/local-database";
+  activateAuthenticatedLocalOwner,
+  authenticatedLocalOwnerKey,
+  createLocalWorkspace,
+} from "../platform/local-workspace";
 import {
   applyPushResults,
   queueScoreDrafts,
@@ -22,16 +24,22 @@ beforeEach(async () => {
     localDatabase.annotationConflicts.clear(),
     localDatabase.annotationSyncCursors.clear(),
     localDatabase.syncLeases.clear(),
+    localDatabase.system.clear(),
   ]);
+  await activateAuthenticatedLocalOwner("user-1");
 });
+
+const workspace = createLocalWorkspace(
+  authenticatedLocalOwnerKey("user-1"),
+  "choir-1",
+  "score-1",
+);
 
 describe("local annotation durability", () => {
   it("persists drafts before queueing and keeps a rejected variant only on this device", async () => {
-    const choirId = "choir-1";
-    const scoreId = "score-1";
     const annotationId = crypto.randomUUID();
     const layerId = crypto.randomUUID();
-    await saveAnnotationDraft(choirId, scoreId, {
+    await saveAnnotationDraft(workspace, {
       id: annotationId,
       layerId,
       payload: {
@@ -48,11 +56,11 @@ describe("local annotation durability", () => {
     expect(
       await localDatabase.annotations
         .where("scopeKey")
-        .equals(annotationScopeKey(choirId, scoreId))
+        .equals(workspace.scopeKey)
         .first(),
     ).toMatchObject({ state: "draft", payload: { text: "本机修改" } });
 
-    expect(await queueScoreDrafts(choirId, scoreId)).toBe(1);
+    expect(await queueScoreDrafts(workspace)).toBe(1);
     const operation = (await localDatabase.annotationOutbox.toArray())[0]!;
     const canonical: AnnotationObjectRecord = {
       id: annotationId,
@@ -70,7 +78,7 @@ describe("local annotation durability", () => {
       updatedByDisplayName: "乙",
       updatedAt: 10,
     };
-    await applyPushResults([operation], [
+    await applyPushResults(workspace, [operation], [
       { opId: operation.opId, status: "conflict", object: canonical },
     ]);
 
@@ -84,7 +92,7 @@ describe("local annotation durability", () => {
       payload: { text: "本机修改" },
     });
 
-    await reapplyAnnotationConflict(operation.opId);
+    await reapplyAnnotationConflict(workspace, operation.opId);
     expect(await localDatabase.annotationConflicts.count()).toBe(0);
     expect(await localDatabase.annotations.toCollection().first()).toMatchObject({
       state: "draft",
@@ -98,28 +106,25 @@ describe("local annotation durability", () => {
       configurable: true,
       value: undefined,
     });
-    const scopeKey = "choir-1:score-1";
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const first = withScoreSyncLock(scopeKey, async () => {
+    const first = withScoreSyncLock(workspace, async () => {
       await held;
       return "first";
     });
     await Promise.resolve();
-    const second = await withScoreSyncLock(scopeKey, async () => "second");
+    const second = await withScoreSyncLock(workspace, async () => "second");
     expect(second).toBeUndefined();
     release();
     await expect(first).resolves.toBe("first");
   });
 
   it("keeps an operation-id reuse as a retryable sync error, not an edit conflict", async () => {
-    const choirId = "choir-1";
-    const scoreId = "score-1";
     const annotationId = crypto.randomUUID();
     const layerId = crypto.randomUUID();
-    await saveAnnotationDraft(choirId, scoreId, {
+    await saveAnnotationDraft(workspace, {
       id: annotationId,
       layerId,
       payload: {
@@ -130,10 +135,10 @@ describe("local annotation durability", () => {
         text: "本机修改",
       },
     });
-    await queueScoreDrafts(choirId, scoreId);
+    await queueScoreDrafts(workspace);
     const operation = (await localDatabase.annotationOutbox.toArray())[0]!;
 
-    await applyPushResults([operation], [
+    await applyPushResults(workspace, [operation], [
       { opId: operation.opId, status: "op_id_reused" },
     ]);
 
@@ -145,15 +150,13 @@ describe("local annotation durability", () => {
       payload: { text: "本机修改" },
     });
 
-    expect(await retryScoreSyncErrors(choirId, scoreId)).toBe(1);
-    expect(await queueScoreDrafts(choirId, scoreId)).toBe(1);
+    expect(await retryScoreSyncErrors(workspace)).toBe(1);
+    expect(await queueScoreDrafts(workspace)).toBe(1);
     const retried = (await localDatabase.annotationOutbox.toArray())[0]!;
     expect(retried.opId).not.toBe(operation.opId);
   });
 
   it("serializes repeated local edits to one object and advances the later base version", async () => {
-    const choirId = "choir-1";
-    const scoreId = "score-1";
     const annotationId = crypto.randomUUID();
     const layerId = crypto.randomUUID();
     const payload = (text: string) => ({
@@ -163,26 +166,26 @@ describe("local annotation durability", () => {
       y: 0.1,
       text,
     });
-    await saveAnnotationDraft(choirId, scoreId, {
+    await saveAnnotationDraft(workspace, {
       id: annotationId,
       layerId,
       payload: payload("第一次"),
     });
-    await queueScoreDrafts(choirId, scoreId);
+    await queueScoreDrafts(workspace);
     const first = (await localDatabase.annotationOutbox.toArray())[0]!;
     await localDatabase.annotationOutbox.update(first.opId, { attemptedAt: 1 });
 
-    await saveAnnotationDraft(choirId, scoreId, {
+    await saveAnnotationDraft(workspace, {
       id: annotationId,
       layerId,
       payload: payload("第二次"),
     });
-    await queueScoreDrafts(choirId, scoreId);
+    await queueScoreDrafts(workspace);
     const queued = await localDatabase.annotationOutbox.orderBy("createdAt").toArray();
     const second = queued.find((operation) => operation.opId !== first.opId)!;
     expect(second.baseVersion).toBe(0);
 
-    await applyPushResults([first], [
+    await applyPushResults(workspace, [first], [
       {
         opId: first.opId,
         status: "accepted",

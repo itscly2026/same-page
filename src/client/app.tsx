@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 
 import { ReloadPrompt } from "./components/reload-prompt";
+import { LocalIdentityObserver } from "./platform/local-identity-observer";
 import { HomePage } from "./routes/home-page";
 
 const ReaderPage = lazy(() => import("./routes/reader-page"));
@@ -27,6 +28,7 @@ export function AppRoutes() {
 export function App() {
   return (
     <BrowserRouter>
+      <LocalIdentityObserver />
       <AppRoutes />
       <ReloadPrompt />
     </BrowserRouter>

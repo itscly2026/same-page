@@ -5,12 +5,16 @@ import type {
 } from "../../shared/annotations";
 import {
   annotationRecordKey,
-  annotationScopeKey,
   localDatabase,
   type AnnotationConflictRecord,
   type AnnotationOutboxRecord,
   type LocalAnnotationRecord,
 } from "../platform/local-database";
+import {
+  assertLocalWorkspaceActive,
+  localWorkspaceRecordKey,
+  type LocalWorkspace,
+} from "../platform/local-workspace";
 
 export interface DraftInput {
   id: string;
@@ -20,45 +24,48 @@ export interface DraftInput {
 }
 
 export async function cacheAnnotationLayers(
-  choirId: string,
-  scoreId: string,
+  workspace: LocalWorkspace,
   layers: AnnotationLayerSummary[],
 ) {
-  const scopeKey = annotationScopeKey(choirId, scoreId);
+  await assertLocalWorkspaceActive(workspace);
   await localDatabase.transaction("rw", localDatabase.annotationLayers, async () => {
-    await localDatabase.annotationLayers.where("scopeKey").equals(scopeKey).delete();
+    await localDatabase.annotationLayers
+      .where("scopeKey")
+      .equals(workspace.scopeKey)
+      .delete();
     await localDatabase.annotationLayers.bulkPut(
       layers.map((layer) => ({
         ...layer,
-        key: `${scopeKey}:${layer.id}`,
-        scopeKey,
+        key: localWorkspaceRecordKey(workspace, layer.id),
+        ...workspace,
       })),
     );
   });
 }
 
 export async function updateCachedLayer(
-  scopeKey: string,
+  workspace: LocalWorkspace,
   layerId: string,
   changes: Partial<Pick<AnnotationLayerSummary, "visible" | "colorOverride">>,
 ) {
-  await localDatabase.annotationLayers.update(`${scopeKey}:${layerId}`, changes);
+  await assertLocalWorkspaceActive(workspace);
+  await localDatabase.annotationLayers.update(
+    localWorkspaceRecordKey(workspace, layerId),
+    changes,
+  );
 }
 
 export async function saveAnnotationDraft(
-  choirId: string,
-  scoreId: string,
+  workspace: LocalWorkspace,
   input: DraftInput,
 ) {
-  const scopeKey = annotationScopeKey(choirId, scoreId);
-  const key = annotationRecordKey(scopeKey, input.id);
+  await assertLocalWorkspaceActive(workspace);
+  const key = annotationRecordKey(workspace.scopeKey, input.id);
   const existing = await localDatabase.annotations.get(key);
   const now = Date.now();
   await localDatabase.annotations.put({
     key,
-    scopeKey,
-    choirId,
-    scoreId,
+    ...workspace,
     id: input.id,
     layerId: input.layerId,
     version: existing?.version ?? 0,
@@ -72,8 +79,12 @@ export async function saveAnnotationDraft(
   });
 }
 
-export async function removeUnsyncedAnnotation(scopeKey: string, annotationId: string) {
-  const key = annotationRecordKey(scopeKey, annotationId);
+export async function removeUnsyncedAnnotation(
+  workspace: LocalWorkspace,
+  annotationId: string,
+) {
+  await assertLocalWorkspaceActive(workspace);
+  const key = annotationRecordKey(workspace.scopeKey, annotationId);
   const existing = await localDatabase.annotations.get(key);
   if (existing?.version === 0 && existing.state === "draft") {
     await localDatabase.annotations.delete(key);
@@ -82,8 +93,8 @@ export async function removeUnsyncedAnnotation(scopeKey: string, annotationId: s
   return false;
 }
 
-export async function queueScoreDrafts(choirId: string, scoreId: string) {
-  const scopeKey = annotationScopeKey(choirId, scoreId);
+export async function queueScoreDrafts(workspace: LocalWorkspace) {
+  await assertLocalWorkspaceActive(workspace);
   return localDatabase.transaction(
     "rw",
     localDatabase.annotations,
@@ -91,20 +102,18 @@ export async function queueScoreDrafts(choirId: string, scoreId: string) {
     async () => {
       const drafts = await localDatabase.annotations
         .where("[scopeKey+state]")
-        .equals([scopeKey, "draft"])
+        .equals([workspace.scopeKey, "draft"])
         .toArray();
       for (const draft of drafts) {
         const unattempted = await localDatabase.annotationOutbox
           .where("[scopeKey+annotationId]")
-          .equals([scopeKey, draft.id])
+          .equals([workspace.scopeKey, draft.id])
           .filter((operation) => operation.attemptedAt === null)
           .first();
         const opId = unattempted?.opId ?? crypto.randomUUID();
         const operation: AnnotationOutboxRecord = {
           opId,
-          scopeKey,
-          choirId,
-          scoreId,
+          ...workspace,
           annotationId: draft.id,
           layerId: draft.layerId,
           baseVersion: draft.baseVersion,
@@ -125,29 +134,29 @@ export async function queueScoreDrafts(choirId: string, scoreId: string) {
 }
 
 export async function applyPulledAnnotations(
-  choirId: string,
-  scoreId: string,
+  workspace: LocalWorkspace,
   cursor: number,
   objects: AnnotationObjectRecord[],
 ) {
-  const scopeKey = annotationScopeKey(choirId, scoreId);
+  await assertLocalWorkspaceActive(workspace);
   await localDatabase.transaction(
     "rw",
     localDatabase.annotations,
     localDatabase.annotationSyncCursors,
     async () => {
       for (const object of objects) {
-        const key = annotationRecordKey(scopeKey, object.id);
+        const key = annotationRecordKey(workspace.scopeKey, object.id);
         const existing = await localDatabase.annotations.get(key);
         if (existing && existing.state !== "synced") continue;
-        await localDatabase.annotations.put(fromCanonical(scopeKey, choirId, scoreId, object));
+        await localDatabase.annotations.put(fromCanonical(workspace, object));
       }
-      await localDatabase.annotationSyncCursors.put({ scopeKey, cursor });
+      await localDatabase.annotationSyncCursors.put({ ...workspace, cursor });
     },
   );
 }
 
 export async function applyPushResults(
+  workspace: LocalWorkspace,
   operations: AnnotationOutboxRecord[],
   results: Array<{
     opId: string;
@@ -155,6 +164,7 @@ export async function applyPushResults(
     object?: AnnotationObjectRecord | null;
   }>,
 ) {
+  await assertLocalWorkspaceActive(workspace);
   const operationsById = new Map(operations.map((operation) => [operation.opId, operation]));
   await localDatabase.transaction(
     "rw",
@@ -170,12 +180,7 @@ export async function applyPushResults(
         if (result.status === "accepted" && result.object) {
           if (local?.lastOpId === operation.opId) {
             await localDatabase.annotations.put(
-              fromCanonical(
-                operation.scopeKey,
-                operation.choirId,
-                operation.scoreId,
-                result.object,
-              ),
+              fromCanonical(workspace, result.object),
             );
           } else if (local) {
             await localDatabase.annotations.update(key, {
@@ -205,7 +210,7 @@ export async function applyPushResults(
           const latest = relatedOperations.at(-1) ?? operation;
           const conflict: AnnotationConflictRecord = {
             opId: operation.opId,
-            scopeKey: operation.scopeKey,
+            ...workspace,
             annotationId: operation.annotationId,
             layerId: operation.layerId,
             localPayload: latest.payload,
@@ -245,9 +250,13 @@ export async function applyPushResults(
   );
 }
 
-export async function discardAnnotationConflict(opId: string) {
+export async function discardAnnotationConflict(
+  workspace: LocalWorkspace,
+  opId: string,
+) {
+  await assertLocalWorkspaceActive(workspace);
   const conflict = await localDatabase.annotationConflicts.get(opId);
-  if (!conflict) return;
+  if (!conflict || conflict.ownerKey !== workspace.ownerKey) return;
   await localDatabase.transaction(
     "rw",
     localDatabase.annotations,
@@ -255,14 +264,8 @@ export async function discardAnnotationConflict(opId: string) {
     async () => {
       const key = annotationRecordKey(conflict.scopeKey, conflict.annotationId);
       if (conflict.canonical) {
-        const [choirId, ...scoreParts] = conflict.scopeKey.split(":");
         await localDatabase.annotations.put(
-          fromCanonical(
-            conflict.scopeKey,
-            choirId,
-            scoreParts.join(":"),
-            conflict.canonical,
-          ),
+          fromCanonical(workspace, conflict.canonical),
         );
       } else {
         await localDatabase.annotations.delete(key);
@@ -272,9 +275,14 @@ export async function discardAnnotationConflict(opId: string) {
   );
 }
 
-export async function reapplyAnnotationConflict(opId: string, keepBoth = false) {
+export async function reapplyAnnotationConflict(
+  workspace: LocalWorkspace,
+  opId: string,
+  keepBoth = false,
+) {
+  await assertLocalWorkspaceActive(workspace);
   const conflict = await localDatabase.annotationConflicts.get(opId);
-  if (!conflict) return;
+  if (!conflict || conflict.ownerKey !== workspace.ownerKey) return;
   const current = await localDatabase.annotations.get(
     annotationRecordKey(conflict.scopeKey, conflict.annotationId),
   );
@@ -289,9 +297,7 @@ export async function reapplyAnnotationConflict(opId: string, keepBoth = false) 
       if (keepBoth && conflict.canonical) {
         await localDatabase.annotations.put(
           fromCanonical(
-            conflict.scopeKey,
-            current.choirId,
-            current.scoreId,
+            workspace,
             conflict.canonical,
           ),
         );
@@ -314,11 +320,11 @@ export async function reapplyAnnotationConflict(opId: string, keepBoth = false) 
   );
 }
 
-export async function retryScoreSyncErrors(choirId: string, scoreId: string) {
-  const scopeKey = annotationScopeKey(choirId, scoreId);
+export async function retryScoreSyncErrors(workspace: LocalWorkspace) {
+  await assertLocalWorkspaceActive(workspace);
   const errors = await localDatabase.annotations
     .where("[scopeKey+state]")
-    .equals([scopeKey, "sync-error"])
+    .equals([workspace.scopeKey, "sync-error"])
     .toArray();
   await localDatabase.annotations.bulkUpdate(
     errors.map((annotation) => ({
@@ -333,25 +339,21 @@ export async function retryScoreSyncErrors(choirId: string, scoreId: string) {
   return errors.length;
 }
 
-export function visibleLocalAnnotations(scopeKey: string) {
+export function visibleLocalAnnotations(workspace: LocalWorkspace) {
   return localDatabase.annotations
     .where("scopeKey")
-    .equals(scopeKey)
+    .equals(workspace.scopeKey)
     .filter((annotation) => !annotation.deleted)
     .toArray();
 }
 
 function fromCanonical(
-  scopeKey: string,
-  choirId: string,
-  scoreId: string,
+  workspace: LocalWorkspace,
   object: AnnotationObjectRecord,
 ): LocalAnnotationRecord {
   return {
-    key: annotationRecordKey(scopeKey, object.id),
-    scopeKey,
-    choirId,
-    scoreId,
+    key: annotationRecordKey(workspace.scopeKey, object.id),
+    ...workspace,
     id: object.id,
     layerId: object.layerId,
     version: object.version,

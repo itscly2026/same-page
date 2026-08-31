@@ -5,14 +5,14 @@ import { Button } from "react-aria-components";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import { AnnotationOverlay, type AnnotationTool } from "../annotations/annotation-overlay";
 import type { LocalAnnotationRecord } from "../platform/local-database";
+import type { LocalWorkspace } from "../platform/local-workspace";
 import type { PDFDocumentProxy } from "./pdf-document";
 import { PdfPageCanvas } from "./pdf-page";
 import { calculateFittedPageWidth } from "./reader-dimensions";
 import { useReaderGestures } from "./use-reader-gestures";
 
 export interface AnnotationPageProps {
-  choirId: string;
-  scoreId: string;
+  workspace: LocalWorkspace;
   layers: AnnotationLayerSummary[];
   annotations: LocalAnnotationRecord[];
   editing: boolean;

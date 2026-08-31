@@ -7,6 +7,7 @@ import {
   saveAnnotationDraft,
   type DraftInput,
 } from "./local-annotations";
+import { type LocalWorkspace } from "../platform/local-workspace";
 
 interface HistoryEntry {
   before: LocalAnnotationRecord | null;
@@ -27,14 +28,14 @@ export function endAnnotationEditSession() {
 }
 
 export async function saveDraftWithHistory(
-  choirId: string,
-  scoreId: string,
+  workspace: LocalWorkspace,
   input: DraftInput,
 ) {
-  const scopeKey = `${choirId}:${scoreId}`;
   const before =
-    (await localDatabase.annotations.get(annotationRecordKey(scopeKey, input.id))) ?? null;
-  await saveAnnotationDraft(choirId, scoreId, input);
+    (await localDatabase.annotations.get(
+      annotationRecordKey(workspace.scopeKey, input.id),
+    )) ?? null;
+  await saveAnnotationDraft(workspace, input);
   const stack = undoByLayer.get(input.layerId) ?? [];
   stack.push({ before, after: input });
   undoByLayer.set(input.layerId, stack);
@@ -42,24 +43,22 @@ export async function saveDraftWithHistory(
 }
 
 export async function updateLatestHistoryDraft(
-  choirId: string,
-  scoreId: string,
+  workspace: LocalWorkspace,
   input: DraftInput,
 ) {
-  await saveAnnotationDraft(choirId, scoreId, input);
+  await saveAnnotationDraft(workspace, input);
   const stack = undoByLayer.get(input.layerId);
   if (stack?.length) stack[stack.length - 1].after = input;
 }
 
 export async function undoAnnotationEdit(
-  choirId: string,
-  scoreId: string,
+  workspace: LocalWorkspace,
   layerId: string,
 ) {
   const undo = undoByLayer.get(layerId) ?? [];
   const entry = undo.pop();
   if (!entry) return false;
-  await restore(choirId, scoreId, entry.before, entry.after.id);
+  await restore(workspace, entry.before, entry.after.id);
   const redo = redoByLayer.get(layerId) ?? [];
   redo.push(entry);
   redoByLayer.set(layerId, redo);
@@ -67,14 +66,13 @@ export async function undoAnnotationEdit(
 }
 
 export async function redoAnnotationEdit(
-  choirId: string,
-  scoreId: string,
+  workspace: LocalWorkspace,
   layerId: string,
 ) {
   const redo = redoByLayer.get(layerId) ?? [];
   const entry = redo.pop();
   if (!entry) return false;
-  await saveAnnotationDraft(choirId, scoreId, entry.after);
+  await saveAnnotationDraft(workspace, entry.after);
   const undo = undoByLayer.get(layerId) ?? [];
   undo.push(entry);
   undoByLayer.set(layerId, undo);
@@ -82,12 +80,11 @@ export async function redoAnnotationEdit(
 }
 
 async function restore(
-  choirId: string,
-  scoreId: string,
+  workspace: LocalWorkspace,
   record: LocalAnnotationRecord | null,
   annotationId: string,
 ) {
-  const key = annotationRecordKey(`${choirId}:${scoreId}`, annotationId);
+  const key = annotationRecordKey(workspace.scopeKey, annotationId);
   if (!record) {
     await localDatabase.annotations.delete(key);
   } else {

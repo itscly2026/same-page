@@ -5,6 +5,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "./app";
 import { authClient } from "./auth/auth-client";
 import { localDatabase } from "./platform/local-database";
+import {
+  activateAuthenticatedLocalOwner,
+  authenticatedLocalOwnerKey,
+  createLocalWorkspace,
+  localWorkspaceRecordKey,
+} from "./platform/local-workspace";
+
+const localWorkspace = createLocalWorkspace(
+  authenticatedLocalOwnerKey("user-1"),
+  "choir-1",
+  "score-1",
+);
 
 vi.mock("./auth/auth-client", () => ({
   authClient: {
@@ -16,6 +28,7 @@ vi.mock("./auth/auth-client", () => ({
 describe("AppRoutes", () => {
   beforeEach(async () => {
     await localDatabase.open();
+    await activateAuthenticatedLocalOwner("user-1");
     vi.mocked(authClient.useSession).mockReturnValue({
       data: null,
       isPending: false,
@@ -712,9 +725,7 @@ describe("AppRoutes", () => {
     } as ReturnType<typeof authClient.useSession>);
     await localDatabase.annotationOutbox.put({
       opId: "pending-op",
-      scopeKey: "choir-1:score-1",
-      choirId: "choir-1",
-      scoreId: "score-1",
+      ...localWorkspace,
       annotationId: "annotation-1",
       layerId: "layer-1",
       baseVersion: 0,
@@ -754,8 +765,8 @@ describe("AppRoutes", () => {
       error: { status: 503, statusText: "Service Unavailable" },
     } as Awaited<ReturnType<typeof authClient.signOut>>);
     await localDatabase.annotationLayers.put({
-      key: "choir-1:score-1:personal-layer",
-      scopeKey: "choir-1:score-1",
+      key: localWorkspaceRecordKey(localWorkspace, "personal-layer"),
+      ...localWorkspace,
       id: "personal-layer",
       kind: "personal",
       defaultSlot: null,
