@@ -1547,6 +1547,7 @@ h1 {
   position: fixed;
   z-index: 40;
   display: flex;
+  justify-content: flex-end;
   inset: 0;
   background: rgb(0 0 0 / 28%);
 }
@@ -1559,7 +1560,7 @@ h1 {
   padding-top: env(safe-area-inset-top);
   color: #111;
   background: rgb(255 255 255 / 98%);
-  box-shadow: 1rem 0 3rem rgb(0 0 0 / 24%);
+  box-shadow: -1rem 0 3rem rgb(0 0 0 / 24%);
   backdrop-filter: blur(22px);
 }
 
@@ -1786,6 +1787,7 @@ h1 {
 .annotation-overlay {
   position: absolute;
   inset: 0;
+  container-type: inline-size;
   pointer-events: none;
 }
 
@@ -1818,14 +1820,13 @@ h1 {
   position: absolute;
   max-width: 18rem;
   border: 0;
-  padding: 0.12rem 0.25rem;
+  padding: 0.2rem;
   color: #a12652;
-  background: rgb(255 255 255 / 78%);
-  font-size: clamp(0.7rem, 1.5vw, 1rem);
+  background: transparent;
   font-weight: 700;
   line-height: 1.25;
-  text-align: left;
-  transform: translate(-0.15rem, -50%);
+  text-align: center;
+  transform: translate(-50%, -50%);
   white-space: pre-wrap;
   touch-action: none;
 }
@@ -1839,42 +1840,202 @@ h1 {
   cursor: move;
 }
 
-.annotation-text-editor {
-  position: absolute;
-  z-index: 2;
-  display: flex;
-  pointer-events: auto;
-  transform: translateY(-50%);
+.annotation-text-hint {
+  position: fixed;
+  z-index: 24;
+  bottom: max(5.4rem, calc(env(safe-area-inset-bottom) + 4.7rem));
+  left: 50%;
+  margin: 0;
+  border-radius: 999px;
+  padding: 0.5rem 0.85rem;
+  color: #fff;
+  background: rgb(31 28 30 / 76%);
+  box-shadow: 0 0.65rem 1.4rem rgb(0 0 0 / 22%);
+  font-size: 0.82rem;
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 
-.annotation-text-editor:not([data-active]) {
-  top: 0;
-  left: 0;
-  width: 1px;
-  height: 1px;
+.annotation-text-composer:not([data-active]) {
+  position: fixed;
+  width: 1px !important;
+  height: 1px !important;
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
-  transform: none;
 }
 
-.annotation-text-editor input {
-  min-width: 10rem;
-  border: 2px solid #7c2d52;
-  border-radius: 0.4rem;
-  padding: 0.35rem 0.45rem;
+.annotation-text-composer[data-active] {
+  position: fixed;
+  z-index: 60;
+  display: block;
+  margin: 0;
+  color: #111;
+  background: rgb(34 34 34 / 28%);
+  backdrop-filter: blur(1px);
+  pointer-events: auto;
 }
 
-.annotation-text-editor[data-active] button + input,
-.annotation-text-editor[data-active] input:has(+ button) {
-  border-radius: 0.4rem 0 0 0.4rem;
+.annotation-text-composer header {
+  position: absolute;
+  z-index: 2;
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: max(0.75rem, env(safe-area-inset-right));
+  left: max(0.75rem, env(safe-area-inset-left));
+  display: flex;
+  justify-content: space-between;
 }
 
-.annotation-text-editor button {
+.annotation-text-composer header button {
+  min-width: 4rem;
+  min-height: 2.75rem;
   border: 0;
-  border-radius: 0 0.4rem 0.4rem 0;
+  border-radius: 999px;
+  padding: 0.55rem 0.9rem;
+  color: #111;
+  background: rgb(255 255 255 / 92%);
+  box-shadow: 0 0.45rem 1.2rem rgb(0 0 0 / 18%);
+  font: inherit;
+  font-weight: 700;
+}
+
+.annotation-text-composer textarea {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(70%, 42rem);
+  max-height: 45%;
+  overflow: auto;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: transparent;
+  font-family: inherit;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  text-shadow: 0 1px 2px rgb(255 255 255 / 72%);
+  caret-color: currentColor;
+  resize: none;
+  transform: translate(-50%, -50%);
+}
+
+.annotation-font-scale {
+  position: absolute;
+  top: 50%;
+  right: max(1rem, env(safe-area-inset-right));
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  width: 3rem;
   color: #fff;
-  background: #7c2d52;
+  font-weight: 800;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 45%);
+  transform: translateY(-50%);
+}
+
+.annotation-font-scale__value {
+  min-width: 2.5rem;
+  min-height: 1.6rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.45rem;
+  color: #292729;
+  background: rgb(255 255 255 / 82%);
+  box-shadow: 0 0.3rem 0.8rem rgb(0 0 0 / 16%);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  text-align: center;
+  opacity: 0;
+}
+
+.annotation-font-scale__value[data-visible] {
+  opacity: 1;
+}
+
+.annotation-font-scale__control {
+  position: relative;
+  display: block;
+  width: 2rem;
+  height: min(13rem, 40dvh);
+}
+
+.annotation-font-scale__track {
+  position: absolute;
+  inset: 0 0.35rem;
+  background: rgb(238 238 238 / 72%);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 22%));
+}
+
+.annotation-font-scale__thumb {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 2px solid rgb(255 255 255 / 92%);
+  border-radius: 50%;
+  background: #565255;
+  box-shadow: 0 0.2rem 0.55rem rgb(0 0 0 / 28%);
+  pointer-events: none;
+  transform: translate(-50%, 50%);
+}
+
+.annotation-font-scale input {
+  position: absolute;
+  z-index: 2;
+  inset: -0.75rem;
+  width: 3.5rem;
+  height: calc(100% + 1.5rem);
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: ns-resize;
+  opacity: 0;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  touch-action: none;
+}
+
+.annotation-delete-zone {
+  position: fixed;
+  z-index: 55;
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  left: 50%;
+  display: grid;
+  width: 5rem;
+  height: 5rem;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 72%);
+  border-radius: 50%;
+  color: #454145;
+  background: rgb(218 216 217 / 72%);
+  box-shadow: 0 0.6rem 1.4rem rgb(0 0 0 / 18%);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+  visibility: hidden;
+  transition: opacity 120ms ease, transform 120ms ease, background 120ms ease;
+}
+
+.annotation-delete-zone[data-visible] {
+  opacity: 1;
+  visibility: visible;
+}
+
+.annotation-delete-zone svg {
+  width: 1.65rem;
+  height: 1.65rem;
+  stroke-width: 1.8;
+}
+
+.annotation-delete-zone[data-active] {
+  color: #272527;
+  background: rgb(174 171 173 / 82%);
+  box-shadow: 0 0.75rem 1.7rem rgb(0 0 0 / 24%);
+  transform: translateX(-50%) scale(1.12);
 }
 
 .pdf-page-canvas canvas {

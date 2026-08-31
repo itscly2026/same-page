@@ -195,7 +195,7 @@ describe("PDF file library and delivery", () => {
       ).bind(
         choirId,
         original.id,
-        JSON.stringify({ kind: "text", pageNumber: 1, x: 0.1, y: 0.1, text: "保留" }),
+        JSON.stringify({ kind: "text", pageNumber: 1, x: 0.1, y: 0.1, fontScale: 0.024, text: "保留" }),
       ),
     ]);
     const historicalPdf = createMinimalPdf(595, 842);

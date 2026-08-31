@@ -76,6 +76,7 @@ try {
       content:
         "*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important;caret-color:transparent!important}",
     });
+    if (scenario.waitsForPdf) await waitForRenderedPdf(page);
     await runActions(page, scenario.actions);
     await waitForReady(page, scenario.ready);
     await waitForPageToSettle(page);
@@ -170,6 +171,14 @@ async function runActions(page, actions) {
       await page.getByRole(action.role, { name: action.name, exact: true }).click();
       continue;
     }
+    if (action.type === "fillRole") {
+      await page.getByRole(action.role, { name: action.name, exact: true }).fill(action.value);
+      continue;
+    }
+    if (action.type === "assertHidden") {
+      await page.locator(action.selector).waitFor({ state: "hidden" });
+      continue;
+    }
     if (action.type === "clickCenter") {
       const locator = page.locator(action.selector);
       const box = await locator.boundingBox();
@@ -179,6 +188,41 @@ async function runActions(page, actions) {
     }
     if (action.type === "fillLabel") {
       await page.getByLabel(action.label, { exact: true }).fill(action.value);
+      continue;
+    }
+    if (action.type === "dispatchPointer") {
+      await page.locator(action.selector).evaluate((element, point) => {
+        const bounds = element.getBoundingClientRect();
+        element.dispatchEvent(new PointerEvent("pointerdown", {
+          bubbles: true,
+          pointerId: 1,
+          pointerType: "touch",
+          clientX: bounds.left + bounds.width * point.x,
+          clientY: bounds.top + bounds.height * point.y,
+        }));
+      }, { x: action.x, y: action.y });
+      continue;
+    }
+    if (action.type === "dispatchDragRoleToBottom") {
+      const locator = page.getByRole(action.role, { name: action.name, exact: true });
+      await locator.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        const common = {
+          bubbles: true,
+          pointerId: 1,
+          pointerType: "touch",
+          clientX: bounds.left + bounds.width / 2,
+        };
+        element.dispatchEvent(new PointerEvent("pointerdown", {
+          ...common,
+          clientY: bounds.top + bounds.height / 2,
+        }));
+        element.dispatchEvent(new PointerEvent("pointermove", {
+          ...common,
+          clientX: window.innerWidth / 2,
+          clientY: window.innerHeight - 32,
+        }));
+      });
       continue;
     }
     throw new Error(`Unknown visual report action: ${action.type}`);

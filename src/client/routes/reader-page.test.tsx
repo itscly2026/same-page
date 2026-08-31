@@ -209,6 +209,7 @@ describe("ReaderPage", () => {
 
     toggleChrome();
     expect(screen.getByRole("link", { name: "返回云盘" }).querySelector("svg")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "图层" }).querySelector("svg")).not.toBeNull();
     expect(screen.getByRole("button", { name: "更多" }).querySelector("svg")).not.toBeNull();
     const pageStrip = screen.getByLabelText("页面缩略图");
     expect(pageStrip).toHaveClass("page-preview-strip");
@@ -223,7 +224,6 @@ describe("ReaderPage", () => {
     expect(
       within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 3 页"),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "更多" }));
     fireEvent.click(screen.getByRole("button", { name: "图层" }));
     expect(screen.getByLabelText("图层显示与颜色")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭页面与图层" }));
@@ -534,9 +534,10 @@ describe("ReaderPage", () => {
     expect(
       screen.getByRole("button", { name: "整条橡皮" }).querySelector("svg"),
     ).not.toBeNull();
-    expect(
-      screen.getByRole("button", { name: "G，共同关注共享层" }),
-    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "U，我的批注" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(
       Array.from(
         screen
@@ -548,8 +549,10 @@ describe("ReaderPage", () => {
     expect(
       screen.getByRole("button", { name: "S，女高音共享层，只读" }),
     ).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "U，我的批注" }));
-    expect(screen.getByRole("button", { name: "U，我的批注" })).toHaveAttribute(
+    fireEvent.click(screen.getByRole("button", { name: "G，共同关注共享层" }));
+    expect(
+      screen.getByRole("button", { name: "G，共同关注共享层" }),
+    ).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -569,6 +572,13 @@ describe("ReaderPage", () => {
     });
     fireEvent.pointerDown(editingOverlay, { clientX: 20, clientY: 30 });
     expect(screen.getByLabelText("批注文本")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "完成" })).toHaveLength(1);
+    fireEvent.click(
+      within(screen.getByRole("form", { name: "文字输入" })).getByRole(
+        "button",
+        { name: "取消" },
+      ),
+    );
 
     virtualTestState.itemSize = 200;
     fireEvent.click(screen.getByRole("button", { name: "完成" }));
@@ -588,6 +598,11 @@ describe("ReaderPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.getByText("200%")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    expect(
+      screen.getByRole("button", { name: "G，共同关注共享层" }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("marks an offline copy only after app shell, layer and annotation snapshot verification", async () => {
@@ -800,7 +815,7 @@ describe("ReaderPage", () => {
         kind: "text",
         pageNumber: 1,
         x: 0.1,
-        y: 0.1,
+        y: 0.1, fontScale: 0.024,
         text: "待恢复后同步",
       },
       attemptedAt: null,
@@ -873,7 +888,7 @@ describe("ReaderPage", () => {
         kind: "text",
         pageNumber: 1,
         x: 0.1,
-        y: 0.1,
+        y: 0.1, fontScale: 0.024,
         text: "待恢复后同步",
       },
       attemptedAt: null,

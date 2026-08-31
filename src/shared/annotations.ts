@@ -19,6 +19,15 @@ export const defaultSharedLayers: ReadonlyArray<{
 
 export const normalizedCoordinateSchema = z.number().finite().min(0).max(1);
 
+export const DEFAULT_TEXT_FONT_SCALE = 0.024;
+export const MIN_TEXT_FONT_SCALE = 0.012;
+export const MAX_TEXT_FONT_SCALE = 0.08;
+export const textFontScaleSchema = z
+  .number()
+  .finite()
+  .min(MIN_TEXT_FONT_SCALE)
+  .max(MAX_TEXT_FONT_SCALE);
+
 const annotationBaseSchema = z.object({
   pageNumber: z.number().int().positive().max(10_000),
 });
@@ -27,6 +36,7 @@ export const textAnnotationPayloadSchema = annotationBaseSchema.extend({
   kind: z.literal("text"),
   x: normalizedCoordinateSchema,
   y: normalizedCoordinateSchema,
+  fontScale: textFontScaleSchema.default(DEFAULT_TEXT_FONT_SCALE),
   text: z.string().trim().min(1).max(1_000),
 });
 

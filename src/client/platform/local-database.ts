@@ -5,6 +5,7 @@ import type {
   AnnotationObjectRecord,
   AnnotationPayload,
 } from "../../shared/annotations";
+import { DEFAULT_TEXT_FONT_SCALE } from "../../shared/annotations";
 import type { LocalWorkspaceOwnerKey } from "./local-workspace";
 
 export const LAST_AUTHENTICATED_OWNER_KEY =
@@ -135,7 +136,7 @@ export interface LocalAnnotationLayerRecord extends AnnotationLayerSummary {
   scoreId: string;
 }
 
-class SamePageDatabase extends Dexie {
+export class SamePageDatabase extends Dexie {
   system!: EntityTable<SystemRecord, "key">;
   offlineScores!: EntityTable<OfflineScoreRecord, "key">;
   annotations!: EntityTable<LocalAnnotationRecord, "key">;
@@ -146,8 +147,8 @@ class SamePageDatabase extends Dexie {
   syncLeases!: EntityTable<SyncLeaseRecord, "scopeKey">;
   annotationLayers!: EntityTable<LocalAnnotationLayerRecord, "key">;
 
-  constructor() {
-    super("same-page");
+  constructor(name = "same-page") {
+    super(name);
     this.version(1).stores({
       system: "&key",
     });
@@ -195,7 +196,70 @@ class SamePageDatabase extends Dexie {
           "&key,ownerKey,scopeKey,[scopeKey+id],kind,sortOrder",
       })
       .upgrade(migrateLegacyLocalWorkspaces);
+    this.version(6)
+      .stores({
+        system: "&key",
+        offlineScores:
+          "&key,ownerKey,scopeKey,[ownerKey+choirId+scoreId],versionId,active,verifiedAt",
+        annotations:
+          "&key,ownerKey,scopeKey,[scopeKey+layerId],[scopeKey+state],id,updatedAt",
+        annotationOutbox:
+          "&opId,ownerKey,scopeKey,[scopeKey+annotationId],createdAt",
+        annotationConflicts:
+          "&opId,ownerKey,scopeKey,[scopeKey+annotationId],createdAt",
+        annotationSyncCursors: "&scopeKey,ownerKey,[ownerKey+choirId+scoreId]",
+        guestLayerPreferences:
+          "&key,ownerKey,scopeKey,[scopeKey+layerId]",
+        syncLeases: "&scopeKey,ownerKey,expiresAt",
+        annotationLayers:
+          "&key,ownerKey,scopeKey,[scopeKey+id],kind,sortOrder",
+      })
+      .upgrade(migrateStoredTextPayloads);
   }
+}
+
+async function migrateStoredTextPayloads(transaction: Transaction) {
+  await transaction
+    .table<LocalAnnotationRecord, string>("annotations")
+    .toCollection()
+    .modify((record) => {
+      record.payload = migrateStoredTextPayload(record.payload);
+    });
+  await transaction
+    .table<AnnotationOutboxRecord, string>("annotationOutbox")
+    .toCollection()
+    .modify((record) => {
+      record.payload = migrateStoredTextPayload(record.payload);
+    });
+  await transaction
+    .table<AnnotationConflictRecord, string>("annotationConflicts")
+    .toCollection()
+    .modify((record) => {
+      record.localPayload = migrateStoredTextPayload(record.localPayload);
+      if (record.canonical) {
+        record.canonical.payload = migrateStoredTextPayload(record.canonical.payload);
+      }
+    });
+  await transaction
+    .table<OfflineScoreRecord, string>("offlineScores")
+    .toCollection()
+    .modify((record) => {
+      if (!record.annotationSnapshot) return;
+      record.annotationSnapshot.annotations =
+        record.annotationSnapshot.annotations.map((annotation) => ({
+          ...annotation,
+          payload: migrateStoredTextPayload(annotation.payload),
+        }));
+    });
+}
+
+export function migrateStoredTextPayload(payload: AnnotationPayload | null) {
+  if (!payload || payload.kind !== "text" || "fontScale" in payload) return payload;
+  const legacy = payload as unknown as Omit<
+    Extract<AnnotationPayload, { kind: "text" }>,
+    "fontScale"
+  >;
+  return { ...legacy, fontScale: DEFAULT_TEXT_FONT_SCALE };
 }
 
 export const localDatabase = new SamePageDatabase();

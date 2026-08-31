@@ -6,7 +6,9 @@ import {
   annotationPushRequestSchema,
   sharedLayerCreateSchema,
   sharedLayerUpdateSchema,
+  DEFAULT_TEXT_FONT_SCALE,
   type AnnotationObjectRecord,
+  type AnnotationPayload,
 } from "../../src/shared/annotations";
 import {
   requireChoirAdmin,
@@ -413,12 +415,28 @@ async function applyOperation(
     layerId: string;
     baseVersion: number;
     type: "upsert" | "delete";
-    payload: unknown;
+    payload: AnnotationPayload | null;
   },
   displayName: string,
 ): Promise<PushResult> {
   const payloadJson = operation.payload === null ? null : JSON.stringify(operation.payload);
   const payloadHash = await sha256(`${operation.type}:${payloadJson ?? ""}`);
+  const compatiblePayloadHashes = [payloadHash];
+  if (
+    operation.payload?.kind === "text" &&
+    operation.payload.fontScale === DEFAULT_TEXT_FONT_SCALE
+  ) {
+    const legacyPayload = {
+      pageNumber: operation.payload.pageNumber,
+      kind: operation.payload.kind,
+      x: operation.payload.x,
+      y: operation.payload.y,
+      text: operation.payload.text,
+    };
+    compatiblePayloadHashes.push(
+      await sha256(`${operation.type}:${JSON.stringify(legacyPayload)}`),
+    );
+  }
   const existingOperation = await context.env.DB.prepare(
     `SELECT op_id, choir_id, score_id, layer_id, annotation_id, actor_user_id,
             base_version, operation_type, payload_hash, status
@@ -427,7 +445,7 @@ async function applyOperation(
     .bind(operation.opId)
     .first<OperationRow>();
   if (existingOperation) {
-    if (!sameOperation(existingOperation, access, operation, payloadHash)) {
+    if (!sameOperation(existingOperation, access, operation, compatiblePayloadHashes)) {
       return { opId: operation.opId, status: "op_id_reused" };
     }
     const canonical = await readObject(context, access, operation.annotationId);
@@ -644,7 +662,7 @@ function sameOperation(
   existing: OperationRow,
   access: ResolvedScoreAccess,
   operation: { annotationId: string; layerId: string; baseVersion: number; type: string },
-  payloadHash: string,
+  compatiblePayloadHashes: string[],
 ) {
   return (
     existing.choir_id === access.choirId &&
@@ -655,7 +673,7 @@ function sameOperation(
       (access.principal.kind === "user" ? access.principal.userId : "") &&
     existing.base_version === operation.baseVersion &&
     existing.operation_type === operation.type &&
-    existing.payload_hash === payloadHash
+    compatiblePayloadHashes.includes(existing.payload_hash)
   );
 }
 

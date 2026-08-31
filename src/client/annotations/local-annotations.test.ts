@@ -46,7 +46,7 @@ describe("local annotation durability", () => {
         kind: "text",
         pageNumber: 1,
         x: 0.2,
-        y: 0.3,
+        y: 0.3, fontScale: 0.024,
         text: "本机修改",
       },
     });
@@ -71,7 +71,7 @@ describe("local annotation durability", () => {
         kind: "text",
         pageNumber: 1,
         x: 0.2,
-        y: 0.3,
+        y: 0.3, fontScale: 0.024,
         text: "云端版本",
       },
       createdByDisplayName: "甲",
@@ -131,7 +131,7 @@ describe("local annotation durability", () => {
         kind: "text",
         pageNumber: 1,
         x: 0.2,
-        y: 0.3,
+        y: 0.3, fontScale: 0.024,
         text: "本机修改",
       },
     });
@@ -164,6 +164,7 @@ describe("local annotation durability", () => {
       pageNumber: 1,
       x: 0.1,
       y: 0.1,
+      fontScale: 0.024,
       text,
     });
     await saveAnnotationDraft(workspace, {

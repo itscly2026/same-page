@@ -44,11 +44,16 @@ try {
     file: join(repositoryRoot, "migrations", "0007_rename_product_drives.sql"),
     targetArgs,
   });
+  executeD1({
+    file: join(repositoryRoot, "migrations", "0008_text_annotation_font_scale.sql"),
+    targetArgs,
+  });
 
   verifySchema();
   verifyMigratedNames();
   verifyDriveNames();
   verifyDefaultSharedLayers();
+  verifyTextAnnotationMigration();
   verifyRelatedRecords();
   process.stdout.write("Verified legacy score schema migration.\n");
 } finally {
@@ -121,6 +126,18 @@ function verifyRelatedRecords() {
   assert.equal(query("SELECT id FROM annotation_layers").length, 21);
   assert.equal(query("SELECT id FROM annotation_objects").length, 1);
   assert.deepEqual(query("PRAGMA foreign_key_check"), []);
+}
+
+function verifyTextAnnotationMigration() {
+  const rows = query(
+    "SELECT payload_json FROM annotation_objects WHERE id = 'annotation'",
+  );
+  assert.equal(JSON.parse(rows[0].payload_json).fontScale, 0.024);
+  assert.equal(
+    query("SELECT op_id FROM annotation_sync_operations WHERE op_id = 'legacy-operation'")
+      .length,
+    0,
+  );
 }
 
 function verifyDefaultSharedLayers() {
@@ -202,8 +219,18 @@ function legacyFixtureSql() {
        created_by_user_id, created_by_display_name, updated_by_user_id,
        updated_by_display_name, created_at, updated_at)
     VALUES
-      ('annotation', 'choir', 'a', 'layer', 1, 0, '{}', 'user', 'Admin',
+      ('annotation', 'choir', 'a', 'layer', 1, 0,
+       '{"kind":"text","pageNumber":1,"x":0.2,"y":0.3,"text":"Legacy"}',
+       'user', 'Admin',
        'user', 'Admin', 1, 1);
+    INSERT INTO annotation_sync_operations
+      (op_id, choir_id, score_id, layer_id, annotation_id, actor_user_id,
+       base_version, operation_type, payload_json, payload_hash, status, created_at)
+    VALUES
+      ('legacy-operation', 'choir', 'a', 'layer', 'pending-annotation', 'user',
+       0, 'upsert',
+       '{"kind":"text","pageNumber":1,"x":0.4,"y":0.5,"text":"Pending"}',
+       'legacy-payload-hash', 'processing', 1);
   `;
 }
 

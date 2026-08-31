@@ -3,7 +3,11 @@ import { type RefObject, useEffect, useRef, useState } from "react";
 import { Button } from "react-aria-components";
 
 import type { AnnotationLayerSummary } from "../../shared/annotations";
-import { AnnotationOverlay, type AnnotationTool } from "../annotations/annotation-overlay";
+import {
+  AnnotationOverlay,
+  type AnnotationOverlayInteraction,
+  type AnnotationTool,
+} from "../annotations/annotation-overlay";
 import type { LocalAnnotationRecord } from "../platform/local-database";
 import type { LocalWorkspace } from "../platform/local-workspace";
 import type { PDFDocumentProxy } from "./pdf-document";
@@ -18,6 +22,7 @@ export interface AnnotationPageProps {
   editing: boolean;
   tool: AnnotationTool;
   activeLayerId: string | null;
+  onInteractionChange(interaction: AnnotationOverlayInteraction): void;
 }
 
 export interface ContinuousReaderPosition {
