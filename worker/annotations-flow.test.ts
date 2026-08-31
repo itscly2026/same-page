@@ -68,6 +68,19 @@ describe("annotation layers and object synchronization", () => {
     const createFirst = operation(firstId, fixture.layerId, 0, "第一处");
     const createSecond = operation(secondId, fixture.layerId, 0, "第二处");
 
+    const switchedOwner = await callWorker(
+      `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/annotations/push`,
+      jsonRequest(
+        fixture.adminCookie,
+        { operations: [createFirst] },
+        { "x-same-page-owner-user-id": crypto.randomUUID() },
+      ),
+    );
+    expect(switchedOwner.status).toBe(409);
+    expect(await switchedOwner.json()).toEqual({
+      error: "local_workspace_owner_changed",
+    });
+
     const createResponse = await push(fixture, [createFirst, createSecond]);
     expect(createResponse.status).toBe(200);
     expect(await createResponse.json()).toMatchObject({
@@ -155,7 +168,7 @@ describe("annotation layers and object synchronization", () => {
     expect(grant.status).toBe(200);
 
     const accepted = await push(
-      { ...fixture, adminCookie: member.cookie },
+      { ...fixture, adminCookie: member.cookie, adminUserId: member.userId },
       [operation(crypto.randomUUID(), fixture.layerId, 0, "获授权")],
     );
     expect(accepted.status).toBe(200);
@@ -165,7 +178,7 @@ describe("annotation layers and object synchronization", () => {
     );
     expect(revoke.status).toBe(200);
     const revoked = await push(
-      { ...fixture, adminCookie: member.cookie },
+      { ...fixture, adminCookie: member.cookie, adminUserId: member.userId },
       [operation(crypto.randomUUID(), fixture.layerId, 0, "已撤权")],
     );
     expect(revoked.status).toBe(403);
@@ -252,6 +265,7 @@ async function createFixture() {
   const layerId = ((await layerResponse.json()) as { layer: { id: string } }).layer.id;
   return {
     adminCookie: admin.cookie,
+    adminUserId: admin.userId,
     choirId: provisioned.choirId,
     joinCode: provisioned.joinCode,
     scoreId,
@@ -309,12 +323,21 @@ function operation(annotationId: string, layerId: string, baseVersion: number, t
 }
 
 function push(
-  fixture: { choirId: string; scoreId: string; adminCookie: string },
+  fixture: {
+    choirId: string;
+    scoreId: string;
+    adminCookie: string;
+    adminUserId: string;
+  },
   operations: unknown[],
 ) {
   return callWorker(
     `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/annotations/push`,
-    jsonRequest(fixture.adminCookie, { operations }),
+    jsonRequest(
+      fixture.adminCookie,
+      { operations },
+      { "x-same-page-owner-user-id": fixture.adminUserId },
+    ),
   );
 }
 

@@ -313,6 +313,12 @@ annotationRoutes.post("/choirs/:choirId/scores/:scoreId/annotations/push", async
   if (access.principal.kind !== "user" || !access.membership) {
     return context.json({ error: "authentication_required" }, 401);
   }
+  if (
+    context.req.header("x-same-page-owner-user-id") !==
+    access.principal.userId
+  ) {
+    return context.json({ error: "local_workspace_owner_changed" }, 409);
+  }
   const parsed = annotationPushRequestSchema.safeParse(
     await context.req.json().catch(() => null),
   );

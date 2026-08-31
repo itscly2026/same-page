@@ -3,60 +3,85 @@ import {
   type AnnotationObjectRecord,
 } from "../../shared/annotations";
 import {
-  annotationScopeKey,
   localDatabase,
   type AnnotationOutboxRecord,
 } from "../platform/local-database";
+import {
+  assertLocalWorkspaceActive,
+  LocalWorkspaceOwnerChangedError,
+  type LocalWorkspace,
+  withLocalWorkspaceTransaction,
+} from "../platform/local-workspace";
 import { applyPulledAnnotations, applyPushResults } from "./local-annotations";
 
 export async function syncAnnotations(
-  choirId: string,
-  scoreId: string,
+  workspace: LocalWorkspace,
   options: { pull: boolean },
 ) {
-  const scopeKey = annotationScopeKey(choirId, scoreId);
-  return withScoreSyncLock(scopeKey, async () => {
-    const pushed = await drainAnnotationOutbox(choirId, scoreId);
+  await assertLocalWorkspaceActive(workspace);
+  return withScoreSyncLock(workspace, async () => {
+    const pushed = await drainAnnotationOutbox(workspace);
     let pulled = 0;
     if (options.pull) {
-      const cursor = (await localDatabase.annotationSyncCursors.get(scopeKey))?.cursor ?? 0;
+      await assertLocalWorkspaceActive(workspace);
+      const cursor = (
+        await localDatabase.annotationSyncCursors.get(workspace.scopeKey)
+      )?.cursor ?? 0;
       const response = await fetch(
-        `/api/choirs/${choirId}/scores/${scoreId}/annotations?cursor=${cursor}`,
+        `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/annotations?cursor=${cursor}`,
       );
       if (!response.ok) throw new Error("annotation_pull_failed");
       const body = annotationPullResponseSchema.parse(await response.json());
-      await applyPulledAnnotations(choirId, scoreId, body.cursor, body.objects);
+      await assertLocalWorkspaceActive(workspace);
+      await applyPulledAnnotations(workspace, body.cursor, body.objects);
       pulled = body.objects.length;
     }
     return { pushed, pulled };
   });
 }
 
-export async function drainAnnotationOutbox(choirId: string, scoreId: string) {
-  const scopeKey = annotationScopeKey(choirId, scoreId);
+export async function drainAnnotationOutbox(workspace: LocalWorkspace) {
+  await assertLocalWorkspaceActive(workspace);
   let pushed = 0;
   while (true) {
-    const operations = await localDatabase.annotationOutbox
-      .where("scopeKey")
-      .equals(scopeKey)
-      .sortBy("createdAt");
-    const seenAnnotationIds = new Set<string>();
-    const batch = operations
-      .filter((operation) => {
-        if (seenAnnotationIds.has(operation.annotationId)) return false;
-        seenAnnotationIds.add(operation.annotationId);
-        return true;
-      })
-      .slice(0, 100);
-    if (batch.length === 0) return pushed;
-    await localDatabase.annotationOutbox.bulkUpdate(
-      batch.map((operation) => ({ key: operation.opId, changes: { attemptedAt: Date.now() } })),
+    const batch = await withLocalWorkspaceTransaction(
+      workspace,
+      "rw",
+      [localDatabase.annotationOutbox],
+      async () => {
+        const operations = await localDatabase.annotationOutbox
+          .where("scopeKey")
+          .equals(workspace.scopeKey)
+          .sortBy("createdAt");
+        const seenAnnotationIds = new Set<string>();
+        const selected = operations
+          .filter((operation) => {
+            if (seenAnnotationIds.has(operation.annotationId)) return false;
+            seenAnnotationIds.add(operation.annotationId);
+            return true;
+          })
+          .slice(0, 100);
+        await localDatabase.annotationOutbox.bulkUpdate(
+          selected.map((operation) => ({
+            key: operation.opId,
+            changes: { attemptedAt: Date.now() },
+          })),
+        );
+        return selected;
+      },
     );
+    if (batch.length === 0) return pushed;
+    await assertLocalWorkspaceActive(workspace);
+    const expectedUserId = authenticatedUserId(workspace);
+    if (!expectedUserId) throw new Error("annotation_push_requires_user_owner");
     const response = await fetch(
-      `/api/choirs/${choirId}/scores/${scoreId}/annotations/push`,
+      `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/annotations/push`,
       {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "x-same-page-owner-user-id": expectedUserId,
+        },
         body: JSON.stringify({ operations: batch.map(toWireOperation) }),
       },
     );
@@ -68,33 +93,58 @@ export async function drainAnnotationOutbox(choirId: string, scoreId: string) {
         object?: AnnotationObjectRecord | null;
       }>;
     };
-    await applyPushResults(batch, body.results);
+    await assertLocalWorkspaceActive(workspace);
+    await applyPushResults(workspace, batch, body.results);
     pushed += batch.length;
   }
 }
 
-export async function withScoreSyncLock<T>(scopeKey: string, action: () => Promise<T>) {
+function authenticatedUserId(workspace: LocalWorkspace) {
+  return workspace.ownerKey.startsWith("user:")
+    ? workspace.ownerKey.slice("user:".length)
+    : null;
+}
+
+export async function withScoreSyncLock<T>(
+  workspace: LocalWorkspace,
+  action: () => Promise<T>,
+) {
+  const scopeKey = workspace.scopeKey;
   if (navigator.locks) {
     return navigator.locks.request(`same-page:sync:${scopeKey}`, action);
   }
   const owner = crypto.randomUUID();
-  const acquired = await localDatabase.transaction("rw", localDatabase.syncLeases, async () => {
-    const current = await localDatabase.syncLeases.get(scopeKey);
-    if (current && current.expiresAt > Date.now()) return false;
-    await localDatabase.syncLeases.put({
-      scopeKey,
-      owner,
-      expiresAt: Date.now() + 120_000,
-    });
-    return true;
-  });
+  const acquired = await withLocalWorkspaceTransaction(
+    workspace,
+    "rw",
+    [localDatabase.syncLeases],
+    async () => {
+      const current = await localDatabase.syncLeases.get(scopeKey);
+      if (current && current.expiresAt > Date.now()) return false;
+      await localDatabase.syncLeases.put({
+        ...workspace,
+        lockOwner: owner,
+        expiresAt: Date.now() + 120_000,
+      });
+      return true;
+    },
+  );
   if (!acquired) return undefined;
   try {
     return await action();
   } finally {
-    await localDatabase.transaction("rw", localDatabase.syncLeases, async () => {
-      const current = await localDatabase.syncLeases.get(scopeKey);
-      if (current?.owner === owner) await localDatabase.syncLeases.delete(scopeKey);
+    await withLocalWorkspaceTransaction(
+      workspace,
+      "rw",
+      [localDatabase.syncLeases],
+      async () => {
+        const current = await localDatabase.syncLeases.get(scopeKey);
+        if (current?.lockOwner === owner) {
+          await localDatabase.syncLeases.delete(scopeKey);
+        }
+      },
+    ).catch((error: unknown) => {
+      if (!(error instanceof LocalWorkspaceOwnerChangedError)) throw error;
     });
   }
 }

@@ -42,6 +42,7 @@ import {
   reapplyAnnotationConflict,
   retryScoreSyncErrors,
   updateCachedLayer,
+  updateCachedLayerMetadata,
 } from "../annotations/local-annotations";
 import { syncAnnotations } from "../annotations/sync";
 import {
@@ -58,11 +59,16 @@ import {
 import { authClient } from "../auth/auth-client";
 import {
   activateVerifiedOfflineScore,
-  annotationScopeKey,
   findActiveOfflineScore,
   localDatabase,
   type OfflineScoreRecord,
 } from "../platform/local-database";
+import {
+  isLocalWorkspaceActive,
+  localWorkspaceRecordKey,
+  resolveLocalWorkspace,
+  type LocalWorkspace,
+} from "../platform/local-workspace";
 import {
   loadPdfDocument,
   type PDFDocumentProxy,
@@ -84,9 +90,20 @@ type ReaderPanel = "layers";
 export default function ReaderPage() {
   const { choirId = "", scoreId = "" } = useParams();
   const session = authClient.useSession();
+  const [resolvedWorkspace, setResolvedWorkspace] =
+    useState<LocalWorkspace | null>(null);
+  const [loadedScopeKey, setLoadedScopeKey] = useState<string | null>(null);
+  const workspaceIsActive = useLiveQuery(
+    () => resolvedWorkspace
+      ? isLocalWorkspaceActive(resolvedWorkspace)
+      : false,
+    [resolvedWorkspace?.scopeKey],
+    false,
+  );
   const [score, setScore] = useState<ScoreSummary | null>(null);
   const [offline, setOffline] = useState<OfflineScoreRecord | null>(null);
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
+  const [documentScopeKey, setDocumentScopeKey] = useState<string | null>(null);
   const [source, setSource] = useState<string | ArrayBuffer | null>(null);
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -119,41 +136,91 @@ export default function ReaderPage() {
   const [showGestureHint, setShowGestureHint] = useState(
     () => !readBooleanPreference("reader-gesture-hint-seen"),
   );
-  const scopeKey = annotationScopeKey(choirId, scoreId);
-  const layers = useLiveQuery(
-    () =>
-      localDatabase.annotationLayers
+  useEffect(() => {
+    if (session.isPending) return;
+    let active = true;
+    void resolveLocalWorkspace({
+      authenticatedUserId: session.data?.user.id ?? null,
+      choirId,
+      scoreId,
+    }).then((workspace) => {
+      if (active) setResolvedWorkspace(workspace);
+    });
+    return () => {
+      active = false;
+    };
+  }, [choirId, scoreId, session.data?.user.id, session.isPending]);
+
+  const workspace =
+    resolvedWorkspace && workspaceIsActive
+      ? resolvedWorkspace
+      : null;
+  const layerQuery = useLiveQuery(
+    async () => ({
+      scopeKey: workspace?.scopeKey ?? null,
+      entries: workspace
+      ? await localDatabase.annotationLayers
         .where("scopeKey")
-        .equals(scopeKey)
+        .equals(workspace.scopeKey)
         .toArray()
-        .then((entries) => entries.sort(compareLayers)),
-    [scopeKey],
-    [],
+        .then((entries) => entries.sort(compareLayers))
+      : [],
+    }),
+    [workspace?.scopeKey],
+    { scopeKey: null, entries: [] },
   );
-  const annotations = useLiveQuery(
-    () => localDatabase.annotations.where("scopeKey").equals(scopeKey).toArray(),
-    [scopeKey],
-    [],
+  const annotationQuery = useLiveQuery(
+    async () => ({
+      scopeKey: workspace?.scopeKey ?? null,
+      entries: workspace
+        ? await localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey).toArray()
+        : [],
+    }),
+    [workspace?.scopeKey],
+    { scopeKey: null, entries: [] },
   );
-  const pendingCount = useLiveQuery(
-    () => localDatabase.annotationOutbox.where("scopeKey").equals(scopeKey).count(),
-    [scopeKey],
-    0,
+  const pendingQuery = useLiveQuery(
+    async () => ({
+      scopeKey: workspace?.scopeKey ?? null,
+      count: workspace
+        ? await localDatabase.annotationOutbox.where("scopeKey").equals(workspace.scopeKey).count()
+        : 0,
+    }),
+    [workspace?.scopeKey],
+    { scopeKey: null, count: 0 },
   );
-  const conflicts = useLiveQuery(
-    () => localDatabase.annotationConflicts.where("scopeKey").equals(scopeKey).toArray(),
-    [scopeKey],
-    [],
+  const conflictQuery = useLiveQuery(
+    async () => ({
+      scopeKey: workspace?.scopeKey ?? null,
+      entries: workspace
+        ? await localDatabase.annotationConflicts.where("scopeKey").equals(workspace.scopeKey).toArray()
+        : [],
+    }),
+    [workspace?.scopeKey],
+    { scopeKey: null, entries: [] },
   );
-  const syncErrorCount = useLiveQuery(
-    () =>
-      localDatabase.annotations
+  const syncErrorQuery = useLiveQuery(
+    async () => ({
+      scopeKey: workspace?.scopeKey ?? null,
+      count: workspace
+      ? await localDatabase.annotations
         .where("[scopeKey+state]")
-        .equals([scopeKey, "sync-error"])
-        .count(),
-    [scopeKey],
-    0,
+        .equals([workspace.scopeKey, "sync-error"])
+        .count()
+      : 0,
+    }),
+    [workspace?.scopeKey],
+    { scopeKey: null, count: 0 },
   );
+  const layers = layerQuery.scopeKey === workspace?.scopeKey ? layerQuery.entries : [];
+  const annotations =
+    annotationQuery.scopeKey === workspace?.scopeKey ? annotationQuery.entries : [];
+  const pendingCount =
+    pendingQuery.scopeKey === workspace?.scopeKey ? pendingQuery.count : 0;
+  const conflicts =
+    conflictQuery.scopeKey === workspace?.scopeKey ? conflictQuery.entries : [];
+  const syncErrorCount =
+    syncErrorQuery.scopeKey === workspace?.scopeKey ? syncErrorQuery.count : 0;
   const { layout, currentPage, setLayout, setCurrentPage } =
     useReaderPreferences({
       identity: session.data?.user.id ?? "guest",
@@ -173,14 +240,24 @@ export default function ReaderPage() {
   }, [document, showGestureHint]);
 
   useEffect(() => {
+    if (!workspace) return;
     let active = true;
     void (async () => {
+      setScore(null);
+      setOffline(null);
+      setSource(null);
+      setDocument(null);
+      setDocumentScopeKey(null);
+      setCanManageLayers(false);
+      setEditing(false);
+      setActiveLayerId(null);
+      endAnnotationEditSession();
       setLoadingError(null);
       setCloudState("checking");
-      const local = await findActiveOfflineScore(choirId, scoreId).catch(
+      const local = await findActiveOfflineScore(workspace.ownerKey, choirId, scoreId).catch(
         () => undefined,
       );
-      if (local) await restoreOfflineAnnotationSnapshot(local).catch(() => undefined);
+      if (local) await restoreOfflineAnnotationSnapshot(workspace, local).catch(() => undefined);
       if (active) setOffline(local ?? null);
 
       try {
@@ -188,6 +265,7 @@ export default function ReaderPage() {
         if (lookup.state === "trashed") {
           setCloudState("trashed");
           if (!local) {
+            setLoadedScopeKey(workspace.scopeKey);
             setLoadingError("这份乐谱已移入回收站，当前设备没有可用的离线副本。");
             return;
           }
@@ -199,15 +277,18 @@ export default function ReaderPage() {
         if (lookup.state !== "active") throw new Error("Score unavailable");
         if (!active) return;
         setCloudState("active");
+        setLoadedScopeKey(workspace.scopeKey);
         setScore(lookup.score);
         setSource(`/api/choirs/${choirId}/scores/${scoreId}/pdf`);
       } catch {
         if (!active) return;
         setCloudState((current) => (current === "trashed" ? current : "unavailable"));
         if (local) {
+          setLoadedScopeKey(workspace.scopeKey);
           setScore(scoreFromOffline(local));
           setSource(await local.blob.arrayBuffer());
         } else {
+          setLoadedScopeKey(workspace.scopeKey);
           setLoadingError("无法打开乐谱。请检查网络与当前访问权限。");
         }
       }
@@ -215,9 +296,10 @@ export default function ReaderPage() {
     return () => {
       active = false;
     };
-  }, [choirId, scoreId]);
+  }, [choirId, scoreId, workspace]);
 
   useEffect(() => {
+    if (!workspace) return;
     if (cloudState === "checking") return;
     if (cloudState === "trashed") return;
     let active = true;
@@ -232,7 +314,7 @@ export default function ReaderPage() {
         );
         const previousLayers = await localDatabase.annotationLayers
           .where("scopeKey")
-          .equals(scopeKey)
+          .equals(workspace.scopeKey)
           .toArray();
         const previousById = new Map(previousLayers.map((layer) => [layer.id, layer]));
         const layersToCache = session.data?.user.id
@@ -243,9 +325,9 @@ export default function ReaderPage() {
               colorOverride:
                 previousById.get(layer.id)?.colorOverride ?? layer.colorOverride,
             }));
-        await cacheAnnotationLayers(choirId, scoreId, layersToCache);
+        await cacheAnnotationLayers(workspace, layersToCache);
         if (active) setCanManageLayers(body.permissions.canManageLayers);
-        await syncAnnotations(choirId, scoreId, { pull: true });
+        await syncAnnotations(workspace, { pull: true });
         if (active) setSyncMessage("批注已同步");
       } catch {
         if (active) setSyncMessage("当前使用本机批注；联网后可立即同步");
@@ -254,9 +336,10 @@ export default function ReaderPage() {
     return () => {
       active = false;
     };
-  }, [choirId, cloudState, scopeKey, scoreId, session.data?.user.id]);
+  }, [choirId, cloudState, scoreId, session.data?.user.id, workspace]);
 
   useEffect(() => {
+    if (!workspace) return;
     let active = true;
     const revalidateAndDrain = () => {
       if (!navigator.onLine || globalThis.document.visibilityState === "hidden") return;
@@ -274,7 +357,7 @@ export default function ReaderPage() {
           setCloudState("active");
           setScore(lookup.score);
           setSource(`/api/choirs/${choirId}/scores/${scoreId}/pdf`);
-          await syncAnnotations(choirId, scoreId, { pull: false });
+          await syncAnnotations(workspace, { pull: false });
         })
         .catch(() => undefined);
     };
@@ -285,7 +368,7 @@ export default function ReaderPage() {
       window.removeEventListener("online", revalidateAndDrain);
       globalThis.document.removeEventListener("visibilitychange", revalidateAndDrain);
     };
-  }, [choirId, scoreId]);
+  }, [choirId, scoreId, workspace]);
 
   useEffect(() => {
     if (!source) return;
@@ -297,6 +380,7 @@ export default function ReaderPage() {
         destroyOpened = opened.destroy;
         if (active) {
           setDocument(nextDocument);
+          setDocumentScopeKey(workspace?.scopeKey ?? null);
           setCurrentPage((page) => Math.min(page, nextDocument.numPages));
         }
       })
@@ -307,8 +391,9 @@ export default function ReaderPage() {
       active = false;
       void destroyOpened?.();
       setDocument(null);
+      setDocumentScopeKey(null);
     };
-  }, [setCurrentPage, source]);
+  }, [setCurrentPage, source, workspace?.scopeKey]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -340,7 +425,7 @@ export default function ReaderPage() {
   }, [document?.numPages, editing, layout, setCurrentPage]);
 
   const downloadOffline = async () => {
-    if (!score) return;
+    if (!score || !workspace) return;
     setDownloading(true);
     setDownloadMessage(null);
     try {
@@ -363,12 +448,11 @@ export default function ReaderPage() {
       );
       const currentLayers = await localDatabase.annotationLayers
         .where("scopeKey")
-        .equals(scopeKey)
+        .equals(workspace.scopeKey)
         .toArray();
       const currentById = new Map(currentLayers.map((layer) => [layer.id, layer]));
       await cacheAnnotationLayers(
-        choirId,
-        scoreId,
+        workspace,
         session.data?.user.id
           ? layerBody.layers
           : layerBody.layers.map((layer) => ({
@@ -378,15 +462,11 @@ export default function ReaderPage() {
                 currentById.get(layer.id)?.colorOverride ?? layer.colorOverride,
             })),
       );
-      await syncAnnotations(choirId, scoreId, { pull: true });
-      const annotationSnapshot = await captureOfflineAnnotationSnapshot(
-        choirId,
-        scoreId,
-      );
+      await syncAnnotations(workspace, { pull: true });
+      const annotationSnapshot = await captureOfflineAnnotationSnapshot(workspace);
       const record = {
-        key: `${choirId}:${scoreId}:${score.currentVersion.id}`,
-        choirId,
-        scoreId,
+        key: localWorkspaceRecordKey(workspace, score.currentVersion.id),
+        ...workspace,
         versionId: score.currentVersion.id,
         fileName: score.fileName,
         sha256: score.currentVersion.sha256,
@@ -395,7 +475,7 @@ export default function ReaderPage() {
         annotationSnapshot,
       };
       await activateVerifiedOfflineScore(record);
-      const activeRecord = await findActiveOfflineScore(choirId, scoreId);
+      const activeRecord = await findActiveOfflineScore(workspace.ownerKey, choirId, scoreId);
       setOffline(activeRecord ?? null);
       if (typeof source !== "string" && activeRecord) {
         setSource(await activeRecord.blob.arrayBuffer());
@@ -443,6 +523,7 @@ export default function ReaderPage() {
   };
 
   const finishEditing = async () => {
+    if (!workspace) return;
     setEditing(false);
     endAnnotationEditSession();
     if (editingOrigin) {
@@ -452,7 +533,7 @@ export default function ReaderPage() {
       setContinuousRestorePosition(editingOrigin.continuousPosition);
     }
     setEditingOrigin(null);
-    const queued = await queueScoreDrafts(choirId, scoreId);
+    const queued = await queueScoreDrafts(workspace);
     if (queued === 0) {
       setSyncMessage("没有需要保存的修改");
       return;
@@ -467,18 +548,18 @@ export default function ReaderPage() {
     }
     setSyncing(true);
     try {
-      await syncAnnotations(choirId, scoreId, { pull: false });
+      await syncAnnotations(workspace, { pull: false });
       const remaining = await localDatabase.annotationOutbox
         .where("scopeKey")
-        .equals(scopeKey)
+        .equals(workspace.scopeKey)
         .count();
       const conflictCount = await localDatabase.annotationConflicts
         .where("scopeKey")
-        .equals(scopeKey)
+        .equals(workspace.scopeKey)
         .count();
       const syncErrors = await localDatabase.annotations
         .where("[scopeKey+state]")
-        .equals([scopeKey, "sync-error"])
+        .equals([workspace.scopeKey, "sync-error"])
         .count();
       setSyncMessage(
         conflictCount > 0
@@ -497,18 +578,19 @@ export default function ReaderPage() {
   };
 
   const manualSync = async () => {
+    if (!workspace) return;
     if (cloudState === "trashed") {
       setSyncMessage("乐谱在回收站中，已停止云端同步；本机内容仍然保留。");
       return;
     }
     setSyncing(true);
     try {
-      await retryScoreSyncErrors(choirId, scoreId);
-      await queueScoreDrafts(choirId, scoreId);
-      await syncAnnotations(choirId, scoreId, { pull: true });
+      await retryScoreSyncErrors(workspace);
+      await queueScoreDrafts(workspace);
+      await syncAnnotations(workspace, { pull: true });
       const remainingErrors = await localDatabase.annotations
         .where("[scopeKey+state]")
-        .equals([scopeKey, "sync-error"])
+        .equals([workspace.scopeKey, "sync-error"])
         .count();
       setSyncMessage(
         remainingErrors > 0
@@ -526,26 +608,28 @@ export default function ReaderPage() {
     opId: string,
     strategy: "discard" | "reapply" | "keep-both",
   ) => {
+    if (!workspace) return;
     if (strategy === "discard") {
-      await discardAnnotationConflict(opId);
+      await discardAnnotationConflict(workspace, opId);
       setSyncMessage("已放弃本机冲突版本");
       return;
     }
-    await reapplyAnnotationConflict(opId, strategy === "keep-both");
-    const queued = await queueScoreDrafts(choirId, scoreId);
+    await reapplyAnnotationConflict(workspace, opId, strategy === "keep-both");
+    const queued = await queueScoreDrafts(workspace);
     if (!navigator.onLine) {
       setSyncMessage(`冲突处理已保存到本机，${queued} 项待同步`);
       return;
     }
     try {
-      await syncAnnotations(choirId, scoreId, { pull: false });
+      await syncAnnotations(workspace, { pull: false });
       setSyncMessage("冲突处理已同步");
     } catch {
       setSyncMessage(`冲突处理已保存到本机，${queued} 项待同步`);
     }
   };
 
-  if (loadingError) {
+  if (!workspace || loadedScopeKey !== workspace.scopeKey || loadingError) {
+    if (!workspace) return <p className="route-loading">正在打开本机工作区…</p>;
     return (
       <main className="page-shell compact-page">
         <p className="eyebrow">乐谱阅读器</p>
@@ -560,7 +644,7 @@ export default function ReaderPage() {
     );
   }
 
-  if (!score || !document) {
+  if (!score || !document || documentScopeKey !== workspace.scopeKey) {
     return <p className="route-loading">正在加载乐谱…</p>;
   }
 
@@ -584,8 +668,7 @@ export default function ReaderPage() {
     setReaderPanel(panel);
   };
   const annotationPageProps: AnnotationPageProps = {
-    choirId,
-    scoreId,
+    workspace,
     layers,
     annotations,
     editing,
@@ -711,8 +794,7 @@ export default function ReaderPage() {
             <Button onPress={() => void finishEditing()}>完成</Button>
           </header>
           <EditingControls
-            choirId={choirId}
-            scoreId={scoreId}
+            workspace={workspace}
             layers={layers}
             tool={tool}
             activeLayerId={activeLayerId}
@@ -753,9 +835,7 @@ export default function ReaderPage() {
               </Button>
             </header>
             <LayerPanel
-              choirId={choirId}
-              scoreId={scoreId}
-              scopeKey={scopeKey}
+              workspace={workspace}
               layers={layers}
               canManageLayers={canManageLayers}
               signedIn={Boolean(session.data?.user.id)}
@@ -833,16 +913,14 @@ export default function ReaderPage() {
 }
 
 function EditingControls({
-  choirId,
-  scoreId,
+  workspace,
   layers,
   tool,
   activeLayerId,
   onToolChange,
   onLayerChange,
 }: {
-  choirId: string;
-  scoreId: string;
+  workspace: LocalWorkspace;
   layers: AnnotationLayerSummary[];
   tool: AnnotationTool;
   activeLayerId: string | null;
@@ -918,7 +996,7 @@ function EditingControls({
         className="annotation-tool-button"
         onPress={() =>
           activeLayerId
-            ? void undoAnnotationEdit(choirId, scoreId, activeLayerId)
+            ? void undoAnnotationEdit(workspace, activeLayerId)
             : undefined
         }
       >
@@ -929,7 +1007,7 @@ function EditingControls({
         className="annotation-tool-button"
         onPress={() =>
           activeLayerId
-            ? void redoAnnotationEdit(choirId, scoreId, activeLayerId)
+            ? void redoAnnotationEdit(workspace, activeLayerId)
             : undefined
         }
       >
@@ -984,16 +1062,12 @@ function AnnotationToolIcon({ tool }: { tool: AnnotationTool }) {
 }
 
 function LayerPanel({
-  choirId,
-  scoreId,
-  scopeKey,
+  workspace,
   layers,
   canManageLayers,
   signedIn,
 }: {
-  choirId: string;
-  scoreId: string;
-  scopeKey: string;
+  workspace: LocalWorkspace;
   layers: AnnotationLayerSummary[];
   canManageLayers: boolean;
   signedIn: boolean;
@@ -1002,10 +1076,10 @@ function LayerPanel({
     layer: AnnotationLayerSummary,
     changes: Partial<Pick<AnnotationLayerSummary, "visible" | "colorOverride">>,
   ) => {
-    await updateCachedLayer(scopeKey, layer.id, changes);
+    await updateCachedLayer(workspace, layer.id, changes);
     if (!signedIn) return;
     const response = await fetch(
-      `/api/choirs/${choirId}/scores/${scoreId}/layers/${layer.id}/preference`,
+      `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/layers/${layer.id}/preference`,
       {
         method: "PUT",
         headers: { "content-type": "application/json" },
@@ -1047,14 +1121,12 @@ function LayerPanel({
                   {canManageLayers ? (
                     <>
                       <SharedLayerEditor
-                        choirId={choirId}
-                        scoreId={scoreId}
-                        scopeKey={scopeKey}
+                        workspace={workspace}
                         layer={layer}
                       />
                       <LayerGrantManager
-                        choirId={choirId}
-                        scoreId={scoreId}
+                        choirId={workspace.choirId}
+                        scoreId={workspace.scoreId}
                         layerId={layer.id}
                       />
                     </>
@@ -1070,7 +1142,7 @@ function LayerPanel({
                 event.preventDefault();
                 const form = event.currentTarget;
                 const data = new FormData(form);
-                void fetch(`/api/choirs/${choirId}/scores/${scoreId}/layers`, {
+                void fetch(`/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/layers`, {
                   method: "POST",
                   headers: { "content-type": "application/json" },
                   body: JSON.stringify({
@@ -1091,7 +1163,7 @@ function LayerPanel({
                         sortOrder: number;
                       };
                     };
-                    await cacheAnnotationLayers(choirId, scoreId, [
+                    await cacheAnnotationLayers(workspace, [
                       ...layers,
                       {
                         ...body.layer,
@@ -1115,14 +1187,10 @@ function LayerPanel({
 }
 
 function SharedLayerEditor({
-  choirId,
-  scoreId,
-  scopeKey,
+  workspace,
   layer,
 }: {
-  choirId: string;
-  scoreId: string;
-  scopeKey: string;
+  workspace: LocalWorkspace;
   layer: AnnotationLayerSummary;
 }) {
   return (
@@ -1138,7 +1206,7 @@ function SharedLayerEditor({
             sortOrder: Number(data.get("sortOrder")),
           };
           void fetch(
-            `/api/choirs/${choirId}/scores/${scoreId}/layers/${layer.id}`,
+            `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/layers/${layer.id}`,
             {
               method: "PATCH",
               headers: { "content-type": "application/json" },
@@ -1146,7 +1214,7 @@ function SharedLayerEditor({
             },
           ).then(async (response) => {
             if (!response.ok) throw new Error("layer_update_failed");
-            await localDatabase.annotationLayers.update(`${scopeKey}:${layer.id}`, update);
+            await updateCachedLayerMetadata(workspace, layer.id, update);
           });
         }}
       >

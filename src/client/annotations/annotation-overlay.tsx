@@ -10,6 +10,7 @@ import type {
   AnnotationPayload,
 } from "../../shared/annotations";
 import type { LocalAnnotationRecord } from "../platform/local-database";
+import type { LocalWorkspace } from "../platform/local-workspace";
 import {
   saveDraftWithHistory,
   updateLatestHistoryDraft,
@@ -23,8 +24,7 @@ const ERASER_HIT_RADIUS_PX = 14;
 const TEXT_DRAG_THRESHOLD = 0.006;
 
 export function AnnotationOverlay({
-  choirId,
-  scoreId,
+  workspace,
   pageNumber,
   layers,
   annotations,
@@ -32,8 +32,7 @@ export function AnnotationOverlay({
   tool,
   activeLayerId,
 }: {
-  choirId: string;
-  scoreId: string;
+  workspace: LocalWorkspace;
   pageNumber: number;
   layers: AnnotationLayerSummary[];
   annotations: LocalAnnotationRecord[];
@@ -116,7 +115,7 @@ export function AnnotationOverlay({
       }));
       if (distanceToPolyline(pointer, points) > ERASER_HIT_RADIUS_PX) continue;
       erasedStrokeIds.current.add(annotation.id);
-      void saveDraftWithHistory(choirId, scoreId, {
+      void saveDraftWithHistory(workspace, {
         id: annotation.id,
         layerId: annotation.layerId,
         payload: null,
@@ -151,7 +150,7 @@ export function AnnotationOverlay({
     const text = textInputRef.current?.value.trim() ?? "";
     closeTextEditor(blur);
     if (text) {
-      await saveDraftWithHistory(choirId, scoreId, {
+      await saveDraftWithHistory(workspace, {
         id: editor.id,
         layerId,
         payload: {
@@ -224,10 +223,10 @@ export function AnnotationOverlay({
         payload: next,
       };
       if (strokeHistoryStarted.current) {
-        void updateLatestHistoryDraft(choirId, scoreId, input);
+        void updateLatestHistoryDraft(workspace, input);
       } else {
         strokeHistoryStarted.current = true;
-        void saveDraftWithHistory(choirId, scoreId, input);
+        void saveDraftWithHistory(workspace, input);
       }
       return next;
     });
@@ -393,7 +392,7 @@ export function AnnotationOverlay({
                   originY: drag.payload.y,
                 };
                 setTextDragPreview(finalPosition);
-                void saveDraftWithHistory(choirId, scoreId, {
+                void saveDraftWithHistory(workspace, {
                   id: annotation.id,
                   layerId: annotation.layerId,
                   payload: {
@@ -425,7 +424,7 @@ export function AnnotationOverlay({
             }}
             onKeyDown={(event) => {
               if (event.key === "Delete" || event.key === "Backspace") {
-                void saveDraftWithHistory(choirId, scoreId, {
+                void saveDraftWithHistory(workspace, {
                   id: annotation.id,
                   layerId: annotation.layerId,
                   payload: null,
@@ -486,7 +485,7 @@ export function AnnotationOverlay({
               }}
               onClick={() => {
                 if (!activeLayerId) return;
-                void saveDraftWithHistory(choirId, scoreId, {
+                void saveDraftWithHistory(workspace, {
                   id: textEditor.id,
                   layerId: activeLayerId,
                   payload: null,

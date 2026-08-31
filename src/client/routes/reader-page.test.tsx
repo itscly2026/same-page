@@ -7,6 +7,12 @@ import {
   findActiveOfflineScore,
   localDatabase,
 } from "../platform/local-database";
+import {
+  activateAuthenticatedLocalOwner,
+  authenticatedLocalOwnerKey,
+  createLocalWorkspace,
+  localWorkspaceRecordKey,
+} from "../platform/local-workspace";
 import { syncAnnotations } from "../annotations/sync";
 import ReaderPage from "./reader-page";
 
@@ -14,6 +20,12 @@ const virtualTestState = vi.hoisted(() => ({
   itemSize: 100,
   scrollToIndex: vi.fn(),
 }));
+
+const localWorkspace = createLocalWorkspace(
+  authenticatedLocalOwnerKey("user-1"),
+  "choir-1",
+  "score-1",
+);
 
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: (options: { count: number }) => ({
@@ -113,6 +125,7 @@ describe("ReaderPage", () => {
     await localDatabase.annotations.clear();
     await localDatabase.annotationOutbox.clear();
     await localDatabase.annotationConflicts.clear();
+    await activateAuthenticatedLocalOwner("user-1");
     const stored = new Map<string, string>();
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => stored.get(key) ?? null,
@@ -663,11 +676,9 @@ describe("ReaderPage", () => {
   });
 
   it("allows the last authenticated user to edit a verified local copy after session expiry", async () => {
-    const scopeKey = "choir-1:score-1";
     vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
       key: "offline-1",
-      choirId: "choir-1",
-      scoreId: "score-1",
+      ...localWorkspace,
       versionId: "version-1",
       fileName: "离线练声曲.pdf",
       sha256: "a".repeat(64),
@@ -678,8 +689,8 @@ describe("ReaderPage", () => {
       annotationSnapshot: {
         layers: [
           {
-            key: `${scopeKey}:11111111-1111-4111-8111-111111111111`,
-            scopeKey,
+            key: localWorkspaceRecordKey(localWorkspace, "11111111-1111-4111-8111-111111111111"),
+            ...localWorkspace,
             id: "11111111-1111-4111-8111-111111111111",
             kind: "personal",
             defaultSlot: null,
@@ -715,12 +726,41 @@ describe("ReaderPage", () => {
     );
   });
 
+  it("hides A's loaded reader state as soon as another tab activates B", async () => {
+    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+      key: "offline-a",
+      ...localWorkspace,
+      versionId: "version-a",
+      fileName: "A 的离线乐谱.pdf",
+      sha256: "a".repeat(64),
+      pageCount: 1,
+      blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
+      active: 1,
+      verifiedAt: 1,
+      annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 },
+    });
+    vi.mocked(fetch).mockRejectedValue(new Error("offline"));
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("A 的离线乐谱.pdf")).toBeInTheDocument();
+
+    await activateAuthenticatedLocalOwner("user-b");
+
+    await waitFor(() => {
+      expect(screen.queryByText("A 的离线乐谱.pdf")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("正在打开本机工作区…")).toBeInTheDocument();
+  });
+
   it("keeps a trashed score's offline copy and outbox without editing or syncing", async () => {
-    const scopeKey = "choir-1:score-1";
     vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
       key: "offline-1",
-      choirId: "choir-1",
-      scoreId: "score-1",
+      ...localWorkspace,
       versionId: "version-1",
       fileName: "离线练声曲.pdf",
       sha256: "a".repeat(64),
@@ -731,8 +771,8 @@ describe("ReaderPage", () => {
       annotationSnapshot: {
         layers: [
           {
-            key: `${scopeKey}:11111111-1111-4111-8111-111111111111`,
-            scopeKey,
+            key: localWorkspaceRecordKey(localWorkspace, "11111111-1111-4111-8111-111111111111"),
+            ...localWorkspace,
             id: "11111111-1111-4111-8111-111111111111",
             kind: "personal",
             defaultSlot: null,
@@ -751,9 +791,7 @@ describe("ReaderPage", () => {
     });
     await localDatabase.annotationOutbox.put({
       opId: "pending-op",
-      scopeKey,
-      choirId: "choir-1",
-      scoreId: "score-1",
+      ...localWorkspace,
       annotationId: "annotation-1",
       layerId: "11111111-1111-4111-8111-111111111111",
       baseVersion: 0,
@@ -812,11 +850,9 @@ describe("ReaderPage", () => {
   });
 
   it("detects trash on reconnect before draining the offline outbox", async () => {
-    const scopeKey = "choir-1:score-1";
     vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
       key: "offline-1",
-      choirId: "choir-1",
-      scoreId: "score-1",
+      ...localWorkspace,
       versionId: "version-1",
       fileName: "离线练声曲.pdf",
       sha256: "a".repeat(64),
@@ -828,9 +864,7 @@ describe("ReaderPage", () => {
     });
     await localDatabase.annotationOutbox.put({
       opId: "pending-reconnect-op",
-      scopeKey,
-      choirId: "choir-1",
-      scoreId: "score-1",
+      ...localWorkspace,
       annotationId: "annotation-1",
       layerId: "11111111-1111-4111-8111-111111111111",
       baseVersion: 0,

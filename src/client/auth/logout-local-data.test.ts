@@ -2,9 +2,15 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   annotationRecordKey,
-  annotationScopeKey,
   localDatabase,
 } from "../platform/local-database";
+import {
+  activateAuthenticatedLocalOwner,
+  authenticatedLocalOwnerKey,
+  createLocalWorkspace,
+  localWorkspaceRecordKey,
+  currentLocalOwnerKey,
+} from "../platform/local-workspace";
 import {
   clearPrivateLocalDataAfterLogout,
   getLogoutLocalSummary,
@@ -18,15 +24,22 @@ beforeEach(async () => {
     localDatabase.annotationOutbox.clear(),
     localDatabase.annotationConflicts.clear(),
     localDatabase.offlineScores.clear(),
+    localDatabase.system.clear(),
   ]);
+  await activateAuthenticatedLocalOwner("user-1");
 });
 
 describe("logout local privacy", () => {
   it("warns about unsynchronized work and removes private data after confirmation", async () => {
-    const scopeKey = annotationScopeKey("choir-1", "score-1");
+    const workspace = createLocalWorkspace(
+      authenticatedLocalOwnerKey("user-1"),
+      "choir-1",
+      "score-1",
+    );
+    const scopeKey = workspace.scopeKey;
     const sharedLayer = {
-      key: `${scopeKey}:shared-layer`,
-      scopeKey,
+      key: localWorkspaceRecordKey(workspace, "shared-layer"),
+      ...workspace,
       id: "shared-layer",
       kind: "shared" as const,
       defaultSlot: null,
@@ -39,7 +52,7 @@ describe("logout local privacy", () => {
     };
     const personalLayer = {
       ...sharedLayer,
-      key: `${scopeKey}:personal-layer`,
+      key: localWorkspaceRecordKey(workspace, "personal-layer"),
       id: "personal-layer",
       kind: "personal" as const,
       name: "我的批注",
@@ -51,9 +64,7 @@ describe("logout local privacy", () => {
       state: "synced" | "pending" | "sync-error",
     ) => ({
       key: annotationRecordKey(scopeKey, id),
-      scopeKey,
-      choirId: "choir-1",
-      scoreId: "score-1",
+      ...workspace,
       id,
       layerId,
       version: 1,
@@ -79,17 +90,17 @@ describe("logout local privacy", () => {
       "sync-error",
     );
     const personalSynced = annotation("personal-synced", personalLayer.id, "synced");
+    const orphanSynced = annotation("orphan-synced", "missing-layer", "synced");
     await localDatabase.annotations.bulkPut([
       sharedSynced,
       sharedPending,
       sharedSyncError,
       personalSynced,
+      orphanSynced,
     ]);
     await localDatabase.annotationOutbox.put({
       opId: "op-1",
-      scopeKey,
-      choirId: "choir-1",
-      scoreId: "score-1",
+      ...workspace,
       annotationId: sharedPending.id,
       layerId: sharedLayer.id,
       baseVersion: 1,
@@ -100,7 +111,7 @@ describe("logout local privacy", () => {
     });
     await localDatabase.annotationConflicts.put({
       opId: "conflict-1",
-      scopeKey,
+      ...workspace,
       annotationId: personalSynced.id,
       layerId: personalLayer.id,
       localPayload: personalSynced.payload,
@@ -110,8 +121,7 @@ describe("logout local privacy", () => {
     });
     await localDatabase.offlineScores.put({
       key: "offline-1",
-      choirId: "choir-1",
-      scoreId: "score-1",
+      ...workspace,
       versionId: "version-1",
       fileName: "离线乐谱.pdf",
       sha256: "a".repeat(64),
@@ -121,7 +131,7 @@ describe("logout local privacy", () => {
       verifiedAt: 1,
       annotationSnapshot: {
         layers: [sharedLayer, personalLayer],
-        annotations: [sharedSynced, personalSynced],
+        annotations: [sharedSynced, personalSynced, orphanSynced],
         cursor: 2,
         verifiedAt: 1,
       },
@@ -147,12 +157,17 @@ describe("logout local privacy", () => {
     expect((await localDatabase.annotations.toArray()).map((entry) => entry.id)).toEqual([
       sharedSynced.id,
     ]);
-    const offline = await localDatabase.offlineScores.get("offline-1");
+    const offline = await localDatabase.offlineScores.toCollection().first();
+    expect(offline?.ownerKey).toMatch(/^guest:/);
     expect(offline?.annotationSnapshot.layers.map((layer) => layer.id)).toEqual([
       sharedLayer.id,
     ]);
     expect(
       offline?.annotationSnapshot.annotations.map((entry) => entry.id),
     ).toEqual([sharedSynced.id]);
+    expect(await currentLocalOwnerKey()).toBeNull();
+    expect(
+      await localDatabase.annotationLayers.where("ownerKey").equals(workspace.ownerKey).count(),
+    ).toBe(0);
   });
 });

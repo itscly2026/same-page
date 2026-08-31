@@ -1,10 +1,19 @@
-import Dexie, { type EntityTable } from "dexie";
+import Dexie, { type EntityTable, type Table, type Transaction } from "dexie";
 
 import type {
   AnnotationLayerSummary,
   AnnotationObjectRecord,
   AnnotationPayload,
 } from "../../shared/annotations";
+import type { LocalWorkspaceOwnerKey } from "./local-workspace";
+
+export const LAST_AUTHENTICATED_OWNER_KEY =
+  "local-workspace:last-authenticated-owner";
+export const ACTIVE_LOCAL_OWNER_KEY = "local-workspace:active-owner";
+export const LEGACY_LAST_AUTHENTICATED_USER_ID_KEY =
+  "last-authenticated-user-id";
+export const guestOwnerSystemKey = (choirId: string) =>
+  `local-workspace:guest-owner:${choirId}`;
 
 export interface SystemRecord {
   key: string;
@@ -13,6 +22,8 @@ export interface SystemRecord {
 
 export interface OfflineScoreRecord {
   key: string;
+  ownerKey: LocalWorkspaceOwnerKey;
+  scopeKey: string;
   choirId: string;
   scoreId: string;
   versionId: string;
@@ -43,6 +54,7 @@ export type AnnotationSyncErrorCode = "op_id_reused";
 
 export interface LocalAnnotationRecord {
   key: string;
+  ownerKey: LocalWorkspaceOwnerKey;
   scopeKey: string;
   choirId: string;
   scoreId: string;
@@ -60,6 +72,7 @@ export interface LocalAnnotationRecord {
 
 export interface AnnotationOutboxRecord {
   opId: string;
+  ownerKey: LocalWorkspaceOwnerKey;
   scopeKey: string;
   choirId: string;
   scoreId: string;
@@ -74,7 +87,10 @@ export interface AnnotationOutboxRecord {
 
 export interface AnnotationConflictRecord {
   opId: string;
+  ownerKey: LocalWorkspaceOwnerKey;
   scopeKey: string;
+  choirId: string;
+  scoreId: string;
   annotationId: string;
   layerId: string;
   localPayload: AnnotationPayload | null;
@@ -84,27 +100,39 @@ export interface AnnotationConflictRecord {
 }
 
 export interface AnnotationSyncCursorRecord {
+  ownerKey: LocalWorkspaceOwnerKey;
   scopeKey: string;
+  choirId: string;
+  scoreId: string;
   cursor: number;
 }
 
 export interface GuestLayerPreferenceRecord {
   key: string;
+  ownerKey: LocalWorkspaceOwnerKey;
   scopeKey: string;
+  choirId: string;
+  scoreId: string;
   layerId: string;
   visible: boolean;
   colorOverride: string | null;
 }
 
 export interface SyncLeaseRecord {
+  ownerKey: LocalWorkspaceOwnerKey;
   scopeKey: string;
-  owner: string;
+  choirId: string;
+  scoreId: string;
+  lockOwner: string;
   expiresAt: number;
 }
 
 export interface LocalAnnotationLayerRecord extends AnnotationLayerSummary {
   key: string;
+  ownerKey: LocalWorkspaceOwnerKey;
   scopeKey: string;
+  choirId: string;
+  scoreId: string;
 }
 
 class SamePageDatabase extends Dexie {
@@ -148,6 +176,25 @@ class SamePageDatabase extends Dexie {
       syncLeases: "&scopeKey,expiresAt",
       annotationLayers: "&key,scopeKey,[scopeKey+id],kind,sortOrder",
     });
+    this.version(5)
+      .stores({
+        system: "&key",
+        offlineScores:
+          "&key,ownerKey,scopeKey,[ownerKey+choirId+scoreId],versionId,active,verifiedAt",
+        annotations:
+          "&key,ownerKey,scopeKey,[scopeKey+layerId],[scopeKey+state],id,updatedAt",
+        annotationOutbox:
+          "&opId,ownerKey,scopeKey,[scopeKey+annotationId],createdAt",
+        annotationConflicts:
+          "&opId,ownerKey,scopeKey,[scopeKey+annotationId],createdAt",
+        annotationSyncCursors: "&scopeKey,ownerKey,[ownerKey+choirId+scoreId]",
+        guestLayerPreferences:
+          "&key,ownerKey,scopeKey,[scopeKey+layerId]",
+        syncLeases: "&scopeKey,ownerKey,expiresAt",
+        annotationLayers:
+          "&key,ownerKey,scopeKey,[scopeKey+id],kind,sortOrder",
+      })
+      .upgrade(migrateLegacyLocalWorkspaces);
   }
 }
 
@@ -160,36 +207,274 @@ export async function verifyLocalDatabase(): Promise<void> {
 export async function activateVerifiedOfflineScore(
   record: Omit<OfflineScoreRecord, "active" | "verifiedAt">,
 ) {
-  await localDatabase.transaction("rw", localDatabase.offlineScores, async () => {
-    const existing = await localDatabase.offlineScores
-      .where("[choirId+scoreId]")
-      .equals([record.choirId, record.scoreId])
-      .toArray();
-    await Promise.all(
-      existing.map((entry) =>
-        localDatabase.offlineScores.update(entry.key, { active: 0 }),
-      ),
-    );
-    await localDatabase.offlineScores.put({
-      ...record,
-      active: 1,
-      verifiedAt: Date.now(),
-    });
-  });
+  await localDatabase.transaction(
+    "rw",
+    [localDatabase.system, localDatabase.offlineScores],
+    async () => {
+      const activeOwner = await localDatabase.system.get(ACTIVE_LOCAL_OWNER_KEY);
+      const guestOwner = record.ownerKey.startsWith("guest:")
+        ? await localDatabase.system.get(guestOwnerSystemKey(record.choirId))
+        : null;
+      const ownerIsActive = record.ownerKey.startsWith("user:")
+        ? activeOwner?.value === record.ownerKey
+        : !activeOwner?.value.startsWith("user:") &&
+          guestOwner?.value === record.ownerKey;
+      if (!ownerIsActive) throw new Error("local_workspace_owner_changed");
+      const existing = await localDatabase.offlineScores
+        .where("[ownerKey+choirId+scoreId]")
+        .equals([record.ownerKey, record.choirId, record.scoreId])
+        .toArray();
+      await Promise.all(
+        existing.map((entry) =>
+          localDatabase.offlineScores.update(entry.key, { active: 0 }),
+        ),
+      );
+      await localDatabase.offlineScores.put({
+        ...record,
+        active: 1,
+        verifiedAt: Date.now(),
+      });
+    },
+  );
 }
 
-export function findActiveOfflineScore(choirId: string, scoreId: string) {
+export function findActiveOfflineScore(
+  ownerKey: LocalWorkspaceOwnerKey,
+  choirId: string,
+  scoreId: string,
+) {
   return localDatabase.offlineScores
-    .where("[choirId+scoreId]")
-    .equals([choirId, scoreId])
+    .where("[ownerKey+choirId+scoreId]")
+    .equals([ownerKey, choirId, scoreId])
     .filter((record) => record.active === 1)
     .first();
 }
 
-export function annotationScopeKey(choirId: string, scoreId: string) {
-  return `${choirId}:${scoreId}`;
+export function annotationRecordKey(scopeKey: string, annotationId: string) {
+  return JSON.stringify([scopeKey, annotationId]);
 }
 
-export function annotationRecordKey(scopeKey: string, annotationId: string) {
-  return `${scopeKey}:${annotationId}`;
+interface LegacyScopedRecord {
+  key?: string;
+  scopeKey: string;
+  choirId?: string;
+  scoreId?: string;
+}
+
+async function migrateLegacyLocalWorkspaces(transaction: Transaction) {
+  const system = transaction.table<SystemRecord>("system");
+  const legacyUser = await system.get(LEGACY_LAST_AUTHENTICATED_USER_ID_KEY);
+  const knownOwner = legacyUser?.value
+    ? (`user:${legacyUser.value}` as LocalWorkspaceOwnerKey)
+    : null;
+
+  const tables = {
+    offlineScores: transaction.table<OfflineScoreRecord>("offlineScores"),
+    annotations: transaction.table<LocalAnnotationRecord>("annotations"),
+    annotationOutbox:
+      transaction.table<AnnotationOutboxRecord>("annotationOutbox"),
+    annotationConflicts:
+      transaction.table<AnnotationConflictRecord>("annotationConflicts"),
+    annotationSyncCursors:
+      transaction.table<AnnotationSyncCursorRecord>("annotationSyncCursors"),
+    guestLayerPreferences:
+      transaction.table<GuestLayerPreferenceRecord>("guestLayerPreferences"),
+    syncLeases: transaction.table<SyncLeaseRecord>("syncLeases"),
+    annotationLayers:
+      transaction.table<LocalAnnotationLayerRecord>("annotationLayers"),
+  };
+
+  const legacyLayers = (await tables.annotationLayers.toArray()) as Array<
+    LocalAnnotationLayerRecord & LegacyScopedRecord
+  >;
+  const sharedLayerIdsByScope = new Map<string, Set<string>>();
+  for (const layer of legacyLayers) {
+    if (layer.kind !== "shared") continue;
+    const ids = sharedLayerIdsByScope.get(layer.scopeKey) ?? new Set<string>();
+    ids.add(layer.id);
+    sharedLayerIdsByScope.set(layer.scopeKey, ids);
+  }
+
+  const guestOwners = new Map<string, LocalWorkspaceOwnerKey>();
+  const ownerFor = async (choirId: string) => {
+    if (knownOwner) return knownOwner;
+    const existing = guestOwners.get(choirId);
+    if (existing) return existing;
+    const ownerKey = `guest:${crypto.randomUUID()}` as LocalWorkspaceOwnerKey;
+    guestOwners.set(choirId, ownerKey);
+    await system.put({ key: guestOwnerSystemKey(choirId), value: ownerKey });
+    return ownerKey;
+  };
+
+  const migrateScope = async (record: LegacyScopedRecord) => {
+    const parsed = legacyScope(record);
+    const ownerKey = await ownerFor(parsed.choirId);
+    const scopeKey = migrationScopeKey(ownerKey, parsed.choirId, parsed.scoreId);
+    return { ...parsed, ownerKey, scopeKey };
+  };
+
+  const migratedLayers: LocalAnnotationLayerRecord[] = [];
+  for (const layer of legacyLayers) {
+    if (!knownOwner && layer.kind !== "shared") continue;
+    const scope = await migrateScope(layer);
+    migratedLayers.push({
+      ...layer,
+      ...scope,
+      key: annotationRecordKey(scope.scopeKey, layer.id),
+      canEdit: knownOwner ? layer.canEdit : false,
+      visible: knownOwner ? layer.visible : true,
+      colorOverride: knownOwner ? layer.colorOverride : null,
+    });
+  }
+  await tables.annotationLayers.clear();
+  await tables.annotationLayers.bulkPut(migratedLayers);
+
+  const migratedAnnotations: LocalAnnotationRecord[] = [];
+  for (const annotation of (await tables.annotations.toArray()) as Array<
+    LocalAnnotationRecord & LegacyScopedRecord
+  >) {
+    if (
+      !knownOwner &&
+      (annotation.state !== "synced" ||
+        !sharedLayerIdsByScope.get(annotation.scopeKey)?.has(annotation.layerId))
+    ) {
+      continue;
+    }
+    const scope = await migrateScope(annotation);
+    migratedAnnotations.push({
+      ...annotation,
+      ...scope,
+      key: annotationRecordKey(scope.scopeKey, annotation.id),
+    });
+  }
+  await tables.annotations.clear();
+  await tables.annotations.bulkPut(migratedAnnotations);
+
+  const migrateCollection = async <T extends LegacyScopedRecord>(
+    table: Table<T, string>,
+    keyFor: (record: T, scopeKey: string) => string,
+  ) => {
+    const migrated: T[] = [];
+    for (const record of await table.toArray()) {
+      const scope = await migrateScope(record);
+      migrated.push({
+        ...record,
+        ...scope,
+        key: keyFor(record, scope.scopeKey),
+      } as T);
+    }
+    await table.clear();
+    await table.bulkPut(migrated);
+  };
+
+  if (knownOwner) {
+    await migrateCollection(
+      tables.guestLayerPreferences as unknown as Table<
+        GuestLayerPreferenceRecord & LegacyScopedRecord,
+        string
+      >,
+      (record, scopeKey) => annotationRecordKey(scopeKey, record.layerId),
+    );
+  } else {
+    await tables.guestLayerPreferences.clear();
+  }
+
+  const migratedOffline: OfflineScoreRecord[] = [];
+  for (const offline of (await tables.offlineScores.toArray()) as Array<
+    OfflineScoreRecord & LegacyScopedRecord
+  >) {
+    const scope = await migrateScope(offline);
+    const legacyOfflineScope = `${offline.choirId}:${offline.scoreId}`;
+    const sharedIds = sharedLayerIdsByScope.get(legacyOfflineScope) ?? new Set();
+    const legacySnapshot = offline.annotationSnapshot ?? {
+      layers: [],
+      annotations: [],
+      cursor: 0,
+      verifiedAt: offline.verifiedAt,
+    };
+    const snapshot = {
+      ...legacySnapshot,
+      layers: legacySnapshot.layers
+        .filter((layer) => knownOwner || layer.kind === "shared")
+        .map((layer) => ({
+          ...layer,
+          ...scope,
+          key: annotationRecordKey(scope.scopeKey, layer.id),
+          canEdit: knownOwner ? layer.canEdit : false,
+          visible: knownOwner ? layer.visible : true,
+          colorOverride: knownOwner ? layer.colorOverride : null,
+        })),
+      annotations: legacySnapshot.annotations
+        .filter(
+          (annotation) =>
+            knownOwner ||
+            (annotation.state === "synced" && sharedIds.has(annotation.layerId)),
+        )
+        .map((annotation) => ({
+          ...annotation,
+          ...scope,
+          key: annotationRecordKey(scope.scopeKey, annotation.id),
+        })),
+    };
+    migratedOffline.push({
+      ...offline,
+      ...scope,
+      key: annotationRecordKey(scope.scopeKey, offline.versionId),
+      annotationSnapshot: snapshot,
+    });
+  }
+  await tables.offlineScores.clear();
+  await tables.offlineScores.bulkPut(migratedOffline);
+
+  if (knownOwner) {
+    for (const operation of await tables.annotationOutbox.toArray()) {
+      const scope = await migrateScope(operation);
+      await tables.annotationOutbox.put({ ...operation, ...scope });
+    }
+    for (const conflict of await tables.annotationConflicts.toArray()) {
+      const scope = await migrateScope(conflict);
+      await tables.annotationConflicts.put({ ...conflict, ...scope });
+    }
+    for (const cursor of await tables.annotationSyncCursors.toArray()) {
+      const scope = await migrateScope(cursor);
+      await tables.annotationSyncCursors.delete(cursor.scopeKey);
+      await tables.annotationSyncCursors.put({ ...cursor, ...scope });
+    }
+    for (const lease of await tables.syncLeases.toArray()) {
+      const scope = await migrateScope(lease);
+      await tables.syncLeases.delete(lease.scopeKey);
+      await tables.syncLeases.put({
+        ...lease,
+        ...scope,
+        lockOwner: (lease as unknown as { owner: string }).owner,
+      });
+    }
+    await system.put({ key: LAST_AUTHENTICATED_OWNER_KEY, value: knownOwner });
+    await system.put({ key: ACTIVE_LOCAL_OWNER_KEY, value: knownOwner });
+  } else {
+    await Promise.all([
+      tables.annotationOutbox.clear(),
+      tables.annotationConflicts.clear(),
+      tables.annotationSyncCursors.clear(),
+      tables.syncLeases.clear(),
+    ]);
+  }
+  await system.delete(LEGACY_LAST_AUTHENTICATED_USER_ID_KEY);
+}
+
+function legacyScope(record: LegacyScopedRecord) {
+  if (record.choirId && record.scoreId) {
+    return { choirId: record.choirId, scoreId: record.scoreId };
+  }
+  const [choirId, scoreId] = record.scopeKey.split(":");
+  if (!choirId || !scoreId) throw new Error("legacy_local_scope_invalid");
+  return { choirId, scoreId };
+}
+
+function migrationScopeKey(
+  ownerKey: LocalWorkspaceOwnerKey,
+  choirId: string,
+  scoreId: string,
+) {
+  return JSON.stringify([ownerKey, choirId, scoreId]);
 }
