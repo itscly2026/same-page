@@ -70,9 +70,7 @@ async function verifyUnauthenticatedBoundary() {
 }
 
 async function verifySocialProviderBoundary() {
-  const response = await request("/api/auth/social-providers", {
-    headers: { accept: "application/json" },
-  });
+  const response = await requestUntilDeployed("/api/auth/social-providers");
   assert.equal(response.status, 200, "social provider endpoint must return 200");
   assert.equal(response.headers.get("cache-control"), "no-store");
   const payload = await response.json();
@@ -84,4 +82,17 @@ async function verifySocialProviderBoundary() {
     ),
     "only supported social providers may be exposed",
   );
+}
+
+async function requestUntilDeployed(path) {
+  const attempts = 12;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const response = await request(path, {
+      headers: { accept: "application/json" },
+    });
+    if (response.status !== 404 || attempt === attempts) return response;
+    // Wrangler can finish before every Cloudflare edge sees the new Worker.
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+  }
+  throw new Error("deployment verification retry exhausted");
 }
