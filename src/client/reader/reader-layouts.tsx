@@ -103,6 +103,7 @@ export function PageLayout({
               document={document}
               pageNumber={currentPage}
               width={renderedWidth}
+              aspectRatio={pageRatio}
               annotationProps={annotationProps}
             />
           </div>
@@ -246,7 +247,10 @@ export function ContinuousLayout({
       <div
         className="continuous-reader__inner"
         ref={contentRef}
-        style={{ height: virtualizer.getTotalSize() }}
+        style={{
+          width: Math.max(size.width, pageWidth),
+          height: virtualizer.getTotalSize(),
+        }}
       >
         {virtualizer.getVirtualItems().map((item) => (
           <div
@@ -312,11 +316,9 @@ export function PageNavigatorPanel({
               style={{ transform: `translateX(${item.start}px)` }}
               aria-label={`前往第 ${item.index + 1} 页`}
             >
-              <PdfPageCanvas
-                className="pdf-thumbnail"
+              <PdfPageThumbnail
                 document={document}
                 pageNumber={item.index + 1}
-                width={42}
               />
               <span>{item.index + 1}</span>
             </button>
@@ -327,20 +329,57 @@ export function PageNavigatorPanel({
   );
 }
 
+function PdfPageThumbnail({
+  document,
+  pageNumber,
+}: {
+  document: PDFDocumentProxy;
+  pageNumber: number;
+}) {
+  const aspectRatio = usePdfPageAspectRatio(document, pageNumber);
+  return (
+    <PdfPageCanvas
+      className="pdf-thumbnail"
+      document={document}
+      pageNumber={pageNumber}
+      width={42}
+      aspectRatio={aspectRatio}
+    />
+  );
+}
+
 function AnnotatedPdfPage({
   document,
   pageNumber,
   width,
+  aspectRatio,
   annotationProps,
 }: {
   document: PDFDocumentProxy;
   pageNumber: number;
   width: number;
+  aspectRatio?: number;
   annotationProps: AnnotationPageProps;
 }) {
+  const resolvedAspectRatio = usePdfPageAspectRatio(
+    document,
+    pageNumber,
+    aspectRatio,
+  );
   return (
-    <div className="annotated-pdf-page">
-      <PdfPageCanvas document={document} pageNumber={pageNumber} width={width} />
+    <div
+      className="annotated-pdf-page"
+      style={{
+        width,
+        height: width / resolvedAspectRatio,
+      }}
+    >
+      <PdfPageCanvas
+        document={document}
+        pageNumber={pageNumber}
+        width={width}
+        aspectRatio={resolvedAspectRatio}
+      />
       <AnnotationOverlay
         {...annotationProps}
         key={`${pageNumber}:${annotationProps.editing ? `edit:${annotationProps.activeLayerId}:${annotationProps.tool}` : "read"}`}
@@ -368,9 +407,13 @@ function useElementSize(ref: RefObject<HTMLElement | null>) {
 function usePdfPageAspectRatio(
   document: PDFDocumentProxy,
   pageNumber: number,
+  knownRatio?: number,
 ) {
-  const [ratio, setRatio] = useState(0.707);
+  const [ratio, setRatio] = useState(knownRatio ?? 0.707);
   useEffect(() => {
+    if (knownRatio !== undefined) {
+      return;
+    }
     let active = true;
     void document
       .getPage(pageNumber)
@@ -384,8 +427,8 @@ function usePdfPageAspectRatio(
     return () => {
       active = false;
     };
-  }, [document, pageNumber]);
-  return ratio;
+  }, [document, knownRatio, pageNumber]);
+  return knownRatio ?? ratio;
 }
 
 function clamp(value: number, minimum: number, maximum: number) {

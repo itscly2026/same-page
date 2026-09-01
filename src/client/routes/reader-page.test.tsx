@@ -774,6 +774,12 @@ describe("ReaderPage", () => {
     expect(screen.getByText("200%")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     const continuousReader = screen.getByLabelText("连续滚动阅读");
+    const continuousContent = continuousReader.querySelector<HTMLElement>(
+      ".continuous-reader__inner",
+    );
+    expect(Number.parseFloat(continuousContent?.style.width ?? "0")).toBeGreaterThan(
+      continuousReader.clientWidth,
+    );
     fireEvent.pointerDown(continuousReader, {
       pointerId: 1,
       clientX: 700,
