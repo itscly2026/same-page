@@ -8,9 +8,24 @@ import { describe, expect, it } from "vitest";
 const styles = readFileSync(resolve(process.cwd(), "src/client/styles.css"), "utf8");
 
 describe("reader control style contract", () => {
-  it("uses opaque white bars with black controls", () => {
+  it("centers fitted pages without changing oversized-page scrolling", () => {
     expect(styles).toMatch(
-      /\.reader-chrome,[\s\S]*?color: #000;[\s\S]*?background: #fff;/,
+      /\.page-reader__canvas-stage \{[\s\S]*?place-items: center;/,
+    );
+    expect(styles).toMatch(
+      /\.continuous-reader__page \{[\s\S]*?justify-content: safe center;/,
+    );
+  });
+
+  it("uses compact floating reader controls instead of a full-width white bar", () => {
+    expect(styles).toMatch(
+      /\.reader-chrome \{[\s\S]*?pointer-events: none;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/,
+    );
+    expect(styles).toMatch(
+      /\.reader-chrome__back,[\s\S]*?background: rgb\(255 255 255 \/ 96%\);/,
+    );
+    expect(styles).toMatch(
+      /\.reader-more-menu \{[\s\S]*?pointer-events: auto;/,
     );
     expect(styles).toMatch(
       /\.annotation-controls \{[\s\S]*?color: #000;[\s\S]*?background: #fff;/,

@@ -967,15 +967,13 @@ h1 {
 
 .file-library {
   width: min(68rem, calc(100% - 2rem));
-  padding-top: clamp(2.5rem, 6vw, 4.5rem);
+  padding-top: clamp(1.5rem, 4vw, 2.75rem);
 }
 
 .library-heading,
 .library-actions,
-.library-search,
 .file-row,
 .file-row__open,
-.invite-admin,
 .trash-list li {
   display: flex;
   align-items: center;
@@ -986,36 +984,71 @@ h1 {
   gap: 1.5rem;
 }
 
+.library-title {
+  display: grid;
+  gap: 0.2rem;
+}
+
 .library-heading h1 {
-  font-size: clamp(2.25rem, 5vw, 3.8rem);
+  margin: 0;
+  font-size: clamp(1.55rem, 3vw, 2.15rem);
+  letter-spacing: -0.035em;
+}
+
+.library-title p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
 }
 
 .library-actions {
   gap: 0.65rem;
 }
 
+.library-workspace {
+  min-height: 20rem;
+  overflow: hidden;
+  margin-top: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+  box-shadow: 0 0.75rem 2.5rem rgb(31 57 60 / 5%);
+}
+
+.library-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.85rem 1rem;
+}
+
+.library-toolbar h2 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: -0.015em;
+}
+
 .library-search {
-  gap: 0.55rem;
-  max-width: 31rem;
-  margin-top: 2.5rem;
+  width: min(18rem, 52%);
+  margin: 0;
 }
 
 .library-search [data-rac] {
-  flex: 1;
+  width: 100%;
 }
 
 .library-search input {
   width: 100%;
-  min-height: 2.8rem;
-  border: 1px solid #b9c8c4;
-  border-radius: 0.75rem;
-  padding: 0.6rem 0.85rem;
+  min-height: 2.35rem;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  padding: 0.45rem 0.75rem;
   color: var(--ink);
-  background: var(--surface);
+  background: #f8fbfa;
 }
 
-.library-search button,
-.invite-admin > button,
 .trash-list button {
   min-height: 2.8rem;
   border: 1px solid #b9c8c4;
@@ -1028,7 +1061,7 @@ h1 {
 
 .storage-warning,
 .library-message {
-  margin: 1rem 0 0;
+  margin: 1rem;
   border-radius: 0.7rem;
   padding: 0.75rem 0.9rem;
   color: #6f4d18;
@@ -1042,14 +1075,18 @@ h1 {
 }
 
 .file-list {
-  margin-top: 1.75rem;
-  border-top: 1px solid var(--line);
+  margin: 0;
 }
 
 .file-row {
   position: relative;
   min-height: 4.25rem;
   border-bottom: 1px solid var(--line);
+  padding-inline: 0.75rem;
+}
+
+.file-row:last-child {
+  border-bottom: 0;
 }
 
 .file-row__open {
@@ -1142,40 +1179,24 @@ h1 {
 }
 
 .empty-library {
-  margin: 1.75rem 0 0;
-  border: 1px dashed #b9c8c4;
-  border-radius: 0.9rem;
-  padding: 2.75rem 1rem;
+  margin: 0;
+  padding: clamp(3.5rem, 12vw, 7rem) 1rem;
   color: var(--muted);
   text-align: center;
 }
 
-.invite-admin {
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1.5rem;
-  margin-top: 4rem;
-  border-top: 1px solid var(--line);
-  padding-top: 1.4rem;
-}
-
-.invite-admin h2,
-.invite-admin p {
-  margin: 0;
-}
-
-.invite-admin h2 {
-  font-size: 1rem;
-}
-
-.invite-admin p {
-  margin-top: 0.35rem;
+.drive-management-copy {
+  margin: 1.25rem 0;
   color: var(--muted);
-  font-size: 0.9rem;
+  line-height: 1.65;
 }
 
-.invite-admin .join-code-result {
-  flex-basis: 100%;
+.drive-management-dialog > .secondary-button {
+  width: 100%;
+}
+
+.drive-management-dialog .join-code-result {
+  margin-top: 1rem;
 }
 
 .upload-dropzone {
@@ -1285,6 +1306,15 @@ h1 {
     flex: 1;
   }
 
+  .library-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .library-search {
+    width: 100%;
+  }
+
   .file-row__open {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
@@ -1297,10 +1327,6 @@ h1 {
 
   .file-row__size {
     grid-column: 2;
-  }
-
-  .invite-admin {
-    flex-direction: column;
   }
 
   .upload-list li {
@@ -1354,6 +1380,27 @@ h1 {
   backdrop-filter: blur(18px) saturate(115%);
 }
 
+.reader-chrome {
+  pointer-events: none;
+  min-height: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.reader-chrome__back,
+.reader-chrome__title,
+.reader-chrome__actions {
+  pointer-events: auto;
+  border: 1px solid rgb(0 0 0 / 8%);
+  color: #000;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 0.65rem 2rem rgb(0 0 0 / 18%);
+  backdrop-filter: blur(18px) saturate(115%);
+}
+
 .reader-chrome__back,
 .reader-chrome button,
 .reader-edit-header button,
@@ -1375,6 +1422,7 @@ h1 {
   display: inline-flex;
   align-items: center;
   text-decoration: none;
+  border-radius: 999px;
 }
 
 .reader-icon-button {
@@ -1390,6 +1438,11 @@ h1 {
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+  justify-self: center;
+  max-width: min(28rem, 42vw);
+  border-radius: 999px;
+  padding: 0.62rem 0.9rem;
+  font-size: 0.82rem;
 }
 
 .reader-chrome__actions,
@@ -1398,6 +1451,23 @@ h1 {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+}
+
+.reader-chrome__actions {
+  border-radius: 999px;
+  padding: 0.2rem;
+}
+
+.reader-chrome__actions button {
+  border-color: transparent;
+  background: transparent;
+}
+
+.reader-page-button {
+  min-width: 3.5rem;
+  padding-inline: 0.65rem !important;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .reader-chrome button[aria-pressed="true"],
@@ -1410,6 +1480,7 @@ h1 {
 }
 
 .reader-more-menu {
+  pointer-events: auto;
   position: absolute;
   top: calc(100% + 0.55rem);
   right: 0;
@@ -1441,6 +1512,12 @@ h1 {
   color: #575757;
   font-size: 0.8rem;
   line-height: 1.45;
+}
+
+.reader-more-menu__status[data-kind="failed"],
+.reader-more-menu__status[data-kind="conflict"],
+.reader-more-menu__status[data-kind="risk"] {
+  color: #7d351f;
 }
 
 .reader-edit-header > div {
@@ -1763,6 +1840,16 @@ h1 {
   margin-top: 0.6rem;
 }
 
+.annotation-conflicts > p {
+  margin: 0.35rem 0 0;
+  font-size: 0.86rem;
+}
+
+.annotation-conflict-item > span {
+  flex-basis: 100%;
+  font-weight: 650;
+}
+
 .annotation-conflicts button {
   color: #562b17;
   background: #fff;
@@ -1820,14 +1907,22 @@ h1 {
 
 .page-reader__canvas-stage {
   display: grid;
-  place-items: start;
+  place-items: center;
 }
 
-.page-reader__canvas-stage > .annotated-pdf-page {
+.page-reader__content,
+.continuous-reader__inner {
   transform: translate(
-    var(--reader-pinch-offset-x, 0),
-    var(--reader-pinch-offset-y, 0)
-  );
+      var(--reader-gesture-x, 0),
+      var(--reader-gesture-y, 0)
+    )
+    scale(var(--reader-gesture-scale, 1));
+  transform-origin: 0 0;
+}
+
+.page-reader__content[data-gesture-preview],
+.continuous-reader__inner[data-gesture-preview] {
+  will-change: transform;
 }
 
 .pdf-page-canvas {
@@ -2119,10 +2214,6 @@ h1 {
 .continuous-reader__inner {
   position: relative;
   min-width: 100%;
-  transform: translate(
-    var(--reader-pinch-offset-x, 0),
-    var(--reader-pinch-offset-y, 0)
-  );
 }
 
 .continuous-reader__page {
@@ -2130,7 +2221,7 @@ h1 {
   top: 0;
   left: 0;
   display: flex;
-  justify-content: flex-start;
+  justify-content: safe center;
   width: 100%;
   padding: 0 0 0.5rem;
 }
@@ -2229,6 +2320,14 @@ h1 {
 
   .reader-more-menu {
     right: -0.4rem;
+  }
+
+  .reader-chrome__title {
+    display: none;
+  }
+
+  .reader-chrome {
+    grid-template-columns: auto 1fr auto;
   }
 
   .reader-panel-backdrop {

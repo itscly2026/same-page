@@ -79,7 +79,12 @@ const annotations = [
   },
 ];
 
-export function resolveFixtureRequest({ pathname, method = "GET", identity = "guest" }) {
+export function resolveFixtureRequest({
+  pathname,
+  method = "GET",
+  identity = "guest",
+  cookie = "",
+}) {
   if (method === "GET" && pathname === "/api/auth/social-providers") {
     return json({ providers: ["google", "wechat"] });
   }
@@ -89,15 +94,37 @@ export function resolveFixtureRequest({ pathname, method = "GET", identity = "gu
   }
 
   if (method === "GET" && pathname === "/api/guest/session") {
-    return json({ error: "no_guest_session" }, 404);
+    return cookie.includes("same_page_guest=visual-preview")
+      ? json({ choir: previewChoir, entryKind: "preview" })
+      : json({ error: "no_guest_session" }, 404);
   }
 
   if (method === "GET" && pathname === "/api/guest/preview-choir") {
     return json({ choir: previewChoir });
   }
 
+  if (
+    method === "GET" &&
+    pathname === `/api/guest/choirs/${previewChoir.id}`
+  ) {
+    return json({ choir: previewChoir, entryKind: "preview" });
+  }
+
   if (method === "GET" && pathname.startsWith("/api/guest/choirs/")) {
     return json({ error: "not_found" }, 404);
+  }
+
+  if (method === "POST" && pathname === "/api/guest/session") {
+    if (identity === "guest") {
+      return json({ error: "invalid_or_expired_join_code" }, 404);
+    }
+    return {
+      ...json({ choir: previewChoir, entryKind: "preview" }),
+      headers: {
+        "cache-control": "no-store",
+        "set-cookie": "same_page_guest=visual-preview; Path=/; HttpOnly; SameSite=Lax",
+      },
+    };
   }
 
   if (method === "GET" && pathname === "/api/choirs") {
@@ -121,6 +148,18 @@ export function resolveFixtureRequest({ pathname, method = "GET", identity = "gu
       scores: [score, ...otherScores],
       storage: { usedBytes: 1_572_864, limitBytes: 1_073_741_824 },
       permissions: { canManage: identity === "admin" },
+    });
+  }
+
+  if (
+    method === "GET" &&
+    pathname === `/api/choirs/${previewChoir.id}/scores` &&
+    cookie.includes("same_page_guest=visual-preview")
+  ) {
+    return json({
+      scores: [{ ...score, choirId: previewChoir.id }],
+      storage: { usedBytes: score.currentVersion.sizeBytes, limitBytes: 1_073_741_824 },
+      permissions: { canManage: false },
     });
   }
 

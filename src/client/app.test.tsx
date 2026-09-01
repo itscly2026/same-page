@@ -139,7 +139,6 @@ describe("AppRoutes", () => {
       },
       isPending: false,
     } as ReturnType<typeof authClient.useSession>);
-
     const home = render(
       <MemoryRouter initialEntries={["/"]}>
         <AppRoutes />
@@ -160,6 +159,38 @@ describe("AppRoutes", () => {
       screen.queryByText("wechat-unionid@wechat.placeholder.invalid"),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "登录或注册" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the public preview entry visible after sign-in", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "user-1", email: "member@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) =>
+        Promise.resolve(
+          input === "/api/guest/preview-choir"
+            ? Response.json({
+                choir: {
+                  id: "preview-choir",
+                  name: "公开体验云盘",
+                  guestAdmissionMode: "open",
+                },
+              })
+            : Response.json({ memberships: [] }),
+        ),
+      ),
+    );
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("link", { name: "访问公开体验云盘" }),
+    ).toHaveAttribute("href", "/choirs/preview-choir");
   });
 
   it("normalizes a grouped pasted invitation and enters as a guest", async () => {
@@ -684,14 +715,14 @@ describe("AppRoutes", () => {
     });
   });
 
-  it("returns a signed-in non-member from the preview choir to the home entry", async () => {
+  it("opens the preview read-only for a signed-in non-member without joining", async () => {
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "user-1", email: "member@example.test" } },
       isPending: false,
     } as ReturnType<typeof authClient.useSession>);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: string) => {
+    let admitted = false;
+    const fetchMock = vi.fn().mockImplementation(
+      (input: string, init?: RequestInit) => {
         if (
           input === "/api/guest/preview-choir" ||
           input === "/api/guest/choirs/preview-choir"
@@ -710,9 +741,32 @@ describe("AppRoutes", () => {
         if (input === "/api/choirs") {
           return Promise.resolve(Response.json({ memberships: [] }));
         }
+        if (input === "/api/guest/session" && init?.method === "POST") {
+          admitted = true;
+          return Promise.resolve(
+            Response.json({
+              choir: {
+                id: "preview-choir",
+                name: "公开体验云盘",
+                guestAdmissionMode: "open",
+              },
+              entryKind: "preview",
+            }),
+          );
+        }
+        if (input === "/api/choirs/preview-choir/scores" && admitted) {
+          return Promise.resolve(
+            Response.json({
+              scores: [],
+              storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
+              permissions: { canManage: false },
+            }),
+          );
+        }
         return Promise.resolve(Response.json({}, { status: 403 }));
-      }),
+      },
     );
+    vi.stubGlobal("fetch", fetchMock);
 
     render(
       <MemoryRouter initialEntries={["/choirs/preview-choir"]}>
@@ -721,12 +775,16 @@ describe("AppRoutes", () => {
     );
 
     expect(
-      await screen.findByRole("heading", {
-        name: "Every voice, on the same page.",
-      }),
+      await screen.findByRole("heading", { name: "公开体验云盘" }),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
-    expect(screen.queryByText("公开体验云盘")).not.toBeInTheDocument();
+    expect(screen.getByText("这里还没有 PDF 文件。")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ admission: "open", choirId: "preview-choir" }),
+    });
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/choirs/join", expect.anything());
   });
 
   it("lets an administrator rotate and then hide a one-time join code", async () => {
@@ -770,9 +828,10 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "轮换邀请码" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "管理" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "邀请码" }));
+    expect(await screen.findByRole("dialog", { name: "邀请码" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "轮换邀请码" }));
 
     expect(
       await screen.findByText("邀请码已轮换。请现在复制并通过私密渠道发送。"),
@@ -838,42 +897,40 @@ describe("AppRoutes", () => {
   });
 
   it("shows members a filename-first list without administrator storage controls", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: string) =>
-        Promise.resolve(
-          input.includes("/scores")
-            ? Response.json({
-                scores: [
-                  {
-                    id: "score-10",
-                    choirId: "choir-1",
-                    fileName: "排练 10.pdf",
-                    updatedAt: 1,
-                    currentVersion: {
-                      id: "version-1",
-                      versionNumber: 1,
-                      sizeBytes: 2 * 1024 * 1024,
-                      sha256: "a".repeat(64),
-                      etag: '"etag"',
-                      pageCount: 2,
-                      createdAt: 1,
-                    },
+    const fetchMock = vi.fn().mockImplementation((input: string) =>
+      Promise.resolve(
+        input.includes("/scores")
+          ? Response.json({
+              scores: [
+                {
+                  id: "score-10",
+                  choirId: "choir-1",
+                  fileName: "排练 10.pdf",
+                  updatedAt: 1,
+                  currentVersion: {
+                    id: "version-1",
+                    versionNumber: 1,
+                    sizeBytes: 2 * 1024 * 1024,
+                    sha256: "a".repeat(64),
+                    etag: '"etag"',
+                    pageCount: 2,
+                    createdAt: 1,
                   },
-                ],
-                storage: { usedBytes: 950_000_000, limitBytes: 1_073_741_824 },
-                permissions: { canManage: false },
-              })
-            : Response.json({
-                choir: {
-                  id: "choir-1",
-                  name: "小红花云盘",
-                  guestAdmissionMode: "invite",
                 },
-              }),
-        ),
+              ],
+              storage: { usedBytes: 950_000_000, limitBytes: 1_073_741_824 },
+              permissions: { canManage: false },
+            })
+          : Response.json({
+              choir: {
+                id: "choir-1",
+                name: "小红花云盘",
+                guestAdmissionMode: "invite",
+              },
+            }),
       ),
     );
+    vi.stubGlobal("fetch", fetchMock);
 
     render(
       <MemoryRouter initialEntries={["/choirs/choir-1"]}>
@@ -889,6 +946,74 @@ describe("AppRoutes", () => {
     expect(screen.queryByRole("button", { name: "回收站" })).not.toBeInTheDocument();
     expect(screen.queryByText(/云盘存储已使用/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/更多操作/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "搜索" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索文件名" }), {
+      target: { value: "排练" },
+    });
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/choirs/choir-1/scores?q=%E6%8E%92%E7%BB%83",
+      );
+    });
+
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve(Response.json({ error: "temporary" }, { status: 503 })),
+    );
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索文件名" }), {
+      target: { value: "暂时失败" },
+    });
+    expect(
+      await screen.findByText("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /排练 10\.pdf.*2\.0 MB/ })).toBeInTheDocument();
+  });
+
+  it("keeps only the newest immediate-search response", async () => {
+    let releaseSlow!: (response: Response) => void;
+    const slowResponse = new Promise<Response>((resolve) => {
+      releaseSlow = resolve;
+    });
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input.endsWith("?q=%E6%85%A2")) return slowResponse;
+      if (input.endsWith("?q=%E6%96%B0")) {
+        return Promise.resolve(scoreListResponse("新结果.pdf"));
+      }
+      if (input.includes("/scores")) {
+        return Promise.resolve(scoreListResponse("初始结果.pdf"));
+      }
+      return Promise.resolve(
+        Response.json({
+          choir: {
+            id: "choir-1",
+            name: "小红花云盘",
+            guestAdmissionMode: "invite",
+          },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("link", { name: /初始结果\.pdf/ });
+    const searchbox = screen.getByRole("searchbox", { name: "搜索文件名" });
+    fireEvent.change(searchbox, { target: { value: "慢" } });
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/choirs/choir-1/scores?q=%E6%85%A2");
+    });
+    fireEvent.change(searchbox, { target: { value: "新" } });
+    expect(await screen.findByRole("link", { name: /新结果\.pdf/ })).toBeInTheDocument();
+
+    releaseSlow(scoreListResponse("过期结果.pdf"));
+    await waitFor(() => {
+      expect(screen.queryByRole("link", { name: /过期结果\.pdf/ })).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /新结果\.pdf/ })).toBeInTheDocument();
+    });
   });
 
   it("uploads files independently and reports invalid and duplicate files in place", async () => {
@@ -1034,3 +1159,27 @@ describe("AppRoutes", () => {
     expect(await localDatabase.annotationLayers.count()).toBe(1);
   });
 });
+
+function scoreListResponse(fileName: string) {
+  return Response.json({
+    scores: [
+      {
+        id: `score-${fileName}`,
+        choirId: "choir-1",
+        fileName,
+        updatedAt: 1,
+        currentVersion: {
+          id: `version-${fileName}`,
+          versionNumber: 1,
+          sizeBytes: 2048,
+          sha256: "a".repeat(64),
+          etag: '"etag"',
+          pageCount: 2,
+          createdAt: 1,
+        },
+      },
+    ],
+    storage: { usedBytes: 2048, limitBytes: 1_073_741_824 },
+    permissions: { canManage: false },
+  });
+}

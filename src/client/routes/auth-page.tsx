@@ -28,6 +28,7 @@ import {
   type ChoirSummary,
 } from "../../shared/choirs";
 import { authClient } from "../auth/auth-client";
+import { clearGuestSession } from "../auth/preview-guest-session";
 import { AppHeader } from "../components/app-header";
 
 type AuthView =
@@ -797,10 +798,6 @@ async function postJson(path: string, body: unknown) {
   } catch {
     return null;
   }
-}
-
-async function clearGuestSession() {
-  await fetch("/api/guest/session", { method: "DELETE" }).catch(() => null);
 }
 
 function validPasswordConfirmation(password: string, confirmation: string) {

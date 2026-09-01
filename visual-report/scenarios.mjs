@@ -22,6 +22,16 @@ export const visualReportScenarios = [
     ],
   },
   {
+    id: "home-member-preview-entry",
+    title: "首页 · 登录后的公开体验入口",
+    description: "登录用户仍能从独立入口访问公开体验云盘。",
+    device: "portrait",
+    identity: "member",
+    route: "/",
+    ready: { type: "role", role: "link", name: "访问公开体验云盘" },
+    actions: [],
+  },
+  {
     id: "home-entry-dialog-filled",
     title: "首页 · 邀请码填写",
     description: "横向 iPad 中邀请码以单一输入呈现 4–4 分组。",
@@ -82,6 +92,28 @@ export const visualReportScenarios = [
     actions: [],
   },
   {
+    id: "library-admin-management",
+    title: "文件库 · 管理入口",
+    description: "低频的回收站、邀请码与存储信息集中在管理菜单。",
+    device: "narrow",
+    identity: "admin",
+    route: "/choirs/visual-choir",
+    ready: { type: "selector", selector: ".admin-menu-popover" },
+    actions: [
+      { type: "clickRole", role: "button", name: "管理" },
+    ],
+  },
+  {
+    id: "library-preview-signed-in",
+    title: "文件库 · 登录用户只读体验",
+    description: "登录但未加入的用户以只读访客身份浏览公开体验云盘。",
+    device: "landscape",
+    identity: "member",
+    route: "/choirs/visual-preview-choir",
+    ready: { type: "selector", selector: ".file-list" },
+    actions: [],
+  },
+  {
     id: "library-upload-dialog",
     title: "文件库 · 上传 PDF",
     description: "管理员打开上传界面后的状态。",
@@ -105,6 +137,17 @@ export const visualReportScenarios = [
     waitsForPdf: true,
   },
   {
+    id: "reader-clean-portrait",
+    title: "阅读器 · 竖屏居中",
+    description: "竖向 iPad 中适合页面后的谱面在阅读舞台水平与垂直居中。",
+    device: "portrait",
+    identity: "member",
+    route: "/choirs/visual-choir/scores/visual-score",
+    ready: { type: "selector", selector: ".page-reader__viewport canvas" },
+    actions: [],
+    waitsForPdf: true,
+  },
+  {
     id: "reader-controls",
     title: "阅读器 · 显示控制",
     description: "轻点页面中央后显示的阅读器控制。",
@@ -114,6 +157,48 @@ export const visualReportScenarios = [
     ready: { type: "selector", selector: ".reader-chrome" },
     actions: [
       { type: "clickCenter", selector: ".page-reader__viewport" },
+    ],
+    waitsForPdf: true,
+  },
+  {
+    id: "reader-controls-desktop",
+    title: "阅读器 · 桌面控制",
+    description: "桌面视口沿用同一套紧凑、内容优先的阅读控制层级。",
+    device: "desktop",
+    identity: "member",
+    route: "/choirs/visual-choir/scores/visual-score",
+    ready: { type: "selector", selector: ".reader-chrome" },
+    actions: [
+      { type: "clickCenter", selector: ".page-reader__viewport" },
+    ],
+    waitsForPdf: true,
+  },
+  {
+    id: "reader-pages",
+    title: "阅读器 · 页面定位",
+    description: "页码入口按需打开缩略图定位，不常驻占用谱面空间。",
+    device: "landscape",
+    identity: "member",
+    route: "/choirs/visual-choir/scores/visual-score",
+    ready: { type: "selector", selector: ".page-preview-strip" },
+    actions: [
+      { type: "clickCenter", selector: ".page-reader__viewport" },
+      { type: "clickRole", role: "button", name: "页面位置" },
+    ],
+    waitsForPdf: true,
+  },
+  {
+    id: "reader-more",
+    title: "阅读器 · 更多",
+    description: "布局、适合页面、缩放、离线与同步集中在可交互的低频菜单。",
+    device: "narrow",
+    identity: "member",
+    route: "/choirs/visual-choir/scores/visual-score",
+    ready: { type: "text", text: "125%" },
+    actions: [
+      { type: "clickCenter", selector: ".page-reader__viewport" },
+      { type: "clickRole", role: "button", name: "更多" },
+      { type: "clickRole", role: "button", name: "放大" },
     ],
     waitsForPdf: true,
   },
@@ -190,7 +275,7 @@ export function validateVisualReportScenarios(scenarios = visualReportScenarios)
       throw new Error(`Duplicate visual report scenario id: ${scenario.id}`);
     }
     ids.add(scenario.id);
-    if (!new Set(["portrait", "landscape", "narrow"]).has(scenario.device)) {
+    if (!new Set(["portrait", "landscape", "narrow", "desktop"]).has(scenario.device)) {
       throw new Error(`Invalid device for scenario ${scenario.id}`);
     }
     if (!new Set(["guest", "member", "admin"]).has(scenario.identity)) {

@@ -88,15 +88,28 @@ import {
   type ReaderLayout,
   useReaderPreferences,
 } from "../reader/use-reader-preferences";
+import {
+  deriveReaderSyncStatus,
+  describeAnnotationConflict,
+  type ReaderSyncOutcome,
+} from "../reader/reader-sync-status";
 
-type ReaderPanel = "layers";
+type ReaderPanel = "layers" | "pages";
+
+type ReaderLoadState =
+  | { kind: "resolving-workspace" }
+  | { kind: "loading"; scopeKey: string }
+  | { kind: "ready"; scopeKey: string }
+  | { kind: "error"; scopeKey: string; message: string };
 
 export default function ReaderPage() {
   const { choirId = "", scoreId = "" } = useParams();
   const session = authClient.useSession();
   const [resolvedWorkspace, setResolvedWorkspace] =
     useState<LocalWorkspace | null>(null);
-  const [loadedScopeKey, setLoadedScopeKey] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<ReaderLoadState>({
+    kind: "resolving-workspace",
+  });
   const workspaceIsActive = useLiveQuery(
     () => resolvedWorkspace
       ? isLocalWorkspaceActive(resolvedWorkspace)
@@ -109,7 +122,6 @@ export default function ReaderPage() {
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [documentScopeKey, setDocumentScopeKey] = useState<string | null>(null);
   const [source, setSource] = useState<string | ArrayBuffer | null>(null);
-  const [loadingError, setLoadingError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [downloading, setDownloading] = useState(false);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
@@ -118,7 +130,7 @@ export default function ReaderPage() {
     useState<AnnotationOverlayInteraction>("idle");
   const [tool, setTool] = useState<AnnotationTool>("text");
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncOutcome, setSyncOutcome] = useState<ReaderSyncOutcome>("none");
   const [cloudState, setCloudState] = useState<
     "checking" | "active" | "trashed" | "unavailable"
   >("checking");
@@ -161,6 +173,7 @@ export default function ReaderPage() {
     resolvedWorkspace && workspaceIsActive
       ? resolvedWorkspace
       : null;
+  const workspaceScopeKey = workspace?.scopeKey ?? null;
   const layerQuery = useLiveQuery(
     async () => ({
       scopeKey: workspace?.scopeKey ?? null,
@@ -258,7 +271,7 @@ export default function ReaderPage() {
       setEditing(false);
       setActiveLayerId(null);
       endAnnotationEditSession();
-      setLoadingError(null);
+      setLoadState({ kind: "loading", scopeKey: workspace.scopeKey });
       setCloudState("checking");
       const local = await findActiveOfflineScore(workspace.ownerKey, choirId, scoreId).catch(
         () => undefined,
@@ -266,38 +279,32 @@ export default function ReaderPage() {
       if (local) await restoreOfflineAnnotationSnapshot(workspace, local).catch(() => undefined);
       if (active) setOffline(local ?? null);
 
-      try {
-        const lookup = await lookupScoreCloudState(choirId, scoreId);
-        if (lookup.state === "trashed") {
-          setCloudState("trashed");
-          if (!local) {
-            setLoadedScopeKey(workspace.scopeKey);
-            setLoadingError("这份乐谱已移入回收站，当前设备没有可用的离线副本。");
-            return;
-          }
-          setSyncMessage(
-            "这份乐谱已移入回收站；本机离线副本和未同步批注仍保留，恢复后可继续同步。",
-          );
-          throw new Error("Score unavailable");
-        }
-        if (lookup.state !== "active") throw new Error("Score unavailable");
+      const lookup = await lookupScoreCloudState(choirId, scoreId);
+      if (lookup.state === "active") {
         if (!active) return;
         setCloudState("active");
-        setLoadedScopeKey(workspace.scopeKey);
         setScore(lookup.score);
         setSource(`/api/choirs/${choirId}/scores/${scoreId}/pdf`);
-      } catch {
-        if (!active) return;
-        setCloudState((current) => (current === "trashed" ? current : "unavailable"));
-        if (local) {
-          setLoadedScopeKey(workspace.scopeKey);
-          setScore(scoreFromOffline(local));
-          setSource(await local.blob.arrayBuffer());
-        } else {
-          setLoadedScopeKey(workspace.scopeKey);
-          setLoadingError("无法打开乐谱。请检查网络与当前访问权限。");
-        }
+        return;
       }
+
+      if (!active) return;
+      if (lookup.state === "trashed") {
+        setCloudState("trashed");
+        setSyncOutcome("trash-preserved");
+      } else {
+        setCloudState("unavailable");
+      }
+      if (local) {
+        setScore(scoreFromOffline(local));
+        setSource(await local.blob.arrayBuffer());
+        return;
+      }
+      setLoadState({
+        kind: "error",
+        scopeKey: workspace.scopeKey,
+        message: readerLoadFailureMessage(lookup.state),
+      });
     })();
     return () => {
       active = false;
@@ -334,9 +341,9 @@ export default function ReaderPage() {
         await cacheAnnotationLayers(workspace, layersToCache);
         if (active) setCanManageLayers(body.permissions.canManageLayers);
         await syncAnnotations(workspace, { pull: true });
-        if (active) setSyncMessage("批注已同步");
+        if (active) setSyncOutcome("synced");
       } catch {
-        if (active) setSyncMessage("当前使用本机批注；联网后可立即同步");
+        if (active) setSyncOutcome("none");
       }
     })();
     return () => {
@@ -354,9 +361,7 @@ export default function ReaderPage() {
           if (!active) return;
           if (lookup.state === "trashed") {
             setCloudState("trashed");
-            setSyncMessage(
-              "这份乐谱已移入回收站；本机离线副本和未同步批注仍保留，恢复后可继续同步。",
-            );
+            setSyncOutcome("trash-preserved");
             return;
           }
           if (lookup.state !== "active") return;
@@ -391,12 +396,21 @@ export default function ReaderPage() {
         destroyOpened = opened.destroy;
         if (active) {
           setDocument(nextDocument);
-          setDocumentScopeKey(workspace?.scopeKey ?? null);
+          setDocumentScopeKey(workspaceScopeKey);
+          if (workspaceScopeKey) {
+            setLoadState({ kind: "ready", scopeKey: workspaceScopeKey });
+          }
           setCurrentPage((page) => Math.min(page, nextDocument.numPages));
         }
       })
       .catch(() => {
-        if (active) setLoadingError("PDF 无法解析或文件暂时不可用。");
+        if (active && workspaceScopeKey) {
+          setLoadState({
+            kind: "error",
+            scopeKey: workspaceScopeKey,
+            message: "PDF 无法解析或文件暂时不可用。",
+          });
+        }
       });
     return () => {
       active = false;
@@ -404,7 +418,7 @@ export default function ReaderPage() {
       setDocument(null);
       setDocumentScopeKey(null);
     };
-  }, [setCurrentPage, source, workspace?.scopeKey]);
+  }, [setCurrentPage, source, workspaceScopeKey]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -501,7 +515,7 @@ export default function ReaderPage() {
 
   const beginEditing = () => {
     if (cloudState === "trashed") {
-      setSyncMessage("乐谱在回收站中，不能继续编辑；本机未同步批注仍会保留。");
+      setSyncOutcome("trash-preserved");
       return;
     }
     if (!workspace) return;
@@ -537,7 +551,7 @@ export default function ReaderPage() {
     setTool("text");
     beginAnnotationEditSession();
     setEditing(true);
-    setSyncMessage("编辑内容会持续保存在本机");
+    setSyncOutcome("local-draft");
   };
 
   const finishEditing = async () => {
@@ -553,43 +567,23 @@ export default function ReaderPage() {
     setEditingOrigin(null);
     const queued = await queueScoreDrafts(workspace);
     if (queued === 0) {
-      setSyncMessage("没有需要保存的修改");
+      setSyncOutcome("synced");
       return;
     }
     if (!navigator.onLine) {
-      setSyncMessage(`已保存到本机，${queued} 项待同步`);
+      setSyncOutcome("local-saved");
       return;
     }
     if (cloudState !== "active") {
-      setSyncMessage(`已保存到本机，${queued} 项待同步`);
+      setSyncOutcome("local-saved");
       return;
     }
     setSyncing(true);
     try {
       await syncAnnotations(workspace, { pull: false });
-      const remaining = await localDatabase.annotationOutbox
-        .where("scopeKey")
-        .equals(workspace.scopeKey)
-        .count();
-      const conflictCount = await localDatabase.annotationConflicts
-        .where("scopeKey")
-        .equals(workspace.scopeKey)
-        .count();
-      const syncErrors = await localDatabase.annotations
-        .where("[scopeKey+state]")
-        .equals([workspace.scopeKey, "sync-error"])
-        .count();
-      setSyncMessage(
-        conflictCount > 0
-          ? `${conflictCount} 项只保留在本机，需要处理冲突`
-          : syncErrors > 0
-            ? `${syncErrors} 项批注同步异常，本机版本仍然保留`
-          : remaining > 0
-            ? `${remaining} 项待同步`
-            : "保存成功，批注已同步",
-      );
+      setSyncOutcome("synced");
     } catch {
-      setSyncMessage(`已保存到本机，${queued} 项待同步`);
+      setSyncOutcome("local-saved");
     } finally {
       setSyncing(false);
     }
@@ -598,7 +592,7 @@ export default function ReaderPage() {
   const manualSync = async () => {
     if (!workspace) return;
     if (cloudState === "trashed") {
-      setSyncMessage("乐谱在回收站中，已停止云端同步；本机内容仍然保留。");
+      setSyncOutcome("trash-preserved");
       return;
     }
     setSyncing(true);
@@ -611,13 +605,9 @@ export default function ReaderPage() {
         .where("[scopeKey+state]")
         .equals([workspace.scopeKey, "sync-error"])
         .count();
-      setSyncMessage(
-        remainingErrors > 0
-          ? `${remainingErrors} 项批注同步异常，稍后可重试`
-          : "批注已同步",
-      );
+      setSyncOutcome(remainingErrors > 0 ? "failed" : "synced");
     } catch {
-      setSyncMessage("同步未完成，本机内容仍然保留");
+      setSyncOutcome("failed");
     } finally {
       setSyncing(false);
     }
@@ -630,31 +620,34 @@ export default function ReaderPage() {
     if (!workspace) return;
     if (strategy === "discard") {
       await discardAnnotationConflict(workspace, opId);
-      setSyncMessage("已放弃本机冲突版本");
+      setSyncOutcome("conflict-discarded");
       return;
     }
     await reapplyAnnotationConflict(workspace, opId, strategy === "keep-both");
-    const queued = await queueScoreDrafts(workspace);
+    await queueScoreDrafts(workspace);
     if (!navigator.onLine) {
-      setSyncMessage(`冲突处理已保存到本机，${queued} 项待同步`);
+      setSyncOutcome("local-saved");
       return;
     }
     try {
       await syncAnnotations(workspace, { pull: false });
-      setSyncMessage("冲突处理已同步");
+      setSyncOutcome("conflict-reapplied");
     } catch {
-      setSyncMessage(`冲突处理已保存到本机，${queued} 项待同步`);
+      setSyncOutcome("local-saved");
     }
   };
 
-  if (!workspace || loadedScopeKey !== workspace.scopeKey || loadingError) {
-    if (!workspace) return <p className="route-loading">正在打开本机工作区…</p>;
+  if (!workspace) {
+    return <p className="route-loading">正在打开本机工作区…</p>;
+  }
+
+  if (loadState.kind === "error" && loadState.scopeKey === workspace.scopeKey) {
     return (
       <main className="page-shell compact-page">
         <p className="eyebrow">乐谱阅读器</p>
         <h1>无法打开</h1>
         <p className="hero__copy" role="alert">
-          {loadingError}
+          {loadState.message}
         </p>
         <Link className="primary-link" to={`/choirs/${choirId}`}>
           返回云盘
@@ -663,7 +656,13 @@ export default function ReaderPage() {
     );
   }
 
-  if (!score || !document || documentScopeKey !== workspace.scopeKey) {
+  if (
+    loadState.kind !== "ready" ||
+    loadState.scopeKey !== workspace.scopeKey ||
+    !score ||
+    !document ||
+    documentScopeKey !== workspace.scopeKey
+  ) {
     return <p className="route-loading">正在加载乐谱…</p>;
   }
 
@@ -700,6 +699,13 @@ export default function ReaderPage() {
     activeLayerId,
     onInteractionChange: setAnnotationInteraction,
   };
+  const syncStatus = deriveReaderSyncStatus({
+    outcome: syncOutcome,
+    syncing,
+    pendingCount,
+    conflictCount: conflicts.length,
+    syncErrorCount,
+  });
 
   return (
     <main className="reader-shell">
@@ -720,6 +726,14 @@ export default function ReaderPage() {
           </Link>
           <strong className="reader-chrome__title">{score.fileName}</strong>
           <div className="reader-chrome__actions">
+            <Button
+              aria-label="页面位置"
+              aria-expanded={readerPanel === "pages"}
+              className="reader-page-button"
+              onPress={() => openReaderPanel("pages")}
+            >
+              {currentPage} / {document.numPages}
+            </Button>
             <Button
               aria-label="图层"
               aria-expanded={readerPanel === "layers"}
@@ -794,22 +808,28 @@ export default function ReaderPage() {
                 <RefreshCw aria-hidden="true" size={18} />
                 {syncing ? "同步中…" : "立即同步"}
               </Button>
-              <p className="reader-more-menu__status" role="status">
-                {downloadMessage ?? syncMessage ?? "尚未同步批注"}
-                {pendingCount > 0 ? ` · ${pendingCount} 项待同步` : ""}
-                {conflicts.length > 0 ? ` · ${conflicts.length} 项本地冲突` : ""}
-                {syncErrorCount > 0 ? ` · ${syncErrorCount} 项同步异常` : ""}
-              </p>
+              {downloadMessage || syncStatus.message ? (
+                <p
+                  className="reader-more-menu__status"
+                  data-kind={downloadMessage ? "download" : syncStatus.kind}
+                  role="status"
+                >
+                  {downloadMessage ?? syncStatus.message}
+                </p>
+              ) : null}
             </aside>
           ) : null}
         </header>
       ) : null}
 
-      {!editing && chromeVisible ? (
+      {!editing && chromeVisible && readerPanel === "pages" ? (
         <PageNavigatorPanel
           document={document}
           currentPage={currentPage}
-          onSelect={goToPage}
+          onSelect={(page) => {
+            goToPage(page);
+            setReaderPanel(null);
+          }}
         />
       ) : null}
 
@@ -850,7 +870,7 @@ export default function ReaderPage() {
           云端已有新版本；完整下载并校验前，原离线副本会继续保留。
         </aside>
       ) : null}
-      {readerPanel ? (
+      {readerPanel === "layers" ? (
         <div
           className="reader-panel-backdrop"
           role="presentation"
@@ -879,27 +899,39 @@ export default function ReaderPage() {
 
       {conflicts.length > 0 ? (
         <aside className="annotation-conflicts" aria-label="本地批注冲突">
-          <strong>{conflicts.length} 项修改没有上传</strong>
-          {conflicts.map((conflict) => (
-            <div key={conflict.opId}>
-              <span>同一批注的云端版本已经变化。</span>
-              <Button
-                onPress={() => void resolveConflict(conflict.opId, "discard")}
-              >
-                放弃本机版本
-              </Button>
-              <Button
-                onPress={() => void resolveConflict(conflict.opId, "reapply")}
-              >
-                基于云端重新应用
-              </Button>
-              <Button
-                onPress={() => void resolveConflict(conflict.opId, "keep-both")}
-              >
-                两份都保留
-              </Button>
-            </div>
-          ))}
+          <strong>仍有 {conflicts.length} 项本机冲突待处理</strong>
+          <p>同一批注的云端版本已经变化；以下是保留在这台设备上的版本。</p>
+          {conflicts.map((conflict) => {
+            const detail = describeAnnotationConflict(
+              conflict,
+              layers.find((layer) => layer.id === conflict.layerId)?.name ?? "未知图层",
+            );
+            return (
+              <div className="annotation-conflict-item" key={conflict.opId}>
+                <span>
+                  第 {detail.pageNumber} 页 · {detail.layerName} · {detail.summary}
+                </span>
+                <Button onPress={() => goToPage(detail.pageNumber)}>
+                  前往第 {detail.pageNumber} 页
+                </Button>
+                <Button
+                  onPress={() => void resolveConflict(conflict.opId, "discard")}
+                >
+                  放弃本机版本
+                </Button>
+                <Button
+                  onPress={() => void resolveConflict(conflict.opId, "reapply")}
+                >
+                  基于云端重新应用
+                </Button>
+                <Button
+                  onPress={() => void resolveConflict(conflict.opId, "keep-both")}
+                >
+                  两份都保留
+                </Button>
+              </div>
+            );
+          })}
         </aside>
       ) : null}
       {syncErrorCount > 0 ? (
@@ -1359,22 +1391,51 @@ function writeStringPreference(key: string, value: string) {
 type ScoreCloudLookup =
   | { state: "active"; score: ScoreSummary }
   | { state: "trashed" }
-  | { state: "unavailable" };
+  | { state: "missing" }
+  | { state: "permission-denied" }
+  | { state: "network-unavailable" };
 
 async function lookupScoreCloudState(
   choirId: string,
   scoreId: string,
 ): Promise<ScoreCloudLookup> {
-  const response = await fetch(`/api/choirs/${choirId}/scores`);
-  if (!response.ok) return { state: "unavailable" };
-  const payload = scoreListResponseSchema.parse(await response.json());
-  const score = payload.scores.find((item) => item.id === scoreId);
-  if (score) return { state: "active", score };
+  try {
+    const response = await fetch(`/api/choirs/${choirId}/scores`);
+    if (response.status === 401 || response.status === 403) {
+      return { state: "permission-denied" };
+    }
+    if (!response.ok) return response.status >= 500
+      ? { state: "network-unavailable" }
+      : { state: "missing" };
+    const payload = scoreListResponseSchema.parse(await response.json());
+    const score = payload.scores.find((item) => item.id === scoreId);
+    if (score) return { state: "active", score };
 
-  const statusResponse = await fetch(`/api/choirs/${choirId}/scores/${scoreId}/status`);
-  if (!statusResponse.ok) return { state: "unavailable" };
-  const status = scoreCloudStateSchema.parse(await statusResponse.json());
-  return status.state === "trashed" ? { state: "trashed" } : { state: "unavailable" };
+    const statusResponse = await fetch(`/api/choirs/${choirId}/scores/${scoreId}/status`);
+    if (statusResponse.status === 401 || statusResponse.status === 403) {
+      return { state: "permission-denied" };
+    }
+    if (!statusResponse.ok) return statusResponse.status >= 500
+      ? { state: "network-unavailable" }
+      : { state: "missing" };
+    const status = scoreCloudStateSchema.parse(await statusResponse.json());
+    return status.state === "trashed" ? { state: "trashed" } : { state: "missing" };
+  } catch {
+    return { state: "network-unavailable" };
+  }
+}
+
+function readerLoadFailureMessage(state: Exclude<ScoreCloudLookup["state"], "active">) {
+  switch (state) {
+    case "trashed":
+      return "这份乐谱已移入回收站，当前设备没有可用的离线副本。";
+    case "permission-denied":
+      return "当前账号没有访问这份乐谱的权限。请返回云盘确认成员关系。";
+    case "network-unavailable":
+      return "网络暂时不可用，且当前设备没有这份乐谱的离线副本。";
+    case "missing":
+      return "这份乐谱不存在或已经被永久移除。";
+  }
 }
 
 function scoreFromOffline(record: OfflineScoreRecord): ScoreSummary {

@@ -4,7 +4,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { Trash2 } from "lucide-react";
 
 import {
@@ -174,15 +174,18 @@ export function AnnotationOverlay({
   };
 
   const openTextEditor = (editor: TextEditorState) => {
+    flushSync(() => {
+      setEditorText(editor.initial);
+      setEditorFontScale(editor.fontScale);
+      setFontScaleAdjusting(false);
+      setTextEditor(editor);
+      updateInteraction("composing-text");
+    });
+    // iPadOS WebKit opens the software keyboard only when focus remains in the
+    // direct user-gesture stack. Synchronously activating the already-mounted
+    // composer makes the textarea visible and focusable before this call.
     const input = textInputRef.current;
     if (input) input.value = editor.initial;
-    setEditorText(editor.initial);
-    setEditorFontScale(editor.fontScale);
-    setFontScaleAdjusting(false);
-    setTextEditor(editor);
-    updateInteraction("composing-text");
-    // iPadOS WebKit opens the software keyboard only when focus remains in the
-    // direct user-gesture stack. The textarea stays mounted between edits.
     input?.focus({ preventScroll: true });
   };
 

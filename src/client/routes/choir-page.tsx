@@ -1,16 +1,20 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
+  Dialog,
   Form,
+  Heading,
   Input,
   Label,
   Menu,
   MenuItem,
   MenuTrigger,
+  Modal,
+  ModalOverlay,
   Popover,
   TextField,
 } from "react-aria-components";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 
 import { isInternalAuthEmail } from "../../shared/auth";
 import {
@@ -26,6 +30,7 @@ import {
   type ScoreSummary,
 } from "../../shared/scores";
 import { authClient } from "../auth/auth-client";
+import { clearPreviewGuestSession } from "../auth/preview-guest-session";
 import { AppHeader } from "../components/app-header";
 import {
   ScoreActionDialog,
@@ -38,19 +43,23 @@ import { UploadDialog } from "../score-library/upload-dialog";
 
 export default function ChoirPage() {
   const { choirId = "" } = useParams();
-  const navigate = useNavigate();
   const session = authClient.useSession();
   const userId = session.data?.user.id;
   const [access, setAccess] = useState<ChoirAccessState>({ kind: "loading" });
   const [openAdmissionDisplayName, setOpenAdmissionDisplayName] = useState("");
   const [search, setSearch] = useState("");
+  const [searchMessage, setSearchMessage] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [rotatedJoinCode, setRotatedJoinCode] = useState<string | null>(null);
+  const [rotationMessage, setRotationMessage] = useState<string | null>(null);
+  const [inviteManagementOpen, setInviteManagementOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [quotaBlocked, setQuotaBlocked] = useState(false);
   const [scoreAction, setScoreAction] = useState<ScoreActionSelection | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
+  const searchTimer = useRef<number | null>(null);
+  const scoreListRequest = useRef(0);
   const currentChoir =
     access.kind === "opened" || access.kind === "join-required"
       ? access.choir
@@ -58,12 +67,19 @@ export default function ChoirPage() {
 
   const refresh = useCallback(
     async (query = search) => {
-      const next = await fetchScoreList(choirId, query);
-      if (!next) {
+      const request = ++scoreListRequest.current;
+      const next = await requestScoreList(choirId, query);
+      if (request !== scoreListRequest.current) return;
+      if (next.kind === "denied") {
         setAccess({ kind: "denied" });
         return;
       }
-      setAccess({ kind: "opened", choir: currentChoir, result: next });
+      if (next.kind === "failed") {
+        setSearchMessage("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。");
+        return;
+      }
+      setSearchMessage(null);
+      setAccess({ kind: "opened", choir: currentChoir, result: next.result });
     },
     [choirId, currentChoir, search],
   );
@@ -73,16 +89,28 @@ export default function ChoirPage() {
     let active = true;
     void openChoir(choirId, Boolean(userId)).then((opened) => {
       if (!active) return;
-      if (opened.kind === "preview-redirect") {
-        void navigate("/", { replace: true });
-        return;
-      }
       setAccess(opened);
     });
     return () => {
       active = false;
     };
-  }, [choirId, navigate, userId, session.isPending]);
+  }, [choirId, userId, session.isPending]);
+
+  useEffect(
+    () => () => {
+      if (searchTimer.current !== null) window.clearTimeout(searchTimer.current);
+    },
+    [],
+  );
+
+  const updateSearch = (value: string) => {
+    setSearch(value);
+    if (searchTimer.current !== null) window.clearTimeout(searchTimer.current);
+    searchTimer.current = window.setTimeout(() => {
+      searchTimer.current = null;
+      void refresh(value);
+    }, 180);
+  };
 
   const joinOpenChoir = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -131,15 +159,16 @@ export default function ChoirPage() {
     if (!window.confirm("轮换后当前邀请码会立即失效。确认继续吗？")) return;
     setBusy(true);
     setRotatedJoinCode(null);
+    setRotationMessage(null);
     try {
       const response = await fetch(`/api/choirs/${choirId}/join-code/rotate`, {
         method: "POST",
       });
       if (!response.ok) throw new Error("rotation_failed");
       setRotatedJoinCode(rotateJoinCodeResponseSchema.parse(await response.json()).joinCode);
-      setMessage("邀请码已轮换。请现在复制并通过私密渠道发送。");
+      setRotationMessage("邀请码已轮换。请现在复制并通过私密渠道发送。");
     } catch {
-      setMessage("邀请码轮换失败，当前邀请码没有改变。");
+      setRotationMessage("邀请码轮换失败，当前邀请码没有改变。");
     } finally {
       setBusy(false);
     }
@@ -217,10 +246,10 @@ export default function ChoirPage() {
     <div className="app-page">
       <AppHeader actions={headerActions} />
       <main className="page-shell file-library">
-        <div className="library-heading">
-          <div>
-            <p className="eyebrow">云盘</p>
+        <header className="library-heading">
+          <div className="library-title">
             <h1>{choir?.name ?? "乐谱"}</h1>
+            <p>{result.scores.length} 份乐谱</p>
           </div>
           {result.permissions.canManage ? (
             <div className="library-actions">
@@ -231,9 +260,13 @@ export default function ChoirPage() {
                     aria-label="管理员菜单"
                     onAction={(key) => {
                       if (key === "trash") setTrashOpen(true);
+                      if (key === "invite") setInviteManagementOpen(true);
                     }}
                   >
                     <MenuItem id="trash">回收站</MenuItem>
+                    {choir?.guestAdmissionMode === "invite" ? (
+                      <MenuItem id="invite">邀请码</MenuItem>
+                    ) : null}
                     <MenuItem id="storage" isDisabled>
                       云盘存储：{formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}
                     </MenuItem>
@@ -245,80 +278,121 @@ export default function ChoirPage() {
               </Button>
             </div>
           ) : null}
-        </div>
+        </header>
 
-        <Form
-          className="library-search"
-          role="search"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void refresh(search);
-          }}
-        >
-          <TextField value={search} onChange={setSearch} aria-label="搜索文件名">
-            <Input placeholder="搜索文件名" />
-          </TextField>
-          <Button type="submit">搜索</Button>
-        </Form>
+        <section className="library-workspace" aria-labelledby="library-content-title">
+          <div className="library-toolbar">
+            <h2 id="library-content-title">乐谱</h2>
+            <Form
+              className="library-search"
+              role="search"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (searchTimer.current !== null) window.clearTimeout(searchTimer.current);
+                searchTimer.current = null;
+                void refresh(search);
+              }}
+            >
+              <TextField value={search} onChange={updateSearch} aria-label="搜索文件名">
+                <Input type="search" placeholder="搜索乐谱" />
+              </TextField>
+            </Form>
+          </div>
 
-        {result.permissions.canManage && (storageRatio >= 0.8 || quotaBlocked) ? (
-          <p className="storage-warning" role="status">
-            云盘存储已使用 {formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}。
-            {quotaBlocked ? " 请先释放空间后再上传。" : " 接近上限，请留意后续上传。"}
-          </p>
-        ) : null}
-        {message ? <p className="library-message" role="status">{message}</p> : null}
+          {result.permissions.canManage && (storageRatio >= 0.8 || quotaBlocked) ? (
+            <p className="storage-warning" role="status">
+              云盘存储已使用 {formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}。
+              {quotaBlocked ? " 请先释放空间后再上传。" : " 接近上限，请留意后续上传。"}
+            </p>
+          ) : null}
+          {searchMessage ? (
+            <p className="library-message" role="status">{searchMessage}</p>
+          ) : null}
+          {message ? <p className="library-message" role="status">{message}</p> : null}
 
-        {result.scores.length > 0 ? (
-          <section className="file-list" aria-label="PDF 文件">
-            {result.scores.map((score) => (
-              <article className="file-row" key={score.id}>
-                <Link className="file-row__open" to={`/choirs/${choirId}/scores/${score.id}`}>
-                  <span className="pdf-file-icon" aria-hidden="true">PDF</span>
-                  <span className="file-row__name">{score.fileName}</span>
-                  <span className="file-row__size">{formatBytes(score.currentVersion.sizeBytes)}</span>
-                </Link>
-                {result.permissions.canManage ? (
-                  <MenuTrigger>
-                    <Button className="file-menu-button" aria-label={`${score.fileName} 更多操作`}>
-                      ···
-                    </Button>
-                    <Popover className="file-menu-popover">
-                      <Menu
-                        aria-label={`${score.fileName} 操作`}
-                        onAction={(key) => openScoreAction(score, key as ScoreAction)}
-                      >
-                        <MenuItem id="rename">重命名</MenuItem>
-                        <MenuItem id="replace">替换 PDF</MenuItem>
-                        <MenuItem id="trash">移到回收站</MenuItem>
-                      </Menu>
-                    </Popover>
-                  </MenuTrigger>
-                ) : null}
-              </article>
-            ))}
-          </section>
-        ) : (
-          <p className="empty-library">这里还没有 PDF 文件。</p>
-        )}
-
-        {result.permissions.canManage && choir?.guestAdmissionMode === "invite" ? (
-          <section className="invite-admin" aria-labelledby="invite-title">
-            <div>
-              <h2 id="invite-title">邀请码</h2>
-              <p>轮换会立即停用旧邀请码；新邀请码只在本次操作后显示。</p>
-            </div>
-            <Button isDisabled={busy} onPress={() => void rotateJoinCode()}>轮换邀请码</Button>
-            {rotatedJoinCode ? (
-              <div className="join-code-result" role="status">
-                <p>新的八位邀请码</p>
-                <output aria-label="新的八位邀请码">{rotatedJoinCode}</output>
-                <Button onPress={() => setRotatedJoinCode(null)}>已复制，隐藏邀请码</Button>
-              </div>
-            ) : null}
-          </section>
-        ) : null}
+          {result.scores.length > 0 ? (
+            <section className="file-list" aria-label="PDF 文件">
+              {result.scores.map((score) => (
+                <article className="file-row" key={score.id}>
+                  <Link className="file-row__open" to={`/choirs/${choirId}/scores/${score.id}`}>
+                    <span className="pdf-file-icon" aria-hidden="true">PDF</span>
+                    <span className="file-row__name">{score.fileName}</span>
+                    <span className="file-row__size">{formatBytes(score.currentVersion.sizeBytes)}</span>
+                  </Link>
+                  {result.permissions.canManage ? (
+                    <MenuTrigger>
+                      <Button className="file-menu-button" aria-label={`${score.fileName} 更多操作`}>
+                        ···
+                      </Button>
+                      <Popover className="file-menu-popover">
+                        <Menu
+                          aria-label={`${score.fileName} 操作`}
+                          onAction={(key) => openScoreAction(score, key as ScoreAction)}
+                        >
+                          <MenuItem id="rename">重命名</MenuItem>
+                          <MenuItem id="replace">替换 PDF</MenuItem>
+                          <MenuItem id="trash">移到回收站</MenuItem>
+                        </Menu>
+                      </Popover>
+                    </MenuTrigger>
+                  ) : null}
+                </article>
+              ))}
+            </section>
+          ) : (
+            <p className="empty-library">这里还没有 PDF 文件。</p>
+          )}
+        </section>
       </main>
+
+      <ModalOverlay
+        className="modal-overlay"
+        isOpen={inviteManagementOpen}
+        onOpenChange={(open) => {
+          setInviteManagementOpen(open);
+          if (!open) {
+            setRotatedJoinCode(null);
+            setRotationMessage(null);
+          }
+        }}
+        isDismissable
+      >
+        <Modal className="app-modal app-modal--compact">
+          <Dialog className="app-dialog drive-management-dialog">
+            {({ close }) => (
+              <>
+                <div className="dialog-heading">
+                  <div>
+                    <p className="dialog-eyebrow">管理</p>
+                    <Heading slot="title">邀请码</Heading>
+                  </div>
+                  <Button className="icon-button" aria-label="关闭" onPress={close}>×</Button>
+                </div>
+                <p className="drive-management-copy">
+                  轮换会立即停用旧邀请码；新邀请码只在本次操作后显示。
+                </p>
+                <Button
+                  className="secondary-button"
+                  isDisabled={busy}
+                  onPress={() => void rotateJoinCode()}
+                >
+                  {busy ? "正在轮换…" : "轮换邀请码"}
+                </Button>
+                {rotationMessage ? (
+                  <p className="library-message" role="status">{rotationMessage}</p>
+                ) : null}
+                {rotatedJoinCode ? (
+                  <div className="join-code-result" role="status">
+                    <p>新的八位邀请码</p>
+                    <output aria-label="新的八位邀请码">{rotatedJoinCode}</output>
+                    <Button onPress={() => setRotatedJoinCode(null)}>已复制，隐藏邀请码</Button>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </Dialog>
+        </Modal>
+      </ModalOverlay>
 
       <UploadDialog
         choirId={choirId}
@@ -355,8 +429,11 @@ async function openChoir(
   choirId: string,
   signedIn: boolean,
 ): Promise<
-  Exclude<ChoirAccessState, { kind: "loading" }> | { kind: "preview-redirect" }
+  Exclude<ChoirAccessState, { kind: "loading" }>
 > {
+  if (signedIn) {
+    await clearPreviewGuestSession({ keepForChoirId: choirId });
+  }
   const [choir, result] = await Promise.all([
     loadChoirSummary(choirId),
     fetchScoreList(choirId, ""),
@@ -364,10 +441,8 @@ async function openChoir(
   if (result) return { kind: "opened", choir, result };
   const openAdmission = await loadOpenAdmissionChoir(choirId);
   if (!openAdmission) return { kind: "denied" };
-  if (signedIn) {
-    return openAdmission.entryKind === "preview"
-      ? { kind: "preview-redirect" }
-      : { kind: "join-required", choir: openAdmission.choir };
+  if (signedIn && openAdmission.entryKind !== "preview") {
+    return { kind: "join-required", choir: openAdmission.choir };
   }
   try {
     const admission = await fetch("/api/guest/session", {
@@ -419,13 +494,30 @@ async function loadChoirSummary(choirId: string) {
 }
 
 async function fetchScoreList(choirId: string, query: string) {
+  const loaded = await requestScoreList(choirId, query);
+  return loaded.kind === "loaded" ? loaded.result : null;
+}
+
+type ScoreListRequest =
+  | { kind: "loaded"; result: ScoreListResponse }
+  | { kind: "denied" }
+  | { kind: "failed" };
+
+async function requestScoreList(
+  choirId: string,
+  query: string,
+): Promise<ScoreListRequest> {
   try {
     const response = await fetch(
       `/api/choirs/${choirId}/scores${query ? `?q=${encodeURIComponent(query)}` : ""}`,
     );
-    if (!response.ok) return null;
-    return scoreListResponseSchema.parse(await response.json());
+    if ([401, 403, 404].includes(response.status)) return { kind: "denied" };
+    if (!response.ok) return { kind: "failed" };
+    return {
+      kind: "loaded",
+      result: scoreListResponseSchema.parse(await response.json()),
+    };
   } catch {
-    return null;
+    return { kind: "failed" };
   }
 }

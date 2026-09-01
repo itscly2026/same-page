@@ -10,10 +10,13 @@ import {
 
 test("visual report scenarios have stable unique ids and cover iPad plus narrow layouts", () => {
   assert.equal(validateVisualReportScenarios(), visualReportScenarios);
-  assert.equal(new Set(visualReportScenarios.map((scenario) => scenario.id)).size, 14);
+  assert.equal(
+    new Set(visualReportScenarios.map((scenario) => scenario.id)).size,
+    visualReportScenarios.length,
+  );
   assert.deepEqual(
     new Set(visualReportScenarios.map((scenario) => scenario.device)),
-    new Set(["portrait", "landscape", "narrow"]),
+    new Set(["portrait", "landscape", "narrow", "desktop"]),
   );
 });
 
@@ -40,6 +43,24 @@ test("fixture resolver isolates guest and member sessions", () => {
     identity: "guest",
   });
   assert.equal(JSON.parse(preview.body).choir.name, "公开体验云盘");
+  const previewAdmission = resolveFixtureRequest({
+    pathname: "/api/guest/session",
+    method: "POST",
+    identity: "member",
+  });
+  assert.match(previewAdmission.headers["set-cookie"], /same_page_guest=visual-preview/);
+  const invalidInvite = resolveFixtureRequest({
+    pathname: "/api/guest/session",
+    method: "POST",
+    identity: "guest",
+  });
+  assert.equal(invalidInvite.status, 404);
+  const signedInPreview = resolveFixtureRequest({
+    pathname: "/api/choirs/visual-preview-choir/scores",
+    identity: "member",
+    cookie: "same_page_guest=visual-preview",
+  });
+  assert.equal(JSON.parse(signedInPreview.body).permissions.canManage, false);
 });
 
 test("fixture resolver returns current score shapes and a generated PDF without secrets", () => {

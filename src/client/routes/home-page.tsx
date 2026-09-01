@@ -23,6 +23,10 @@ import {
 } from "../../shared/choirs";
 import { authClient } from "../auth/auth-client";
 import {
+  clearGuestSession,
+  clearPreviewGuestSession,
+} from "../auth/preview-guest-session";
+import {
   clearPrivateLocalDataAfterLogout,
   getLogoutLocalSummary,
   type LogoutLocalSummary,
@@ -67,7 +71,7 @@ export function HomePage() {
   }, [userId]);
 
   useEffect(() => {
-    if (session.isPending || userId) return;
+    if (session.isPending) return;
     let active = true;
     void loadPreviewChoir().then((choir) => {
       if (active) setPreviewChoir(choir);
@@ -75,6 +79,11 @@ export function HomePage() {
     return () => {
       active = false;
     };
+  }, [session.isPending, userId]);
+
+  useEffect(() => {
+    if (session.isPending || !userId) return;
+    void clearPreviewGuestSession();
   }, [session.isPending, userId]);
 
   const resetJoinFlow = () => {
@@ -208,6 +217,7 @@ export function HomePage() {
     try {
       const result = await authClient.signOut();
       if (result.error) throw new Error("sign_out_failed");
+      await clearPreviewGuestSession();
       await clearPrivateLocalDataAfterLogout();
       setMemberships([]);
       setLogoutSummary(null);
@@ -252,7 +262,7 @@ export function HomePage() {
           <Button className="primary-button hero-cta" onPress={() => setJoinOpen(true)}>
             进入云盘
           </Button>
-          {!userId && previewChoir ? (
+          {previewChoir ? (
             <Link className="hero-preview-link" to={`/choirs/${previewChoir.id}`}>
               访问公开体验云盘
             </Link>
@@ -459,10 +469,6 @@ async function loadMemberships(): Promise<MembershipSummary[]> {
   } catch {
     return [];
   }
-}
-
-async function clearGuestSession() {
-  await fetch("/api/guest/session", { method: "DELETE" }).catch(() => null);
 }
 
 async function loadPreviewChoir(): Promise<ChoirSummary | null> {

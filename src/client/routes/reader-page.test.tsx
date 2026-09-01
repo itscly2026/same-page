@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,6 +14,7 @@ import {
   localWorkspaceRecordKey,
 } from "../platform/local-workspace";
 import { syncAnnotations } from "../annotations/sync";
+import { loadPdfDocument } from "../reader/pdf-document";
 import ReaderPage from "./reader-page";
 
 const virtualTestState = vi.hoisted(() => ({
@@ -178,8 +179,160 @@ describe("ReaderPage", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("keeps a delayed cloud lookup in a loading state without flashing an error", async () => {
+    let releaseLookup!: (response: Response) => void;
+    const delayedLookup = new Promise<Response>((resolve) => {
+      releaseLookup = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) => {
+        if (input.includes("/scores") && !input.includes("/layers")) {
+          return delayedLookup;
+        }
+        return Promise.resolve(
+          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+        );
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("正在加载乐谱…")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "无法打开" })).not.toBeInTheDocument();
+    releaseLookup(
+      Response.json({
+        scores: [
+          {
+            id: "score-1",
+            choirId: "choir-1",
+            fileName: "练声曲.pdf",
+            updatedAt: 1,
+            currentVersion: {
+              id: "version-1",
+              versionNumber: 1,
+              sizeBytes: 329,
+              sha256: "a".repeat(64),
+              etag: '"etag"',
+              pageCount: 3,
+              createdAt: 1,
+            },
+          },
+        ],
+        storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
+        permissions: { canManage: false },
+      }),
+    );
+    expect(await screen.findByText("练声曲.pdf")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
+    });
+  });
+
+  it("distinguishes permission, network, and PDF parsing failures", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 403 })));
+    const permissionView = render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "当前账号没有访问这份乐谱的权限",
+    );
+    permissionView.unmount();
+
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
+    const networkView = render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("网络暂时不可用");
+    networkView.unmount();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) =>
+        Promise.resolve(
+          input.endsWith("/scores/score-1/status")
+            ? Response.json({ error: "not_found" }, { status: 404 })
+            : Response.json({
+                scores: [],
+                storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
+                permissions: { canManage: false },
+              }),
+        ),
+      ),
+    );
+    const missingView = render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "这份乐谱不存在或已经被永久移除",
+    );
+    missingView.unmount();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) =>
+        Promise.resolve(
+          input.includes("/layers")
+            ? Response.json({ layers: [], permissions: { canManageLayers: false } })
+            : Response.json({
+                scores: [
+                  {
+                    id: "score-1",
+                    choirId: "choir-1",
+                    fileName: "练声曲.pdf",
+                    updatedAt: 1,
+                    currentVersion: {
+                      id: "version-1",
+                      versionNumber: 1,
+                      sizeBytes: 329,
+                      sha256: "a".repeat(64),
+                      etag: '"etag"',
+                      pageCount: 3,
+                      createdAt: 1,
+                    },
+                  },
+                ],
+                storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
+                permissions: { canManage: false },
+              }),
+        ),
+      ),
+    );
+    vi.mocked(loadPdfDocument).mockRejectedValueOnce(new Error("invalid pdf"));
+    const parsingView = render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "PDF 无法解析或文件暂时不可用",
+    );
+    parsingView.unmount();
   });
 
   it("opens with score-only chrome and switches layouts without entering edit mode", async () => {
@@ -211,12 +364,16 @@ describe("ReaderPage", () => {
     expect(screen.getByRole("link", { name: "返回云盘" }).querySelector("svg")).not.toBeNull();
     expect(screen.getByRole("button", { name: "图层" }).querySelector("svg")).not.toBeNull();
     expect(screen.getByRole("button", { name: "更多" }).querySelector("svg")).not.toBeNull();
+    expect(screen.queryByLabelText("页面缩略图")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "页面位置" }));
     const pageStrip = screen.getByLabelText("页面缩略图");
     expect(pageStrip).toHaveClass("page-preview-strip");
     expect(screen.getByRole("button", { name: "前往第 2 页" })).toHaveAttribute(
       "data-current",
     );
-    expect(screen.getByText("2 / 3")).toHaveClass("page-preview-strip__position");
+    expect(within(pageStrip).getByText("2 / 3")).toHaveClass(
+      "page-preview-strip__position",
+    );
     expect(virtualTestState.scrollToIndex).toHaveBeenCalledWith(1, {
       align: "auto",
     });
@@ -224,17 +381,19 @@ describe("ReaderPage", () => {
     expect(
       within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 3 页"),
     ).toBeInTheDocument();
+    expect(screen.queryByLabelText("页面缩略图")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "图层" }));
     expect(screen.getByLabelText("图层显示与颜色")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭页面与图层" }));
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    expect(screen.queryByText("尚未同步批注")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "翻页" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
     fireEvent.click(screen.getByRole("button", { name: "连续滚动" }));
     expect(screen.getByLabelText("连续滚动阅读")).toBeInTheDocument();
-    expect(screen.getByText("3 / 3")).toHaveClass("page-preview-strip__position");
+    expect(screen.getByRole("button", { name: "页面位置" })).toHaveTextContent("3 / 3");
     expect(
       screen.getByText("轻点页面中央显示控制，上下滑动连续浏览"),
     ).toBeInTheDocument();
@@ -242,6 +401,104 @@ describe("ReaderPage", () => {
       screen.queryByText("轻点页面中央显示控制，点按两侧或左右滑动翻页"),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("编辑")).not.toBeInTheDocument();
+  });
+
+  it("identifies a persisted object conflict by page, layer and summary", async () => {
+    await localDatabase.annotationConflicts.put({
+      opId: "conflict-op",
+      ...localWorkspace,
+      annotationId: "annotation-1",
+      layerId: "11111111-1111-4111-8111-111111111111",
+      localPayload: {
+        kind: "text",
+        pageNumber: 2,
+        x: 0.2,
+        y: 0.3,
+        fontScale: 0.024,
+        text: "第二页力度轻一些",
+      },
+      localDeleted: false,
+      canonical: null,
+      createdAt: 1,
+    });
+    vi.mocked(fetch).mockImplementation((input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/layers")) {
+        return Promise.resolve(
+          Response.json({
+            layers: [
+              {
+                id: "11111111-1111-4111-8111-111111111111",
+                kind: "shared",
+                defaultSlot: "G",
+                name: "G",
+                sortOrder: 0,
+                defaultColor: "#a12652",
+                colorOverride: null,
+                visible: true,
+                canEdit: false,
+              },
+            ],
+            permissions: { canManageLayers: false },
+          }),
+        );
+      }
+      return Promise.resolve(
+        Response.json({
+          scores: [
+            {
+              id: "score-1",
+              choirId: "choir-1",
+              fileName: "练声曲.pdf",
+              updatedAt: 1,
+              currentVersion: {
+                id: "version-1",
+                versionNumber: 1,
+                sizeBytes: 329,
+                sha256: "a".repeat(64),
+                etag: '"etag"',
+                pageCount: 3,
+                createdAt: 1,
+              },
+            },
+          ],
+          storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
+          permissions: { canManage: false },
+        }),
+      );
+    });
+
+    const view = render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByText("仍有 1 项本机冲突待处理"),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("第 2 页 · G · 第二页力度轻一些"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "前往第 2 页" }));
+    expect(
+      within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 2 页"),
+    ).toBeInTheDocument();
+
+    view.unmount();
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByText("仍有 1 项本机冲突待处理"),
+    ).toBeInTheDocument();
+    await screen.findByLabelText("翻页阅读");
   });
 
   it("keeps the existing offline selection when checksum verification fails", async () => {
@@ -517,6 +774,38 @@ describe("ReaderPage", () => {
     expect(screen.getByText("200%")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     const continuousReader = screen.getByLabelText("连续滚动阅读");
+    fireEvent.pointerDown(continuousReader, {
+      pointerId: 1,
+      clientX: 700,
+      clientY: 400,
+    });
+    fireEvent.pointerMove(continuousReader, {
+      pointerId: 1,
+      clientX: 300,
+      clientY: 400,
+    });
+    expect(continuousReader.scrollLeft).toBe(400);
+    fireEvent.pointerUp(continuousReader, {
+      pointerId: 1,
+      clientX: 300,
+      clientY: 400,
+    });
+    fireEvent.pointerDown(continuousReader, {
+      pointerId: 2,
+      clientX: 300,
+      clientY: 400,
+    });
+    fireEvent.pointerMove(continuousReader, {
+      pointerId: 2,
+      clientX: 700,
+      clientY: 400,
+    });
+    expect(continuousReader.scrollLeft).toBe(0);
+    fireEvent.pointerUp(continuousReader, {
+      pointerId: 2,
+      clientX: 700,
+      clientY: 400,
+    });
     continuousReader.scrollTop = 40;
     fireEvent.scroll(continuousReader);
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import {
@@ -69,6 +69,18 @@ beforeEach(async () => {
 describe("AnnotationOverlay", () => {
   it("shows a concise hint and keeps the centered composer open across blur until cancel", async () => {
     const interactions: AnnotationOverlayInteraction[] = [];
+    const focusStates: Array<{ active: boolean; hidden: string | null; tabIndex: number }> = [];
+    vi.spyOn(HTMLTextAreaElement.prototype, "focus").mockImplementation(function (
+      this: HTMLTextAreaElement,
+    ) {
+      const composer = this.closest("form");
+      focusStates.push({
+        active: composer?.hasAttribute("data-active") ?? false,
+        hidden: composer?.getAttribute("aria-hidden") ?? null,
+        tabIndex: this.tabIndex,
+      });
+      HTMLElement.prototype.focus.call(this);
+    });
     renderOverlay([], "text", (interaction) => interactions.push(interaction));
     expect(screen.getByText("轻点任意位置添加文字")).toBeInTheDocument();
     const overlay = screen.getByLabelText("第 1 页批注层");
@@ -79,6 +91,7 @@ describe("AnnotationOverlay", () => {
     const input = screen.getByLabelText("批注文本");
     expect(composer).toHaveClass("annotation-text-composer");
     expect(input).toHaveFocus();
+    expect(focusStates[0]).toEqual({ active: true, hidden: null, tabIndex: 0 });
     expect(interactions).toEqual(["composing-text"]);
     expect(input).toHaveStyle({ color: "rgb(161, 38, 82)" });
     const fontScale = screen.getByRole("slider", { name: "字号" });
@@ -442,4 +455,7 @@ function mockDynamicTextBounds(element: HTMLElement) {
   });
 }
 
-afterEach(() => endAnnotationEditSession());
+afterEach(() => {
+  endAnnotationEditSession();
+  vi.restoreAllMocks();
+});

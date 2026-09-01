@@ -911,6 +911,29 @@ describe("authentication and choir boundaries", () => {
       scores: [],
       permissions: { canManage: false },
     });
+    const signedInPreviewResponse = await callWorker(
+      `/api/choirs/${choirWithOpenGuestAdmission.choirId}/scores`,
+      { headers: { cookie: `${memberCookie}; ${guestWithOpenAdmissionCookie}` } },
+    );
+    expect(signedInPreviewResponse.status).toBe(200);
+    expect(await signedInPreviewResponse.json()).toMatchObject({
+      permissions: { canManage: false },
+    });
+    const previewAdminResponse = await callWorker(
+      `/api/choirs/${choirWithOpenGuestAdmission.choirId}/scores`,
+      { headers: { cookie: `${adminCookie}; ${guestWithOpenAdmissionCookie}` } },
+    );
+    expect(await previewAdminResponse.json()).toMatchObject({
+      permissions: { canManage: true },
+    });
+    const signedInPreviewUpload = await callWorker(
+      `/api/choirs/${choirWithOpenGuestAdmission.choirId}/scores`,
+      {
+        method: "POST",
+        headers: { cookie: `${memberCookie}; ${guestWithOpenAdmissionCookie}` },
+      },
+    );
+    expect(signedInPreviewUpload.status).toBe(403);
 
     const crossChoirResponse = await callWorker(
       `/api/choirs/${provisioned.choirId}/scores`,

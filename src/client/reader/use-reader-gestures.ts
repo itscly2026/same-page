@@ -10,8 +10,29 @@ const MIN_PINCH_ZOOM = 0.75;
 const MIN_SETTLED_ZOOM = 1;
 const MAX_ZOOM = 3;
 
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface PinchSession {
+  distance: number;
+  zoom: number;
+  contentBounds: DOMRect;
+  contentPoint: Point;
+}
+
+interface PinchPreview {
+  zoom: number;
+  scale: number;
+  offset: Point;
+  center: Point;
+  contentRatio: Point;
+}
+
 export function useReaderGestures({
   containerRef,
+  contentRef,
   disabled,
   zoom,
   onZoomChange,
@@ -21,6 +42,7 @@ export function useReaderGestures({
   panAtFit = false,
 }: {
   containerRef: RefObject<HTMLElement | null>;
+  contentRef: RefObject<HTMLElement | null>;
   disabled: boolean;
   zoom: number;
   onZoomChange(value: number): void;
@@ -29,7 +51,7 @@ export function useReaderGestures({
   onSwipe?(direction: "previous" | "next"): void;
   panAtFit?: boolean;
 }) {
-  const points = useRef(new Map<number, { x: number; y: number }>());
+  const points = useRef(new Map<number, Point>());
   const primary = useRef<{
     id: number;
     x: number;
@@ -37,41 +59,72 @@ export function useReaderGestures({
     scrollLeft: number;
     scrollTop: number;
   } | null>(null);
-  const pinch = useRef<{
-    distance: number;
-    zoom: number;
-    contentX: number;
-    contentY: number;
-  } | null>(null);
-  const pendingScroll = useRef<{
-    zoom: number;
-    left: number;
-    top: number;
-    offsetX: number;
-    offsetY: number;
-  } | null>(null);
-  const contentOffset = useRef({ x: 0, y: 0 });
+  const pinch = useRef<PinchSession | null>(null);
+  const preview = useRef<PinchPreview | null>(null);
+  const pendingCommit = useRef<PinchPreview | null>(null);
+  const previewFrame = useRef<number | null>(null);
   const latestZoom = useRef(zoom);
   const pinched = useRef(false);
 
-  const applyContentOffset = useCallback((x: number, y: number) => {
-    contentOffset.current = { x, y };
-    const container = containerRef.current;
-    if (!container) return;
-    container.style.setProperty("--reader-pinch-offset-x", `${x}px`);
-    container.style.setProperty("--reader-pinch-offset-y", `${y}px`);
-  }, [containerRef]);
+  const clearPreview = useCallback(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    content.style.removeProperty("--reader-gesture-scale");
+    content.style.removeProperty("--reader-gesture-x");
+    content.style.removeProperty("--reader-gesture-y");
+    content.removeAttribute("data-gesture-preview");
+  }, [contentRef]);
+
+  const paintPreview = useCallback((next: PinchPreview) => {
+    const content = contentRef.current;
+    if (!content) return;
+    content.style.setProperty("--reader-gesture-scale", String(next.scale));
+    content.style.setProperty("--reader-gesture-x", `${next.offset.x}px`);
+    content.style.setProperty("--reader-gesture-y", `${next.offset.y}px`);
+    content.setAttribute("data-gesture-preview", "");
+  }, [contentRef]);
+
+  const schedulePreview = useCallback((next: PinchPreview) => {
+    preview.current = next;
+    if (previewFrame.current !== null) return;
+    previewFrame.current = requestAnimationFrame(() => {
+      previewFrame.current = null;
+      if (preview.current) paintPreview(preview.current);
+    });
+  }, [paintPreview]);
+
+  const cancelPreviewFrame = useCallback(() => {
+    if (previewFrame.current === null) return;
+    cancelAnimationFrame(previewFrame.current);
+    previewFrame.current = null;
+  }, []);
 
   useLayoutEffect(() => {
     latestZoom.current = zoom;
-    const pending = pendingScroll.current;
+    const commit = pendingCommit.current;
     const container = containerRef.current;
-    if (!pending || !container || Math.abs(pending.zoom - zoom) > 0.001) return;
-    container.scrollLeft = pending.left;
-    container.scrollTop = pending.top;
-    applyContentOffset(pending.offsetX, pending.offsetY);
-    pendingScroll.current = null;
-  }, [applyContentOffset, containerRef, zoom]);
+    const content = contentRef.current;
+    if (!commit || !container || !content || Math.abs(commit.zoom - zoom) > 0.001) {
+      return;
+    }
+
+    clearPreview();
+    const bounds = content.getBoundingClientRect();
+    const targetX = bounds.left + bounds.width * commit.contentRatio.x;
+    const targetY = bounds.top + bounds.height * commit.contentRatio.y;
+    container.scrollLeft += targetX - commit.center.x;
+    container.scrollTop += targetY - commit.center.y;
+    pendingCommit.current = null;
+    preview.current = null;
+  }, [clearPreview, containerRef, contentRef, zoom]);
+
+  useLayoutEffect(
+    () => () => {
+      cancelPreviewFrame();
+      clearPreview();
+    },
+    [cancelPreviewFrame, clearPreview],
+  );
 
   const pointerDown = (event: ReactPointerEvent<HTMLElement>) => {
     if (disabled) return;
@@ -87,22 +140,25 @@ export function useReaderGestures({
         scrollTop: container?.scrollTop ?? 0,
       };
       pinched.current = false;
-    } else if (points.current.size === 2) {
-      const [first, second] = [...points.current.values()];
-      const bounds = container?.getBoundingClientRect();
-      const centerX = (first.x + second.x) / 2 - (bounds?.left ?? 0);
-      const centerY = (first.y + second.y) / 2 - (bounds?.top ?? 0);
-      pinch.current = {
-        distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
-        zoom,
-        contentX:
-          (container?.scrollLeft ?? 0) + centerX - contentOffset.current.x,
-        contentY:
-          (container?.scrollTop ?? 0) + centerY - contentOffset.current.y,
-      };
-      latestZoom.current = zoom;
-      pinched.current = true;
+      return;
     }
+    if (points.current.size !== 2) return;
+    const content = contentRef.current;
+    if (!content) return;
+    const [first, second] = [...points.current.values()];
+    const center = midpoint(first, second);
+    const contentBounds = content.getBoundingClientRect();
+    pinch.current = {
+      distance: distance(first, second),
+      zoom,
+      contentBounds,
+      contentPoint: {
+        x: center.x - contentBounds.left,
+        y: center.y - contentBounds.top,
+      },
+    };
+    latestZoom.current = zoom;
+    pinched.current = true;
   };
 
   const pointerMove = (event: ReactPointerEvent<HTMLElement>) => {
@@ -110,31 +166,42 @@ export function useReaderGestures({
     points.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (points.current.size >= 2 && pinch.current) {
       const [first, second] = [...points.current.values()];
-      const distance = Math.max(
-        1,
-        Math.hypot(second.x - first.x, second.y - first.y),
-      );
+      const center = midpoint(first, second);
       const nextZoom = clamp(
-        pinch.current.zoom * (distance / pinch.current.distance),
+        pinch.current.zoom * (distance(first, second) / pinch.current.distance),
         MIN_PINCH_ZOOM,
         MAX_ZOOM,
       );
-      const container = containerRef.current;
-      const bounds = container?.getBoundingClientRect();
-      const centerX = (first.x + second.x) / 2 - (bounds?.left ?? 0);
-      const centerY = (first.y + second.y) / 2 - (bounds?.top ?? 0);
       const scale = nextZoom / pinch.current.zoom;
-      const horizontalPosition = centerX - pinch.current.contentX * scale;
-      const verticalPosition = centerY - pinch.current.contentY * scale;
-      pendingScroll.current = {
+      const next: PinchPreview = {
         zoom: nextZoom,
-        left: Math.max(0, -horizontalPosition),
-        top: Math.max(0, -verticalPosition),
-        offsetX: Math.max(0, horizontalPosition),
-        offsetY: Math.max(0, verticalPosition),
+        scale,
+        offset: {
+          x:
+            center.x -
+            pinch.current.contentBounds.left -
+            pinch.current.contentPoint.x * scale,
+          y:
+            center.y -
+            pinch.current.contentBounds.top -
+            pinch.current.contentPoint.y * scale,
+        },
+        center,
+        contentRatio: {
+          x: clamp(
+            pinch.current.contentPoint.x / Math.max(1, pinch.current.contentBounds.width),
+            0,
+            1,
+          ),
+          y: clamp(
+            pinch.current.contentPoint.y / Math.max(1, pinch.current.contentBounds.height),
+            0,
+            1,
+          ),
+        },
       };
       latestZoom.current = nextZoom;
-      onZoomChange(nextZoom);
+      schedulePreview(next);
       return;
     }
 
@@ -147,16 +214,32 @@ export function useReaderGestures({
     }
   };
 
-  const finishPinch = () => {
-    if (latestZoom.current < MIN_SETTLED_ZOOM) {
-      latestZoom.current = MIN_SETTLED_ZOOM;
-      pendingScroll.current = null;
-      applyContentOffset(0, 0);
-      onZoomChange(MIN_SETTLED_ZOOM);
-    }
+  const resetGesture = () => {
     primary.current = null;
     pinch.current = null;
     pinched.current = false;
+  };
+
+  const finishPinch = () => {
+    cancelPreviewFrame();
+    const lastPreview = preview.current;
+    const settledZoom = clamp(latestZoom.current, MIN_SETTLED_ZOOM, MAX_ZOOM);
+    if (!lastPreview || Math.abs(settledZoom - zoom) < 0.001) {
+      pendingCommit.current = null;
+      preview.current = null;
+      clearPreview();
+      resetGesture();
+      return;
+    }
+    const commit = {
+      ...lastPreview,
+      zoom: settledZoom,
+      scale: settledZoom / (pinch.current?.zoom ?? zoom),
+    };
+    paintPreview(commit);
+    pendingCommit.current = commit;
+    onZoomChange(settledZoom);
+    resetGesture();
   };
 
   const finishPointer = (event: ReactPointerEvent<HTMLElement>) => {
@@ -166,9 +249,7 @@ export function useReaderGestures({
     points.current.delete(event.pointerId);
     if (points.current.size < 2) pinch.current = null;
     if (wasPinched) {
-      if (points.current.size === 0) {
-        finishPinch();
-      }
+      if (points.current.size === 0) finishPinch();
       return;
     }
     if (!start || start.id !== event.pointerId) return;
@@ -204,9 +285,15 @@ export function useReaderGestures({
 
   const cancelPointer = (event: ReactPointerEvent<HTMLElement>) => {
     points.current.delete(event.pointerId);
-    if (points.current.size === 0) {
-      if (pinched.current) finishPinch();
-      else primary.current = null;
+    if (pinched.current) {
+      points.current.clear();
+      cancelPreviewFrame();
+      pendingCommit.current = null;
+      preview.current = null;
+      clearPreview();
+      resetGesture();
+    } else if (points.current.size === 0) {
+      primary.current = null;
     }
   };
 
@@ -216,6 +303,14 @@ export function useReaderGestures({
     onPointerUp: finishPointer,
     onPointerCancel: cancelPointer,
   };
+}
+
+function midpoint(first: Point, second: Point) {
+  return { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+}
+
+function distance(first: Point, second: Point) {
+  return Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
 }
 
 function clamp(value: number, minimum: number, maximum: number) {
