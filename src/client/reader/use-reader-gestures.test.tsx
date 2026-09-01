@@ -1,8 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useReaderGestures } from "./use-reader-gestures";
+import { PdfPageCanvas } from "./pdf-page";
+import type { PDFDocumentProxy } from "./pdf-document";
 
 let nextFrameId = 1;
 let frames = new Map<number, FrameRequestCallback>();
@@ -18,10 +20,14 @@ beforeEach(() => {
   vi.stubGlobal("cancelAnimationFrame", (id: number) => {
     frames.delete(id);
   });
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+    {} as CanvasRenderingContext2D,
+  );
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("useReaderGestures", () => {
@@ -55,12 +61,28 @@ describe("useReaderGestures", () => {
     expect(content).not.toHaveAttribute("data-gesture-preview");
   });
 
-  it("coalesces 60 pointer samples into one composited preview and one commit", () => {
+  it("coalesces 60 pointer samples into one preview and one bounded PDF redraw", async () => {
     const onZoomChange = vi.fn();
-    render(<GestureHarness onZoomChange={onZoomChange} />);
+    const renderPage = vi.fn(() => ({
+      promise: Promise.resolve(),
+      cancel: vi.fn(),
+    }));
+    const document = {
+      getPage: vi.fn().mockResolvedValue({
+        getViewport: ({ scale }: { scale: number }) => ({
+          width: 600 * scale,
+          height: 800 * scale,
+        }),
+        render: renderPage,
+      }),
+    } as unknown as PDFDocumentProxy;
+    render(
+      <RenderingGestureHarness document={document} onZoomChange={onZoomChange} />,
+    );
     const viewport = screen.getByTestId("gesture-viewport");
     const content = screen.getByTestId("gesture-content");
     mockGeometry(viewport, content);
+    await waitFor(() => expect(renderPage).toHaveBeenCalledTimes(1));
 
     fireEvent.pointerDown(viewport, { pointerId: 1, clientX: 200, clientY: 200 });
     fireEvent.pointerDown(viewport, { pointerId: 2, clientX: 400, clientY: 200 });
@@ -74,12 +96,33 @@ describe("useReaderGestures", () => {
 
     expect(frames.size).toBe(1);
     expect(onZoomChange).not.toHaveBeenCalled();
+    expect(renderPage).toHaveBeenCalledTimes(1);
     flushAnimationFrame();
     expect(content).toHaveAttribute("data-gesture-preview");
 
     fireEvent.pointerUp(viewport, { pointerId: 2, clientX: 460, clientY: 200 });
     fireEvent.pointerUp(viewport, { pointerId: 1, clientX: 200, clientY: 200 });
     expect(onZoomChange).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(renderPage).toHaveBeenCalledTimes(2));
+  });
+
+  it.each([
+    { name: "left edge", first: 20, second: 120, moved: 220, scrollLeft: 20 },
+    { name: "right edge", first: 800, second: 900, moved: 1000, scrollLeft: 800 },
+  ])("keeps the anchored PDF point stable at the $name", ({ first, second, moved, scrollLeft }) => {
+    render(<GestureHarness onZoomChange={vi.fn()} />);
+    const viewport = screen.getByTestId("gesture-viewport");
+    const content = screen.getByTestId("gesture-content");
+    mockGeometry(viewport, content);
+
+    fireEvent.pointerDown(viewport, { pointerId: 1, clientX: first, clientY: 200 });
+    fireEvent.pointerDown(viewport, { pointerId: 2, clientX: second, clientY: 200 });
+    fireEvent.pointerMove(viewport, { pointerId: 2, clientX: moved, clientY: 200 });
+    flushAnimationFrame();
+    fireEvent.pointerUp(viewport, { pointerId: 2, clientX: moved, clientY: 200 });
+    fireEvent.pointerUp(viewport, { pointerId: 1, clientX: first, clientY: 200 });
+
+    expect(viewport.scrollLeft).toBeCloseTo(scrollLeft);
   });
 
   it("allows an under-fit preview and rebounds without a redundant render", () => {
@@ -147,6 +190,41 @@ function GestureHarness({ onZoomChange }: { onZoomChange: (zoom: number) => void
       {...handlers}
     >
       <div ref={contentRef} data-testid="gesture-content" />
+    </div>
+  );
+}
+
+function RenderingGestureHarness({
+  document,
+  onZoomChange,
+}: {
+  document: PDFDocumentProxy;
+  onZoomChange: (zoom: number) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const handlers = useReaderGestures({
+    containerRef,
+    contentRef,
+    disabled: false,
+    zoom,
+    onZoomChange: (value) => {
+      onZoomChange(value);
+      setZoom(value);
+    },
+    onTap: vi.fn(),
+  });
+  return (
+    <div
+      ref={containerRef}
+      data-testid="gesture-viewport"
+      data-zoom={zoom}
+      {...handlers}
+    >
+      <div ref={contentRef} data-testid="gesture-content">
+        <PdfPageCanvas document={document} pageNumber={1} width={600 * zoom} />
+      </div>
     </div>
   );
 }

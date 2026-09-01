@@ -30,6 +30,7 @@ import {
   type ScoreSummary,
 } from "../../shared/scores";
 import { authClient } from "../auth/auth-client";
+import { clearPreviewGuestSession } from "../auth/preview-guest-session";
 import { AppHeader } from "../components/app-header";
 import {
   ScoreActionDialog,
@@ -47,6 +48,7 @@ export default function ChoirPage() {
   const [access, setAccess] = useState<ChoirAccessState>({ kind: "loading" });
   const [openAdmissionDisplayName, setOpenAdmissionDisplayName] = useState("");
   const [search, setSearch] = useState("");
+  const [searchMessage, setSearchMessage] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [rotatedJoinCode, setRotatedJoinCode] = useState<string | null>(null);
@@ -57,6 +59,7 @@ export default function ChoirPage() {
   const [scoreAction, setScoreAction] = useState<ScoreActionSelection | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
   const searchTimer = useRef<number | null>(null);
+  const scoreListRequest = useRef(0);
   const currentChoir =
     access.kind === "opened" || access.kind === "join-required"
       ? access.choir
@@ -64,12 +67,19 @@ export default function ChoirPage() {
 
   const refresh = useCallback(
     async (query = search) => {
-      const next = await fetchScoreList(choirId, query);
-      if (!next) {
+      const request = ++scoreListRequest.current;
+      const next = await requestScoreList(choirId, query);
+      if (request !== scoreListRequest.current) return;
+      if (next.kind === "denied") {
         setAccess({ kind: "denied" });
         return;
       }
-      setAccess({ kind: "opened", choir: currentChoir, result: next });
+      if (next.kind === "failed") {
+        setSearchMessage("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。");
+        return;
+      }
+      setSearchMessage(null);
+      setAccess({ kind: "opened", choir: currentChoir, result: next.result });
     },
     [choirId, currentChoir, search],
   );
@@ -295,6 +305,9 @@ export default function ChoirPage() {
               {quotaBlocked ? " 请先释放空间后再上传。" : " 接近上限，请留意后续上传。"}
             </p>
           ) : null}
+          {searchMessage ? (
+            <p className="library-message" role="status">{searchMessage}</p>
+          ) : null}
           {message ? <p className="library-message" role="status">{message}</p> : null}
 
           {result.scores.length > 0 ? (
@@ -418,6 +431,9 @@ async function openChoir(
 ): Promise<
   Exclude<ChoirAccessState, { kind: "loading" }>
 > {
+  if (signedIn) {
+    await clearPreviewGuestSession({ keepForChoirId: choirId });
+  }
   const [choir, result] = await Promise.all([
     loadChoirSummary(choirId),
     fetchScoreList(choirId, ""),
@@ -478,13 +494,30 @@ async function loadChoirSummary(choirId: string) {
 }
 
 async function fetchScoreList(choirId: string, query: string) {
+  const loaded = await requestScoreList(choirId, query);
+  return loaded.kind === "loaded" ? loaded.result : null;
+}
+
+type ScoreListRequest =
+  | { kind: "loaded"; result: ScoreListResponse }
+  | { kind: "denied" }
+  | { kind: "failed" };
+
+async function requestScoreList(
+  choirId: string,
+  query: string,
+): Promise<ScoreListRequest> {
   try {
     const response = await fetch(
       `/api/choirs/${choirId}/scores${query ? `?q=${encodeURIComponent(query)}` : ""}`,
     );
-    if (!response.ok) return null;
-    return scoreListResponseSchema.parse(await response.json());
+    if ([401, 403, 404].includes(response.status)) return { kind: "denied" };
+    if (!response.ok) return { kind: "failed" };
+    return {
+      kind: "loaded",
+      result: scoreListResponseSchema.parse(await response.json()),
+    };
   } catch {
-    return null;
+    return { kind: "failed" };
   }
 }

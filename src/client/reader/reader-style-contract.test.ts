@@ -13,7 +13,7 @@ describe("reader control style contract", () => {
       /\.page-reader__canvas-stage \{[\s\S]*?place-items: center;/,
     );
     expect(styles).toMatch(
-      /\.continuous-reader__page \{[\s\S]*?justify-content: center;/,
+      /\.continuous-reader__page \{[\s\S]*?justify-content: safe center;/,
     );
   });
 
@@ -23,6 +23,9 @@ describe("reader control style contract", () => {
     );
     expect(styles).toMatch(
       /\.reader-chrome__back,[\s\S]*?background: rgb\(255 255 255 \/ 96%\);/,
+    );
+    expect(styles).toMatch(
+      /\.reader-more-menu \{[\s\S]*?pointer-events: auto;/,
     );
     expect(styles).toMatch(
       /\.annotation-controls \{[\s\S]*?color: #000;[\s\S]*?background: #fff;/,

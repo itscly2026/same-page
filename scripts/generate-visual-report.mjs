@@ -39,13 +39,16 @@ try {
   const captures = [];
 
   for (const scenario of visualReportScenarios) {
-    const deviceName =
-      scenario.device === "landscape"
+    const deviceName = scenario.device === "desktop"
+      ? "Desktop 1440 × 1000"
+      : scenario.device === "landscape"
         ? "iPad Pro 11 landscape"
         : scenario.device === "narrow"
           ? "iPhone 13"
           : "iPad Pro 11";
-    const device = devices[deviceName];
+    const device = scenario.device === "desktop"
+      ? { viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 }
+      : devices[deviceName];
     const context = await browser.newContext({
       ...device,
       colorScheme: "light",

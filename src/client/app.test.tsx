@@ -956,6 +956,64 @@ describe("AppRoutes", () => {
         "/api/choirs/choir-1/scores?q=%E6%8E%92%E7%BB%83",
       );
     });
+
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve(Response.json({ error: "temporary" }, { status: 503 })),
+    );
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索文件名" }), {
+      target: { value: "暂时失败" },
+    });
+    expect(
+      await screen.findByText("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /排练 10\.pdf.*2\.0 MB/ })).toBeInTheDocument();
+  });
+
+  it("keeps only the newest immediate-search response", async () => {
+    let releaseSlow!: (response: Response) => void;
+    const slowResponse = new Promise<Response>((resolve) => {
+      releaseSlow = resolve;
+    });
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input.endsWith("?q=%E6%85%A2")) return slowResponse;
+      if (input.endsWith("?q=%E6%96%B0")) {
+        return Promise.resolve(scoreListResponse("新结果.pdf"));
+      }
+      if (input.includes("/scores")) {
+        return Promise.resolve(scoreListResponse("初始结果.pdf"));
+      }
+      return Promise.resolve(
+        Response.json({
+          choir: {
+            id: "choir-1",
+            name: "小红花云盘",
+            guestAdmissionMode: "invite",
+          },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("link", { name: /初始结果\.pdf/ });
+    const searchbox = screen.getByRole("searchbox", { name: "搜索文件名" });
+    fireEvent.change(searchbox, { target: { value: "慢" } });
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/choirs/choir-1/scores?q=%E6%85%A2");
+    });
+    fireEvent.change(searchbox, { target: { value: "新" } });
+    expect(await screen.findByRole("link", { name: /新结果\.pdf/ })).toBeInTheDocument();
+
+    releaseSlow(scoreListResponse("过期结果.pdf"));
+    await waitFor(() => {
+      expect(screen.queryByRole("link", { name: /过期结果\.pdf/ })).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /新结果\.pdf/ })).toBeInTheDocument();
+    });
   });
 
   it("uploads files independently and reports invalid and duplicate files in place", async () => {
@@ -1101,3 +1159,27 @@ describe("AppRoutes", () => {
     expect(await localDatabase.annotationLayers.count()).toBe(1);
   });
 });
+
+function scoreListResponse(fileName: string) {
+  return Response.json({
+    scores: [
+      {
+        id: `score-${fileName}`,
+        choirId: "choir-1",
+        fileName,
+        updatedAt: 1,
+        currentVersion: {
+          id: `version-${fileName}`,
+          versionNumber: 1,
+          sizeBytes: 2048,
+          sha256: "a".repeat(64),
+          etag: '"etag"',
+          pageCount: 2,
+          createdAt: 1,
+        },
+      },
+    ],
+    storage: { usedBytes: 2048, limitBytes: 1_073_741_824 },
+    permissions: { canManage: false },
+  });
+}

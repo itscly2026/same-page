@@ -1480,6 +1480,7 @@ h1 {
 }
 
 .reader-more-menu {
+  pointer-events: auto;
   position: absolute;
   top: calc(100% + 0.55rem);
   right: 0;
@@ -2220,7 +2221,7 @@ h1 {
   top: 0;
   left: 0;
   display: flex;
-  justify-content: center;
+  justify-content: safe center;
   width: 100%;
   padding: 0 0 0.5rem;
 }

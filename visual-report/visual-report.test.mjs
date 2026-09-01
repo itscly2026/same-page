@@ -16,7 +16,7 @@ test("visual report scenarios have stable unique ids and cover iPad plus narrow 
   );
   assert.deepEqual(
     new Set(visualReportScenarios.map((scenario) => scenario.device)),
-    new Set(["portrait", "landscape", "narrow"]),
+    new Set(["portrait", "landscape", "narrow", "desktop"]),
   );
 });
 

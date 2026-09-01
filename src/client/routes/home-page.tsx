@@ -23,6 +23,10 @@ import {
 } from "../../shared/choirs";
 import { authClient } from "../auth/auth-client";
 import {
+  clearGuestSession,
+  clearPreviewGuestSession,
+} from "../auth/preview-guest-session";
+import {
   clearPrivateLocalDataAfterLogout,
   getLogoutLocalSummary,
   type LogoutLocalSummary,
@@ -75,6 +79,11 @@ export function HomePage() {
     return () => {
       active = false;
     };
+  }, [session.isPending, userId]);
+
+  useEffect(() => {
+    if (session.isPending || !userId) return;
+    void clearPreviewGuestSession();
   }, [session.isPending, userId]);
 
   const resetJoinFlow = () => {
@@ -208,6 +217,7 @@ export function HomePage() {
     try {
       const result = await authClient.signOut();
       if (result.error) throw new Error("sign_out_failed");
+      await clearPreviewGuestSession();
       await clearPrivateLocalDataAfterLogout();
       setMemberships([]);
       setLogoutSummary(null);
@@ -459,10 +469,6 @@ async function loadMemberships(): Promise<MembershipSummary[]> {
   } catch {
     return [];
   }
-}
-
-async function clearGuestSession() {
-  await fetch("/api/guest/session", { method: "DELETE" }).catch(() => null);
 }
 
 async function loadPreviewChoir(): Promise<ChoirSummary | null> {

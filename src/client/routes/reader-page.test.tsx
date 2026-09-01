@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,6 +14,7 @@ import {
   localWorkspaceRecordKey,
 } from "../platform/local-workspace";
 import { syncAnnotations } from "../annotations/sync";
+import { loadPdfDocument } from "../reader/pdf-document";
 import ReaderPage from "./reader-page";
 
 const virtualTestState = vi.hoisted(() => ({
@@ -178,6 +179,7 @@ describe("ReaderPage", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -236,6 +238,75 @@ describe("ReaderPage", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
     });
+  });
+
+  it("distinguishes permission, network, and PDF parsing failures", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 403 })));
+    const permissionView = render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "当前账号没有访问这份乐谱的权限",
+    );
+    permissionView.unmount();
+
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
+    const networkView = render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("网络暂时不可用");
+    networkView.unmount();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) =>
+        Promise.resolve(
+          input.includes("/layers")
+            ? Response.json({ layers: [], permissions: { canManageLayers: false } })
+            : Response.json({
+                scores: [
+                  {
+                    id: "score-1",
+                    choirId: "choir-1",
+                    fileName: "练声曲.pdf",
+                    updatedAt: 1,
+                    currentVersion: {
+                      id: "version-1",
+                      versionNumber: 1,
+                      sizeBytes: 329,
+                      sha256: "a".repeat(64),
+                      etag: '"etag"',
+                      pageCount: 3,
+                      createdAt: 1,
+                    },
+                  },
+                ],
+                storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
+                permissions: { canManage: false },
+              }),
+        ),
+      ),
+    );
+    vi.mocked(loadPdfDocument).mockRejectedValueOnce(new Error("invalid pdf"));
+    const parsingView = render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "PDF 无法解析或文件暂时不可用",
+    );
+    parsingView.unmount();
   });
 
   it("opens with score-only chrome and switches layouts without entering edit mode", async () => {
@@ -401,6 +472,7 @@ describe("ReaderPage", () => {
     expect(
       await screen.findByText("仍有 1 项本机冲突待处理"),
     ).toBeInTheDocument();
+    await screen.findByLabelText("翻页阅读");
   });
 
   it("keeps the existing offline selection when checksum verification fails", async () => {
@@ -676,6 +748,38 @@ describe("ReaderPage", () => {
     expect(screen.getByText("200%")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     const continuousReader = screen.getByLabelText("连续滚动阅读");
+    fireEvent.pointerDown(continuousReader, {
+      pointerId: 1,
+      clientX: 700,
+      clientY: 400,
+    });
+    fireEvent.pointerMove(continuousReader, {
+      pointerId: 1,
+      clientX: 300,
+      clientY: 400,
+    });
+    expect(continuousReader.scrollLeft).toBe(400);
+    fireEvent.pointerUp(continuousReader, {
+      pointerId: 1,
+      clientX: 300,
+      clientY: 400,
+    });
+    fireEvent.pointerDown(continuousReader, {
+      pointerId: 2,
+      clientX: 300,
+      clientY: 400,
+    });
+    fireEvent.pointerMove(continuousReader, {
+      pointerId: 2,
+      clientX: 700,
+      clientY: 400,
+    });
+    expect(continuousReader.scrollLeft).toBe(0);
+    fireEvent.pointerUp(continuousReader, {
+      pointerId: 2,
+      clientX: 700,
+      clientY: 400,
+    });
     continuousReader.scrollTop = 40;
     fireEvent.scroll(continuousReader);
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));

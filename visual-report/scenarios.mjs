@@ -137,10 +137,34 @@ export const visualReportScenarios = [
     waitsForPdf: true,
   },
   {
+    id: "reader-clean-portrait",
+    title: "阅读器 · 竖屏居中",
+    description: "竖向 iPad 中适合页面后的谱面在阅读舞台水平与垂直居中。",
+    device: "portrait",
+    identity: "member",
+    route: "/choirs/visual-choir/scores/visual-score",
+    ready: { type: "selector", selector: ".page-reader__viewport canvas" },
+    actions: [],
+    waitsForPdf: true,
+  },
+  {
     id: "reader-controls",
     title: "阅读器 · 显示控制",
     description: "轻点页面中央后显示的阅读器控制。",
     device: "landscape",
+    identity: "member",
+    route: "/choirs/visual-choir/scores/visual-score",
+    ready: { type: "selector", selector: ".reader-chrome" },
+    actions: [
+      { type: "clickCenter", selector: ".page-reader__viewport" },
+    ],
+    waitsForPdf: true,
+  },
+  {
+    id: "reader-controls-desktop",
+    title: "阅读器 · 桌面控制",
+    description: "桌面视口沿用同一套紧凑、内容优先的阅读控制层级。",
+    device: "desktop",
     identity: "member",
     route: "/choirs/visual-choir/scores/visual-score",
     ready: { type: "selector", selector: ".reader-chrome" },
@@ -166,14 +190,15 @@ export const visualReportScenarios = [
   {
     id: "reader-more",
     title: "阅读器 · 更多",
-    description: "布局、适合页面、离线与同步集中在低频菜单。",
+    description: "布局、适合页面、缩放、离线与同步集中在可交互的低频菜单。",
     device: "narrow",
     identity: "member",
     route: "/choirs/visual-choir/scores/visual-score",
-    ready: { type: "selector", selector: ".reader-more-menu" },
+    ready: { type: "text", text: "125%" },
     actions: [
       { type: "clickCenter", selector: ".page-reader__viewport" },
       { type: "clickRole", role: "button", name: "更多" },
+      { type: "clickRole", role: "button", name: "放大" },
     ],
     waitsForPdf: true,
   },
@@ -250,7 +275,7 @@ export function validateVisualReportScenarios(scenarios = visualReportScenarios)
       throw new Error(`Duplicate visual report scenario id: ${scenario.id}`);
     }
     ids.add(scenario.id);
-    if (!new Set(["portrait", "landscape", "narrow"]).has(scenario.device)) {
+    if (!new Set(["portrait", "landscape", "narrow", "desktop"]).has(scenario.device)) {
       throw new Error(`Invalid device for scenario ${scenario.id}`);
     }
     if (!new Set(["guest", "member", "admin"]).has(scenario.identity)) {

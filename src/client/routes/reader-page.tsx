@@ -279,40 +279,32 @@ export default function ReaderPage() {
       if (local) await restoreOfflineAnnotationSnapshot(workspace, local).catch(() => undefined);
       if (active) setOffline(local ?? null);
 
-      try {
-        const lookup = await lookupScoreCloudState(choirId, scoreId);
-        if (lookup.state === "trashed") {
-          setCloudState("trashed");
-          if (!local) {
-            setLoadState({
-              kind: "error",
-              scopeKey: workspace.scopeKey,
-              message: "这份乐谱已移入回收站，当前设备没有可用的离线副本。",
-            });
-            return;
-          }
-          setSyncOutcome("trash-preserved");
-          throw new Error("Score unavailable");
-        }
-        if (lookup.state !== "active") throw new Error("Score unavailable");
+      const lookup = await lookupScoreCloudState(choirId, scoreId);
+      if (lookup.state === "active") {
         if (!active) return;
         setCloudState("active");
         setScore(lookup.score);
         setSource(`/api/choirs/${choirId}/scores/${scoreId}/pdf`);
-      } catch {
-        if (!active) return;
-        setCloudState((current) => (current === "trashed" ? current : "unavailable"));
-        if (local) {
-          setScore(scoreFromOffline(local));
-          setSource(await local.blob.arrayBuffer());
-        } else {
-          setLoadState({
-            kind: "error",
-            scopeKey: workspace.scopeKey,
-            message: "无法打开乐谱。请检查网络与当前访问权限。",
-          });
-        }
+        return;
       }
+
+      if (!active) return;
+      if (lookup.state === "trashed") {
+        setCloudState("trashed");
+        setSyncOutcome("trash-preserved");
+      } else {
+        setCloudState("unavailable");
+      }
+      if (local) {
+        setScore(scoreFromOffline(local));
+        setSource(await local.blob.arrayBuffer());
+        return;
+      }
+      setLoadState({
+        kind: "error",
+        scopeKey: workspace.scopeKey,
+        message: readerLoadFailureMessage(lookup.state),
+      });
     })();
     return () => {
       active = false;
@@ -1399,22 +1391,51 @@ function writeStringPreference(key: string, value: string) {
 type ScoreCloudLookup =
   | { state: "active"; score: ScoreSummary }
   | { state: "trashed" }
-  | { state: "unavailable" };
+  | { state: "missing" }
+  | { state: "permission-denied" }
+  | { state: "network-unavailable" };
 
 async function lookupScoreCloudState(
   choirId: string,
   scoreId: string,
 ): Promise<ScoreCloudLookup> {
-  const response = await fetch(`/api/choirs/${choirId}/scores`);
-  if (!response.ok) return { state: "unavailable" };
-  const payload = scoreListResponseSchema.parse(await response.json());
-  const score = payload.scores.find((item) => item.id === scoreId);
-  if (score) return { state: "active", score };
+  try {
+    const response = await fetch(`/api/choirs/${choirId}/scores`);
+    if (response.status === 401 || response.status === 403) {
+      return { state: "permission-denied" };
+    }
+    if (!response.ok) return response.status >= 500
+      ? { state: "network-unavailable" }
+      : { state: "missing" };
+    const payload = scoreListResponseSchema.parse(await response.json());
+    const score = payload.scores.find((item) => item.id === scoreId);
+    if (score) return { state: "active", score };
 
-  const statusResponse = await fetch(`/api/choirs/${choirId}/scores/${scoreId}/status`);
-  if (!statusResponse.ok) return { state: "unavailable" };
-  const status = scoreCloudStateSchema.parse(await statusResponse.json());
-  return status.state === "trashed" ? { state: "trashed" } : { state: "unavailable" };
+    const statusResponse = await fetch(`/api/choirs/${choirId}/scores/${scoreId}/status`);
+    if (statusResponse.status === 401 || statusResponse.status === 403) {
+      return { state: "permission-denied" };
+    }
+    if (!statusResponse.ok) return statusResponse.status >= 500
+      ? { state: "network-unavailable" }
+      : { state: "missing" };
+    const status = scoreCloudStateSchema.parse(await statusResponse.json());
+    return status.state === "trashed" ? { state: "trashed" } : { state: "missing" };
+  } catch {
+    return { state: "network-unavailable" };
+  }
+}
+
+function readerLoadFailureMessage(state: Exclude<ScoreCloudLookup["state"], "active">) {
+  switch (state) {
+    case "trashed":
+      return "这份乐谱已移入回收站，当前设备没有可用的离线副本。";
+    case "permission-denied":
+      return "当前账号没有访问这份乐谱的权限。请返回云盘确认成员关系。";
+    case "network-unavailable":
+      return "网络暂时不可用，且当前设备没有这份乐谱的离线副本。";
+    case "missing":
+      return "这份乐谱不存在或已经被永久移除。";
+  }
 }
 
 function scoreFromOffline(record: OfflineScoreRecord): ScoreSummary {
