@@ -49,6 +49,12 @@ test("fixture resolver isolates guest and member sessions", () => {
     identity: "member",
   });
   assert.match(previewAdmission.headers["set-cookie"], /same_page_guest=visual-preview/);
+  const invalidInvite = resolveFixtureRequest({
+    pathname: "/api/guest/session",
+    method: "POST",
+    identity: "guest",
+  });
+  assert.equal(invalidInvite.status, 404);
   const signedInPreview = resolveFixtureRequest({
     pathname: "/api/choirs/visual-preview-choir/scores",
     identity: "member",

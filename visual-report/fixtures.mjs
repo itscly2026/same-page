@@ -115,6 +115,9 @@ export function resolveFixtureRequest({
   }
 
   if (method === "POST" && pathname === "/api/guest/session") {
+    if (identity === "guest") {
+      return json({ error: "invalid_or_expired_join_code" }, 404);
+    }
     return {
       ...json({ choir: previewChoir, entryKind: "preview" }),
       headers: {

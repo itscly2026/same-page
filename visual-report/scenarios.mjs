@@ -98,7 +98,7 @@ export const visualReportScenarios = [
     device: "narrow",
     identity: "admin",
     route: "/choirs/visual-choir",
-    ready: { type: "role", role: "menu", name: "管理员菜单" },
+    ready: { type: "selector", selector: ".admin-menu-popover" },
     actions: [
       { type: "clickRole", role: "button", name: "管理" },
     ],
