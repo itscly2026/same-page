@@ -3,6 +3,7 @@ import {
   type AnnotationObjectRecord,
 } from "../../shared/annotations";
 import {
+  annotationRecordKey,
   localDatabase,
   type AnnotationOutboxRecord,
 } from "../platform/local-database";
@@ -67,20 +68,95 @@ async function drainAnnotationOutbox(
     const batch = await withLocalWorkspaceTransaction(
       workspace,
       "rw",
-      [localDatabase.annotationOutbox],
+      [
+        localDatabase.annotations,
+        localDatabase.annotationOutbox,
+        localDatabase.annotationConflicts,
+      ],
       async () => {
         const operations = await localDatabase.annotationOutbox
           .where("scopeKey")
           .equals(workspace.scopeKey)
           .sortBy("createdAt");
+        const discardedOperationIds = new Set<string>();
+        for (const invalidDelete of operations.filter(
+          (operation) =>
+            operation.baseVersion === 0 && operation.type === "delete",
+        )) {
+          const related = operations.filter(
+            (operation) =>
+              operation.annotationId === invalidDelete.annotationId,
+          );
+          const attemptedCreate = related.find(
+            (operation) =>
+              operation.baseVersion === 0 &&
+              operation.type === "upsert" &&
+              operation.attemptedAt !== null,
+          );
+          discardedOperationIds.add(invalidDelete.opId);
+          if (attemptedCreate) {
+            for (const operation of related) {
+              if (operation.attemptedAt === null) {
+                discardedOperationIds.add(operation.opId);
+              }
+            }
+            const local = await localDatabase.annotations.get(
+              annotationRecordKey(workspace.scopeKey, invalidDelete.annotationId),
+            );
+            if (local?.version === 0) {
+              await localDatabase.annotations.update(local.key, {
+                deleted: true,
+                payload: null,
+                state: "pending",
+                lastOpId: attemptedCreate.opId,
+              });
+            }
+            continue;
+          }
+          for (const operation of related) {
+            if (operation.attemptedAt === null) {
+              discardedOperationIds.add(operation.opId);
+            }
+          }
+          const key = annotationRecordKey(
+            workspace.scopeKey,
+            invalidDelete.annotationId,
+          );
+          const local = await localDatabase.annotations.get(key);
+          if (local?.version === 0 && local.deleted) {
+            await localDatabase.annotations.delete(key);
+          }
+          const pseudoConflicts = await localDatabase.annotationConflicts
+            .where("[scopeKey+annotationId]")
+            .equals([workspace.scopeKey, invalidDelete.annotationId])
+            .filter(
+              (conflict) =>
+                conflict.opId === invalidDelete.opId &&
+                conflict.localDeleted &&
+                conflict.canonical === null,
+            )
+            .toArray();
+          await localDatabase.annotationConflicts.bulkDelete(
+            pseudoConflicts.map((conflict) => conflict.opId),
+          );
+        }
+        await localDatabase.annotationOutbox.bulkDelete([
+          ...discardedOperationIds,
+        ]);
         const seenAnnotationIds = new Set<string>();
         const selected = operations
+          .filter(
+            (operation) => !discardedOperationIds.has(operation.opId),
+          )
           .filter((operation) => {
             if (seenAnnotationIds.has(operation.annotationId)) return false;
             seenAnnotationIds.add(operation.annotationId);
             return true;
           })
           .slice(0, Math.min(100, maxOperations - pushed));
+        for (const operation of selected) {
+          assertOutboxOperation(operation);
+        }
         await localDatabase.annotationOutbox.bulkUpdate(
           selected.map((operation) => ({
             key: operation.opId,
@@ -171,6 +247,7 @@ export async function withScoreSyncLock<T>(
 }
 
 function toWireOperation(operation: AnnotationOutboxRecord) {
+  assertOutboxOperation(operation);
   return {
     opId: operation.opId,
     annotationId: operation.annotationId,
@@ -179,4 +256,10 @@ function toWireOperation(operation: AnnotationOutboxRecord) {
     type: operation.type,
     payload: operation.payload,
   };
+}
+
+function assertOutboxOperation(operation: AnnotationOutboxRecord) {
+  if (operation.baseVersion === 0 && operation.type === "delete") {
+    throw new Error("annotation_outbox_invariant_version_zero_delete");
+  }
 }

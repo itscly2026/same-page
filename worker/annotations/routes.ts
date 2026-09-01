@@ -437,13 +437,23 @@ async function applyOperation(
       await sha256(`${operation.type}:${JSON.stringify(legacyPayload)}`),
     );
   }
-  const existingOperation = await context.env.DB.prepare(
-    `SELECT op_id, choir_id, score_id, layer_id, annotation_id, actor_user_id,
-            base_version, operation_type, payload_hash, status
-     FROM annotation_sync_operations WHERE op_id = ?`,
-  )
-    .bind(operation.opId)
-    .first<OperationRow>();
+  const actorUserId =
+    access.principal.kind === "user" ? access.principal.userId : "";
+  const operationIdentityWhere = `choir_id = ? AND score_id = ? AND layer_id = ?
+    AND annotation_id = ? AND actor_user_id = ? AND base_version = ?
+    AND operation_type = ? AND payload_hash IN (?, ?)`;
+  const operationIdentityBindings = [
+    access.choirId,
+    access.scoreId,
+    operation.layerId,
+    operation.annotationId,
+    actorUserId,
+    operation.baseVersion,
+    operation.type,
+    compatiblePayloadHashes[0]!,
+    compatiblePayloadHashes[1] ?? compatiblePayloadHashes[0]!,
+  ] as const;
+  const existingOperation = await readOperation(context, operation.opId);
   if (existingOperation) {
     if (!sameOperation(existingOperation, access, operation, compatiblePayloadHashes)) {
       return { opId: operation.opId, status: "op_id_reused" };
@@ -471,7 +481,7 @@ async function applyOperation(
       access.scoreId,
       operation.layerId,
       operation.annotationId,
-      access.principal.kind === "user" ? access.principal.userId : "",
+      actorUserId,
       operation.baseVersion,
       operation.type,
       payloadJson,
@@ -482,6 +492,19 @@ async function applyOperation(
   if (operation.baseVersion === 0 && operation.type === "upsert") {
     statements.push(
       context.env.DB.prepare(
+        `UPDATE annotation_sync_operations
+         SET status = 'accepted', resulting_version = 1, payload_json = NULL
+         WHERE op_id = ? AND status = 'processing' AND ${operationIdentityWhere}
+           AND NOT EXISTS (
+             SELECT 1 FROM annotation_objects
+             WHERE id = ?
+           )`,
+      ).bind(
+        operation.opId,
+        ...operationIdentityBindings,
+        operation.annotationId,
+      ),
+      context.env.DB.prepare(
         `INSERT OR IGNORE INTO annotation_objects
            (id, choir_id, score_id, layer_id, version, deleted, payload_json,
             created_by_user_id, created_by_display_name, updated_by_user_id,
@@ -489,7 +512,8 @@ async function applyOperation(
          SELECT ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?
          WHERE EXISTS (
            SELECT 1 FROM annotation_sync_operations
-           WHERE op_id = ? AND status = 'processing'
+           WHERE op_id = ? AND status = 'accepted'
+             AND ${operationIdentityWhere}
          )`,
       ).bind(
         operation.annotationId,
@@ -504,10 +528,30 @@ async function applyOperation(
         now,
         now,
         operation.opId,
+        ...operationIdentityBindings,
       ),
     );
   } else if (operation.baseVersion > 0) {
     statements.push(
+      context.env.DB.prepare(
+        `UPDATE annotation_sync_operations
+         SET status = 'accepted', resulting_version = ?, payload_json = NULL
+         WHERE op_id = ? AND status = 'processing' AND ${operationIdentityWhere}
+           AND EXISTS (
+             SELECT 1 FROM annotation_objects
+             WHERE id = ? AND choir_id = ? AND score_id = ? AND layer_id = ?
+               AND version = ?
+           )`,
+      ).bind(
+        nextVersion,
+        operation.opId,
+        ...operationIdentityBindings,
+        operation.annotationId,
+        access.choirId,
+        access.scoreId,
+        operation.layerId,
+        operation.baseVersion,
+      ),
       context.env.DB.prepare(
         `UPDATE annotation_objects
          SET version = ?, deleted = ?, payload_json = ?, updated_by_user_id = ?,
@@ -516,7 +560,8 @@ async function applyOperation(
            AND version = ?
            AND EXISTS (
              SELECT 1 FROM annotation_sync_operations
-             WHERE op_id = ? AND status = 'processing'
+             WHERE op_id = ? AND status = 'accepted'
+               AND ${operationIdentityWhere}
            )`,
       ).bind(
         nextVersion,
@@ -531,47 +576,44 @@ async function applyOperation(
         operation.layerId,
         operation.baseVersion,
         operation.opId,
+        ...operationIdentityBindings,
       ),
     );
   }
   statements.push(
     context.env.DB.prepare(
-      `UPDATE annotation_sync_operations
-       SET status = 'accepted', resulting_version = ?, payload_json = NULL
-       WHERE op_id = ? AND status = 'processing'
-         AND EXISTS (
-           SELECT 1 FROM annotation_objects
-           WHERE id = ? AND choir_id = ? AND score_id = ? AND layer_id = ?
-             AND version = ? AND deleted = ?
-             AND payload_json IS ?
-         )`,
-    ).bind(
-      nextVersion,
-      operation.opId,
-      operation.annotationId,
-      access.choirId,
-      access.scoreId,
-      operation.layerId,
-      nextVersion,
-      deleted,
-      payloadJson,
-    ),
-    context.env.DB.prepare(
       "UPDATE annotation_sync_operations SET status = 'conflict', payload_json = NULL WHERE op_id = ? AND status = 'processing'",
     ).bind(operation.opId),
   );
   await context.env.DB.batch(statements);
-  const operationResult = await context.env.DB.prepare(
-    "SELECT status FROM annotation_sync_operations WHERE op_id = ?",
-  )
-    .bind(operation.opId)
-    .first<{ status: "accepted" | "conflict" }>();
+  const operationResult = await readOperation(context, operation.opId);
+  if (
+    operationResult &&
+    !sameOperation(
+      operationResult,
+      access,
+      operation,
+      compatiblePayloadHashes,
+    )
+  ) {
+    return { opId: operation.opId, status: "op_id_reused" };
+  }
   const canonical = await readObject(context, access, operation.annotationId);
   return {
     opId: operation.opId,
-    status: operationResult?.status ?? "conflict",
+    status: operationResult?.status === "accepted" ? "accepted" : "conflict",
     object: canonical,
   };
+}
+
+function readOperation(context: Context<AppEnvironment>, opId: string) {
+  return context.env.DB.prepare(
+    `SELECT op_id, choir_id, score_id, layer_id, annotation_id, actor_user_id,
+            base_version, operation_type, payload_hash, status
+     FROM annotation_sync_operations WHERE op_id = ?`,
+  )
+    .bind(opId)
+    .first<OperationRow>();
 }
 
 async function resolveScoreAccess(

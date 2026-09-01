@@ -40,6 +40,7 @@ import type {
 } from "../annotations/annotation-overlay";
 import {
   cacheAnnotationLayers,
+  cleanupUncreatedDeleteConflicts,
   discardAnnotationConflict,
   queueScoreDrafts,
   reapplyAnnotationConflict,
@@ -161,7 +162,12 @@ export default function ReaderPage() {
       authenticatedUserId: session.data?.user.id ?? null,
       choirId,
       scoreId,
-    }).then((workspace) => {
+    }).then(async (workspace) => {
+      try {
+        await cleanupUncreatedDeleteConflicts(workspace);
+      } catch {
+        // Historical cleanup must never prevent the local workspace from opening.
+      }
       if (active) setResolvedWorkspace(workspace);
     });
     return () => {

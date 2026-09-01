@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { AnnotationObjectRecord } from "../../shared/annotations";
-import { localDatabase } from "../platform/local-database";
+import {
+  annotationRecordKey,
+  localDatabase,
+} from "../platform/local-database";
 import {
   activateAuthenticatedLocalOwner,
   authenticatedLocalOwnerKey,
@@ -9,6 +12,7 @@ import {
 } from "../platform/local-workspace";
 import {
   applyPushResults,
+  cleanupUncreatedDeleteConflicts,
   queueScoreDrafts,
   reapplyAnnotationConflict,
   retryScoreSyncErrors,
@@ -213,4 +217,217 @@ describe("local annotation durability", () => {
       payload: { text: "第二次" },
     });
   });
+
+  it("folds a never-uploaded create followed by delete into no local or network work", async () => {
+    const annotationId = crypto.randomUUID();
+    const layerId = crypto.randomUUID();
+    await saveAnnotationDraft(workspace, {
+      id: annotationId,
+      layerId,
+      payload: textPayload("临时文字"),
+    });
+    await saveAnnotationDraft(workspace, {
+      id: annotationId,
+      layerId,
+      payload: null,
+      deleted: true,
+    });
+
+    expect(await queueScoreDrafts(workspace)).toBe(0);
+    expect(await localDatabase.annotations.count()).toBe(0);
+    expect(await localDatabase.annotationOutbox.count()).toBe(0);
+
+    await saveAnnotationDraft(workspace, {
+      id: annotationId,
+      layerId,
+      payload: textPayload("已排队但未尝试"),
+    });
+    expect(await queueScoreDrafts(workspace)).toBe(1);
+    const create = (await localDatabase.annotationOutbox.toArray())[0]!;
+    expect(create).toMatchObject({ baseVersion: 0, type: "upsert", attemptedAt: null });
+
+    await saveAnnotationDraft(workspace, {
+      id: annotationId,
+      layerId,
+      payload: null,
+      deleted: true,
+    });
+    expect(await localDatabase.annotations.count()).toBe(0);
+    expect(await localDatabase.annotationOutbox.count()).toBe(0);
+  });
+
+  it("keeps an attempted create idempotent and queues delete only after a positive version", async () => {
+    const annotationId = crypto.randomUUID();
+    const layerId = crypto.randomUUID();
+    await saveAnnotationDraft(workspace, {
+      id: annotationId,
+      layerId,
+      payload: textPayload("已发出的新建"),
+    });
+    await queueScoreDrafts(workspace);
+    const create = (await localDatabase.annotationOutbox.toArray())[0]!;
+    await localDatabase.annotationOutbox.update(create.opId, { attemptedAt: 1 });
+
+    await saveAnnotationDraft(workspace, {
+      id: annotationId,
+      layerId,
+      payload: null,
+      deleted: true,
+    });
+    expect(await queueScoreDrafts(workspace)).toBe(1);
+    expect(await localDatabase.annotationOutbox.toArray()).toEqual([
+      expect.objectContaining({
+        opId: create.opId,
+        baseVersion: 0,
+        type: "upsert",
+        attemptedAt: 1,
+      }),
+    ]);
+
+    await applyPushResults(workspace, [create], [
+      {
+        opId: create.opId,
+        status: "accepted",
+        object: canonicalText(annotationId, layerId, 1, "已发出的新建"),
+      },
+    ]);
+    const deleteOperation = (await localDatabase.annotationOutbox.toArray())[0]!;
+    expect(deleteOperation).toMatchObject({
+      annotationId,
+      baseVersion: 1,
+      type: "delete",
+      payload: null,
+      attemptedAt: null,
+    });
+    expect(
+      (await localDatabase.annotationOutbox.toArray()).some(
+        (operation) => operation.baseVersion === 0 && operation.type === "delete",
+      ),
+    ).toBe(false);
+  });
+
+  it("recovers an accepted create response after restart with the original opId", async () => {
+    const annotationId = crypto.randomUUID();
+    const layerId = crypto.randomUUID();
+    await saveAnnotationDraft(workspace, {
+      id: annotationId,
+      layerId,
+      payload: textPayload("响应丢失"),
+    });
+    await queueScoreDrafts(workspace);
+    const create = (await localDatabase.annotationOutbox.toArray())[0]!;
+    await localDatabase.annotationOutbox.update(create.opId, { attemptedAt: 1 });
+    await saveAnnotationDraft(workspace, {
+      id: annotationId,
+      layerId,
+      payload: null,
+      deleted: true,
+    });
+
+    localDatabase.close();
+    await localDatabase.open();
+    expect((await localDatabase.annotationOutbox.toArray())[0]?.opId).toBe(create.opId);
+    await applyPushResults(workspace, [create], [
+      {
+        opId: create.opId,
+        status: "accepted",
+        object: canonicalText(annotationId, layerId, 1, "响应丢失"),
+      },
+    ]);
+    expect(await localDatabase.annotationOutbox.toArray()).toEqual([
+      expect.objectContaining({ baseVersion: 1, type: "delete" }),
+    ]);
+  });
+
+  it("cleans only canonical-empty version-zero delete conflicts", async () => {
+    const annotationId = crypto.randomUUID();
+    const layerId = crypto.randomUUID();
+    const key = annotationRecordKey(workspace.scopeKey, annotationId);
+    await localDatabase.annotations.put({
+      key,
+      ...workspace,
+      id: annotationId,
+      layerId,
+      version: 0,
+      baseVersion: 0,
+      deleted: true,
+      payload: null,
+      state: "conflict",
+      lastOpId: "pseudo-conflict",
+      syncErrorCode: null,
+      updatedAt: 1,
+    });
+    await localDatabase.annotationConflicts.put({
+      opId: "pseudo-conflict",
+      ...workspace,
+      annotationId,
+      layerId,
+      localPayload: null,
+      localDeleted: true,
+      canonical: null,
+      createdAt: 1,
+    });
+    const realId = crypto.randomUUID();
+    const realKey = annotationRecordKey(workspace.scopeKey, realId);
+    const canonical = canonicalText(realId, layerId, 2, "云端对象");
+    await localDatabase.annotations.put({
+      key: realKey,
+      ...workspace,
+      id: realId,
+      layerId,
+      version: 1,
+      baseVersion: 1,
+      deleted: true,
+      payload: null,
+      state: "conflict",
+      lastOpId: "real-conflict",
+      syncErrorCode: null,
+      updatedAt: 1,
+    });
+    await localDatabase.annotationConflicts.put({
+      opId: "real-conflict",
+      ...workspace,
+      annotationId: realId,
+      layerId,
+      localPayload: null,
+      localDeleted: true,
+      canonical,
+      createdAt: 1,
+    });
+
+    expect(await cleanupUncreatedDeleteConflicts(workspace)).toBe(1);
+    expect(await localDatabase.annotations.get(key)).toBeUndefined();
+    expect(await localDatabase.annotationConflicts.get("pseudo-conflict")).toBeUndefined();
+    expect(await localDatabase.annotations.get(realKey)).toBeDefined();
+    expect(await localDatabase.annotationConflicts.get("real-conflict")).toBeDefined();
+  });
 });
+
+function textPayload(text: string) {
+  return {
+    kind: "text" as const,
+    pageNumber: 1,
+    x: 0.2,
+    y: 0.3,
+    fontScale: 0.024,
+    text,
+  };
+}
+
+function canonicalText(
+  id: string,
+  layerId: string,
+  version: number,
+  text: string,
+): AnnotationObjectRecord {
+  return {
+    id,
+    layerId,
+    version,
+    deleted: false,
+    payload: textPayload(text),
+    createdByDisplayName: "我",
+    updatedByDisplayName: "我",
+    updatedAt: version,
+  };
+}
