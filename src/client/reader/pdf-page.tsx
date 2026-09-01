@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { PDFDocumentProxy } from "./pdf-document";
 
@@ -8,18 +8,30 @@ export function PdfPageCanvas({
   width,
   aspectRatio = 0.707,
   className = "pdf-page-canvas",
+  onRenderStart,
 }: {
   document: PDFDocumentProxy;
   pageNumber: number;
   width: number;
   aspectRatio?: number;
   className?: string;
+  onRenderStart?(pageNumber: number): PdfPageRenderLease;
 }) {
   const canvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
   const frontCanvas = useRef(0);
   const source = useRef({ document, pageNumber });
+  const renderLease = useRef<PdfPageRenderLease | null>(null);
   const [visibleCanvas, setVisibleCanvas] = useState<number | null>(null);
   const [error, setError] = useState(false);
+
+  useLayoutEffect(() => {
+    const lease = onRenderStart?.(pageNumber) ?? null;
+    renderLease.current = lease;
+    return () => {
+      if (renderLease.current === lease) renderLease.current = null;
+      lease?.cancel();
+    };
+  }, [document, onRenderStart, pageNumber, width]);
 
   useEffect(() => {
     const sourceChanged =
@@ -36,6 +48,7 @@ export function PdfPageCanvas({
     }
     let active = true;
     let cancelRender: (() => void) | undefined;
+    const lease = renderLease.current;
 
     void document
       .getPage(pageNumber)
@@ -64,10 +77,12 @@ export function PdfPageCanvas({
           previous.height = 1;
         }
         setError(false);
+        lease?.ready();
       })
       .catch((reason: unknown) => {
         if (active && !(reason instanceof Error && reason.name === "RenderingCancelledException")) {
           setError(true);
+          lease?.ready();
         }
       });
 
@@ -75,7 +90,7 @@ export function PdfPageCanvas({
       active = false;
       cancelRender?.();
     };
-  }, [document, pageNumber, width]);
+  }, [document, onRenderStart, pageNumber, width]);
 
   return (
     <div
@@ -102,4 +117,9 @@ export function PdfPageCanvas({
       {error ? <p role="alert">这一页暂时无法显示</p> : null}
     </div>
   );
+}
+
+export interface PdfPageRenderLease {
+  ready(): void;
+  cancel(): void;
 }

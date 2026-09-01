@@ -1,5 +1,12 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type RefObject,
+  type TransitionEvent as ReactTransitionEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "react-aria-components";
 
 import type { AnnotationLayerSummary } from "../../shared/annotations";
@@ -11,9 +18,15 @@ import {
 import type { LocalAnnotationRecord } from "../platform/local-database";
 import type { LocalWorkspace } from "../platform/local-workspace";
 import type { PDFDocumentProxy } from "./pdf-document";
-import { PdfPageCanvas } from "./pdf-page";
-import { calculateFittedPageWidth } from "./reader-dimensions";
+import { PdfPageCanvas, type PdfPageRenderLease } from "./pdf-page";
+import {
+  calculateFittedPageWidth,
+  calculatePageTurnDistance,
+} from "./reader-dimensions";
+import type { PagedReader, PagedReaderItem } from "./use-paged-reader";
 import { useReaderGestures } from "./use-reader-gestures";
+
+const PAGE_TURN_GUTTER_PX = 14;
 
 export interface AnnotationPageProps {
   workspace: LocalWorkspace;
@@ -45,12 +58,13 @@ export function PageLayout({
   currentPage,
   zoom,
   onZoomChange,
-  onPageChange,
   onToggleChrome,
   annotationProps,
-}: ReaderLayoutProps) {
+  pager,
+}: Omit<ReaderLayoutProps, "onPageChange"> & { pager: PagedReader }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const previewBoundaryRef = useRef<HTMLDivElement>(null);
   const size = useElementSize(containerRef);
   const pageRatio = usePdfPageAspectRatio(document, currentPage);
   const fitWidth = calculateFittedPageWidth(
@@ -60,26 +74,46 @@ export function PageLayout({
   );
   const renderedWidth = Math.max(1, fitWidth * zoom);
   const renderedHeight = renderedWidth / pageRatio;
+  const pageTurnDistance = calculatePageTurnDistance(
+    renderedWidth,
+    PAGE_TURN_GUTTER_PX,
+  );
+  const showPageWindow = !annotationProps.editing && zoom <= 1;
+  const pageItems: PagedReaderItem[] = showPageWindow
+    ? pager.items
+    : [{ page: currentPage, position: 0 }];
+  const gutterPositions = showPageWindow
+    ? pageItems
+      .slice(0, -1)
+      .filter((item, index) => pageItems[index + 1].position - item.position === 1)
+      .map((item, index) => ({
+        between: `${item.page}:${pageItems[index + 1].page}`,
+        position: (item.position + pageItems[index + 1].position) / 2,
+      }))
+    : [];
+  const requestPage = (target: "previous" | "next") => {
+    if (zoom > 1) onZoomChange(1);
+    pager.request(target);
+  };
+  const finishPageTransition = (event: ReactTransitionEvent<HTMLDivElement>) => {
+    if (
+      event.target === event.currentTarget &&
+      event.propertyName === "transform"
+    ) {
+      pager.finishTransition();
+    }
+  };
   const gestureHandlers = useReaderGestures({
     containerRef,
     contentRef,
+    previewBoundaryRef,
     disabled: annotationProps.editing,
     zoom,
     onZoomChange,
     onTap: onToggleChrome,
-    onEdgeTap: (direction) => {
-      const targetPage =
-        direction === "next"
-          ? Math.min(document.numPages, currentPage + 1)
-          : Math.max(1, currentPage - 1);
-      if (targetPage !== currentPage) onPageChange(targetPage);
-    },
-    onSwipe: (direction) =>
-      onPageChange(
-        direction === "next"
-          ? Math.min(document.numPages, currentPage + 1)
-          : Math.max(1, currentPage - 1),
-      ),
+    onEdgeTap: zoom <= 1 ? requestPage : undefined,
+    pageTurn: zoom <= 1 ? pager.gesture : undefined,
+    pageTurnExtent: pageTurnDistance,
   });
 
   return (
@@ -98,14 +132,67 @@ export function PageLayout({
             height: Math.max(size.height, renderedHeight),
           }}
         >
-          <div className="page-reader__content" ref={contentRef}>
-            <AnnotatedPdfPage
-              document={document}
-              pageNumber={currentPage}
-              width={renderedWidth}
-              aspectRatio={pageRatio}
-              annotationProps={annotationProps}
-            />
+          <div
+            className="page-reader__pager-window"
+            ref={previewBoundaryRef}
+            style={{
+              width: renderedWidth,
+              height: renderedHeight,
+            }}
+          >
+            <div
+              className="page-reader__pager-track"
+              data-page-turn-phase={showPageWindow ? pager.phase : "disabled"}
+              data-page-turn-progress={showPageWindow ? pager.progress : 0}
+              onTransitionCancel={finishPageTransition}
+              onTransitionEnd={finishPageTransition}
+              style={{
+                "--page-turn-offset": `${
+                  (showPageWindow ? pager.progress : 0) * pageTurnDistance
+                }px`,
+              } as CSSProperties}
+            >
+              {gutterPositions.map((gutter) => (
+                <i
+                  aria-hidden="true"
+                  className="page-reader__gutter"
+                  data-between-pages={gutter.between}
+                  key={gutter.between}
+                  style={{
+                    "--page-turn-gutter-offset": `${
+                      gutter.position * pageTurnDistance
+                    }px`,
+                  } as CSSProperties}
+                />
+              ))}
+              {pageItems.map((item) => (
+                <div
+                  aria-hidden={item.position === 0 ? undefined : true}
+                  className="page-reader__sheet"
+                  data-page-number={item.page}
+                  data-page-turn-current={item.position === 0 || undefined}
+                  data-page-turn-target={item.page === pager.targetPage || undefined}
+                  key={item.page}
+                  style={{
+                    "--page-turn-slot-offset": `${item.position * pageTurnDistance}px`,
+                  } as CSSProperties}
+                >
+                  <div
+                    className="page-reader__content page-reader__paper"
+                    ref={item.position === 0 ? contentRef : undefined}
+                  >
+                    <AnnotatedPdfPage
+                      document={document}
+                      pageNumber={item.page}
+                      width={renderedWidth}
+                      aspectRatio={item.page === currentPage ? pageRatio : undefined}
+                      annotationProps={annotationProps}
+                      onPageRenderStart={pager.beginPageRender}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -115,7 +202,7 @@ export function PageLayout({
             className="visually-hidden page-turn-control page-turn-control--previous"
             aria-label="上一页"
             isDisabled={currentPage <= 1}
-            onPress={() => onPageChange(Math.max(1, currentPage - 1))}
+            onPress={() => requestPage("previous")}
           >
             上一页
           </Button>
@@ -123,9 +210,7 @@ export function PageLayout({
             className="visually-hidden page-turn-control page-turn-control--next"
             aria-label="下一页"
             isDisabled={currentPage >= document.numPages}
-            onPress={() =>
-              onPageChange(Math.min(document.numPages, currentPage + 1))
-            }
+            onPress={() => requestPage("next")}
           >
             下一页
           </Button>
@@ -354,12 +439,14 @@ function AnnotatedPdfPage({
   width,
   aspectRatio,
   annotationProps,
+  onPageRenderStart,
 }: {
   document: PDFDocumentProxy;
   pageNumber: number;
   width: number;
   aspectRatio?: number;
   annotationProps: AnnotationPageProps;
+  onPageRenderStart?(page: number): PdfPageRenderLease;
 }) {
   const resolvedAspectRatio = usePdfPageAspectRatio(
     document,
@@ -379,6 +466,7 @@ function AnnotatedPdfPage({
         pageNumber={pageNumber}
         width={width}
         aspectRatio={resolvedAspectRatio}
+        onRenderStart={onPageRenderStart}
       />
       <AnnotationOverlay
         {...annotationProps}

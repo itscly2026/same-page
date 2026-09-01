@@ -194,6 +194,10 @@ async function runActions(page, actions) {
       await page.getByLabel(action.label, { exact: true }).fill(action.value);
       continue;
     }
+    if (action.type === "waitVisible") {
+      await page.locator(action.selector).waitFor({ state: "visible" });
+      continue;
+    }
     if (action.type === "dispatchPointer") {
       await page.locator(action.selector).evaluate((element, point) => {
         const bounds = element.getBoundingClientRect();
@@ -220,6 +224,45 @@ async function runActions(page, actions) {
         element.dispatchEvent(new PointerEvent("pointerdown", eventInit));
         element.dispatchEvent(new PointerEvent("pointerup", eventInit));
       }, { x: action.x, y: action.y });
+      continue;
+    }
+    if (action.type === "dispatchPointerMove") {
+      await page.locator(action.selector).evaluate((element, point) => {
+        const bounds = element.getBoundingClientRect();
+        element.dispatchEvent(new PointerEvent("pointermove", {
+          bubbles: true,
+          pointerId: 1,
+          pointerType: "touch",
+          clientX: bounds.left + bounds.width * point.x,
+          clientY: bounds.top + bounds.height * point.y,
+        }));
+      }, { x: action.x, y: action.y });
+      continue;
+    }
+    if (action.type === "dispatchPointerHalfPage") {
+      await page.locator(action.selector).evaluate((element, pageSelector) => {
+        const bounds = element.getBoundingClientRect();
+        const paperWindow = document.querySelector(pageSelector);
+        if (!(paperWindow instanceof HTMLElement)) {
+          throw new Error(`Cannot find page-turn window: ${pageSelector}`);
+        }
+        const paperBounds = paperWindow.getBoundingClientRect();
+        const startX = bounds.left + bounds.width * 0.65;
+        const common = {
+          bubbles: true,
+          pointerId: 1,
+          pointerType: "touch",
+          clientY: bounds.top + bounds.height / 2,
+        };
+        element.dispatchEvent(new PointerEvent("pointerdown", {
+          ...common,
+          clientX: startX,
+        }));
+        element.dispatchEvent(new PointerEvent("pointermove", {
+          ...common,
+          clientX: startX - paperBounds.width / 2,
+        }));
+      }, action.pageSelector);
       continue;
     }
     if (action.type === "dispatchDragRoleToBottom") {

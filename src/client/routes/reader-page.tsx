@@ -89,6 +89,7 @@ import {
   type ReaderLayout,
   useReaderPreferences,
 } from "../reader/use-reader-preferences";
+import { usePagedReader } from "../reader/use-paged-reader";
 import {
   deriveReaderSyncStatus,
   describeAnnotationConflict,
@@ -252,6 +253,14 @@ export default function ReaderPage() {
       choirId,
       scoreId,
     });
+  const pager = usePagedReader({
+    currentPage,
+    pageCount: document?.numPages ?? 1,
+    documentKey: `${documentScopeKey ?? "none"}:${score?.currentVersion.id ?? "none"}`,
+    enabled: layout === "page" && !editing && document !== null,
+    onPageChange: setCurrentPage,
+  });
+  const requestPage = pager.request;
 
   useEffect(() => {
     if (!document || !showGestureHint) return;
@@ -441,19 +450,17 @@ export default function ReaderPage() {
       if (event.key === "ArrowLeft" || event.key === "PageUp") {
         event.preventDefault();
         setZoom(1);
-        setCurrentPage((page) => Math.max(1, page - 1));
+        requestPage("previous");
       }
       if (event.key === "ArrowRight" || event.key === "PageDown") {
         event.preventDefault();
         setZoom(1);
-        setCurrentPage((page) =>
-          Math.min(document?.numPages ?? page, page + 1),
-        );
+        requestPage("next");
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [document?.numPages, editing, layout, setCurrentPage]);
+  }, [editing, layout, requestPage]);
 
   const downloadOffline = async () => {
     if (!score || !workspace) return;
@@ -676,7 +683,9 @@ export default function ReaderPage() {
     offline && offline.versionId !== score.currentVersion.id;
   const goToPage = (page: number) => {
     setZoom(1);
-    setCurrentPage(clamp(page, 1, document.numPages));
+    const targetPage = clamp(page, 1, document.numPages);
+    if (layout === "page" && !editing) requestPage(targetPage);
+    else setCurrentPage(targetPage);
   };
   const selectLayout = (value: ReaderLayout) => {
     setZoom(1);
@@ -958,9 +967,9 @@ export default function ReaderPage() {
             currentPage={currentPage}
             zoom={zoom}
             onZoomChange={setZoom}
-            onPageChange={goToPage}
             onToggleChrome={toggleChrome}
             annotationProps={annotationPageProps}
+            pager={pager}
           />
         ) : (
           <ContinuousLayout

@@ -62,11 +62,30 @@ vi.mock("../reader/pdf-document", () => ({
   }),
 }));
 
-vi.mock("../reader/pdf-page", () => ({
-  PdfPageCanvas: ({ pageNumber }: { pageNumber: number }) => (
-    <div aria-label={`渲染第 ${pageNumber} 页`} />
-  ),
-}));
+vi.mock("../reader/pdf-page", async () => {
+  const { useEffect, useLayoutEffect, useRef } = await import("react");
+  return {
+    PdfPageCanvas: ({
+      pageNumber,
+      onRenderStart,
+    }: {
+      pageNumber: number;
+      onRenderStart?(page: number): { ready(): void; cancel(): void };
+    }) => {
+      const leaseRef = useRef<ReturnType<NonNullable<typeof onRenderStart>>>(null);
+      useLayoutEffect(() => {
+        const lease = onRenderStart?.(pageNumber);
+        leaseRef.current = lease ?? null;
+        return () => {
+          if (leaseRef.current === lease) leaseRef.current = null;
+          lease?.cancel();
+        };
+      }, [onRenderStart, pageNumber]);
+      useEffect(() => leaseRef.current?.ready(), [onRenderStart, pageNumber]);
+      return <div aria-label={`渲染第 ${pageNumber} 页`} />;
+    },
+  };
+});
 
 vi.mock("../platform/local-database", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../platform/local-database")>();
@@ -119,6 +138,23 @@ describe("ReaderPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
   };
 
+  const finishPageTurn = async () => {
+    await waitFor(() =>
+      expect(document.querySelector(".page-reader__pager-track")).toHaveAttribute(
+        "data-page-turn-phase",
+        "settling",
+      ),
+    );
+    const track = document.querySelector<HTMLElement>(".page-reader__pager-track");
+    if (!track) throw new Error("page turn track unavailable");
+    fireEvent.transitionEnd(track, { propertyName: "transform" });
+  };
+
+  const currentRenderedPage = () =>
+    document
+      .querySelector<HTMLElement>(".page-reader__sheet[data-page-turn-current]")
+      ?.getAttribute("data-page-number");
+
   beforeEach(async () => {
     virtualTestState.itemSize = 100;
     await localDatabase.open();
@@ -141,6 +177,16 @@ describe("ReaderPage", () => {
         disconnect() {}
       },
     );
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false,
+      media: "(prefers-reduced-motion: reduce)",
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation((input: string) =>
@@ -356,9 +402,8 @@ describe("ReaderPage", () => {
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-    expect(
-      within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 2 页"),
-    ).toBeInTheDocument();
+    await finishPageTurn();
+    expect(currentRenderedPage()).toBe("2");
 
     toggleChrome();
     expect(screen.getByRole("link", { name: "返回云盘" }).querySelector("svg")).not.toBeNull();
@@ -378,10 +423,15 @@ describe("ReaderPage", () => {
       align: "auto",
     });
     fireEvent.click(screen.getByRole("button", { name: "前往第 3 页" }));
-    expect(
-      within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 3 页"),
-    ).toBeInTheDocument();
+    await finishPageTurn();
+    expect(currentRenderedPage()).toBe("3");
     expect(screen.queryByLabelText("页面缩略图")).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    await finishPageTurn();
+    expect(currentRenderedPage()).toBe("2");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    await finishPageTurn();
+    expect(currentRenderedPage()).toBe("3");
     fireEvent.click(screen.getByRole("button", { name: "图层" }));
     expect(screen.getByLabelText("图层显示与颜色")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭页面与图层" }));
@@ -574,7 +624,8 @@ describe("ReaderPage", () => {
       clientX: 980,
       clientY: 100,
     });
-    expect(screen.getByLabelText("渲染第 2 页")).toBeInTheDocument();
+    await finishPageTurn();
+    expect(currentRenderedPage()).toBe("2");
 
     fireEvent.pointerDown(viewport, {
       pointerId: 11,
@@ -588,7 +639,8 @@ describe("ReaderPage", () => {
       clientX: 20,
       clientY: 100,
     });
-    expect(screen.getByLabelText("渲染第 1 页")).toBeInTheDocument();
+    await finishPageTurn();
+    expect(currentRenderedPage()).toBe("1");
 
     fireEvent.pointerDown(viewport, {
       pointerId: 1,
@@ -596,13 +648,31 @@ describe("ReaderPage", () => {
       clientX: 250,
       clientY: 100,
     });
+    fireEvent.pointerMove(viewport, {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 150,
+      clientY: 100,
+    });
+    const track = document.querySelector<HTMLElement>(".page-reader__pager-track");
+    expect(track).toHaveAttribute("data-page-turn-phase", "dragging");
+    expect(document.querySelectorAll(".page-reader__sheet")).toHaveLength(2);
+    expect(document.querySelector(".page-reader__gutter")).not.toBeNull();
+    for (const page of [1, 2]) {
+      const sheet = document.querySelector<HTMLElement>(
+        `.page-reader__sheet[data-page-number="${page}"]`,
+      );
+      expect(sheet?.querySelector(`[aria-label="渲染第 ${page} 页"]`)).not.toBeNull();
+      expect(sheet?.querySelector(`[aria-label="第 ${page} 页批注层"]`)).not.toBeNull();
+    }
     fireEvent.pointerUp(viewport, {
       pointerId: 1,
       pointerType: "touch",
       clientX: 150,
       clientY: 100,
     });
-    expect(screen.getByLabelText("渲染第 2 页")).toBeInTheDocument();
+    await finishPageTurn();
+    expect(currentRenderedPage()).toBe("2");
 
     fireEvent.pointerDown(viewport, {
       pointerId: 2,
@@ -631,13 +701,20 @@ describe("ReaderPage", () => {
       clientX: 250,
       clientY: 100,
     });
+    fireEvent.pointerMove(viewport, {
+      pointerId: 4,
+      pointerType: "touch",
+      clientX: 150,
+      clientY: 100,
+    });
     fireEvent.pointerUp(viewport, {
       pointerId: 4,
       pointerType: "touch",
       clientX: 150,
       clientY: 100,
     });
-    expect(screen.getByLabelText("渲染第 2 页")).toBeInTheDocument();
+    expect(currentRenderedPage()).toBe("2");
+    expect(track).toHaveAttribute("data-page-turn-phase", "disabled");
 
     toggleChrome();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
@@ -645,6 +722,8 @@ describe("ReaderPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     fireEvent.click(screen.getByRole("button", { name: "上一页" }));
+    await finishPageTurn();
+    expect(currentRenderedPage()).toBe("1");
     fireEvent.pointerDown(viewport, {
       pointerId: 12,
       pointerType: "touch",
@@ -677,8 +756,8 @@ describe("ReaderPage", () => {
       clientX: 20,
       clientY: 100,
     });
-    fireEvent.click(screen.getByRole("button", { name: "更多" }));
-    expect(screen.getByText("200%")).toBeInTheDocument();
+    expect(viewport).toHaveAttribute("data-zoom", "2");
+    expect(currentRenderedPage()).toBe("1");
   });
 
   it("keeps page input read-only until edit is explicit and defaults editing to text", async () => {
