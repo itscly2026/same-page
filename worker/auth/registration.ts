@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { z } from "zod";
 
-import { PASSWORD_POLICY } from "../../src/shared/auth";
+import { isInternalAuthEmail, PASSWORD_POLICY } from "../../src/shared/auth";
 import { createDatabase } from "../db/database";
 import { user } from "../db/schema";
 import type { AppEnvironment } from "../env";
@@ -11,7 +11,12 @@ import { consumeRateLimit } from "../security/rate-limit";
 import type { Auth } from "./create-auth";
 
 const registrationRequestSchema = z.object({
-  email: z.string().trim().toLowerCase().pipe(z.email()),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .pipe(z.email())
+    .refine((email) => !isInternalAuthEmail(email)),
 });
 
 const registrationCompletionSchema = registrationRequestSchema.extend({

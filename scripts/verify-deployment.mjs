@@ -8,6 +8,7 @@ const checks = [
   verifyAppShell(),
   verifyManifest(),
   verifyServiceWorker(),
+  verifySocialProviderBoundary(),
   verifyUnauthenticatedBoundary(),
 ];
 
@@ -66,4 +67,21 @@ async function verifyUnauthenticatedBoundary() {
   });
   assert.equal(response.status, 401, "choir listing must require authentication");
   assert.deepEqual(await response.json(), { error: "unauthorized" });
+}
+
+async function verifySocialProviderBoundary() {
+  const response = await request("/api/auth/social-providers", {
+    headers: { accept: "application/json" },
+  });
+  assert.equal(response.status, 200, "social provider endpoint must return 200");
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const payload = await response.json();
+  assert.ok(Array.isArray(payload.providers));
+  assert.equal(new Set(payload.providers).size, payload.providers.length);
+  assert.ok(
+    payload.providers.every((provider) =>
+      ["google", "wechat"].includes(provider),
+    ),
+    "only supported social providers may be exposed",
+  );
 }

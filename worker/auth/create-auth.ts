@@ -9,6 +9,7 @@ import { sendAuthOtp } from "../email/send-otp";
 import type { Env, WaitUntilContext } from "../env";
 import { hashRateLimitIdentity } from "../security/join-code";
 import { consumeRateLimit } from "../security/rate-limit";
+import { createSocialProviderOptions } from "./social-providers";
 
 export function createAuth(env: Env, executionContext: WaitUntilContext) {
   const database = createDatabase(env.DB);
@@ -18,10 +19,39 @@ export function createAuth(env: Env, executionContext: WaitUntilContext) {
     baseURL: env.BETTER_AUTH_URL,
     secret: env.BETTER_AUTH_SECRET,
     trustedOrigins: [env.BETTER_AUTH_URL],
+    disabledPaths: [
+      "/account-info",
+      "/get-access-token",
+      "/link-social",
+      "/list-accounts",
+      "/refresh-token",
+      "/unlink-account",
+    ],
     database: drizzleAdapter(database, {
       provider: "sqlite",
       schema,
     }),
+    account: {
+      encryptOAuthTokens: true,
+    },
+    databaseHooks: {
+      account: {
+        create: {
+          async before(account) {
+            return { data: { ...account, idToken: null } };
+          },
+        },
+        update: {
+          async before(account) {
+            return { data: { ...account, idToken: null } };
+          },
+        },
+      },
+    },
+    onAPIError: {
+      errorURL: "/login?oauth=error",
+    },
+    socialProviders: createSocialProviderOptions(env),
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,

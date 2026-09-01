@@ -1,4 +1,10 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Button,
   FieldError,
@@ -7,9 +13,15 @@ import {
   Label,
   TextField,
 } from "react-aria-components";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
-import { authFlowResponseSchema, PASSWORD_POLICY } from "../../shared/auth";
+import {
+  authFlowResponseSchema,
+  authSessionResponseSchema,
+  PASSWORD_POLICY,
+  socialAuthProvidersResponseSchema,
+  type SocialAuthProvider,
+} from "../../shared/auth";
 import {
   guestJoinStateResponseSchema,
   guestSessionResponseSchema,
@@ -28,19 +40,29 @@ type AuthView =
   | "join-choir"
   | "join-result";
 
+const SOCIAL_EMAIL_DRAFT_KEY = "same-page:social-auth-email-draft";
+
 export default function AuthPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const initialOauthResult = new URLSearchParams(location.search).get("oauth");
   const [view, setView] = useState<AuthView>("identify");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(readSocialEmailDraft);
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [otp, setOtp] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [joinChoir, setJoinChoir] = useState<ChoirSummary | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(initialOauthResult === "complete");
+  const [message, setMessage] = useState<string | null>(() =>
+    initialOauthResult === "error"
+      ? "第三方登录没有完成，请重试或继续使用邮箱。"
+      : null,
+  );
+  const [socialProviders, setSocialProviders] = useState<SocialAuthProvider[]>([]);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const previousViewRef = useRef<AuthView>(view);
+  const oauthCompletionHandledRef = useRef(false);
 
   useEffect(() => {
     if (previousViewRef.current !== view) {
@@ -49,8 +71,28 @@ export default function AuthPage() {
     }
   }, [view]);
 
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/auth/social-providers", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        const parsed = socialAuthProvidersResponseSchema.safeParse(
+          await response.json(),
+        );
+        return parsed.success ? parsed.data.providers : null;
+      })
+      .then((providers) => {
+        if (active && providers) setSocialProviders(providers);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const identifyEmail = async (event: FormEvent) => {
     event.preventDefault();
+    clearSocialEmailDraft();
     setSubmitting(true);
     setMessage(null);
     const response = await postJson("/api/auth/flow", {
@@ -195,7 +237,7 @@ export default function AuthPage() {
     setSubmitting(false);
   };
 
-  const finishAuthentication = async () => {
+  const finishAuthentication = useCallback(async () => {
     const guestResponse = await fetch("/api/guest/session").catch(() => null);
     if (!guestResponse?.ok) {
       await navigate("/");
@@ -242,6 +284,44 @@ export default function AuthPage() {
 
     setJoinChoir(joinState.data.choir);
     setView("join-choir");
+  }, [navigate]);
+
+  useEffect(() => {
+    const oauthResult = new URLSearchParams(location.search).get("oauth");
+    if (!oauthResult || oauthCompletionHandledRef.current) return;
+    oauthCompletionHandledRef.current = true;
+    void navigate("/login", { replace: true });
+
+    if (oauthResult === "error") return;
+    if (oauthResult !== "complete") return;
+
+    void confirmAuthenticatedSession()
+      .then(async (authenticated) => {
+        if (!authenticated) {
+          setMessage(
+            "第三方登录没有建立有效会话，请重试或继续使用邮箱。",
+          );
+          return;
+        }
+        clearSocialEmailDraft();
+        await finishAuthentication();
+      })
+      .finally(() => setSubmitting(false));
+  }, [finishAuthentication, location.search, navigate]);
+
+  const startSocialAuthentication = async (provider: SocialAuthProvider) => {
+    setSubmitting(true);
+    setMessage(null);
+    storeSocialEmailDraft(email);
+    const { error } = await authClient.signIn.social({
+      provider,
+      callbackURL: "/login?oauth=complete",
+      errorCallbackURL: "/login?oauth=error",
+    });
+    if (error) {
+      setSubmitting(false);
+      setMessage("暂时无法开始第三方登录，请重试或继续使用邮箱。");
+    }
   };
 
   const joinCurrentGuestChoir = async (event: FormEvent) => {
@@ -491,6 +571,14 @@ export default function AuthPage() {
           <p className="auth-description">{viewPanel.description}</p>
           {viewPanel.form}
 
+          {view === "identify" && socialProviders.length > 0 ? (
+            <SocialAuthOptions
+              providers={socialProviders}
+              disabled={submitting}
+              onContinue={(provider) => void startSocialAuthentication(provider)}
+            />
+          ) : null}
+
           {message ? (
             <p className="form-message" role="status">
               {message}
@@ -500,6 +588,119 @@ export default function AuthPage() {
       </main>
     </div>
   );
+}
+
+function SocialAuthOptions(props: {
+  providers: SocialAuthProvider[];
+  disabled: boolean;
+  onContinue(provider: SocialAuthProvider): void;
+}) {
+  return (
+    <section className="social-auth-options" aria-labelledby="social-auth-label">
+      <div className="social-auth-divider">
+        <span id="social-auth-label">其他登录方式</span>
+      </div>
+      <div className="social-auth-buttons">
+        {props.providers.includes("google") ? (
+          <Button
+            type="button"
+            className="social-auth-button"
+            aria-label="使用 Google 继续"
+            isDisabled={props.disabled}
+            onPress={() => props.onContinue("google")}
+          >
+            <GoogleIcon />
+          </Button>
+        ) : null}
+        {props.providers.includes("wechat") ? (
+          <Button
+            type="button"
+            className="social-auth-button"
+            aria-label="使用微信继续"
+            isDisabled={props.disabled}
+            onPress={() => props.onContinue("wechat")}
+          >
+            <WechatIcon />
+          </Button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        fill="#4285f4"
+        d="M21.6 12.23c0-.71-.06-1.4-.18-2.07H12v3.91h5.38a4.6 4.6 0 0 1-2 3.02v2.54h3.24c1.9-1.75 2.98-4.33 2.98-7.4Z"
+      />
+      <path
+        fill="#34a853"
+        d="M12 22c2.7 0 4.97-.9 6.62-2.37l-3.24-2.54c-.9.6-2.05.96-3.38.96-2.6 0-4.8-1.76-5.6-4.12H3.05v2.62A10 10 0 0 0 12 22Z"
+      />
+      <path
+        fill="#fbbc05"
+        d="M6.4 13.93A6 6 0 0 1 6.08 12c0-.67.12-1.32.32-1.93V7.45H3.05A10 10 0 0 0 2 12c0 1.61.38 3.14 1.05 4.55l3.35-2.62Z"
+      />
+      <path
+        fill="#ea4335"
+        d="M12 5.95c1.47 0 2.79.5 3.82 1.5l2.87-2.87A9.64 9.64 0 0 0 12 2a10 10 0 0 0-8.95 5.45l3.35 2.62A5.98 5.98 0 0 1 12 5.95Z"
+      />
+    </svg>
+  );
+}
+
+function WechatIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        fill="#07c160"
+        d="M9.8 3C5 3 1.2 6.1 1.2 9.9c0 2.2 1.3 4.2 3.4 5.5l-.8 2.4 2.8-1.4c1 .3 2.1.5 3.2.5h.5a6.2 6.2 0 0 1-.2-1.5c0-3.7 3.4-6.7 7.7-6.7h.5C17.5 5.5 14.1 3 9.8 3Z"
+      />
+      <path
+        fill="#07c160"
+        d="M22.8 15.4c0-3.1-3-5.6-6.7-5.6s-6.7 2.5-6.7 5.6 3 5.6 6.7 5.6c.9 0 1.8-.2 2.6-.4l2.2 1.1-.6-1.9c1.5-1 2.5-2.6 2.5-4.4Z"
+      />
+      <circle cx="6.8" cy="8.7" r=".8" fill="#fff" />
+      <circle cx="12.2" cy="8.7" r=".8" fill="#fff" />
+      <circle cx="13.8" cy="14.5" r=".7" fill="#fff" />
+      <circle cx="18.3" cy="14.5" r=".7" fill="#fff" />
+    </svg>
+  );
+}
+
+function readSocialEmailDraft() {
+  try {
+    return sessionStorage.getItem(SOCIAL_EMAIL_DRAFT_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function storeSocialEmailDraft(email: string) {
+  try {
+    if (email) sessionStorage.setItem(SOCIAL_EMAIL_DRAFT_KEY, email);
+    else sessionStorage.removeItem(SOCIAL_EMAIL_DRAFT_KEY);
+  } catch {
+    // Storage can be unavailable in hardened browser contexts.
+  }
+}
+
+function clearSocialEmailDraft() {
+  try {
+    sessionStorage.removeItem(SOCIAL_EMAIL_DRAFT_KEY);
+  } catch {
+    // Storage can be unavailable in hardened browser contexts.
+  }
+}
+
+async function confirmAuthenticatedSession() {
+  const response = await fetch("/api/auth/get-session", {
+    cache: "no-store",
+  }).catch(() => null);
+  if (!response?.ok) return false;
+  return authSessionResponseSchema.safeParse(await response.json()).success;
 }
 
 function EmailField(props: {

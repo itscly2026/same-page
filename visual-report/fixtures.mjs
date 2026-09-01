@@ -80,6 +80,10 @@ const annotations = [
 ];
 
 export function resolveFixtureRequest({ pathname, method = "GET", identity = "guest" }) {
+  if (method === "GET" && pathname === "/api/auth/social-providers") {
+    return json({ providers: ["google", "wechat"] });
+  }
+
   if (method === "GET" && pathname === "/api/auth/get-session") {
     return json(identity === "guest" ? null : session(identity));
   }

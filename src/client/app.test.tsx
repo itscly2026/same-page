@@ -129,6 +129,39 @@ describe("AppRoutes", () => {
     expect(screen.queryByText("公开体验云盘")).not.toBeInTheDocument();
   });
 
+  it("never renders an internal social-provider email in signed-in headers", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: {
+        user: {
+          id: "wechat-user",
+          email: "wechat-unionid@wechat.placeholder.invalid",
+        },
+      },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+
+    const home = render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.queryByText("wechat-unionid@wechat.placeholder.invalid"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "退出登录" })).toBeInTheDocument();
+    home.unmount();
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.queryByText("wechat-unionid@wechat.placeholder.invalid"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "登录或注册" })).not.toBeInTheDocument();
+  });
+
   it("normalizes a grouped pasted invitation and enters as a guest", async () => {
     render(
       <MemoryRouter initialEntries={["/"]}>

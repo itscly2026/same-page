@@ -7,6 +7,7 @@ import {
 } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
+import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import {
   afterAll,
   afterEach,
@@ -46,9 +47,16 @@ const deliveredEmails: Array<{
   text: string;
 }> = [];
 const consoleSpies: Array<ReturnType<typeof vi.spyOn>> = [];
+let googlePrivateKey: Awaited<
+  ReturnType<typeof generateKeyPair>
+>["privateKey"];
+let googlePublicJwk: Awaited<ReturnType<typeof exportJWK>>;
 
-beforeAll(() => {
+beforeAll(async () => {
   network.enable();
+  const keyPair = await generateKeyPair("RS256", { extractable: true });
+  googlePrivateKey = keyPair.privateKey;
+  googlePublicJwk = await exportJWK(keyPair.publicKey);
 });
 
 afterAll(() => {
@@ -95,6 +103,333 @@ afterEach(() => {
 });
 
 describe("authentication and choir boundaries", () => {
+  it("exposes configured providers and starts minimal Google and Website App WeChat flows", async () => {
+    const providers = await callWorker("/api/auth/social-providers");
+    expect(providers.status).toBe(200);
+    expect(providers.headers.get("Cache-Control")).toBe("no-store");
+    expect(await providers.json()).toEqual({
+      providers: ["google", "wechat"],
+    });
+
+    const google = await startSocialAuthentication("google");
+    const googleUrl = new URL(google.url);
+    expect(google.redirect).toBe(true);
+    expect(googleUrl.origin).toBe("https://accounts.google.com");
+    expect(googleUrl.pathname).toBe("/o/oauth2/v2/auth");
+    expect(googleUrl.searchParams.get("redirect_uri")).toBe(
+      "https://same-page.test/api/auth/callback/google",
+    );
+    expect(new Set(googleUrl.searchParams.get("scope")?.split(" "))).toEqual(
+      new Set(["email", "profile", "openid"]),
+    );
+
+    const wechat = await startSocialAuthentication("wechat");
+    const wechatUrl = new URL(wechat.url);
+    expect(wechat.redirect).toBe(true);
+    expect(wechatUrl.origin).toBe("https://open.weixin.qq.com");
+    expect(wechatUrl.pathname).toBe("/connect/qrconnect");
+    expect(wechatUrl.searchParams.get("redirect_uri")).toBe(
+      "https://same-page.test/api/auth/callback/wechat",
+    );
+    expect(wechatUrl.searchParams.get("scope")).toBe("snsapi_login");
+    expect(wechatUrl.searchParams.get("lang")).toBe("cn");
+    expect(wechatUrl.hash).toBe("#wechat_redirect");
+  });
+
+  it("returns provider cancellation and invalid OAuth state to the recoverable login route", async () => {
+    const start = await callWorker("/api/auth/sign-in/social", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://same-page.test",
+      },
+      body: JSON.stringify({
+        provider: "wechat",
+        callbackURL: "/login?oauth=complete",
+        errorCallbackURL: "/login?oauth=error",
+      }),
+    });
+    const startBody = (await start.json()) as { url: string };
+    const state = new URL(startBody.url).searchParams.get("state");
+
+    const cancelled = await callWorker(
+      `/api/auth/callback/wechat?error=access_denied&state=${encodeURIComponent(state!)}`,
+      {
+        headers: { cookie: cookieFrom(start) },
+        redirect: "manual",
+      },
+    );
+    expect(cancelled.status).toBe(302);
+    expect(cancelled.headers.get("location")).toBe(
+      "/login?oauth=error&error=access_denied",
+    );
+
+    const repeated = await callWorker(
+      `/api/auth/callback/wechat?error=access_denied&state=${encodeURIComponent(state!)}`,
+      {
+        headers: { cookie: cookieFrom(start) },
+        redirect: "manual",
+      },
+    );
+    expect(repeated.status).toBe(302);
+    expect(repeated.headers.get("location")).toBe(
+      "/login?oauth=error&error=state_mismatch",
+    );
+
+    const invalidState = await callWorker(
+      "/api/auth/callback/wechat?code=wechat-code&state=invalid-state",
+      { redirect: "manual" },
+    );
+    expect(invalidState.status).toBe(302);
+    expect(invalidState.headers.get("location")).toBe(
+      "/login?oauth=error&error=state_mismatch",
+    );
+  });
+
+  it("returns WeChat token and profile network failures to the internal login route", async () => {
+    const failures = [
+      {
+        configure() {
+          network.use(
+            http.get(
+              "https://api.weixin.qq.com/sns/oauth2/access_token",
+              () => HttpResponse.json({ error: "unavailable" }, { status: 503 }),
+            ),
+          );
+        },
+      },
+      {
+        configure() {
+          network.use(
+            http.get(
+              "https://api.weixin.qq.com/sns/oauth2/access_token",
+              () =>
+                HttpResponse.json({
+                  access_token: "wechat-access-token",
+                  expires_in: 7200,
+                  refresh_token: "wechat-refresh-token",
+                  openid: "wechat-openid",
+                  scope: "snsapi_login",
+                }),
+            ),
+            http.get("https://api.weixin.qq.com/sns/userinfo", () =>
+              HttpResponse.json({ error: "unavailable" }, { status: 503 }),
+            ),
+          );
+        },
+      },
+    ];
+
+    for (const failure of failures) {
+      failure.configure();
+      const start = await callWorker("/api/auth/sign-in/social", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://same-page.test",
+        },
+        body: JSON.stringify({
+          provider: "wechat",
+          callbackURL: "/login?oauth=complete",
+          errorCallbackURL: "/login?oauth=error",
+        }),
+      });
+      const startBody = (await start.json()) as { url: string };
+      const state = new URL(startBody.url).searchParams.get("state");
+      const callback = await callWorker(
+        `/api/auth/callback/wechat?code=wechat-code&state=${encodeURIComponent(state!)}`,
+        {
+          headers: { cookie: cookieFrom(start) },
+          redirect: "manual",
+        },
+      );
+
+      expect(callback.status).toBe(302);
+      const location = new URL(
+        callback.headers.get("location")!,
+        "https://same-page.test",
+      );
+      expect(location.pathname).toBe("/login");
+      expect(location.searchParams.get("oauth")).toBe("error");
+      expect(location.searchParams.get("error")).toBeTruthy();
+      expect(location.href).not.toContain("wechat-code");
+      expect(location.href).not.toContain("wechat-access-token");
+    }
+
+    const database = createDatabase(env.DB);
+    expect(await database.select().from(user)).toHaveLength(0);
+    expect(await database.select().from(account)).toHaveLength(0);
+  });
+
+  it("rejects an OAuth continuation outside the trusted Same Page origin", async () => {
+    const response = await callWorker("/api/auth/sign-in/social", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://same-page.test",
+      },
+      body: JSON.stringify({
+        provider: "google",
+        callbackURL: "https://attacker.example/after-auth",
+        errorCallbackURL: "/login?oauth=error",
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).not.toContain("attacker.example");
+  });
+
+  it("does not expose manual account management or provider token endpoints", async () => {
+    const registration = await registerWithPassword({
+      callWorker,
+      email: "account-boundary@example.test",
+      latestOtp,
+    });
+    const requests: Array<[string, RequestInit]> = [
+      ["/api/auth/account-info", { method: "GET" }],
+      ["/api/auth/get-access-token", { method: "POST" }],
+      ["/api/auth/link-social", { method: "POST" }],
+      ["/api/auth/list-accounts", { method: "GET" }],
+      ["/api/auth/refresh-token", { method: "POST" }],
+      ["/api/auth/unlink-account", { method: "POST" }],
+    ];
+
+    for (const [path, init] of requests) {
+      const response = await callWorker(path, {
+        ...init,
+        headers: {
+          "content-type": "application/json",
+          cookie: registration.cookie,
+        },
+        ...(init.method === "POST" ? { body: "{}" } : {}),
+      });
+      expect(response.status, path).toBe(404);
+    }
+  });
+
+  it("creates one WeChat user from unionid with non-routable email and encrypted tokens", async () => {
+    const firstSessionCookie = await completeWechatAuthentication();
+    expect(firstSessionCookie).toContain("better-auth.session_token=");
+
+    const database = createDatabase(env.DB);
+    const createdUsers = await database.select().from(user);
+    expect(createdUsers).toHaveLength(1);
+    expect(createdUsers[0]).toMatchObject({
+      name: "微信成员",
+      email: "wechat-unionid@wechat.placeholder.invalid",
+      emailVerified: false,
+    });
+
+    const createdAccounts = await database.select().from(account);
+    expect(createdAccounts).toHaveLength(1);
+    expect(createdAccounts[0]).toMatchObject({
+      accountId: "wechat-unionid",
+      providerId: "wechat",
+      userId: createdUsers[0].id,
+      scope: "snsapi_login",
+    });
+    expect(createdAccounts[0].accessToken).not.toBe("wechat-access-token");
+    expect(createdAccounts[0].refreshToken).not.toBe("wechat-refresh-token");
+    expect(deliveredEmails).toHaveLength(0);
+
+    const emailFlow = await callWorker("/api/auth/flow", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: createdUsers[0].email }),
+    });
+    expect(emailFlow.status).toBe(400);
+    const passwordReset = await callWorker(
+      "/api/auth/email-otp/request-password-reset",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: createdUsers[0].email }),
+      },
+    );
+    expect(passwordReset.status).toBe(400);
+    expect(deliveredEmails).toHaveLength(0);
+
+    await completeWechatAuthentication();
+    expect(await database.select().from(user)).toHaveLength(1);
+    expect(await database.select().from(account)).toHaveLength(1);
+  });
+
+  it("falls back to the Website App openid when WeChat omits unionid", async () => {
+    await completeWechatAuthentication({
+      openid: "wechat-openid-only",
+      unionid: undefined,
+    });
+
+    const database = createDatabase(env.DB);
+    expect(await database.select().from(user)).toContainEqual(
+      expect.objectContaining({
+        email: "wechat-openid-only@wechat.placeholder.invalid",
+      }),
+    );
+    expect(await database.select().from(account)).toContainEqual(
+      expect.objectContaining({
+        accountId: "wechat-openid-only",
+        providerId: "wechat",
+      }),
+    );
+  });
+
+  it("links Google only to an existing verified email and creates a user for a different email", async () => {
+    const database = createDatabase(env.DB);
+    const existingUserId = crypto.randomUUID();
+    await database.insert(user).values({
+      id: existingUserId,
+      name: "邮箱成员",
+      email: "verified@example.test",
+      emailVerified: true,
+    });
+
+    const googleIdToken = await completeGoogleAuthentication({
+      subject: "google-existing-subject",
+      email: "verified@example.test",
+      name: "Google 昵称",
+    });
+    let users = await database.select().from(user);
+    expect(users).toHaveLength(1);
+    expect(users[0].id).toBe(existingUserId);
+    expect(users[0].name).toBe("邮箱成员");
+    const googleAccounts = await database.select().from(account);
+    expect(googleAccounts).toContainEqual(
+      expect.objectContaining({
+        accountId: "google-existing-subject",
+        idToken: null,
+        providerId: "google",
+        userId: existingUserId,
+      }),
+    );
+    expect(googleAccounts[0].idToken).not.toBe(googleIdToken);
+    expect(googleAccounts[0].accessToken).not.toBe("google-access-token");
+    expect(googleAccounts[0].refreshToken).not.toBe("google-refresh-token");
+
+    await completeGoogleAuthentication({
+      subject: "google-existing-subject",
+      email: "verified@example.test",
+      name: "Google 新昵称",
+    });
+    expect(await database.select().from(user)).toHaveLength(1);
+    expect(await database.select().from(account)).toHaveLength(1);
+
+    await completeGoogleAuthentication({
+      subject: "google-new-subject",
+      email: "different@example.test",
+      name: "另一位成员",
+    });
+    users = await database.select().from(user);
+    expect(users).toHaveLength(2);
+    expect(users).toContainEqual(
+      expect.objectContaining({
+        email: "different@example.test",
+        emailVerified: true,
+        name: "另一位成员",
+      }),
+    );
+  });
+
   it("allows exactly one open-admission preview entry", async () => {
     const adminUserId = crypto.randomUUID();
     await createDatabase(env.DB).insert(user).values({
@@ -912,4 +1247,157 @@ async function callWorker(path: string, init: RequestInit = {}) {
   );
   await waitOnExecutionContext(context);
   return response;
+}
+
+async function startSocialAuthentication(provider: "google" | "wechat") {
+  const response = await callWorker("/api/auth/sign-in/social", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: "https://same-page.test",
+    },
+    body: JSON.stringify({
+      provider,
+      callbackURL: "/login?oauth=complete",
+      errorCallbackURL: "/login?oauth=error",
+    }),
+  });
+  expect(response.status, await response.clone().text()).toBe(200);
+  return (await response.json()) as { redirect: boolean; url: string };
+}
+
+async function completeWechatAuthentication(
+  identity: { openid: string; unionid?: string } = {
+    openid: "wechat-openid",
+    unionid: "wechat-unionid",
+  },
+) {
+  network.use(
+    http.get(
+      "https://api.weixin.qq.com/sns/oauth2/access_token",
+      () =>
+        HttpResponse.json({
+          access_token: "wechat-access-token",
+          expires_in: 7200,
+          refresh_token: "wechat-refresh-token",
+          openid: identity.openid,
+          scope: "snsapi_login",
+          ...(identity.unionid ? { unionid: identity.unionid } : {}),
+        }),
+    ),
+    http.get("https://api.weixin.qq.com/sns/userinfo", () =>
+      HttpResponse.json({
+        openid: identity.openid,
+        nickname: "微信成员",
+        headimgurl: "https://example.test/wechat-avatar.png",
+        privilege: [],
+        ...(identity.unionid ? { unionid: identity.unionid } : {}),
+      }),
+    ),
+  );
+
+  const start = await callWorker("/api/auth/sign-in/social", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: "https://same-page.test",
+    },
+    body: JSON.stringify({
+      provider: "wechat",
+      callbackURL: "/login?oauth=complete",
+      errorCallbackURL: "/login?oauth=error",
+    }),
+  });
+  expect(start.status, await start.clone().text()).toBe(200);
+  const startBody = (await start.json()) as { url: string };
+  const state = new URL(startBody.url).searchParams.get("state");
+  expect(state).toBeTruthy();
+
+  const callback = await callWorker(
+    `/api/auth/callback/wechat?code=wechat-code&state=${encodeURIComponent(state!)}`,
+    {
+      headers: { cookie: cookieFrom(start) },
+      redirect: "manual",
+    },
+  );
+  expect(callback.status, await callback.clone().text()).toBe(302);
+  expect(callback.headers.get("location")).toBe("/login?oauth=complete");
+  const sessionCookie = callback.headers
+    .get("set-cookie")
+    ?.match(/(?:^|,\s*)((?:__Secure-)?better-auth\.session_token=[^;]+)/)?.[1];
+  expect(sessionCookie).toBeTruthy();
+  return sessionCookie!;
+}
+
+async function completeGoogleAuthentication(profile: {
+  subject: string;
+  email: string;
+  name: string;
+}) {
+  const idToken = await new SignJWT({
+    sub: profile.subject,
+    email: profile.email,
+    email_verified: true,
+    name: profile.name,
+    picture: "https://example.test/google-avatar.png",
+  })
+    .setProtectedHeader({ alg: "RS256", kid: "google-test-key" })
+    .setIssuer("https://accounts.google.com")
+    .setAudience("test-google-client-id")
+    .setIssuedAt()
+    .setExpirationTime("5m")
+    .sign(googlePrivateKey);
+
+  network.use(
+    http.post("https://oauth2.googleapis.com/token", () =>
+      HttpResponse.json({
+        access_token: "google-access-token",
+        expires_in: 3600,
+        id_token: idToken,
+        refresh_token: "google-refresh-token",
+        scope: "openid email profile",
+        token_type: "Bearer",
+      }),
+    ),
+    http.get("https://www.googleapis.com/oauth2/v3/certs", () =>
+      HttpResponse.json({
+        keys: [
+          {
+            ...googlePublicJwk,
+            alg: "RS256",
+            kid: "google-test-key",
+            use: "sig",
+          },
+        ],
+      }),
+    ),
+  );
+
+  const start = await callWorker("/api/auth/sign-in/social", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: "https://same-page.test",
+    },
+    body: JSON.stringify({
+      provider: "google",
+      callbackURL: "/login?oauth=complete",
+      errorCallbackURL: "/login?oauth=error",
+    }),
+  });
+  expect(start.status, await start.clone().text()).toBe(200);
+  const startBody = (await start.json()) as { url: string };
+  const state = new URL(startBody.url).searchParams.get("state");
+  expect(state).toBeTruthy();
+
+  const callback = await callWorker(
+    `/api/auth/callback/google?code=google-code&state=${encodeURIComponent(state!)}`,
+    {
+      headers: { cookie: cookieFrom(start) },
+      redirect: "manual",
+    },
+  );
+  expect(callback.status, await callback.clone().text()).toBe(302);
+  expect(callback.headers.get("location")).toBe("/login?oauth=complete");
+  return idToken;
 }
