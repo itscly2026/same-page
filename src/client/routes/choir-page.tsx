@@ -32,6 +32,7 @@ import {
 import { authClient } from "../auth/auth-client";
 import { clearPreviewGuestSession } from "../auth/preview-guest-session";
 import { AppHeader } from "../components/app-header";
+import { rememberReaderScore } from "../reader/reader-score-cache";
 import {
   ScoreActionDialog,
   type ScoreAction,
@@ -314,7 +315,13 @@ export default function ChoirPage() {
             <section className="file-list" aria-label="PDF 文件">
               {result.scores.map((score) => (
                 <article className="file-row" key={score.id}>
-                  <Link className="file-row__open" to={`/choirs/${choirId}/scores/${score.id}`}>
+                  <Link
+                    className="file-row__open"
+                    to={`/choirs/${choirId}/scores/${score.id}`}
+                    onClick={() =>
+                      rememberReaderScore(userId ?? "guest", score)
+                    }
+                  >
                     <span className="pdf-file-icon" aria-hidden="true">PDF</span>
                     <span className="file-row__name">{score.fileName}</span>
                     <span className="file-row__size">{formatBytes(score.currentVersion.sizeBytes)}</span>

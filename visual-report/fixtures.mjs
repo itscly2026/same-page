@@ -153,6 +153,17 @@ export function resolveFixtureRequest({
 
   if (
     method === "GET" &&
+    pathname === `/api/choirs/${choir.id}/scores/${score.id}/bootstrap`
+  ) {
+    return json({
+      state: "active",
+      score,
+      permissions: { canManage: identity === "admin" },
+    });
+  }
+
+  if (
+    method === "GET" &&
     pathname === `/api/choirs/${previewChoir.id}/scores` &&
     cookie.includes("same_page_guest=visual-preview")
   ) {

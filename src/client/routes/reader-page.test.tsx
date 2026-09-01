@@ -1,5 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  createMemoryRouter,
+  MemoryRouter,
+  Route,
+  RouterProvider,
+  Routes,
+} from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -15,6 +21,12 @@ import {
 } from "../platform/local-workspace";
 import { syncAnnotations } from "../annotations/sync";
 import { loadPdfDocument } from "../reader/pdf-document";
+import { clearReaderDocumentCache } from "../reader/reader-document-cache";
+import {
+  clearReaderScoreCache,
+  rememberReaderScore,
+} from "../reader/reader-score-cache";
+import { readerPdfSourceIsCurrent } from "../reader/reader-source-identity";
 import ReaderPage from "./reader-page";
 
 const virtualTestState = vi.hoisted(() => ({
@@ -27,6 +39,30 @@ const localWorkspace = createLocalWorkspace(
   "choir-1",
   "score-1",
 );
+
+const scoreSummary = {
+  id: "score-1",
+  choirId: "choir-1",
+  fileName: "练声曲.pdf",
+  updatedAt: 1,
+  currentVersion: {
+    id: "version-1",
+    versionNumber: 1,
+    sizeBytes: 329,
+    sha256: "a".repeat(64),
+    etag: '"etag"',
+    pageCount: 3,
+    createdAt: 1,
+  },
+};
+
+function activeBootstrapResponse() {
+  return Response.json({
+    state: "active",
+    score: scoreSummary,
+    permissions: { canManage: false },
+  });
+}
 
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: (options: { count: number }) => ({
@@ -51,15 +87,18 @@ vi.mock("../auth/auth-client", () => ({
 }));
 
 vi.mock("../reader/pdf-document", () => ({
-  loadPdfDocument: vi.fn().mockResolvedValue({
-    document: {
-      numPages: 3,
-      getPage: vi.fn().mockResolvedValue({
-        getViewport: () => ({ width: 600, height: 800 }),
-      }),
-    },
-    destroy: vi.fn(),
-  }),
+  loadPdfDocument: vi.fn((_source, versionId) => ({
+    promise: Promise.resolve({
+      document: {
+        numPages: 3,
+        getPage: vi.fn().mockResolvedValue({
+          getViewport: () => ({ width: 600, height: 800 }),
+        }),
+      },
+      versionId: versionId ?? "version-1",
+    }),
+    destroy: vi.fn().mockResolvedValue(undefined),
+  })),
 }));
 
 vi.mock("../reader/pdf-page", async () => {
@@ -109,6 +148,19 @@ vi.mock("../annotations/local-annotations", async (importOriginal) => {
 });
 
 describe("ReaderPage", () => {
+  it("distinguishes structurally identical PDF source generations", () => {
+    const oldSource = {
+      scopeKey: "scope",
+      data: "/versions/version-1/pdf",
+      kind: "cloud",
+      versionId: "version-1",
+    };
+    const replacementSource = { ...oldSource };
+
+    expect(readerPdfSourceIsCurrent(oldSource, oldSource)).toBe(true);
+    expect(readerPdfSourceIsCurrent(oldSource, replacementSource)).toBe(false);
+  });
+
   const getPageViewport = () => {
     const viewport = screen
       .getByLabelText("翻页阅读")
@@ -145,6 +197,9 @@ describe("ReaderPage", () => {
         "settling",
       ),
     );
+    expect(vi.mocked(fetch).mock.calls.map(([input]) => String(input))).not.toContain(
+      "/api/choirs/choir-1/scores",
+    );
     const track = document.querySelector<HTMLElement>(".page-reader__pager-track");
     if (!track) throw new Error("page turn track unavailable");
     fireEvent.transitionEnd(track, { propertyName: "transform" });
@@ -156,6 +211,8 @@ describe("ReaderPage", () => {
       ?.getAttribute("data-page-number");
 
   beforeEach(async () => {
+    clearReaderDocumentCache();
+    clearReaderScoreCache();
     virtualTestState.itemSize = 100;
     await localDatabase.open();
     await localDatabase.annotationLayers.clear();
@@ -197,37 +254,1086 @@ describe("ReaderPage", () => {
             ? new Response(new Uint8Array([1, 2, 3]), {
                 headers: { "content-type": "application/pdf" },
               })
-            : Response.json({
-          scores: [
-            {
-              id: "score-1",
-              choirId: "choir-1",
-              fileName: "练声曲.pdf",
-              updatedAt: 1,
-              currentVersion: {
-                id: "version-1",
-                versionNumber: 1,
-                sizeBytes: 329,
-                sha256: "a".repeat(64),
-                etag: '"etag"',
-                pageCount: 3,
-                createdAt: 1,
-              },
-            },
-          ],
-          storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
-          permissions: { canManage: false },
-              }),
+            : activeBootstrapResponse(),
         ),
       ),
     );
     vi.clearAllMocks();
+    vi.mocked(loadPdfDocument).mockReset().mockImplementation((_source, versionId) =>
+      ({
+        promise: Promise.resolve({
+          document: {
+            numPages: 3,
+            getPage: vi.fn().mockResolvedValue({
+              getViewport: () => ({ width: 600, height: 800 }),
+            }),
+          },
+          versionId: versionId ?? "version-1",
+        }),
+        destroy: vi.fn().mockResolvedValue(undefined),
+      }) as never,
+    );
+  });
+
+  it("reuses the library summary while the document and bootstrap are pending", async () => {
+    rememberReaderScore("guest", scoreSummary);
+    vi.mocked(loadPdfDocument).mockReturnValueOnce({
+      promise: new Promise(() => {}),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("练声曲.pdf")).toBeInTheDocument();
+    expect(screen.getByLabelText("正在加载乐谱")).toBeInTheDocument();
   });
 
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("starts the cloud PDF without waiting for the offline lookup", async () => {
+    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+      new Promise(() => {}) as never,
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(loadPdfDocument).toHaveBeenCalledWith(
+        "/api/choirs/choir-1/scores/score-1/pdf",
+        undefined,
+      ),
+    );
+  });
+
+  it("prefers a verified offline copy only when its immutable version matches", async () => {
+    rememberReaderScore("guest", scoreSummary);
+    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+      key: "offline-1",
+      ...localWorkspace,
+      versionId: "version-1",
+      fileName: "练声曲.pdf",
+      sha256: "a".repeat(64),
+      pageCount: 3,
+      blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
+      active: 1,
+      verifiedAt: 1,
+      annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 },
+    });
+    vi.mocked(loadPdfDocument).mockReturnValueOnce({
+      promise: Promise.resolve({
+        document: {
+          numPages: 3,
+          getPage: vi.fn().mockResolvedValue({
+            getViewport: () => ({ width: 600, height: 800 }),
+          }),
+        },
+        versionId: "version-1",
+      }),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByLabelText("翻页阅读");
+    expect(loadPdfDocument).toHaveBeenCalledTimes(1);
+    expect(loadPdfDocument).toHaveBeenCalledWith(
+      expect.any(ArrayBuffer),
+      "version-1",
+    );
+  });
+
+  it("keeps a ready matching offline document when bootstrap arrives later", async () => {
+    rememberReaderScore("guest", scoreSummary);
+    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+      key: "offline-delayed-bootstrap",
+      ...localWorkspace,
+      versionId: "version-1",
+      fileName: "练声曲.pdf",
+      sha256: "a".repeat(64),
+      pageCount: 3,
+      blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
+      active: 1,
+      verifiedAt: 1,
+      annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 },
+    });
+    let releaseBootstrap!: (response: Response) => void;
+    const delayedBootstrap = new Promise<Response>((resolve) => {
+      releaseBootstrap = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) =>
+        input.endsWith("/bootstrap")
+          ? delayedBootstrap
+          : Promise.resolve(
+              Response.json({ layers: [], permissions: { canManageLayers: false } }),
+            ),
+      ),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByLabelText("翻页阅读");
+    expect(loadPdfDocument).toHaveBeenCalledTimes(1);
+    expect(loadPdfDocument).toHaveBeenCalledWith(expect.any(ArrayBuffer), "version-1");
+    releaseBootstrap(activeBootstrapResponse());
+    await waitFor(() =>
+      expect(
+        vi.mocked(fetch).mock.calls.some(([input]) =>
+          String(input).endsWith("/scores/score-1/layers"),
+        ),
+      ).toBe(true),
+    );
+    expect(loadPdfDocument).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText("正在加载乐谱")).not.toBeInTheDocument();
+  });
+
+  it("keeps the rendered document during same-version online revalidation", async () => {
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByLabelText("翻页阅读");
+    const loadCount = vi.mocked(loadPdfDocument).mock.calls.length;
+    await waitFor(() =>
+      expect(
+        vi.mocked(fetch).mock.calls.some(([input]) =>
+          String(input).endsWith("/scores/score-1/layers"),
+        ),
+      ).toBe(true),
+    );
+    let releaseRevalidation!: (response: Response) => void;
+    vi.mocked(fetch).mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          releaseRevalidation = resolve;
+        }),
+    );
+    fireEvent(window, new Event("online"));
+    await waitFor(() => {
+      const bootstrapCalls = vi.mocked(fetch).mock.calls.filter(([input]) =>
+        String(input).endsWith("/scores/score-1/bootstrap"),
+      );
+      expect(bootstrapCalls).toHaveLength(2);
+    });
+    await act(async () => releaseRevalidation(activeBootstrapResponse()));
+    expect(loadPdfDocument).toHaveBeenCalledTimes(loadCount);
+    expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
+    expect(screen.queryByLabelText("正在加载乐谱")).not.toBeInTheDocument();
+  });
+
+  it("does not let an older bootstrap response roll back a newer version", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const versionTwoScore = {
+      ...scoreSummary,
+      fileName: "新版练声曲.pdf",
+      updatedAt: 2,
+      currentVersion: {
+        ...scoreSummary.currentVersion,
+        id: "version-2",
+        versionNumber: 2,
+        createdAt: 2,
+      },
+    };
+    let releaseInitialBootstrap!: (response: Response) => void;
+    let bootstrapCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) => {
+        if (input.endsWith("/bootstrap")) {
+          bootstrapCalls += 1;
+          if (bootstrapCalls === 1) {
+            return new Promise<Response>((resolve) => {
+              releaseInitialBootstrap = resolve;
+            });
+          }
+          return Promise.resolve(
+            Response.json({
+              state: "active",
+              score: versionTwoScore,
+              permissions: { canManage: false },
+            }),
+          );
+        }
+        return Promise.resolve(
+          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+        );
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(bootstrapCalls).toBe(1));
+    await waitFor(() => expect(loadPdfDocument).toHaveBeenCalled());
+    fireEvent(window, new Event("online"));
+    await waitFor(() => expect(bootstrapCalls).toBe(2));
+    await waitFor(() =>
+      expect(loadPdfDocument).toHaveBeenCalledWith(
+        "/api/choirs/choir-1/scores/score-1/versions/version-2/pdf",
+        "version-2",
+      ),
+    );
+    expect(document.body).toHaveTextContent("新版练声曲.pdf");
+
+    await act(async () =>
+      releaseInitialBootstrap(
+        Response.json({
+          state: "active",
+          score: { ...scoreSummary, fileName: "旧版练声曲.pdf" },
+          permissions: { canManage: false },
+        }),
+      ),
+    );
+    expect(document.body).toHaveTextContent("新版练声曲.pdf");
+    expect(document.body).not.toHaveTextContent("旧版练声曲.pdf");
+    expect(loadPdfDocument).not.toHaveBeenCalledWith(
+      "/api/choirs/choir-1/scores/score-1/versions/version-1/pdf",
+      "version-1",
+    );
+  });
+
+  it("uses delayed matching offline data after revalidation on a direct link", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const versionTwoScore = {
+      ...scoreSummary,
+      fileName: "直达新版.pdf",
+      updatedAt: 2,
+      currentVersion: {
+        ...scoreSummary.currentVersion,
+        id: "version-2",
+        versionNumber: 2,
+        createdAt: 2,
+      },
+    };
+    let releaseLocal!: (record: Awaited<ReturnType<typeof findActiveOfflineScore>>) => void;
+    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseLocal = resolve;
+      }) as never,
+    );
+    let bootstrapCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) => {
+        if (input.endsWith("/bootstrap")) {
+          bootstrapCalls += 1;
+          if (bootstrapCalls === 1) return new Promise<Response>(() => {});
+          return Promise.resolve(
+            Response.json({
+              state: "active",
+              score: versionTwoScore,
+              permissions: { canManage: false },
+            }),
+          );
+        }
+        return Promise.resolve(
+          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+        );
+      }),
+    );
+    vi.mocked(loadPdfDocument).mockImplementation((source, versionId) => {
+      if (source instanceof ArrayBuffer) {
+        return {
+          promise: Promise.resolve({
+            document: {
+              numPages: 3,
+              getPage: vi.fn().mockResolvedValue({
+                getViewport: () => ({ width: 600, height: 800 }),
+              }),
+            },
+            versionId: versionId ?? "version-2",
+          }),
+          destroy: vi.fn().mockResolvedValue(undefined),
+        } as never;
+      }
+      const failedCloud = Promise.reject(new Error("cloud PDF unavailable"));
+      void failedCloud.catch(() => undefined);
+      return {
+        promise: failedCloud,
+        destroy: vi.fn().mockResolvedValue(undefined),
+      } as never;
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(bootstrapCalls).toBe(1));
+    await waitFor(() => expect(loadPdfDocument).toHaveBeenCalled());
+    fireEvent(window, new Event("online"));
+    await waitFor(() => expect(bootstrapCalls).toBe(2));
+    await waitFor(() => expect(document.body).toHaveTextContent("直达新版.pdf"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    await act(async () =>
+      releaseLocal({
+        key: "direct-link-offline-v2",
+        ...localWorkspace,
+        versionId: "version-2",
+        fileName: "直达新版.pdf",
+        sha256: "a".repeat(64),
+        pageCount: 3,
+        blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
+        active: 1,
+        verifiedAt: 2,
+        annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 2 },
+      }),
+    );
+
+    await waitFor(() =>
+      expect(loadPdfDocument).toHaveBeenCalledWith(expect.any(ArrayBuffer), "version-2"),
+    );
+    expect(await screen.findByLabelText("翻页阅读")).toBeInTheDocument();
+  });
+
+  it("replaces a ready cloud document with delayed offline data after permission denial", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    rememberReaderScore("guest", scoreSummary);
+    let releaseLocal!: (record: Awaited<ReturnType<typeof findActiveOfflineScore>>) => void;
+    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseLocal = resolve;
+      }) as never,
+    );
+    let bootstrapCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) => {
+        if (input.endsWith("/bootstrap")) {
+          bootstrapCalls += 1;
+          return bootstrapCalls === 1
+            ? new Promise<Response>(() => {})
+            : Promise.resolve(new Response(null, { status: 403 }));
+        }
+        return Promise.resolve(
+          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+        );
+      }),
+    );
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(bootstrapCalls).toBe(1));
+    await screen.findByLabelText("翻页阅读");
+    fireEvent(window, new Event("online"));
+    await waitFor(() => expect(bootstrapCalls).toBe(2));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    await act(async () =>
+      releaseLocal({
+        key: "direct-link-offline-after-permission-denial",
+        ...localWorkspace,
+        versionId: "version-1",
+        fileName: "回收站离线谱.pdf",
+        sha256: "a".repeat(64),
+        pageCount: 3,
+        blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
+        active: 1,
+        verifiedAt: 2,
+        annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 2 },
+      }),
+    );
+
+    await waitFor(() =>
+      expect(loadPdfDocument).toHaveBeenCalledWith(expect.any(ArrayBuffer), "version-1"),
+    );
+    expect(await screen.findByLabelText("翻页阅读")).toBeInTheDocument();
+    expect(screen.getByText("回收站离线谱.pdf")).toBeInTheDocument();
+  });
+
+  it("switches a ready cloud document to settled offline data after trashing", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    rememberReaderScore("guest", scoreSummary);
+    let releaseLocal!: (record: Awaited<ReturnType<typeof findActiveOfflineScore>>) => void;
+    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseLocal = resolve;
+      }) as never,
+    );
+    let bootstrapCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) => {
+        if (input.endsWith("/bootstrap")) {
+          bootstrapCalls += 1;
+          return Promise.resolve(
+            bootstrapCalls === 1
+              ? activeBootstrapResponse()
+              : Response.json({ state: "trashed" }),
+          );
+        }
+        return Promise.resolve(
+          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+        );
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByLabelText("翻页阅读");
+    await act(async () =>
+      releaseLocal({
+        key: "settled-offline-before-trash",
+        ...localWorkspace,
+        versionId: "version-1",
+        fileName: "回收站离线谱.pdf",
+        sha256: "a".repeat(64),
+        pageCount: 3,
+        blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
+        active: 1,
+        verifiedAt: 2,
+        annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 2 },
+      }),
+    );
+    expect(
+      vi.mocked(loadPdfDocument).mock.calls.some(([source]) => source instanceof ArrayBuffer),
+    ).toBe(false);
+
+    fireEvent(window, new Event("online"));
+    await waitFor(() => expect(bootstrapCalls).toBe(2));
+    await waitFor(() =>
+      expect(loadPdfDocument).toHaveBeenCalledWith(expect.any(ArrayBuffer), "version-1"),
+    );
+    expect(await screen.findByLabelText("翻页阅读")).toBeInTheDocument();
+    expect(screen.getByText("回收站离线谱.pdf")).toBeInTheDocument();
+  });
+
+  it("reacquires the same cloud version after a stale denial invalidates it", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    rememberReaderScore("guest", scoreSummary);
+    let releaseLocal!: (record: Awaited<ReturnType<typeof findActiveOfflineScore>>) => void;
+    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseLocal = resolve;
+      }) as never,
+    );
+    let releaseOfflineData!: (data: ArrayBuffer) => void;
+    const deferredBlob = new Blob([new Uint8Array([1, 2, 3])], {
+      type: "application/pdf",
+    });
+    vi.spyOn(deferredBlob, "arrayBuffer").mockReturnValue(
+      new Promise((resolve) => {
+        releaseOfflineData = resolve;
+      }),
+    );
+    let bootstrapCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) => {
+        if (input.endsWith("/bootstrap")) {
+          bootstrapCalls += 1;
+          if (bootstrapCalls === 2) {
+            return Promise.resolve(new Response(null, { status: 403 }));
+          }
+          return Promise.resolve(activeBootstrapResponse());
+        }
+        return Promise.resolve(
+          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+        );
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByLabelText("翻页阅读");
+    await act(async () =>
+      releaseLocal({
+        key: "settled-offline-before-stale-denial",
+        ...localWorkspace,
+        versionId: "version-1",
+        fileName: "离线练声曲.pdf",
+        sha256: "a".repeat(64),
+        pageCount: 3,
+        blob: deferredBlob,
+        active: 1,
+        verifiedAt: 2,
+        annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 2 },
+      }),
+    );
+    fireEvent(window, new Event("online"));
+    await waitFor(() => expect(deferredBlob.arrayBuffer).toHaveBeenCalled());
+
+    fireEvent(window, new Event("online"));
+    await waitFor(() => expect(bootstrapCalls).toBe(3));
+    await waitFor(() => {
+      const versionedCloudLoads = vi.mocked(loadPdfDocument).mock.calls.filter(
+        ([source, versionId]) =>
+          source ===
+            "/api/choirs/choir-1/scores/score-1/versions/version-1/pdf" &&
+          versionId === "version-1",
+      );
+      expect(versionedCloudLoads).toHaveLength(2);
+    });
+
+    await act(async () => releaseOfflineData(new Uint8Array([4, 5, 6]).buffer));
+    expect(
+      vi.mocked(loadPdfDocument).mock.calls.some(([source]) => source instanceof ArrayBuffer),
+    ).toBe(false);
+    expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
+  });
+
+  it("clears a stale denial while a same-version reacquire is pending", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    rememberReaderScore("guest", scoreSummary);
+    let bootstrapCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) => {
+        if (input.endsWith("/bootstrap")) {
+          bootstrapCalls += 1;
+          if (bootstrapCalls === 2) {
+            return Promise.resolve(new Response(null, { status: 403 }));
+          }
+          return Promise.resolve(activeBootstrapResponse());
+        }
+        return Promise.resolve(
+          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+        );
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByLabelText("翻页阅读");
+    fireEvent(window, new Event("online"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "当前账号没有访问这份乐谱的权限",
+    );
+
+    let rejectReacquire!: (error: Error) => void;
+    const pendingReacquire = new Promise<never>((_resolve, reject) => {
+      rejectReacquire = reject;
+    });
+    void pendingReacquire.catch(() => undefined);
+    vi.mocked(loadPdfDocument).mockReturnValueOnce({
+      promise: pendingReacquire,
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+    fireEvent(window, new Event("online"));
+    await waitFor(() => expect(bootstrapCalls).toBe(3));
+    expect(screen.getByLabelText("正在加载乐谱")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    await act(async () => rejectReacquire(new Error("PDF parse failed")));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "PDF 无法解析或文件暂时不可用",
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent("当前账号没有访问");
+  });
+
+  it("ignores an old same-version failure while its replacement is pending", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    rememberReaderScore("guest", scoreSummary);
+    let rejectOldLoad!: (error: Error) => void;
+    const oldLoad = new Promise<never>((_resolve, reject) => {
+      rejectOldLoad = reject;
+    });
+    void oldLoad.catch(() => undefined);
+    let resolveNewLoad!: (value: {
+      document: { numPages: number; getPage: ReturnType<typeof vi.fn> };
+      versionId: string;
+    }) => void;
+    const newLoad = new Promise((resolve) => {
+      resolveNewLoad = resolve;
+    });
+    let pdfLoadCalls = 0;
+    vi.mocked(loadPdfDocument).mockImplementation(() => {
+      pdfLoadCalls += 1;
+      return {
+        promise: pdfLoadCalls === 1 ? oldLoad : newLoad,
+        destroy: vi.fn().mockResolvedValue(undefined),
+      } as never;
+    });
+    let bootstrapCalls = 0;
+    let releaseActiveRevalidation!: (response: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) => {
+        if (input.endsWith("/bootstrap")) {
+          bootstrapCalls += 1;
+          if (bootstrapCalls === 2) {
+            return Promise.resolve(new Response(null, { status: 403 }));
+          }
+          if (bootstrapCalls === 3) {
+            return new Promise<Response>((resolve) => {
+              releaseActiveRevalidation = resolve;
+            });
+          }
+          return Promise.resolve(activeBootstrapResponse());
+        }
+        return Promise.resolve(
+          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+        );
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(pdfLoadCalls).toBe(1));
+    fireEvent(window, new Event("online"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "当前账号没有访问这份乐谱的权限",
+    );
+    fireEvent(window, new Event("online"));
+    await waitFor(() => expect(bootstrapCalls).toBe(3));
+    await act(async () => {
+      releaseActiveRevalidation(activeBootstrapResponse());
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      rejectOldLoad(new Error("old task failed"));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(pdfLoadCalls).toBe(2));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("正在加载乐谱")).toBeInTheDocument();
+
+    await act(async () =>
+      resolveNewLoad({
+        document: {
+          numPages: 3,
+          getPage: vi.fn().mockResolvedValue({
+            getViewport: () => ({ width: 600, height: 800 }),
+          }),
+        },
+        versionId: "version-1",
+      }),
+    );
+    expect(await screen.findByLabelText("翻页阅读")).toBeInTheDocument();
+  });
+
+  it("does not forget an active version after a newer network failure", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const versionTwoScore = {
+      ...scoreSummary,
+      currentVersion: {
+        ...scoreSummary.currentVersion,
+        id: "version-2",
+        versionNumber: 2,
+        createdAt: 2,
+      },
+    };
+    let releaseLocal!: (record: Awaited<ReturnType<typeof findActiveOfflineScore>>) => void;
+    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseLocal = resolve;
+      }) as never,
+    );
+    let bootstrapCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) => {
+        if (!input.endsWith("/bootstrap")) {
+          return Promise.resolve(
+            Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          );
+        }
+        bootstrapCalls += 1;
+        if (bootstrapCalls === 1) return new Promise<Response>(() => {});
+        if (bootstrapCalls === 2) {
+          return Promise.resolve(
+            Response.json({
+              state: "active",
+              score: versionTwoScore,
+              permissions: { canManage: false },
+            }),
+          );
+        }
+        return Promise.reject(new TypeError("network unavailable"));
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(bootstrapCalls).toBe(1));
+    await waitFor(() => expect(loadPdfDocument).toHaveBeenCalled());
+    fireEvent(window, new Event("online"));
+    await waitFor(() => expect(bootstrapCalls).toBe(2));
+    await waitFor(() =>
+      expect(loadPdfDocument).toHaveBeenCalledWith(
+        "/api/choirs/choir-1/scores/score-1/versions/version-2/pdf",
+        "version-2",
+      ),
+    );
+    fireEvent(window, new Event("online"));
+    await waitFor(() => expect(bootstrapCalls).toBe(3));
+
+    await act(async () => {
+      releaseLocal({
+        key: "stale-offline-v1",
+        ...localWorkspace,
+        versionId: "version-1",
+        fileName: "旧离线谱.pdf",
+        sha256: "a".repeat(64),
+        pageCount: 3,
+        blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
+        active: 1,
+        verifiedAt: 1,
+        annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 },
+      });
+      await Promise.resolve();
+    });
+
+    expect(
+      vi.mocked(loadPdfDocument).mock.calls.some(([source]) => source instanceof ArrayBuffer),
+    ).toBe(false);
+  });
+
+  it("keeps a remembered version constraint through a network failure", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const rememberedVersionTwo = {
+      ...scoreSummary,
+      currentVersion: {
+        ...scoreSummary.currentVersion,
+        id: "version-2",
+        versionNumber: 2,
+        createdAt: 2,
+      },
+    };
+    rememberReaderScore("guest", rememberedVersionTwo);
+    let releaseLocal!: (record: Awaited<ReturnType<typeof findActiveOfflineScore>>) => void;
+    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseLocal = resolve;
+      }) as never,
+    );
+    let bootstrapCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) => {
+        if (!input.endsWith("/bootstrap")) {
+          return Promise.resolve(
+            Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          );
+        }
+        bootstrapCalls += 1;
+        return bootstrapCalls === 1
+          ? new Promise<Response>(() => {})
+          : Promise.reject(new TypeError("network unavailable"));
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(bootstrapCalls).toBe(1));
+    await screen.findByLabelText("翻页阅读");
+    fireEvent(window, new Event("online"));
+    await waitFor(() => expect(bootstrapCalls).toBe(2));
+    await act(async () => {
+      releaseLocal({
+        key: "remembered-v2-stale-offline-v1",
+        ...localWorkspace,
+        versionId: "version-1",
+        fileName: "旧离线谱.pdf",
+        sha256: "a".repeat(64),
+        pageCount: 3,
+        blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
+        active: 1,
+        verifiedAt: 1,
+        annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 },
+      });
+      await Promise.resolve();
+    });
+
+    expect(
+      vi.mocked(loadPdfDocument).mock.calls.some(([source]) => source instanceof ArrayBuffer),
+    ).toBe(false);
+    expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
+  });
+
+  it("keeps a remembered version constraint when initial bootstrap fails", async () => {
+    const rememberedVersionTwo = {
+      ...scoreSummary,
+      currentVersion: {
+        ...scoreSummary.currentVersion,
+        id: "version-2",
+        versionNumber: 2,
+        createdAt: 2,
+      },
+    };
+    rememberReaderScore("guest", rememberedVersionTwo);
+    let releaseLocal!: (record: Awaited<ReturnType<typeof findActiveOfflineScore>>) => void;
+    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseLocal = resolve;
+      }) as never,
+    );
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("network unavailable")));
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByLabelText("翻页阅读");
+    await act(async () =>
+      releaseLocal({
+        key: "initial-network-stale-offline-v1",
+        ...localWorkspace,
+        versionId: "version-1",
+        fileName: "旧离线谱.pdf",
+        sha256: "a".repeat(64),
+        pageCount: 3,
+        blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
+        active: 1,
+        verifiedAt: 1,
+        annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 },
+      }),
+    );
+
+    await waitFor(() => expect(findActiveOfflineScore).toHaveBeenCalled());
+    expect(
+      vi.mocked(loadPdfDocument).mock.calls.some(([source]) => source instanceof ArrayBuffer),
+    ).toBe(false);
+    expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
+  });
+
+  it("does not substitute an offline copy from a different version", async () => {
+    rememberReaderScore("guest", scoreSummary);
+    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+      key: "offline-old",
+      ...localWorkspace,
+      versionId: "version-old",
+      fileName: "旧版.pdf",
+      sha256: "b".repeat(64),
+      pageCount: 3,
+      blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
+      active: 1,
+      verifiedAt: 1,
+      annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 },
+    });
+    vi.mocked(loadPdfDocument).mockReturnValueOnce({
+      promise: new Promise(() => {}),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(findActiveOfflineScore).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+        "/api/choirs/choir-1/scores/score-1/bootstrap",
+      ),
+    );
+    expect(loadPdfDocument).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("正在加载乐谱")).toBeInTheDocument();
+  });
+
+  it("does not apply an old route's deferred offline blob", async () => {
+    rememberReaderScore("guest", scoreSummary);
+    let releaseBlob!: (value: ArrayBuffer) => void;
+    const deferredBlob = new Blob([new Uint8Array([1])], { type: "application/pdf" });
+    vi.spyOn(deferredBlob, "arrayBuffer").mockReturnValue(
+      new Promise((resolve) => {
+        releaseBlob = resolve;
+      }),
+    );
+    vi.mocked(findActiveOfflineScore)
+      .mockResolvedValueOnce({
+        key: "old-route-offline",
+        ...localWorkspace,
+        versionId: "version-1",
+        fileName: "旧路由.pdf",
+        sha256: "a".repeat(64),
+        pageCount: 3,
+        blob: deferredBlob,
+        active: 1,
+        verifiedAt: 1,
+        annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 },
+      })
+      .mockResolvedValueOnce(undefined);
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/choirs/:choirId/scores/:scoreId",
+          element: <ReaderPage />,
+        },
+      ],
+      { initialEntries: ["/choirs/choir-1/scores/score-1"] },
+    );
+    render(<RouterProvider router={router} />);
+    await waitFor(() => expect(deferredBlob.arrayBuffer).toHaveBeenCalled());
+
+    await act(() => router.navigate("/choirs/choir-1/scores/score-2"));
+    const staleData = new Uint8Array([9, 9, 9]).buffer;
+    releaseBlob(staleData);
+    await waitFor(() =>
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+        "/api/choirs/choir-1/scores/score-2/bootstrap",
+      ),
+    );
+
+    expect(
+      vi.mocked(loadPdfDocument).mock.calls.some(([source]) => source === staleData),
+    ).toBe(false);
+  });
+
+  it("reports a corrupt offline fallback instead of loading forever", async () => {
+    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+      key: "corrupt-offline",
+      ...localWorkspace,
+      versionId: "version-1",
+      fileName: "损坏的离线副本.pdf",
+      sha256: "a".repeat(64),
+      pageCount: 3,
+      blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
+      active: 1,
+      verifiedAt: 1,
+      annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(Response.json({ state: "trashed" })),
+    );
+    const corruptPdf = Promise.reject(new Error("corrupt offline PDF"));
+    void corruptPdf.catch(() => undefined);
+    vi.mocked(loadPdfDocument).mockReturnValueOnce({
+      promise: corruptPdf,
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "本机离线副本无法解析，现有批注仍然保留",
+    );
+  });
+
+  it("stops after a persistent mismatch from the same versioned source", async () => {
+    rememberReaderScore("guest", scoreSummary);
+    vi.mocked(loadPdfDocument).mockImplementation(() => ({
+      promise: Promise.resolve({
+        document: {
+          numPages: 3,
+          getPage: vi.fn().mockResolvedValue({
+            getViewport: () => ({ width: 600, height: 800 }),
+          }),
+        },
+        versionId: "unexpected-version",
+      }),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    }) as never);
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "PDF 无法解析或文件暂时不可用",
+    );
+    expect(loadPdfDocument).toHaveBeenCalledTimes(1);
   });
 
   it("keeps a delayed cloud lookup in a loading state without flashing an error", async () => {
@@ -256,30 +1362,14 @@ describe("ReaderPage", () => {
     );
 
     expect(await screen.findByText("正在加载乐谱…")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "无法打开" })).not.toBeInTheDocument();
-    releaseLookup(
-      Response.json({
-        scores: [
-          {
-            id: "score-1",
-            choirId: "choir-1",
-            fileName: "练声曲.pdf",
-            updatedAt: 1,
-            currentVersion: {
-              id: "version-1",
-              versionNumber: 1,
-              sizeBytes: 329,
-              sha256: "a".repeat(64),
-              etag: '"etag"',
-              pageCount: 3,
-              createdAt: 1,
-            },
-          },
-        ],
-        storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
-        permissions: { canManage: false },
-      }),
+    await waitFor(() =>
+      expect(loadPdfDocument).toHaveBeenCalledWith(
+        "/api/choirs/choir-1/scores/score-1/pdf",
+        undefined,
+      ),
     );
+    expect(screen.queryByRole("heading", { name: "无法打开" })).not.toBeInTheDocument();
+    releaseLookup(activeBootstrapResponse());
     expect(await screen.findByText("练声曲.pdf")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
@@ -315,13 +1405,9 @@ describe("ReaderPage", () => {
       "fetch",
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
-          input.endsWith("/scores/score-1/status")
+          input.endsWith("/scores/score-1/bootstrap")
             ? Response.json({ error: "not_found" }, { status: 404 })
-            : Response.json({
-                scores: [],
-                storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
-                permissions: { canManage: false },
-              }),
+            : Response.json({ layers: [], permissions: { canManageLayers: false } }),
         ),
       ),
     );
@@ -337,37 +1423,24 @@ describe("ReaderPage", () => {
     );
     missingView.unmount();
 
+    clearReaderDocumentCache();
+
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
           input.includes("/layers")
             ? Response.json({ layers: [], permissions: { canManageLayers: false } })
-            : Response.json({
-                scores: [
-                  {
-                    id: "score-1",
-                    choirId: "choir-1",
-                    fileName: "练声曲.pdf",
-                    updatedAt: 1,
-                    currentVersion: {
-                      id: "version-1",
-                      versionNumber: 1,
-                      sizeBytes: 329,
-                      sha256: "a".repeat(64),
-                      etag: '"etag"',
-                      pageCount: 3,
-                      createdAt: 1,
-                    },
-                  },
-                ],
-                storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
-                permissions: { canManage: false },
-              }),
+            : activeBootstrapResponse(),
         ),
       ),
     );
-    vi.mocked(loadPdfDocument).mockRejectedValueOnce(new Error("invalid pdf"));
+    const invalidPdf = Promise.reject(new Error("invalid pdf"));
+    void invalidPdf.catch(() => undefined);
+    vi.mocked(loadPdfDocument).mockReturnValueOnce({
+      promise: invalidPdf,
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
     const parsingView = render(
       <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
         <Routes>
@@ -395,7 +1468,8 @@ describe("ReaderPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("练声曲.pdf")).toBeInTheDocument();
+    await screen.findByLabelText("翻页阅读");
+    expect(screen.getByText("练声曲.pdf")).toBeInTheDocument();
     expect(screen.queryByLabelText("阅读器控制")).not.toBeInTheDocument();
     expect(
       within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 1 页"),
@@ -493,29 +1567,7 @@ describe("ReaderPage", () => {
           }),
         );
       }
-      return Promise.resolve(
-        Response.json({
-          scores: [
-            {
-              id: "score-1",
-              choirId: "choir-1",
-              fileName: "练声曲.pdf",
-              updatedAt: 1,
-              currentVersion: {
-                id: "version-1",
-                versionNumber: 1,
-                sizeBytes: 329,
-                sha256: "a".repeat(64),
-                etag: '"etag"',
-                pageCount: 3,
-                createdAt: 1,
-              },
-            },
-          ],
-          storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
-          permissions: { canManage: false },
-        }),
-      );
+      return Promise.resolve(activeBootstrapResponse());
     });
 
     const view = render(
@@ -566,6 +1618,7 @@ describe("ReaderPage", () => {
     );
 
     await screen.findByText("练声曲.pdf");
+    await screen.findByLabelText("翻页阅读");
     openMoreMenu();
     fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
     expect(
@@ -584,6 +1637,7 @@ describe("ReaderPage", () => {
     );
 
     await screen.findByText("练声曲.pdf");
+    await screen.findByLabelText("翻页阅读");
     const viewport = getPageViewport();
     vi.spyOn(viewport, "getBoundingClientRect").mockReturnValue({
       x: 0,
@@ -805,29 +1859,7 @@ describe("ReaderPage", () => {
           }),
         );
       }
-      return Promise.resolve(
-        Response.json({
-          scores: [
-            {
-              id: "score-1",
-              choirId: "choir-1",
-              fileName: "练声曲.pdf",
-              updatedAt: 1,
-              currentVersion: {
-                id: "version-1",
-                versionNumber: 1,
-                sizeBytes: 329,
-                sha256: "a".repeat(64),
-                etag: '"etag"',
-                pageCount: 3,
-                createdAt: 1,
-              },
-            },
-          ],
-          storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
-          permissions: { canManage: false },
-        }),
-      );
+      return Promise.resolve(activeBootstrapResponse());
     });
     render(
       <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
@@ -838,6 +1870,7 @@ describe("ReaderPage", () => {
     );
 
     await screen.findByText("练声曲.pdf");
+    await screen.findByLabelText("翻页阅读");
     const overlay = screen.getByLabelText("第 1 页批注层");
     fireEvent.pointerDown(overlay, { clientX: 20, clientY: 20 });
     fireEvent.pointerUp(overlay, { clientX: 20, clientY: 20 });
@@ -1017,29 +2050,7 @@ describe("ReaderPage", () => {
           }),
         );
       }
-      return Promise.resolve(
-        Response.json({
-          scores: [
-            {
-              id: "score-1",
-              choirId: "choir-1",
-              fileName: "练声曲.pdf",
-              updatedAt: 1,
-              currentVersion: {
-                id: "version-1",
-                versionNumber: 1,
-                sizeBytes: 3,
-                sha256: "a".repeat(64),
-                etag: '"etag"',
-                pageCount: 3,
-                createdAt: 1,
-              },
-            },
-          ],
-          storage: { usedBytes: 3, limitBytes: 1_073_741_824 },
-          permissions: { canManage: false },
-        }),
-      );
+      return Promise.resolve(activeBootstrapResponse());
     });
     render(
       <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
@@ -1050,6 +2061,7 @@ describe("ReaderPage", () => {
     );
 
     await screen.findByText("练声曲.pdf");
+    await screen.findByLabelText("翻页阅读");
     openMoreMenu();
     fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
     expect(
@@ -1106,7 +2118,8 @@ describe("ReaderPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("离线练声曲.pdf")).toBeInTheDocument();
+    await screen.findByLabelText("翻页阅读");
+    expect(screen.getByText("离线练声曲.pdf")).toBeInTheDocument();
     toggleChrome();
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
     expect(screen.getByText(/编辑模式/)).toBeInTheDocument();
@@ -1137,7 +2150,8 @@ describe("ReaderPage", () => {
         </Routes>
       </MemoryRouter>,
     );
-    expect(await screen.findByText("A 的离线乐谱.pdf")).toBeInTheDocument();
+    await screen.findByLabelText("翻页阅读");
+    expect(screen.getByText("A 的离线乐谱.pdf")).toBeInTheDocument();
 
     await activateAuthenticatedLocalOwner("user-b");
 
@@ -1198,16 +2212,7 @@ describe("ReaderPage", () => {
     });
     const fetchMock = vi.fn().mockImplementation((input: string | URL | Request) => {
       const url = String(input);
-      if (url.endsWith("/scores")) {
-        return Promise.resolve(
-          Response.json({
-            scores: [],
-            storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
-            permissions: { canManage: false },
-          }),
-        );
-      }
-      if (url.endsWith("/scores/score-1/status")) {
+      if (url.endsWith("/scores/score-1/bootstrap")) {
         return Promise.resolve(Response.json({ state: "trashed" }));
       }
       return Promise.reject(new Error(`unexpected request: ${url}`));
@@ -1222,8 +2227,9 @@ describe("ReaderPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("离线练声曲.pdf")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    await screen.findByLabelText("翻页阅读");
+    expect(screen.getByText("离线练声曲.pdf")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
       "本机离线副本和未同步批注仍保留，恢复后可继续同步",
     );
     toggleChrome();
@@ -1234,8 +2240,7 @@ describe("ReaderPage", () => {
     expect(await localDatabase.annotationOutbox.count()).toBe(1);
     expect(syncAnnotations).not.toHaveBeenCalled();
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
-      "/api/choirs/choir-1/scores",
-      "/api/choirs/choir-1/scores/score-1/status",
+      "/api/choirs/choir-1/scores/score-1/bootstrap",
     ]);
   });
 
@@ -1273,16 +2278,7 @@ describe("ReaderPage", () => {
     const fetchMock = vi.fn().mockImplementation((input: string | URL | Request) => {
       const url = String(input);
       if (!connected) return Promise.reject(new Error("offline"));
-      if (url.endsWith("/scores")) {
-        return Promise.resolve(
-          Response.json({
-            scores: [],
-            storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
-            permissions: { canManage: false },
-          }),
-        );
-      }
-      if (url.endsWith("/scores/score-1/status")) {
+      if (url.endsWith("/scores/score-1/bootstrap")) {
         return Promise.resolve(Response.json({ state: "trashed" }));
       }
       return Promise.reject(new Error(`unexpected request: ${url}`));
@@ -1297,7 +2293,8 @@ describe("ReaderPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("离线练声曲.pdf")).toBeInTheDocument();
+    await screen.findByLabelText("翻页阅读");
+    expect(screen.getByText("离线练声曲.pdf")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     connected = true;
     fireEvent(window, new Event("online"));

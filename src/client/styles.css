@@ -1449,6 +1449,51 @@ h1 {
   background: #1d1a1c;
 }
 
+.reader-loading {
+  position: relative;
+  display: grid;
+  height: 100dvh;
+  place-items: center;
+  overflow: hidden;
+  color: #eee;
+  background: #1d1a1c;
+}
+
+.reader-loading__paper {
+  width: min(76vw, calc(86dvh * 0.75));
+  aspect-ratio: 3 / 4;
+  border-radius: 0.15rem;
+  background: linear-gradient(100deg, #f5f3ef 25%, #fff 40%, #f5f3ef 55%);
+  background-size: 220% 100%;
+  box-shadow: 0 0.8rem 2.5rem rgb(0 0 0 / 24%);
+  animation: reader-loading-shimmer 1.4s ease-in-out infinite;
+}
+
+.reader-loading__label {
+  position: absolute;
+  right: 1rem;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  left: 1rem;
+  display: grid;
+  justify-content: center;
+  gap: 0.2rem;
+  text-align: center;
+  text-shadow: 0 1px 5px #000;
+}
+
+.reader-loading__label span {
+  color: #c9c6c7;
+  font-size: 0.86rem;
+}
+
+@keyframes reader-loading-shimmer {
+  to { background-position: -220% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reader-loading__paper { animation: none; }
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
