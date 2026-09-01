@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AnnotationLayerSummary } from "../../shared/annotations";
@@ -68,16 +68,27 @@ beforeEach(async () => {
 
 describe("AnnotationOverlay", () => {
   it("shows a concise hint and keeps the centered composer open across blur until cancel", async () => {
+    const visualViewport = installVisualViewport();
     const interactions: AnnotationOverlayInteraction[] = [];
-    const focusStates: Array<{ active: boolean; hidden: string | null; tabIndex: number }> = [];
+    let handlingPointerUp = false;
+    const focusStates: Array<{
+      active: boolean;
+      hidden: string | null;
+      tabIndex: number;
+      sameEventStack: boolean;
+      preventScroll: boolean;
+    }> = [];
     vi.spyOn(HTMLTextAreaElement.prototype, "focus").mockImplementation(function (
       this: HTMLTextAreaElement,
+      options?: FocusOptions,
     ) {
       const composer = this.closest("form");
       focusStates.push({
         active: composer?.hasAttribute("data-active") ?? false,
         hidden: composer?.getAttribute("aria-hidden") ?? null,
         tabIndex: this.tabIndex,
+        sameEventStack: handlingPointerUp,
+        preventScroll: options?.preventScroll ?? false,
       });
       HTMLElement.prototype.focus.call(this);
     });
@@ -85,23 +96,75 @@ describe("AnnotationOverlay", () => {
     expect(screen.getByText("轻点任意位置添加文字")).toBeInTheDocument();
     const overlay = screen.getByLabelText("第 1 页批注层");
     mockBounds(overlay);
+    const stableInput = document.querySelector<HTMLTextAreaElement>(
+      ".annotation-text-composer textarea",
+    );
+    expect(stableInput).not.toBeNull();
+    overlay.addEventListener("pointerup", () => {
+      handlingPointerUp = true;
+    });
 
-    fireEvent.pointerDown(overlay, { pointerId: 1, clientX: 20, clientY: 30 });
+    fireEvent.pointerDown(overlay, {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 20,
+      clientY: 30,
+    });
+    expect(document.querySelector(".annotation-text-composer")).not.toHaveAttribute(
+      "data-active",
+    );
+    expect(focusStates).toHaveLength(0);
+    fireEvent.pointerUp(overlay, {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 20,
+      clientY: 30,
+    });
+    handlingPointerUp = false;
     const composer = screen.getByRole("form", { name: "文字输入" });
-    const input = screen.getByLabelText("批注文本");
+    const input = screen.getByLabelText("批注文本") as HTMLTextAreaElement;
     expect(composer).toHaveClass("annotation-text-composer");
+    expect(input).toBe(stableInput);
     expect(input).toHaveFocus();
-    expect(focusStates[0]).toEqual({ active: true, hidden: null, tabIndex: 0 });
+    expect(focusStates[0]).toEqual({
+      active: true,
+      hidden: null,
+      tabIndex: 0,
+      sameEventStack: true,
+      preventScroll: true,
+    });
     expect(interactions).toEqual(["composing-text"]);
     expect(input).toHaveStyle({ color: "rgb(161, 38, 82)" });
     const fontScale = screen.getByRole("slider", { name: "字号" });
     expect(fontScale).toHaveValue("0.024");
     const fontValue = composer.querySelector(".annotation-font-scale__value");
     expect(fontValue).not.toHaveAttribute("data-visible");
+    fireEvent.change(input, { target: { value: "保持选择范围" } });
+    expect(screen.getByLabelText("批注文本")).toBe(stableInput);
+    input.setSelectionRange(2, 6, "forward");
     fireEvent.pointerDown(fontScale);
+    fontScale.focus();
     expect(fontValue).toHaveAttribute("data-visible");
+    fireEvent.change(fontScale, { target: { value: "0.04" } });
+    expect(fontScale).toHaveValue("0.04");
+    expect(screen.getByLabelText("批注文本")).toBe(stableInput);
+    expect(input).toHaveValue("保持选择范围");
+    expect(input.selectionStart).toBe(2);
+    expect(input.selectionEnd).toBe(6);
     fireEvent.pointerUp(fontScale);
     expect(fontValue).not.toHaveAttribute("data-visible");
+    expect(input).toHaveFocus();
+    expect(input.selectionStart).toBe(2);
+    expect(input.selectionEnd).toBe(6);
+    expect(input.selectionDirection).toBe("forward");
+    expect(input).toHaveValue("保持选择范围");
+    expect(screen.getByLabelText("批注文本")).toBe(stableInput);
+    expect(focusStates.at(-1)?.preventScroll).toBe(true);
+
+    act(() => {
+      visualViewport.dispatchEvent(new Event("resize"));
+    });
+    expect(screen.getByLabelText("批注文本")).toBe(stableInput);
 
     fireEvent.change(input, { target: { value: "尚未确认" } });
     fireEvent.blur(input);
@@ -114,11 +177,78 @@ describe("AnnotationOverlay", () => {
     expect(await localDatabase.annotations.count()).toBe(0);
   });
 
+  it("does not open text composition for a drag or cancelled placement", () => {
+    const focus = vi.spyOn(HTMLTextAreaElement.prototype, "focus");
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    mockBounds(overlay);
+
+    fireEvent.pointerDown(overlay, {
+      pointerId: 8,
+      pointerType: "touch",
+      clientX: 20,
+      clientY: 30,
+    });
+    fireEvent.pointerMove(overlay, {
+      pointerId: 8,
+      pointerType: "touch",
+      clientX: 40,
+      clientY: 30,
+    });
+    fireEvent.pointerUp(overlay, {
+      pointerId: 8,
+      pointerType: "touch",
+      clientX: 40,
+      clientY: 30,
+    });
+    fireEvent.pointerDown(overlay, {
+      pointerId: 9,
+      pointerType: "touch",
+      clientX: 20,
+      clientY: 30,
+    });
+    fireEvent.pointerCancel(overlay, {
+      pointerId: 9,
+      pointerType: "touch",
+      clientX: 20,
+      clientY: 30,
+    });
+
+    expect(document.querySelector(".annotation-text-composer")).not.toHaveAttribute(
+      "data-active",
+    );
+    expect(focus).not.toHaveBeenCalled();
+  });
+
+  it("keeps Apple Pencil activation on the same textarea without simulating system UI", () => {
+    const focus = vi.spyOn(HTMLTextAreaElement.prototype, "focus");
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    mockBounds(overlay);
+    const stableInput = document.querySelector(".annotation-text-composer textarea");
+
+    fireEvent.pointerDown(overlay, {
+      pointerId: 7,
+      pointerType: "pen",
+      clientX: 20,
+      clientY: 30,
+    });
+    fireEvent.pointerUp(overlay, {
+      pointerId: 7,
+      pointerType: "pen",
+      clientX: 20,
+      clientY: 30,
+    });
+
+    expect(screen.getByLabelText("批注文本")).toBe(stableInput);
+    expect(focus).toHaveBeenCalledOnce();
+  });
+
   it("saves multiline text, its original page anchor and normalized font scale only on complete", async () => {
     renderOverlay([], "text");
     const overlay = screen.getByLabelText("第 1 页批注层");
     mockBounds(overlay);
-    fireEvent.pointerDown(overlay, { pointerId: 1, clientX: 20, clientY: 30 });
+    openNewText(overlay);
     const composer = screen.getByRole("form", { name: "文字输入" });
     fireEvent.change(screen.getByLabelText("批注文本"), {
       target: { value: "第一行\n第二行" },
@@ -146,7 +276,7 @@ describe("AnnotationOverlay", () => {
     const newView = renderOverlay([], "text");
     const overlay = screen.getByLabelText("第 1 页批注层");
     mockBounds(overlay);
-    fireEvent.pointerDown(overlay, { pointerId: 1, clientX: 20, clientY: 30 });
+    openNewText(overlay);
     fireEvent.click(screen.getByRole("button", { name: "完成" }));
     expect(await localDatabase.annotations.count()).toBe(0);
     newView.unmount();
@@ -381,6 +511,21 @@ function openExistingText(name: string) {
   fireEvent.pointerUp(button, { pointerId: 1, clientX: 20, clientY: 30 });
 }
 
+function openNewText(overlay: Element) {
+  fireEvent.pointerDown(overlay, {
+    pointerId: 1,
+    pointerType: "touch",
+    clientX: 20,
+    clientY: 30,
+  });
+  fireEvent.pointerUp(overlay, {
+    pointerId: 1,
+    pointerType: "touch",
+    clientX: 20,
+    clientY: 30,
+  });
+}
+
 function textPayload(text: string, x = 0.2, y = 0.3) {
   return { kind: "text" as const, pageNumber: 1, x, y, fontScale: 0.024, text };
 }
@@ -455,7 +600,20 @@ function mockDynamicTextBounds(element: HTMLElement) {
   });
 }
 
+function installVisualViewport() {
+  const viewport = new EventTarget() as EventTarget & Partial<VisualViewport>;
+  Object.assign(viewport, {
+    offsetTop: 0,
+    offsetLeft: 0,
+    width: 1024,
+    height: 768,
+  });
+  vi.stubGlobal("visualViewport", viewport);
+  return viewport;
+}
+
 afterEach(() => {
   endAnnotationEditSession();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
