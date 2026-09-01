@@ -88,6 +88,11 @@ import {
   type ReaderLayout,
   useReaderPreferences,
 } from "../reader/use-reader-preferences";
+import {
+  deriveReaderSyncStatus,
+  describeAnnotationConflict,
+  type ReaderSyncOutcome,
+} from "../reader/reader-sync-status";
 
 type ReaderPanel = "layers" | "pages";
 
@@ -125,7 +130,7 @@ export default function ReaderPage() {
     useState<AnnotationOverlayInteraction>("idle");
   const [tool, setTool] = useState<AnnotationTool>("text");
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncOutcome, setSyncOutcome] = useState<ReaderSyncOutcome>("none");
   const [cloudState, setCloudState] = useState<
     "checking" | "active" | "trashed" | "unavailable"
   >("checking");
@@ -168,6 +173,7 @@ export default function ReaderPage() {
     resolvedWorkspace && workspaceIsActive
       ? resolvedWorkspace
       : null;
+  const workspaceScopeKey = workspace?.scopeKey ?? null;
   const layerQuery = useLiveQuery(
     async () => ({
       scopeKey: workspace?.scopeKey ?? null,
@@ -285,9 +291,7 @@ export default function ReaderPage() {
             });
             return;
           }
-          setSyncMessage(
-            "这份乐谱已移入回收站；本机离线副本和未同步批注仍保留，恢复后可继续同步。",
-          );
+          setSyncOutcome("trash-preserved");
           throw new Error("Score unavailable");
         }
         if (lookup.state !== "active") throw new Error("Score unavailable");
@@ -345,9 +349,9 @@ export default function ReaderPage() {
         await cacheAnnotationLayers(workspace, layersToCache);
         if (active) setCanManageLayers(body.permissions.canManageLayers);
         await syncAnnotations(workspace, { pull: true });
-        if (active) setSyncMessage("批注已同步");
+        if (active) setSyncOutcome("synced");
       } catch {
-        if (active) setSyncMessage("当前使用本机批注；联网后可立即同步");
+        if (active) setSyncOutcome("none");
       }
     })();
     return () => {
@@ -365,9 +369,7 @@ export default function ReaderPage() {
           if (!active) return;
           if (lookup.state === "trashed") {
             setCloudState("trashed");
-            setSyncMessage(
-              "这份乐谱已移入回收站；本机离线副本和未同步批注仍保留，恢复后可继续同步。",
-            );
+            setSyncOutcome("trash-preserved");
             return;
           }
           if (lookup.state !== "active") return;
@@ -402,18 +404,18 @@ export default function ReaderPage() {
         destroyOpened = opened.destroy;
         if (active) {
           setDocument(nextDocument);
-          setDocumentScopeKey(workspace?.scopeKey ?? null);
-          if (workspace) {
-            setLoadState({ kind: "ready", scopeKey: workspace.scopeKey });
+          setDocumentScopeKey(workspaceScopeKey);
+          if (workspaceScopeKey) {
+            setLoadState({ kind: "ready", scopeKey: workspaceScopeKey });
           }
           setCurrentPage((page) => Math.min(page, nextDocument.numPages));
         }
       })
       .catch(() => {
-        if (active && workspace) {
+        if (active && workspaceScopeKey) {
           setLoadState({
             kind: "error",
-            scopeKey: workspace.scopeKey,
+            scopeKey: workspaceScopeKey,
             message: "PDF 无法解析或文件暂时不可用。",
           });
         }
@@ -424,7 +426,7 @@ export default function ReaderPage() {
       setDocument(null);
       setDocumentScopeKey(null);
     };
-  }, [setCurrentPage, source, workspace?.scopeKey]);
+  }, [setCurrentPage, source, workspaceScopeKey]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -521,7 +523,7 @@ export default function ReaderPage() {
 
   const beginEditing = () => {
     if (cloudState === "trashed") {
-      setSyncMessage("乐谱在回收站中，不能继续编辑；本机未同步批注仍会保留。");
+      setSyncOutcome("trash-preserved");
       return;
     }
     if (!workspace) return;
@@ -557,7 +559,7 @@ export default function ReaderPage() {
     setTool("text");
     beginAnnotationEditSession();
     setEditing(true);
-    setSyncMessage("编辑内容会持续保存在本机");
+    setSyncOutcome("local-draft");
   };
 
   const finishEditing = async () => {
@@ -573,43 +575,23 @@ export default function ReaderPage() {
     setEditingOrigin(null);
     const queued = await queueScoreDrafts(workspace);
     if (queued === 0) {
-      setSyncMessage("没有需要保存的修改");
+      setSyncOutcome("synced");
       return;
     }
     if (!navigator.onLine) {
-      setSyncMessage(`已保存到本机，${queued} 项待同步`);
+      setSyncOutcome("local-saved");
       return;
     }
     if (cloudState !== "active") {
-      setSyncMessage(`已保存到本机，${queued} 项待同步`);
+      setSyncOutcome("local-saved");
       return;
     }
     setSyncing(true);
     try {
       await syncAnnotations(workspace, { pull: false });
-      const remaining = await localDatabase.annotationOutbox
-        .where("scopeKey")
-        .equals(workspace.scopeKey)
-        .count();
-      const conflictCount = await localDatabase.annotationConflicts
-        .where("scopeKey")
-        .equals(workspace.scopeKey)
-        .count();
-      const syncErrors = await localDatabase.annotations
-        .where("[scopeKey+state]")
-        .equals([workspace.scopeKey, "sync-error"])
-        .count();
-      setSyncMessage(
-        conflictCount > 0
-          ? `${conflictCount} 项只保留在本机，需要处理冲突`
-          : syncErrors > 0
-            ? `${syncErrors} 项批注同步异常，本机版本仍然保留`
-          : remaining > 0
-            ? `${remaining} 项待同步`
-            : "保存成功，批注已同步",
-      );
+      setSyncOutcome("synced");
     } catch {
-      setSyncMessage(`已保存到本机，${queued} 项待同步`);
+      setSyncOutcome("local-saved");
     } finally {
       setSyncing(false);
     }
@@ -618,7 +600,7 @@ export default function ReaderPage() {
   const manualSync = async () => {
     if (!workspace) return;
     if (cloudState === "trashed") {
-      setSyncMessage("乐谱在回收站中，已停止云端同步；本机内容仍然保留。");
+      setSyncOutcome("trash-preserved");
       return;
     }
     setSyncing(true);
@@ -631,13 +613,9 @@ export default function ReaderPage() {
         .where("[scopeKey+state]")
         .equals([workspace.scopeKey, "sync-error"])
         .count();
-      setSyncMessage(
-        remainingErrors > 0
-          ? `${remainingErrors} 项批注同步异常，稍后可重试`
-          : "批注已同步",
-      );
+      setSyncOutcome(remainingErrors > 0 ? "failed" : "synced");
     } catch {
-      setSyncMessage("同步未完成，本机内容仍然保留");
+      setSyncOutcome("failed");
     } finally {
       setSyncing(false);
     }
@@ -650,20 +628,20 @@ export default function ReaderPage() {
     if (!workspace) return;
     if (strategy === "discard") {
       await discardAnnotationConflict(workspace, opId);
-      setSyncMessage("已放弃本机冲突版本");
+      setSyncOutcome("conflict-discarded");
       return;
     }
     await reapplyAnnotationConflict(workspace, opId, strategy === "keep-both");
-    const queued = await queueScoreDrafts(workspace);
+    await queueScoreDrafts(workspace);
     if (!navigator.onLine) {
-      setSyncMessage(`冲突处理已保存到本机，${queued} 项待同步`);
+      setSyncOutcome("local-saved");
       return;
     }
     try {
       await syncAnnotations(workspace, { pull: false });
-      setSyncMessage("冲突处理已同步");
+      setSyncOutcome("conflict-reapplied");
     } catch {
-      setSyncMessage(`冲突处理已保存到本机，${queued} 项待同步`);
+      setSyncOutcome("local-saved");
     }
   };
 
@@ -729,6 +707,13 @@ export default function ReaderPage() {
     activeLayerId,
     onInteractionChange: setAnnotationInteraction,
   };
+  const syncStatus = deriveReaderSyncStatus({
+    outcome: syncOutcome,
+    syncing,
+    pendingCount,
+    conflictCount: conflicts.length,
+    syncErrorCount,
+  });
 
   return (
     <main className="reader-shell">
@@ -831,12 +816,15 @@ export default function ReaderPage() {
                 <RefreshCw aria-hidden="true" size={18} />
                 {syncing ? "同步中…" : "立即同步"}
               </Button>
-              <p className="reader-more-menu__status" role="status">
-                {downloadMessage ?? syncMessage ?? "尚未同步批注"}
-                {pendingCount > 0 ? ` · ${pendingCount} 项待同步` : ""}
-                {conflicts.length > 0 ? ` · ${conflicts.length} 项本地冲突` : ""}
-                {syncErrorCount > 0 ? ` · ${syncErrorCount} 项同步异常` : ""}
-              </p>
+              {downloadMessage || syncStatus.message ? (
+                <p
+                  className="reader-more-menu__status"
+                  data-kind={downloadMessage ? "download" : syncStatus.kind}
+                  role="status"
+                >
+                  {downloadMessage ?? syncStatus.message}
+                </p>
+              ) : null}
             </aside>
           ) : null}
         </header>
@@ -919,27 +907,39 @@ export default function ReaderPage() {
 
       {conflicts.length > 0 ? (
         <aside className="annotation-conflicts" aria-label="本地批注冲突">
-          <strong>{conflicts.length} 项修改没有上传</strong>
-          {conflicts.map((conflict) => (
-            <div key={conflict.opId}>
-              <span>同一批注的云端版本已经变化。</span>
-              <Button
-                onPress={() => void resolveConflict(conflict.opId, "discard")}
-              >
-                放弃本机版本
-              </Button>
-              <Button
-                onPress={() => void resolveConflict(conflict.opId, "reapply")}
-              >
-                基于云端重新应用
-              </Button>
-              <Button
-                onPress={() => void resolveConflict(conflict.opId, "keep-both")}
-              >
-                两份都保留
-              </Button>
-            </div>
-          ))}
+          <strong>仍有 {conflicts.length} 项本机冲突待处理</strong>
+          <p>同一批注的云端版本已经变化；以下是保留在这台设备上的版本。</p>
+          {conflicts.map((conflict) => {
+            const detail = describeAnnotationConflict(
+              conflict,
+              layers.find((layer) => layer.id === conflict.layerId)?.name ?? "未知图层",
+            );
+            return (
+              <div className="annotation-conflict-item" key={conflict.opId}>
+                <span>
+                  第 {detail.pageNumber} 页 · {detail.layerName} · {detail.summary}
+                </span>
+                <Button onPress={() => goToPage(detail.pageNumber)}>
+                  前往第 {detail.pageNumber} 页
+                </Button>
+                <Button
+                  onPress={() => void resolveConflict(conflict.opId, "discard")}
+                >
+                  放弃本机版本
+                </Button>
+                <Button
+                  onPress={() => void resolveConflict(conflict.opId, "reapply")}
+                >
+                  基于云端重新应用
+                </Button>
+                <Button
+                  onPress={() => void resolveConflict(conflict.opId, "keep-both")}
+                >
+                  两份都保留
+                </Button>
+              </div>
+            );
+          })}
         </aside>
       ) : null}
       {syncErrorCount > 0 ? (

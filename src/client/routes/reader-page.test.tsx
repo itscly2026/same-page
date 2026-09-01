@@ -289,6 +289,7 @@ describe("ReaderPage", () => {
     expect(screen.getByLabelText("图层显示与颜色")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭页面与图层" }));
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    expect(screen.queryByText("尚未同步批注")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "翻页" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -303,6 +304,103 @@ describe("ReaderPage", () => {
       screen.queryByText("轻点页面中央显示控制，点按两侧或左右滑动翻页"),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("编辑")).not.toBeInTheDocument();
+  });
+
+  it("identifies a persisted object conflict by page, layer and summary", async () => {
+    await localDatabase.annotationConflicts.put({
+      opId: "conflict-op",
+      ...localWorkspace,
+      annotationId: "annotation-1",
+      layerId: "11111111-1111-4111-8111-111111111111",
+      localPayload: {
+        kind: "text",
+        pageNumber: 2,
+        x: 0.2,
+        y: 0.3,
+        fontScale: 0.024,
+        text: "第二页力度轻一些",
+      },
+      localDeleted: false,
+      canonical: null,
+      createdAt: 1,
+    });
+    vi.mocked(fetch).mockImplementation((input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/layers")) {
+        return Promise.resolve(
+          Response.json({
+            layers: [
+              {
+                id: "11111111-1111-4111-8111-111111111111",
+                kind: "shared",
+                defaultSlot: "G",
+                name: "G",
+                sortOrder: 0,
+                defaultColor: "#a12652",
+                colorOverride: null,
+                visible: true,
+                canEdit: false,
+              },
+            ],
+            permissions: { canManageLayers: false },
+          }),
+        );
+      }
+      return Promise.resolve(
+        Response.json({
+          scores: [
+            {
+              id: "score-1",
+              choirId: "choir-1",
+              fileName: "练声曲.pdf",
+              updatedAt: 1,
+              currentVersion: {
+                id: "version-1",
+                versionNumber: 1,
+                sizeBytes: 329,
+                sha256: "a".repeat(64),
+                etag: '"etag"',
+                pageCount: 3,
+                createdAt: 1,
+              },
+            },
+          ],
+          storage: { usedBytes: 329, limitBytes: 1_073_741_824 },
+          permissions: { canManage: false },
+        }),
+      );
+    });
+
+    const view = render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByText("仍有 1 项本机冲突待处理"),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("第 2 页 · G · 第二页力度轻一些"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "前往第 2 页" }));
+    expect(
+      within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 2 页"),
+    ).toBeInTheDocument();
+
+    view.unmount();
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByText("仍有 1 项本机冲突待处理"),
+    ).toBeInTheDocument();
   });
 
   it("keeps the existing offline selection when checksum verification fails", async () => {
