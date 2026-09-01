@@ -269,6 +269,32 @@ describe("ReaderPage", () => {
       "fetch",
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
+          input.endsWith("/scores/score-1/status")
+            ? Response.json({ error: "not_found" }, { status: 404 })
+            : Response.json({
+                scores: [],
+                storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
+                permissions: { canManage: false },
+              }),
+        ),
+      ),
+    );
+    const missingView = render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "这份乐谱不存在或已经被永久移除",
+    );
+    missingView.unmount();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) =>
+        Promise.resolve(
           input.includes("/layers")
             ? Response.json({ layers: [], permissions: { canManageLayers: false } })
             : Response.json({
