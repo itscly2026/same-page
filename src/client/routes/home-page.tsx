@@ -275,6 +275,10 @@ export function HomePage() {
         ) : null}
       </main>
 
+      <footer className="marketing-footer">
+        <Link to="/privacy">隐私政策</Link>
+      </footer>
+
       <ModalOverlay
         className="modal-overlay"
         isOpen={joinOpen}

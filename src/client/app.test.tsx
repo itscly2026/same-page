@@ -79,6 +79,10 @@ describe("AppRoutes", () => {
     expect(screen.getByText("同页共谱，众声一心。")).toBeInTheDocument();
     expect(screen.getByText("为合唱排练而设计的乐谱云盘。")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "登录" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "隐私政策" })).toHaveAttribute(
+      "href",
+      "/privacy",
+    );
     expect(screen.queryByLabelText("邀请码")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "进入云盘" }));
@@ -96,6 +100,29 @@ describe("AppRoutes", () => {
     expect(screen.getByRole("button", { name: "进入" })).toBeDisabled();
     expect(screen.queryByText("无需注册，也可以访客身份只读访问。")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
+  });
+
+  it("publishes the privacy policy at a stable public route", async () => {
+    render(
+      <MemoryRouter initialEntries={["/privacy"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "隐私政策", level: 1 }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Google 用户数据" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "admin@clyapps.com" })).toHaveAttribute(
+      "href",
+      "mailto:admin@clyapps.com",
+    );
+    expect(screen.getByRole("link", { name: "返回 Same Page 首页" })).toHaveAttribute(
+      "href",
+      "/",
+    );
   });
 
   it("shows the public preview as the third independent signed-out entry", async () => {

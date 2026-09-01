@@ -45,6 +45,9 @@ Google 使用其已验证邮箱；Better Auth 只在安全确认相同邮箱时�
 
 认证由 Same Page 自己的 Better Auth/D1 边界负责；OAuth access token 与 refresh token 加密后保存，完成身份验证后不持久化 Google ID token。认证邮件通过独立的 Resend Sending-only key 和发送域发出，不调用或共享现有 Webmail 的 API、Secret 或 Sent 数据。
 
+公开隐私政策固定发布在 `/privacy`，首页底部提供入口；第三方登录平台应使用该生产 URL，
+不得指向仓库文档或未发布的临时页面。
+
 权限只在所属云盘内生效：
 
 - **云盘管理员**：管理成员、乐谱、共享层、邀请码、配额和共享层编辑权。
