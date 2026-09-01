@@ -96,10 +96,7 @@ describe("AnnotationOverlay", () => {
     expect(screen.getByText("轻点任意位置添加文字")).toBeInTheDocument();
     const overlay = screen.getByLabelText("第 1 页批注层");
     mockBounds(overlay);
-    const stableInput = document.querySelector<HTMLTextAreaElement>(
-      ".annotation-text-composer textarea",
-    );
-    expect(stableInput).not.toBeNull();
+    expect(document.querySelector(".annotation-text-composer textarea")).toBeNull();
     overlay.addEventListener("pointerup", () => {
       handlingPointerUp = true;
     });
@@ -123,15 +120,15 @@ describe("AnnotationOverlay", () => {
     handlingPointerUp = false;
     const composer = screen.getByRole("form", { name: "文字输入" });
     const input = screen.getByLabelText("批注文本") as HTMLTextAreaElement;
+    const stableInput = input;
     expect(composer).toHaveClass("annotation-text-composer");
-    expect(input).toBe(stableInput);
     expect(input).toHaveFocus();
     expect(focusStates[0]).toEqual({
       active: true,
       hidden: null,
       tabIndex: 0,
       sameEventStack: true,
-      preventScroll: true,
+      preventScroll: false,
     });
     expect(interactions).toEqual(["composing-text"]);
     expect(input).toHaveStyle({ color: "rgb(161, 38, 82)" });
@@ -220,12 +217,28 @@ describe("AnnotationOverlay", () => {
     expect(focus).not.toHaveBeenCalled();
   });
 
-  it("keeps Apple Pencil activation on the same textarea without simulating system UI", () => {
-    const focus = vi.spyOn(HTMLTextAreaElement.prototype, "focus");
+  it("mounts and autofocuses a fresh textarea during Pencil pointerdown", () => {
+    let handlingPointerDown = false;
+    const focusStates: Array<{
+      active: boolean;
+      sameEventStack: boolean;
+    }> = [];
+    vi.spyOn(HTMLTextAreaElement.prototype, "focus").mockImplementation(function (
+      this: HTMLTextAreaElement,
+    ) {
+      focusStates.push({
+        active: this.closest("form")?.hasAttribute("data-active") ?? false,
+        sameEventStack: handlingPointerDown,
+      });
+      HTMLElement.prototype.focus.call(this);
+    });
     renderOverlay([], "text");
     const overlay = screen.getByLabelText("第 1 页批注层");
     mockBounds(overlay);
-    const stableInput = document.querySelector(".annotation-text-composer textarea");
+    expect(document.querySelector(".annotation-text-composer textarea")).toBeNull();
+    overlay.addEventListener("pointerdown", () => {
+      handlingPointerDown = true;
+    });
 
     fireEvent.pointerDown(overlay, {
       pointerId: 7,
@@ -233,6 +246,71 @@ describe("AnnotationOverlay", () => {
       clientX: 20,
       clientY: 30,
     });
+    handlingPointerDown = false;
+
+    const input = screen.getByLabelText("批注文本");
+    expect(input).toHaveFocus();
+    expect(focusStates).toEqual([{ active: true, sameEventStack: true }]);
+  });
+
+  it("closes the Pencil composer when placement becomes a drag or is cancelled", () => {
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    mockBounds(overlay);
+
+    fireEvent.pointerDown(overlay, {
+      pointerId: 7,
+      pointerType: "pen",
+      clientX: 20,
+      clientY: 30,
+    });
+    expect(screen.getByRole("form", { name: "文字输入" })).toBeInTheDocument();
+    fireEvent.pointerMove(overlay, {
+      pointerId: 7,
+      pointerType: "pen",
+      clientX: 40,
+      clientY: 30,
+    });
+    fireEvent.pointerUp(overlay, {
+      pointerId: 7,
+      pointerType: "pen",
+      clientX: 40,
+      clientY: 30,
+    });
+    expect(screen.queryByRole("form", { name: "文字输入" })).not.toBeInTheDocument();
+    expect(document.querySelector(".annotation-text-composer textarea")).toBeNull();
+
+    fireEvent.pointerDown(overlay, {
+      pointerId: 8,
+      pointerType: "pen",
+      clientX: 20,
+      clientY: 30,
+    });
+    expect(screen.getByRole("form", { name: "文字输入" })).toBeInTheDocument();
+    fireEvent.pointerCancel(overlay, {
+      pointerId: 8,
+      pointerType: "pen",
+      clientX: 20,
+      clientY: 30,
+    });
+    expect(screen.queryByRole("form", { name: "文字输入" })).not.toBeInTheDocument();
+    expect(document.querySelector(".annotation-text-composer textarea")).toBeNull();
+  });
+
+  it("keeps Apple Pencil activation on the same textarea without simulating system UI", () => {
+    const focus = vi.spyOn(HTMLTextAreaElement.prototype, "focus");
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    mockBounds(overlay);
+    expect(document.querySelector(".annotation-text-composer textarea")).toBeNull();
+
+    fireEvent.pointerDown(overlay, {
+      pointerId: 7,
+      pointerType: "pen",
+      clientX: 20,
+      clientY: 30,
+    });
+    const stableInput = screen.getByLabelText("批注文本");
     fireEvent.pointerUp(overlay, {
       pointerId: 7,
       pointerType: "pen",

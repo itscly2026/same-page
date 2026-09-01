@@ -37,6 +37,9 @@ jobs:
       - name: Worker tests
         run: npm run test:worker
 
+      - name: Install Playwright WebKit
+        run: npx playwright install --with-deps webkit
+
       - name: Visual report tests
         run: npm run test:visual-report
 
