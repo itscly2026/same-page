@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { authClient } from "../auth/auth-client";
@@ -176,6 +176,11 @@ describe("AuthPage", () => {
         if (input === "/api/auth/social-providers") {
           return Promise.resolve(Response.json({ providers: ["google"] }));
         }
+        if (input === "/api/auth/get-session") {
+          return Promise.resolve(
+            Response.json({ user: { id: "google-user" } }),
+          );
+        }
         if (input === "/api/guest/session" && !init?.method) {
           return Promise.resolve(
             Response.json({
@@ -212,6 +217,11 @@ describe("AuthPage", () => {
         if (input === "/api/auth/social-providers") {
           return Promise.resolve(Response.json({ providers: ["wechat"] }));
         }
+        if (input === "/api/auth/get-session") {
+          return Promise.resolve(
+            Response.json({ user: { id: "wechat-user" } }),
+          );
+        }
         if (input === "/api/guest/session") {
           return Promise.resolve(
             Response.json({
@@ -244,6 +254,112 @@ describe("AuthPage", () => {
 
     expect(await screen.findByLabelText("显示名")).toBeInTheDocument();
     expect(screen.getByText(/认证已完成/)).toHaveTextContent("小红花云盘");
+  });
+
+  it("returns a normal social sign-in to the home route", async () => {
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input === "/api/auth/social-providers") {
+        return Promise.resolve(Response.json({ providers: ["google"] }));
+      }
+      if (input === "/api/auth/get-session") {
+        return Promise.resolve(Response.json({ user: { id: "google-user" } }));
+      }
+      if (input === "/api/guest/session") {
+        return Promise.resolve(new Response(null, { status: 401 }));
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderAuthPage("/login?oauth=complete");
+
+    expect(await screen.findByLabelText("current route")).toHaveTextContent("/");
+  });
+
+  it("enters the choir directly for an existing member after social authentication", async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      (input: string, init?: RequestInit) => {
+        if (input === "/api/auth/social-providers") {
+          return Promise.resolve(Response.json({ providers: ["wechat"] }));
+        }
+        if (input === "/api/auth/get-session") {
+          return Promise.resolve(Response.json({ user: { id: "wechat-user" } }));
+        }
+        if (input === "/api/guest/session" && !init?.method) {
+          return Promise.resolve(
+            Response.json({
+              choir: {
+                id: "choir-1",
+                name: "小红花云盘",
+                guestAdmissionMode: "invite",
+              },
+              entryKind: "admission",
+            }),
+          );
+        }
+        if (input === "/api/choirs/current-guest/join-state") {
+          return Promise.resolve(
+            Response.json({
+              status: "joined",
+              choir: {
+                id: "choir-1",
+                name: "小红花云盘",
+                guestAdmissionMode: "invite",
+              },
+            }),
+          );
+        }
+        if (input === "/api/guest/session" && init?.method === "DELETE") {
+          return Promise.resolve(new Response(null, { status: 204 }));
+        }
+        return Promise.resolve(new Response(null, { status: 404 }));
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderAuthPage("/login?oauth=complete");
+
+    expect(await screen.findByLabelText("current route")).toHaveTextContent(
+      "/choirs/choir-1",
+    );
+    expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", {
+      method: "DELETE",
+    });
+  });
+
+  it("does not mutate guest context for a forged OAuth completion URL", async () => {
+    sessionStorage.setItem(
+      "same-page:social-auth-email-draft",
+      "singer@example.test",
+    );
+    const fetchMock = vi.fn().mockImplementation(
+      (input: string, init?: RequestInit) => {
+        if (input === "/api/auth/social-providers") {
+          return Promise.resolve(Response.json({ providers: ["google"] }));
+        }
+        if (input === "/api/auth/get-session") {
+          return Promise.resolve(Response.json(null));
+        }
+        if (input === "/api/guest/session" && init?.method === "DELETE") {
+          return Promise.resolve(new Response(null, { status: 204 }));
+        }
+        return Promise.resolve(new Response(null, { status: 404 }));
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderAuthPage("/login?oauth=complete");
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "第三方登录没有建立有效会话，请重试或继续使用邮箱。",
+    );
+    expect(screen.getByLabelText("邮箱")).toHaveValue("singer@example.test");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/guest/session", {
+      method: "DELETE",
+    });
+    expect(sessionStorage.getItem("same-page:social-auth-email-draft")).toBe(
+      "singer@example.test",
+    );
   });
 
   it("registers first and only then asks for an invite choir display name", async () => {
@@ -452,7 +568,15 @@ async function identify(email: string) {
 function renderAuthPage(initialEntry = "/login") {
   render(
     <MemoryRouter initialEntries={[initialEntry]}>
-      <AuthPage />
+      <Routes>
+        <Route path="/login" element={<AuthPage />} />
+        <Route path="*" element={<CurrentRoute />} />
+      </Routes>
     </MemoryRouter>,
   );
+}
+
+function CurrentRoute() {
+  const location = useLocation();
+  return <output aria-label="current route">{location.pathname}</output>;
 }

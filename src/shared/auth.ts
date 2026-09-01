@@ -16,6 +16,10 @@ export const socialAuthProvidersResponseSchema = z.object({
   providers: z.array(socialAuthProviderSchema),
 });
 
+export const authSessionResponseSchema = z.object({
+  user: z.object({ id: z.string().min(1) }),
+});
+
 const INTERNAL_AUTH_EMAIL_SUFFIX = ".placeholder.invalid";
 
 export function isInternalAuthEmail(email: string) {

@@ -49,6 +49,20 @@
 - 部署代码、平台审核通过、生产 Secret 完整、真实账号授权成功是四个独立门槛。只有最后一项
   通过后，才能把对应提供方记为生产可用。
 
+### 第三方登录故障排查
+
+排查只记录提供方、时间、HTTP 状态和非敏感错误类别；不得复制授权 URL、callback query、
+authorization code、token、完整 profile 或 Secret。
+
+| 症状 | 检查 |
+| --- | --- |
+| Google 或微信图标未出现 | 请求 `/api/auth/social-providers`，确认响应仍为 `no-store`；用 `wrangler secret list` 只核对对应 Client ID / Secret 的名称是否成对存在，不读取或打印值。缺一项时隐藏入口是预期行为。 |
+| Google 报 redirect URI 不匹配 | 核对 Web application client 的精确回调是 `https://samepage.clyapps.com/api/auth/callback/google`，协议、域名、路径和尾部斜杠必须一致。 |
+| Google 只允许测试用户或显示 consent 错误 | 核对 consent screen 的测试/发布状态、测试用户、品牌域名和已验证域名；平台未发布不能记为生产可用。 |
+| 微信提示 AppID、scope 或回调域错误 | 确认使用已审核的开放平台“网站应用”，scope 为 `snsapi_login`，AppID 属于该应用，授权回调域为 `samepage.clyapps.com`；公众号网页授权配置不能替代。 |
+| 提供方确认后回到登录页并提示失败 | 先确认 `/api/health` 和邮箱登录正常，再按时间查 Worker 的非敏感状态日志；不要在日志或 Issue 中粘贴 callback URL。state 失效或重复回调应安全返回登录页，不能绕过重试。 |
+| 中国大陆网络下 Google 超时 | 记录网络、设备和时间，将 Google 判为该场景不可用；确认邮箱入口始终可见可用。不要通过放宽 OAuth 校验或增加代理回调规避。 |
+
 后续 `main` 发布必须先通过 CI 的 lint、typecheck、客户端测试、Worker 测试和生产构建。
 deploy job 随后执行 D1 migrations、Wrangler deploy 与线上机器验证；迁移或验证失败时
 workflow 失败，不能记为发布成功。

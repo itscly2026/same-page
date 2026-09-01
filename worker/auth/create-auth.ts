@@ -19,12 +19,34 @@ export function createAuth(env: Env, executionContext: WaitUntilContext) {
     baseURL: env.BETTER_AUTH_URL,
     secret: env.BETTER_AUTH_SECRET,
     trustedOrigins: [env.BETTER_AUTH_URL],
+    disabledPaths: [
+      "/account-info",
+      "/get-access-token",
+      "/link-social",
+      "/list-accounts",
+      "/refresh-token",
+      "/unlink-account",
+    ],
     database: drizzleAdapter(database, {
       provider: "sqlite",
       schema,
     }),
     account: {
       encryptOAuthTokens: true,
+    },
+    databaseHooks: {
+      account: {
+        create: {
+          async before(account) {
+            return { data: { ...account, idToken: null } };
+          },
+        },
+        update: {
+          async before(account) {
+            return { data: { ...account, idToken: null } };
+          },
+        },
+      },
     },
     onAPIError: {
       errorURL: "/login?oauth=error",

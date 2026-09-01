@@ -17,6 +17,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import {
   authFlowResponseSchema,
+  authSessionResponseSchema,
   PASSWORD_POLICY,
   socialAuthProvidersResponseSchema,
   type SocialAuthProvider,
@@ -294,8 +295,18 @@ export default function AuthPage() {
     if (oauthResult === "error") return;
     if (oauthResult !== "complete") return;
 
-    clearSocialEmailDraft();
-    void finishAuthentication().finally(() => setSubmitting(false));
+    void confirmAuthenticatedSession()
+      .then(async (authenticated) => {
+        if (!authenticated) {
+          setMessage(
+            "第三方登录没有建立有效会话，请重试或继续使用邮箱。",
+          );
+          return;
+        }
+        clearSocialEmailDraft();
+        await finishAuthentication();
+      })
+      .finally(() => setSubmitting(false));
   }, [finishAuthentication, location.search, navigate]);
 
   const startSocialAuthentication = async (provider: SocialAuthProvider) => {
@@ -682,6 +693,14 @@ function clearSocialEmailDraft() {
   } catch {
     // Storage can be unavailable in hardened browser contexts.
   }
+}
+
+async function confirmAuthenticatedSession() {
+  const response = await fetch("/api/auth/get-session", {
+    cache: "no-store",
+  }).catch(() => null);
+  if (!response?.ok) return false;
+  return authSessionResponseSchema.safeParse(await response.json()).success;
 }
 
 function EmailField(props: {

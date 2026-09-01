@@ -43,7 +43,7 @@ Same Page 的认证首屏以邮箱为主入口：用户先输入邮箱，服务�
 
 Google 使用其已验证邮箱；Better Auth 只在安全确认相同邮箱时复用现有用户。不同邮箱不会被推断为同一人，也不提供手工合并、绑定或解绑。微信网站应用登录优先使用 `unionid`，否则使用该应用命名空间内的 `openid`；微信不提供邮箱时生成不可投递的内部占位地址，该地址不得用于 OTP、密码重置或联系用户。所有登录方式完成后复用同一套访客续接、公开体验退出和云盘内显示名流程。
 
-认证由 Same Page 自己的 Better Auth/D1 边界负责；OAuth token 加密后保存。认证邮件通过独立的 Resend Sending-only key 和发送域发出，不调用或共享现有 Webmail 的 API、Secret 或 Sent 数据。
+认证由 Same Page 自己的 Better Auth/D1 边界负责；OAuth access token 与 refresh token 加密后保存，完成身份验证后不持久化 Google ID token。认证邮件通过独立的 Resend Sending-only key 和发送域发出，不调用或共享现有 Webmail 的 API、Secret 或 Sent 数据。
 
 权限只在所属云盘内生效：
 

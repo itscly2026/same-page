@@ -186,6 +186,127 @@ describe("authentication and choir boundaries", () => {
     );
   });
 
+  it("returns WeChat token and profile network failures to the internal login route", async () => {
+    const failures = [
+      {
+        configure() {
+          network.use(
+            http.get(
+              "https://api.weixin.qq.com/sns/oauth2/access_token",
+              () => HttpResponse.json({ error: "unavailable" }, { status: 503 }),
+            ),
+          );
+        },
+      },
+      {
+        configure() {
+          network.use(
+            http.get(
+              "https://api.weixin.qq.com/sns/oauth2/access_token",
+              () =>
+                HttpResponse.json({
+                  access_token: "wechat-access-token",
+                  expires_in: 7200,
+                  refresh_token: "wechat-refresh-token",
+                  openid: "wechat-openid",
+                  scope: "snsapi_login",
+                }),
+            ),
+            http.get("https://api.weixin.qq.com/sns/userinfo", () =>
+              HttpResponse.json({ error: "unavailable" }, { status: 503 }),
+            ),
+          );
+        },
+      },
+    ];
+
+    for (const failure of failures) {
+      failure.configure();
+      const start = await callWorker("/api/auth/sign-in/social", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://same-page.test",
+        },
+        body: JSON.stringify({
+          provider: "wechat",
+          callbackURL: "/login?oauth=complete",
+          errorCallbackURL: "/login?oauth=error",
+        }),
+      });
+      const startBody = (await start.json()) as { url: string };
+      const state = new URL(startBody.url).searchParams.get("state");
+      const callback = await callWorker(
+        `/api/auth/callback/wechat?code=wechat-code&state=${encodeURIComponent(state!)}`,
+        {
+          headers: { cookie: cookieFrom(start) },
+          redirect: "manual",
+        },
+      );
+
+      expect(callback.status).toBe(302);
+      const location = new URL(
+        callback.headers.get("location")!,
+        "https://same-page.test",
+      );
+      expect(location.pathname).toBe("/login");
+      expect(location.searchParams.get("oauth")).toBe("error");
+      expect(location.searchParams.get("error")).toBeTruthy();
+      expect(location.href).not.toContain("wechat-code");
+      expect(location.href).not.toContain("wechat-access-token");
+    }
+
+    const database = createDatabase(env.DB);
+    expect(await database.select().from(user)).toHaveLength(0);
+    expect(await database.select().from(account)).toHaveLength(0);
+  });
+
+  it("rejects an OAuth continuation outside the trusted Same Page origin", async () => {
+    const response = await callWorker("/api/auth/sign-in/social", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://same-page.test",
+      },
+      body: JSON.stringify({
+        provider: "google",
+        callbackURL: "https://attacker.example/after-auth",
+        errorCallbackURL: "/login?oauth=error",
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).not.toContain("attacker.example");
+  });
+
+  it("does not expose manual account management or provider token endpoints", async () => {
+    const registration = await registerWithPassword({
+      callWorker,
+      email: "account-boundary@example.test",
+      latestOtp,
+    });
+    const requests: Array<[string, RequestInit]> = [
+      ["/api/auth/account-info", { method: "GET" }],
+      ["/api/auth/get-access-token", { method: "POST" }],
+      ["/api/auth/link-social", { method: "POST" }],
+      ["/api/auth/list-accounts", { method: "GET" }],
+      ["/api/auth/refresh-token", { method: "POST" }],
+      ["/api/auth/unlink-account", { method: "POST" }],
+    ];
+
+    for (const [path, init] of requests) {
+      const response = await callWorker(path, {
+        ...init,
+        headers: {
+          "content-type": "application/json",
+          cookie: registration.cookie,
+        },
+        ...(init.method === "POST" ? { body: "{}" } : {}),
+      });
+      expect(response.status, path).toBe(404);
+    }
+  });
+
   it("creates one WeChat user from unionid with non-routable email and encrypted tokens", async () => {
     const firstSessionCookie = await completeWechatAuthentication();
     expect(firstSessionCookie).toContain("better-auth.session_token=");
@@ -263,7 +384,7 @@ describe("authentication and choir boundaries", () => {
       emailVerified: true,
     });
 
-    await completeGoogleAuthentication({
+    const googleIdToken = await completeGoogleAuthentication({
       subject: "google-existing-subject",
       email: "verified@example.test",
       name: "Google 昵称",
@@ -272,13 +393,18 @@ describe("authentication and choir boundaries", () => {
     expect(users).toHaveLength(1);
     expect(users[0].id).toBe(existingUserId);
     expect(users[0].name).toBe("邮箱成员");
-    expect(await database.select().from(account)).toContainEqual(
+    const googleAccounts = await database.select().from(account);
+    expect(googleAccounts).toContainEqual(
       expect.objectContaining({
         accountId: "google-existing-subject",
+        idToken: null,
         providerId: "google",
         userId: existingUserId,
       }),
     );
+    expect(googleAccounts[0].idToken).not.toBe(googleIdToken);
+    expect(googleAccounts[0].accessToken).not.toBe("google-access-token");
+    expect(googleAccounts[0].refreshToken).not.toBe("google-refresh-token");
 
     await completeGoogleAuthentication({
       subject: "google-existing-subject",
@@ -1273,4 +1399,5 @@ async function completeGoogleAuthentication(profile: {
   );
   expect(callback.status, await callback.clone().text()).toBe(302);
   expect(callback.headers.get("location")).toBe("/login?oauth=complete");
+  return idToken;
 }
