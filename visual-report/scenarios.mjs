@@ -92,6 +92,18 @@ export const visualReportScenarios = [
     actions: [],
   },
   {
+    id: "library-admin-management",
+    title: "文件库 · 管理入口",
+    description: "低频的回收站、邀请码与存储信息集中在管理菜单。",
+    device: "narrow",
+    identity: "admin",
+    route: "/choirs/visual-choir",
+    ready: { type: "role", role: "menu", name: "管理员菜单" },
+    actions: [
+      { type: "clickRole", role: "button", name: "管理" },
+    ],
+  },
+  {
     id: "library-preview-signed-in",
     title: "文件库 · 登录用户只读体验",
     description: "登录但未加入的用户以只读访客身份浏览公开体验云盘。",

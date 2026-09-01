@@ -828,9 +828,10 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "轮换邀请码" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "管理" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "邀请码" }));
+    expect(await screen.findByRole("dialog", { name: "邀请码" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "轮换邀请码" }));
 
     expect(
       await screen.findByText("邀请码已轮换。请现在复制并通过私密渠道发送。"),
@@ -896,42 +897,40 @@ describe("AppRoutes", () => {
   });
 
   it("shows members a filename-first list without administrator storage controls", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: string) =>
-        Promise.resolve(
-          input.includes("/scores")
-            ? Response.json({
-                scores: [
-                  {
-                    id: "score-10",
-                    choirId: "choir-1",
-                    fileName: "排练 10.pdf",
-                    updatedAt: 1,
-                    currentVersion: {
-                      id: "version-1",
-                      versionNumber: 1,
-                      sizeBytes: 2 * 1024 * 1024,
-                      sha256: "a".repeat(64),
-                      etag: '"etag"',
-                      pageCount: 2,
-                      createdAt: 1,
-                    },
+    const fetchMock = vi.fn().mockImplementation((input: string) =>
+      Promise.resolve(
+        input.includes("/scores")
+          ? Response.json({
+              scores: [
+                {
+                  id: "score-10",
+                  choirId: "choir-1",
+                  fileName: "排练 10.pdf",
+                  updatedAt: 1,
+                  currentVersion: {
+                    id: "version-1",
+                    versionNumber: 1,
+                    sizeBytes: 2 * 1024 * 1024,
+                    sha256: "a".repeat(64),
+                    etag: '"etag"',
+                    pageCount: 2,
+                    createdAt: 1,
                   },
-                ],
-                storage: { usedBytes: 950_000_000, limitBytes: 1_073_741_824 },
-                permissions: { canManage: false },
-              })
-            : Response.json({
-                choir: {
-                  id: "choir-1",
-                  name: "小红花云盘",
-                  guestAdmissionMode: "invite",
                 },
-              }),
-        ),
+              ],
+              storage: { usedBytes: 950_000_000, limitBytes: 1_073_741_824 },
+              permissions: { canManage: false },
+            })
+          : Response.json({
+              choir: {
+                id: "choir-1",
+                name: "小红花云盘",
+                guestAdmissionMode: "invite",
+              },
+            }),
       ),
     );
+    vi.stubGlobal("fetch", fetchMock);
 
     render(
       <MemoryRouter initialEntries={["/choirs/choir-1"]}>
@@ -947,6 +946,16 @@ describe("AppRoutes", () => {
     expect(screen.queryByRole("button", { name: "回收站" })).not.toBeInTheDocument();
     expect(screen.queryByText(/云盘存储已使用/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/更多操作/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "搜索" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索文件名" }), {
+      target: { value: "排练" },
+    });
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/choirs/choir-1/scores?q=%E6%8E%92%E7%BB%83",
+      );
+    });
   });
 
   it("uploads files independently and reports invalid and duplicate files in place", async () => {
