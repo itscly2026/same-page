@@ -107,6 +107,100 @@ describe("useReaderGestures", () => {
   });
 
   it.each([
+    {
+      name: "center with existing scroll",
+      first: 100,
+      second: 300,
+      moved: 500,
+      initialScroll: 100,
+      expectedScroll: 300,
+    },
+    {
+      name: "left edge",
+      first: 0,
+      second: 100,
+      moved: 200,
+      initialScroll: 0,
+      expectedScroll: 0,
+    },
+    {
+      name: "right edge",
+      first: 500,
+      second: 600,
+      moved: 700,
+      initialScroll: 0,
+      expectedScroll: 500,
+    },
+  ])("commits $name geometry before a delayed PDF redraw", async ({
+    first,
+    second,
+    moved,
+    initialScroll,
+    expectedScroll,
+  }) => {
+    let finishRedraw: (() => void) | undefined;
+    const redraw = new Promise<void>((resolve) => {
+      finishRedraw = resolve;
+    });
+    const renderPage = vi
+      .fn()
+      .mockReturnValueOnce({ promise: Promise.resolve(), cancel: vi.fn() })
+      .mockReturnValueOnce({ promise: redraw, cancel: vi.fn() });
+    const document = {
+      getPage: vi.fn().mockResolvedValue({
+        getViewport: ({ scale }: { scale: number }) => ({
+          width: 600 * scale,
+          height: 800 * scale,
+        }),
+        render: renderPage,
+      }),
+    } as unknown as PDFDocumentProxy;
+    render(
+      <RenderingGestureHarness document={document} onZoomChange={vi.fn()} />,
+    );
+    const viewport = screen.getByTestId("gesture-viewport");
+    const content = screen.getByTestId("gesture-content");
+    vi.spyOn(viewport, "getBoundingClientRect").mockImplementation(() =>
+      rect(0, 0, 1000, 800),
+    );
+    vi.spyOn(content, "getBoundingClientRect").mockImplementation(() => {
+      const page = content.querySelector<HTMLElement>(".pdf-page-canvas");
+      return rect(
+        -viewport.scrollLeft,
+        -viewport.scrollTop,
+        Number.parseFloat(page?.style.width ?? "0"),
+        Number.parseFloat(page?.style.height ?? "0"),
+      );
+    });
+    await waitFor(() => expect(renderPage).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(content.querySelector("[data-pdf-canvas-active]")).not.toBeNull(),
+    );
+    const firstCanvas = content.querySelector("[data-pdf-canvas-active]");
+    viewport.scrollLeft = initialScroll;
+
+    fireEvent.pointerDown(viewport, { pointerId: 1, clientX: first, clientY: 200 });
+    fireEvent.pointerDown(viewport, { pointerId: 2, clientX: second, clientY: 200 });
+    fireEvent.pointerMove(viewport, { pointerId: 2, clientX: moved, clientY: 200 });
+    flushAnimationFrame();
+    fireEvent.pointerUp(viewport, { pointerId: 2, clientX: moved, clientY: 200 });
+    fireEvent.pointerUp(viewport, { pointerId: 1, clientX: first, clientY: 200 });
+
+    expect(content.querySelector<HTMLElement>(".pdf-page-canvas")?.style.width).toBe(
+      "1200px",
+    );
+    expect(viewport.scrollLeft).toBeCloseTo(expectedScroll);
+    expect(content.querySelector("[data-pdf-canvas-active]")).toBe(firstCanvas);
+    await waitFor(() => expect(renderPage).toHaveBeenCalledTimes(2));
+
+    finishRedraw?.();
+    await waitFor(() =>
+      expect(content.querySelector("[data-pdf-canvas-active]")).not.toBe(firstCanvas),
+    );
+    expect((firstCanvas as HTMLCanvasElement).width).toBe(1);
+  });
+
+  it.each([
     { name: "left edge", first: 20, second: 120, moved: 220, scrollLeft: 20 },
     { name: "right edge", first: 800, second: 900, moved: 1000, scrollLeft: 800 },
   ])("keeps the anchored PDF point stable at the $name", ({ first, second, moved, scrollLeft }) => {
