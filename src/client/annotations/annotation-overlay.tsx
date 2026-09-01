@@ -116,7 +116,7 @@ export function AnnotationOverlay({
   const [deleteActive, setDeleteActive] = useState(false);
   const deleteActiveRef = useRef(false);
   const deleteTargetRef = useRef<HTMLDivElement>(null);
-  const visualViewport = useVisualViewport();
+  const visualViewport = useVisualViewport(editing);
   const visibleLayerIds = new Set(
     layers
       .filter((layer) => (editing ? layer.id === activeLayerId : layer.visible))
@@ -629,7 +629,7 @@ export function AnnotationOverlay({
       })}
 
       </div>
-      {createPortal(
+      {editing ? createPortal(
         <>
           {editing && tool === "text" && !textEditor && !transformingText ? (
             <p className="annotation-text-hint" role="status">轻点任意位置添加文字</p>
@@ -744,7 +744,7 @@ export function AnnotationOverlay({
           </form>
         </>,
         document.body,
-      )}
+      ) : null}
     </>
   );
 }
@@ -757,7 +757,7 @@ function capturePointer(element: Element, pointerId: number) {
   }
 }
 
-function useVisualViewport() {
+function useVisualViewport(enabled: boolean) {
   const read = () => ({
     top: window.visualViewport?.offsetTop ?? 0,
     left: window.visualViewport?.offsetLeft ?? 0,
@@ -766,6 +766,7 @@ function useVisualViewport() {
   });
   const [viewport, setViewport] = useState(read);
   useEffect(() => {
+    if (!enabled) return;
     const target = window.visualViewport;
     const update = () => setViewport(read());
     target?.addEventListener("resize", update);
@@ -776,7 +777,7 @@ function useVisualViewport() {
       target?.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
     };
-  }, []);
+  }, [enabled]);
   return viewport;
 }
 

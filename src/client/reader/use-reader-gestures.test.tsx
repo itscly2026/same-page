@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useReaderGestures } from "./use-reader-gestures";
 import { PdfPageCanvas } from "./pdf-page";
 import type { PDFDocumentProxy } from "./pdf-document";
+import type { PageTurnGesture } from "./use-paged-reader";
 
 let nextFrameId = 1;
 let frames = new Map<number, FrameRequestCallback>();
@@ -36,6 +37,7 @@ describe("useReaderGestures", () => {
     render(<GestureHarness onZoomChange={onZoomChange} />);
     const viewport = screen.getByTestId("gesture-viewport");
     const content = screen.getByTestId("gesture-content");
+    const boundary = screen.getByTestId("gesture-boundary");
     mockGeometry(viewport, content);
     viewport.scrollLeft = 100;
     viewport.scrollTop = 50;
@@ -49,6 +51,7 @@ describe("useReaderGestures", () => {
     expect(content.style.getPropertyValue("--reader-gesture-scale")).toBe("2");
     expect(content.style.getPropertyValue("--reader-gesture-x")).toBe("-300px");
     expect(content.style.getPropertyValue("--reader-gesture-y")).toBe("-250px");
+    expect(boundary).toHaveAttribute("data-gesture-preview");
     expect(onZoomChange).not.toHaveBeenCalled();
 
     fireEvent.pointerUp(viewport, { pointerId: 2, clientX: 600, clientY: 200 });
@@ -59,6 +62,27 @@ describe("useReaderGestures", () => {
     expect(viewport.scrollTop).toBeCloseTo(300);
     expect(onZoomChange).toHaveBeenCalledTimes(1);
     expect(content).not.toHaveAttribute("data-gesture-preview");
+    expect(boundary).not.toHaveAttribute("data-gesture-preview");
+  });
+
+  it("does not begin a pinch while an uncancellable page transition is active", () => {
+    const pageTurn: PageTurnGesture = {
+      begin: vi.fn(),
+      move: vi.fn(() => false),
+      end: vi.fn(() => false),
+      cancel: vi.fn(() => false),
+    };
+    render(<GestureHarness onZoomChange={vi.fn()} pageTurn={pageTurn} />);
+    const viewport = screen.getByTestId("gesture-viewport");
+    const boundary = screen.getByTestId("gesture-boundary");
+
+    fireEvent.pointerDown(viewport, { pointerId: 1, clientX: 200, clientY: 200 });
+    fireEvent.pointerDown(viewport, { pointerId: 2, clientX: 400, clientY: 200 });
+    fireEvent.pointerMove(viewport, { pointerId: 2, clientX: 600, clientY: 200 });
+
+    expect(pageTurn.cancel).toHaveBeenCalledWith(1, true);
+    expect(boundary).not.toHaveAttribute("data-gesture-preview");
+    expect(frames).toHaveLength(0);
   });
 
   it("coalesces 60 pointer samples into one preview and one bounded PDF redraw", async () => {
@@ -261,13 +285,21 @@ describe("useReaderGestures", () => {
   });
 });
 
-function GestureHarness({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
+function GestureHarness({
+  onZoomChange,
+  pageTurn,
+}: {
+  onZoomChange: (zoom: number) => void;
+  pageTurn?: PageTurnGesture;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const previewBoundaryRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const handlers = useReaderGestures({
     containerRef,
     contentRef,
+    previewBoundaryRef,
     disabled: false,
     zoom,
     onZoomChange: (value) => {
@@ -275,6 +307,7 @@ function GestureHarness({ onZoomChange }: { onZoomChange: (zoom: number) => void
       setZoom(value);
     },
     onTap: vi.fn(),
+    pageTurn,
   });
   return (
     <div
@@ -283,7 +316,9 @@ function GestureHarness({ onZoomChange }: { onZoomChange: (zoom: number) => void
       data-zoom={zoom}
       {...handlers}
     >
-      <div ref={contentRef} data-testid="gesture-content" />
+      <div ref={previewBoundaryRef} data-testid="gesture-boundary">
+        <div ref={contentRef} data-testid="gesture-content" />
+      </div>
     </div>
   );
 }
@@ -297,10 +332,12 @@ function RenderingGestureHarness({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const previewBoundaryRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const handlers = useReaderGestures({
     containerRef,
     contentRef,
+    previewBoundaryRef,
     disabled: false,
     zoom,
     onZoomChange: (value) => {
@@ -316,8 +353,10 @@ function RenderingGestureHarness({
       data-zoom={zoom}
       {...handlers}
     >
-      <div ref={contentRef} data-testid="gesture-content">
-        <PdfPageCanvas document={document} pageNumber={1} width={600 * zoom} />
+      <div ref={previewBoundaryRef} data-testid="gesture-boundary">
+        <div ref={contentRef} data-testid="gesture-content">
+          <PdfPageCanvas document={document} pageNumber={1} width={600 * zoom} />
+        </div>
       </div>
     </div>
   );

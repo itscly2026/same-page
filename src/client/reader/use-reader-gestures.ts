@@ -6,6 +6,8 @@ import {
   useRef,
 } from "react";
 
+import type { PageTurnGesture } from "./use-paged-reader";
+
 const MIN_PINCH_ZOOM = 0.75;
 const MIN_SETTLED_ZOOM = 1;
 const MAX_ZOOM = 3;
@@ -33,22 +35,26 @@ interface PinchPreview {
 export function useReaderGestures({
   containerRef,
   contentRef,
+  previewBoundaryRef,
   disabled,
   zoom,
   onZoomChange,
   onTap,
   onEdgeTap,
-  onSwipe,
+  pageTurn,
+  pageTurnExtent,
   panAtFit = false,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   contentRef: RefObject<HTMLElement | null>;
+  previewBoundaryRef?: RefObject<HTMLElement | null>;
   disabled: boolean;
   zoom: number;
   onZoomChange(value: number): void;
   onTap(): void;
   onEdgeTap?(direction: "previous" | "next"): void;
-  onSwipe?(direction: "previous" | "next"): void;
+  pageTurn?: PageTurnGesture;
+  pageTurnExtent?: number;
   panAtFit?: boolean;
 }) {
   const points = useRef(new Map<number, Point>());
@@ -67,22 +73,24 @@ export function useReaderGestures({
   const pinched = useRef(false);
 
   const clearPreview = useCallback(() => {
+    previewBoundaryRef?.current?.removeAttribute("data-gesture-preview");
     const content = contentRef.current;
     if (!content) return;
     content.style.removeProperty("--reader-gesture-scale");
     content.style.removeProperty("--reader-gesture-x");
     content.style.removeProperty("--reader-gesture-y");
     content.removeAttribute("data-gesture-preview");
-  }, [contentRef]);
+  }, [contentRef, previewBoundaryRef]);
 
   const paintPreview = useCallback((next: PinchPreview) => {
     const content = contentRef.current;
     if (!content) return;
+    previewBoundaryRef?.current?.setAttribute("data-gesture-preview", "");
     content.style.setProperty("--reader-gesture-scale", String(next.scale));
     content.style.setProperty("--reader-gesture-x", `${next.offset.x}px`);
     content.style.setProperty("--reader-gesture-y", `${next.offset.y}px`);
     content.setAttribute("data-gesture-preview", "");
-  }, [contentRef]);
+  }, [contentRef, previewBoundaryRef]);
 
   const schedulePreview = useCallback((next: PinchPreview) => {
     preview.current = next;
@@ -140,9 +148,19 @@ export function useReaderGestures({
         scrollTop: container?.scrollTop ?? 0,
       };
       pinched.current = false;
+      pageTurn?.begin(pageTurnSample(event, pageTurnExtent));
       return;
     }
     if (points.current.size !== 2) return;
+    if (
+      primary.current &&
+      pageTurn &&
+      !pageTurn.cancel(primary.current.id, true)
+    ) {
+      points.current.clear();
+      primary.current = null;
+      return;
+    }
     const content = contentRef.current;
     if (!content) return;
     const [first, second] = [...points.current.values()];
@@ -159,6 +177,7 @@ export function useReaderGestures({
     };
     latestZoom.current = zoom;
     pinched.current = true;
+    previewBoundaryRef?.current?.setAttribute("data-gesture-preview", "");
   };
 
   const pointerMove = (event: ReactPointerEvent<HTMLElement>) => {
@@ -208,6 +227,9 @@ export function useReaderGestures({
     const start = primary.current;
     const container = containerRef.current;
     if (!start || !container || start.id !== event.pointerId) return;
+    if (zoom <= 1 && pageTurn?.move(pageTurnSample(event, pageTurnExtent))) {
+      return;
+    }
     if (zoom > 1 || panAtFit) {
       container.scrollLeft = start.scrollLeft - (event.clientX - start.x);
       container.scrollTop = start.scrollTop - (event.clientY - start.y);
@@ -254,6 +276,9 @@ export function useReaderGestures({
     }
     if (!start || start.id !== event.pointerId) return;
     primary.current = null;
+    if (zoom <= 1 && pageTurn?.end(pageTurnSample(event, pageTurnExtent))) {
+      return;
+    }
     const x = event.clientX - start.x;
     const y = event.clientY - start.y;
     if (Math.abs(x) < 10 && Math.abs(y) < 10) {
@@ -273,18 +298,11 @@ export function useReaderGestures({
       onTap();
       return;
     }
-    if (
-      zoom <= 1 &&
-      onSwipe &&
-      Math.abs(x) >= 50 &&
-      Math.abs(x) > Math.abs(y)
-    ) {
-      onSwipe(x < 0 ? "next" : "previous");
-    }
   };
 
   const cancelPointer = (event: ReactPointerEvent<HTMLElement>) => {
     points.current.delete(event.pointerId);
+    pageTurn?.cancel(event.pointerId);
     if (pinched.current) {
       points.current.clear();
       cancelPreviewFrame();
@@ -302,6 +320,22 @@ export function useReaderGestures({
     onPointerMove: pointerMove,
     onPointerUp: finishPointer,
     onPointerCancel: cancelPointer,
+  };
+}
+
+function pageTurnSample(
+  event: ReactPointerEvent<HTMLElement>,
+  extent?: number,
+) {
+  return {
+    pointerId: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    time: event.timeStamp,
+    extent: Math.max(
+      1,
+      extent ?? event.currentTarget.getBoundingClientRect().width,
+    ),
   };
 }
 

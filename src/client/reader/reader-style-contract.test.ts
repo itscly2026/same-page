@@ -17,6 +17,27 @@ describe("reader control style contract", () => {
     );
   });
 
+  it("moves a paper track across a distinct black page gutter", () => {
+    expect(styles).toMatch(
+      /\.page-reader__pager-track \{[\s\S]*?translate3d\(var\(--page-turn-offset, 0px\)/,
+    );
+    expect(styles).toMatch(
+      /\.page-reader__pager-window \{[\s\S]*?overflow: clip/,
+    );
+    expect(styles).toMatch(
+      /\.page-reader__pager-window\[data-gesture-preview\] \{[\s\S]*?overflow: visible/,
+    );
+    expect(styles).toMatch(
+      /\.page-reader__pager-window\[data-gesture-preview\][\s\S]*?\.page-reader__sheet:not\(\[data-page-turn-current\]\)[\s\S]*?visibility: hidden/,
+    );
+    expect(styles).toMatch(
+      /\.page-reader__pager-track\[data-page-turn-phase="settling"\] \{[\s\S]*?transition: transform 240ms/,
+    );
+    expect(styles).toMatch(
+      /\.page-reader__gutter \{[\s\S]*?width: 14px;[\s\S]*?background: #050505;/,
+    );
+  });
+
   it("uses compact floating reader controls instead of a full-width white bar", () => {
     expect(styles).toMatch(
       /\.reader-chrome \{[\s\S]*?pointer-events: none;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/,
