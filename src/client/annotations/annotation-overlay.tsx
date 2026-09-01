@@ -60,6 +60,20 @@ interface TextTransformState {
   moved: boolean;
 }
 
+interface PendingTextPlacement {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  editor: TextEditorState;
+  moved: boolean;
+}
+
+interface TextSelection {
+  start: number;
+  end: number;
+  direction: "forward" | "backward" | "none";
+}
+
 export function AnnotationOverlay({
   workspace,
   pageNumber,
@@ -86,6 +100,8 @@ export function AnnotationOverlay({
   const [editorFontScale, setEditorFontScale] = useState(DEFAULT_TEXT_FONT_SCALE);
   const [fontScaleAdjusting, setFontScaleAdjusting] = useState(false);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
+  const pendingTextPlacement = useRef<PendingTextPlacement | null>(null);
+  const textSelection = useRef<TextSelection | null>(null);
   const currentStrokeId = useRef<string | null>(null);
   const strokeHistoryStarted = useRef(false);
   const eraserPointerId = useRef<number | null>(null);
@@ -173,6 +189,19 @@ export function AnnotationOverlay({
     }
   };
 
+  const focusTextInput = (selection?: TextSelection | null) => {
+    const input = textInputRef.current;
+    if (!input) return;
+    input.focus({ preventScroll: true });
+    if (selection) {
+      input.setSelectionRange(
+        selection.start,
+        selection.end,
+        selection.direction,
+      );
+    }
+  };
+
   const openTextEditor = (editor: TextEditorState) => {
     flushSync(() => {
       setEditorText(editor.initial);
@@ -186,11 +215,13 @@ export function AnnotationOverlay({
     // composer makes the textarea visible and focusable before this call.
     const input = textInputRef.current;
     if (input) input.value = editor.initial;
-    input?.focus({ preventScroll: true });
+    const cursor = editor.initial.length;
+    focusTextInput({ start: cursor, end: cursor, direction: "none" });
   };
 
   const closeTextEditor = () => {
     setFontScaleAdjusting(false);
+    textSelection.current = null;
     setTextEditor(null);
     updateInteraction("idle");
     const input = textInputRef.current;
@@ -388,18 +419,25 @@ export function AnnotationOverlay({
         addTransformPointer(event, textTransform.current);
         return;
       }
-      if (textEditor) return;
+      if (textEditor || pendingTextPlacement.current) return;
       const bounds = event.currentTarget.getBoundingClientRect();
       const position = point(event);
-      openTextEditor({
-        id: crypto.randomUUID(),
-        x: position.x,
-        y: position.y,
-        initial: "",
-        fontScale: DEFAULT_TEXT_FONT_SCALE,
-        pageWidth: bounds.width,
-        source: "new",
-      });
+      capturePointer(event.currentTarget, event.pointerId);
+      pendingTextPlacement.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        moved: false,
+        editor: {
+          id: crypto.randomUUID(),
+          x: position.x,
+          y: position.y,
+          initial: "",
+          fontScale: DEFAULT_TEXT_FONT_SCALE,
+          pageWidth: bounds.width,
+          source: "new",
+        },
+      };
       return;
     }
     if (tool === "eraser") {
@@ -423,6 +461,18 @@ export function AnnotationOverlay({
   };
 
   const pointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const pendingPlacement = pendingTextPlacement.current;
+    if (pendingPlacement?.pointerId === event.pointerId) {
+      if (
+        Math.hypot(
+          event.clientX - pendingPlacement.startX,
+          event.clientY - pendingPlacement.startY,
+        ) > TEXT_DRAG_THRESHOLD_PX
+      ) {
+        pendingPlacement.moved = true;
+      }
+      return;
+    }
     if (textTransform.current?.pointers.has(event.pointerId)) {
       updateTextTransform(event);
       return;
@@ -448,6 +498,17 @@ export function AnnotationOverlay({
   };
 
   const pointerUp = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const pendingPlacement = pendingTextPlacement.current;
+    if (pendingPlacement?.pointerId === event.pointerId) {
+      pendingTextPlacement.current = null;
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      if (!pendingPlacement.moved) {
+        openTextEditor(pendingPlacement.editor);
+      }
+      return;
+    }
     if (textTransform.current?.pointers.has(event.pointerId)) {
       finishTextTransform(event);
       return;
@@ -480,7 +541,9 @@ export function AnnotationOverlay({
         onPointerMove={pointerMove}
         onPointerUp={pointerUp}
         onPointerCancel={(event) => {
-          if (textTransform.current?.pointers.has(event.pointerId)) cancelTextTransform();
+          if (pendingTextPlacement.current?.pointerId === event.pointerId) {
+            pendingTextPlacement.current = null;
+          } else if (textTransform.current?.pointers.has(event.pointerId)) cancelTextTransform();
           else pointerUp(event);
         }}
       >
@@ -656,11 +719,24 @@ export function AnnotationOverlay({
               step="0.001"
               value={editorFontScale}
               onChange={(event) => setEditorFontScale(Number(event.target.value))}
-              onPointerDown={() => setFontScaleAdjusting(true)}
-              onPointerCancel={() => setFontScaleAdjusting(false)}
+              onPointerDown={() => {
+                const input = textInputRef.current;
+                textSelection.current = input
+                  ? {
+                      start: input.selectionStart,
+                      end: input.selectionEnd,
+                      direction: input.selectionDirection,
+                    }
+                  : null;
+                setFontScaleAdjusting(true);
+              }}
+              onPointerCancel={() => {
+                setFontScaleAdjusting(false);
+                focusTextInput(textSelection.current);
+              }}
               onPointerUp={() => {
                 setFontScaleAdjusting(false);
-                textInputRef.current?.focus({ preventScroll: true });
+                focusTextInput(textSelection.current);
               }}
             />
           </span>

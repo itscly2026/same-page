@@ -866,6 +866,7 @@ describe("ReaderPage", () => {
       toJSON: () => ({}),
     });
     fireEvent.pointerDown(editingOverlay, { clientX: 20, clientY: 30 });
+    fireEvent.pointerUp(editingOverlay, { clientX: 20, clientY: 30 });
     expect(screen.getByLabelText("批注文本")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "完成" })).toHaveLength(1);
     fireEvent.click(

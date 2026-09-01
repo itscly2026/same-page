@@ -207,6 +207,21 @@ async function runActions(page, actions) {
       }, { x: action.x, y: action.y });
       continue;
     }
+    if (action.type === "dispatchPointerTap") {
+      await page.locator(action.selector).evaluate((element, point) => {
+        const bounds = element.getBoundingClientRect();
+        const eventInit = {
+          bubbles: true,
+          pointerId: 1,
+          pointerType: "touch",
+          clientX: bounds.left + bounds.width * point.x,
+          clientY: bounds.top + bounds.height * point.y,
+        };
+        element.dispatchEvent(new PointerEvent("pointerdown", eventInit));
+        element.dispatchEvent(new PointerEvent("pointerup", eventInit));
+      }, { x: action.x, y: action.y });
+      continue;
+    }
     if (action.type === "dispatchDragRoleToBottom") {
       const locator = page.getByRole(action.role, { name: action.name, exact: true });
       await locator.evaluate((element) => {
@@ -254,7 +269,7 @@ async function waitForPageToSettle(page) {
 
 async function waitForRenderedPdf(page) {
   await page.waitForFunction(() => {
-    const canvas = document.querySelector(".pdf-page-canvas canvas");
+    const canvas = document.querySelector(".pdf-page-canvas [data-pdf-canvas-active]");
     if (!(canvas instanceof HTMLCanvasElement) || canvas.width < 100 || canvas.height < 100) {
       return false;
     }
