@@ -107,6 +107,29 @@ describe("PDF file library and delivery", () => {
       "练习 10.pdf",
     ]);
 
+    const bootstrap = await callWorker(
+      `/api/choirs/${choirId}/scores/${tenUpload.id}/bootstrap`,
+      { headers: { cookie: guestCookie } },
+    );
+    expect(await bootstrap.json()).toMatchObject({
+      state: "active",
+      score: { id: tenUpload.id, fileName: "练习 10.pdf" },
+      permissions: { canManage: false },
+    });
+    const adminBootstrap = await callWorker(
+      `/api/choirs/${choirId}/scores/${tenUpload.id}/bootstrap`,
+      { headers: { cookie: adminCookie } },
+    );
+    expect(await adminBootstrap.json()).toMatchObject({
+      state: "active",
+      permissions: { canManage: true },
+    });
+    const missingBootstrap = await callWorker(
+      `/api/choirs/${choirId}/scores/missing/bootstrap`,
+      { headers: { cookie: guestCookie } },
+    );
+    expect(missingBootstrap.status).toBe(404);
+
     const search = await callWorker(
       `/api/choirs/${choirId}/scores?q=${encodeURIComponent("10.PDF")}`,
       { headers: { cookie: guestCookie } },
@@ -256,6 +279,11 @@ describe("PDF file library and delivery", () => {
       { headers: { cookie: guestCookie } },
     );
     expect(await status.json()).toMatchObject({ state: "trashed" });
+    const bootstrap = await callWorker(
+      `/api/choirs/${choirId}/scores/${original.id}/bootstrap`,
+      { headers: { cookie: guestCookie } },
+    );
+    expect(await bootstrap.json()).toMatchObject({ state: "trashed" });
     const trashedPdf = await callWorker(
       `/api/choirs/${choirId}/scores/${original.id}/pdf`,
       { headers: { cookie: guestCookie } },

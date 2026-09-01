@@ -83,6 +83,19 @@ test("fixture resolver returns current score shapes and a generated PDF without 
   assert.doesNotMatch(pdf.body.toString("ascii"), /token|password|invite/i);
 });
 
+test("fixture resolver supports the narrow reader bootstrap", () => {
+  const response = resolveFixtureRequest({
+    pathname: "/api/choirs/visual-choir/scores/visual-score/bootstrap",
+    method: "GET",
+    identity: "member",
+  });
+  const body = JSON.parse(response.body);
+
+  assert.equal(body.state, "active");
+  assert.equal(body.score.fileName, "排练示例 · 秋日合唱.pdf");
+  assert.equal(body.permissions.canManage, false);
+});
+
 test("unknown API requests fail closed instead of reaching the current Worker", () => {
   const response = resolveFixtureRequest({
     pathname: "/api/not-a-visual-fixture",

@@ -66,6 +66,19 @@ export const scoreCloudStateSchema = z.object({
   trashExpiresAt: z.number().optional(),
 });
 
+export const readerScoreBootstrapSchema = z.discriminatedUnion("state", [
+  z.object({
+    state: z.literal("active"),
+    score: scoreSummarySchema,
+    permissions: z.object({ canManage: z.boolean() }),
+  }),
+  z.object({
+    state: z.literal("trashed"),
+    trashExpiresAt: z.number().optional(),
+  }),
+]);
+
 export type ScoreSummary = z.infer<typeof scoreSummarySchema>;
 export type TrashedScoreSummary = z.infer<typeof trashedScoreSummarySchema>;
 export type ScoreListResponse = z.infer<typeof scoreListResponseSchema>;
+export type ReaderScoreBootstrap = z.infer<typeof readerScoreBootstrapSchema>;

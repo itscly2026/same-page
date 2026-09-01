@@ -11,6 +11,10 @@ import {
   createLocalWorkspace,
   localWorkspaceRecordKey,
 } from "./platform/local-workspace";
+import {
+  clearReaderScoreCache,
+  peekReaderScore,
+} from "./reader/reader-score-cache";
 
 const localWorkspace = createLocalWorkspace(
   authenticatedLocalOwnerKey("user-1"),
@@ -27,6 +31,7 @@ vi.mock("./auth/auth-client", () => ({
 
 describe("AppRoutes", () => {
   beforeEach(async () => {
+    clearReaderScoreCache();
     await localDatabase.open();
     await activateAuthenticatedLocalOwner("user-1");
     vi.mocked(authClient.useSession).mockReturnValue({
@@ -965,10 +970,17 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("link", { name: /排练 10\.pdf.*2\.0 MB/ })).toHaveAttribute(
+    const scoreLink = await screen.findByRole("link", { name: /排练 10\.pdf.*2\.0 MB/ });
+    expect(scoreLink).toHaveAttribute(
       "href",
       "/choirs/choir-1/scores/score-10",
     );
+    fireEvent.click(scoreLink, { button: 1 });
+    expect(peekReaderScore("guest", "choir-1", "score-10")).toMatchObject({
+      id: "score-10",
+      fileName: "排练 10.pdf",
+      currentVersion: { id: "version-1" },
+    });
     expect(screen.queryByRole("button", { name: "上传 PDF" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "回收站" })).not.toBeInTheDocument();
     expect(screen.queryByText(/云盘存储已使用/)).not.toBeInTheDocument();

@@ -101,6 +101,38 @@ scoreRoutes.get("/choirs/:choirId/scores/:scoreId/status", async (context) => {
   );
 });
 
+scoreRoutes.get("/choirs/:choirId/scores/:scoreId/bootstrap", async (context) => {
+  const choirId = context.req.param("choirId");
+  const scoreId = context.req.param("scoreId");
+  const access = await resolveChoirAccess(context, choirId);
+  const row = await context.env.DB.prepare(
+    `SELECT scores.id, scores.choir_id, scores.file_name, scores.updated_at,
+            scores.trashed_at, scores.trash_expires_at,
+            versions.id AS version_id, versions.version_number,
+            versions.size_bytes, versions.sha256, versions.etag,
+            versions.page_count, versions.created_at AS version_created_at
+     FROM scores
+     INNER JOIN score_versions AS versions
+       ON versions.id = scores.current_version_id AND versions.state = 'ready'
+     WHERE scores.id = ? AND scores.choir_id = ?
+     LIMIT 1`,
+  )
+    .bind(scoreId, choirId)
+    .first<TrashedScoreRow>();
+  if (!row) return context.json({ error: "score_not_found" }, 404);
+  if (row.trashed_at !== null) {
+    return context.json({
+      state: "trashed" as const,
+      trashExpiresAt: row.trash_expires_at ?? undefined,
+    });
+  }
+  return context.json({
+    state: "active" as const,
+    score: serializeScoreRow(row),
+    permissions: { canManage: access.canManage },
+  });
+});
+
 scoreRoutes.post("/choirs/:choirId/scores", async (context) => {
   const choirId = context.req.param("choirId");
   const { membership } = await requireAdmin(context, choirId);

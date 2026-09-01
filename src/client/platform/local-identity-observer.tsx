@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { OutboxRecoveryCoordinator } from "../annotations/outbox-recovery-coordinator";
 import { authClient } from "../auth/auth-client";
@@ -6,10 +6,12 @@ import {
   activateAuthenticatedLocalOwner,
   type LocalWorkspaceOwnerKey,
 } from "./local-workspace";
+import { notifyReaderIdentityChange } from "../reader/reader-cache-events";
 
 export function LocalIdentityObserver() {
   const session = authClient.useSession();
   const userId = session.data?.user.id;
+  const readerIdentity = useRef(userId);
   const [identityState, setIdentityState] = useState<{
     observedUserId: string | undefined;
     activation: number;
@@ -33,6 +35,12 @@ export function LocalIdentityObserver() {
       active = false;
     };
   }, [identityState.activation, userId]);
+
+  useEffect(() => {
+    if (readerIdentity.current === userId) return;
+    readerIdentity.current = userId;
+    notifyReaderIdentityChange();
+  }, [userId]);
 
   if (identityState.observedUserId !== userId) {
     setIdentityState({

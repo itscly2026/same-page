@@ -30,8 +30,7 @@ import {
   type DefaultSharedLayerSlot,
 } from "../../shared/annotations";
 import {
-  scoreCloudStateSchema,
-  scoreListResponseSchema,
+  readerScoreBootstrapSchema,
   type ScoreSummary,
 } from "../../shared/scores";
 import type {
@@ -74,10 +73,19 @@ import {
   resolveLocalWorkspace,
   type LocalWorkspace,
 } from "../platform/local-workspace";
+import type { PDFDocumentProxy } from "../reader/pdf-document";
 import {
-  loadPdfDocument,
-  type PDFDocumentProxy,
-} from "../reader/pdf-document";
+  acquireReaderDocument,
+  confirmReaderDocumentVersion,
+  invalidateReaderDocument,
+  ReaderDocumentVersionMismatchError,
+} from "../reader/reader-document-cache";
+import {
+  forgetReaderScore,
+  peekReaderScore,
+  rememberReaderScore,
+} from "../reader/reader-score-cache";
+import { readerPdfSourceIsCurrent } from "../reader/reader-source-identity";
 import {
   type AnnotationPageProps,
   type ContinuousReaderPosition,
@@ -98,11 +106,22 @@ import {
 
 type ReaderPanel = "layers" | "pages";
 
+type ReaderCloudOutcome =
+  | { scopeKey: string; state: "active"; versionId: string }
+  | { scopeKey: string; state: "offline-allowed" };
+
 type ReaderLoadState =
   | { kind: "resolving-workspace" }
   | { kind: "loading"; scopeKey: string }
   | { kind: "ready"; scopeKey: string }
   | { kind: "error"; scopeKey: string; message: string };
+
+interface ReaderPdfSource {
+  scopeKey: string;
+  data: string | ArrayBuffer;
+  kind: "cloud" | "offline";
+  versionId?: string;
+}
 
 export default function ReaderPage() {
   const { choirId = "", scoreId = "" } = useParams();
@@ -121,9 +140,16 @@ export default function ReaderPage() {
   );
   const [score, setScore] = useState<ScoreSummary | null>(null);
   const [offline, setOffline] = useState<OfflineScoreRecord | null>(null);
+  const [localLookupState, setLocalLookupState] = useState<{
+    scopeKey: string;
+    status: "pending" | "settled";
+  } | null>(null);
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [documentScopeKey, setDocumentScopeKey] = useState<string | null>(null);
-  const [source, setSource] = useState<string | ArrayBuffer | null>(null);
+  const [source, setSource] = useState<ReaderPdfSource | null>(null);
+  const [pdfFailure, setPdfFailure] = useState<{
+    source: ReaderPdfSource;
+  } | null>(null);
   const [zoom, setZoom] = useState(1);
   const [downloading, setDownloading] = useState(false);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
@@ -151,6 +177,13 @@ export default function ReaderPage() {
     page: 1,
     pageOffsetRatio: 0,
   });
+  const documentReadyScopeKey = useRef<string | null>(null);
+  const cloudLookupSequence = useRef({ next: 0, applied: 0 });
+  const cloudOutcome = useRef<ReaderCloudOutcome | null>(null);
+  const readyDocumentSource = useRef<Pick<
+    ReaderPdfSource,
+    "scopeKey" | "kind" | "versionId"
+  > | null>(null);
   const [continuousRestorePosition, setContinuousRestorePosition] =
     useState<ContinuousReaderPosition | null>(null);
   const [showGestureHint, setShowGestureHint] = useState(
@@ -177,7 +210,10 @@ export default function ReaderPage() {
   }, [choirId, scoreId, session.data?.user.id, session.isPending]);
 
   const workspace =
-    resolvedWorkspace && workspaceIsActive
+    resolvedWorkspace &&
+    workspaceIsActive &&
+    resolvedWorkspace.choirId === choirId &&
+    resolvedWorkspace.scoreId === scoreId
       ? resolvedWorkspace
       : null;
   const workspaceScopeKey = workspace?.scopeKey ?? null;
@@ -276,45 +312,210 @@ export default function ReaderPage() {
   useEffect(() => {
     if (!workspace) return;
     let active = true;
+    const isCurrent = () => active;
     void (async () => {
-      setScore(null);
+      const identity = session.data?.user.id ?? "guest";
+      const rememberedScore = peekReaderScore(identity, choirId, scoreId);
+      const cloudSource = cloudPdfSource(
+        choirId,
+        scoreId,
+        rememberedScore?.currentVersion.id,
+      );
+      setScore(rememberedScore);
       setOffline(null);
-      setSource(null);
+      setLocalLookupState({ scopeKey: workspace.scopeKey, status: "pending" });
+      setSource({
+        scopeKey: workspace.scopeKey,
+        data: cloudSource,
+        kind: "cloud",
+        versionId: rememberedScore?.currentVersion.id,
+      });
       setDocument(null);
       setDocumentScopeKey(null);
+      documentReadyScopeKey.current = null;
+      cloudOutcome.current = rememberedScore
+        ? {
+            scopeKey: workspace.scopeKey,
+            state: "active",
+            versionId: rememberedScore.currentVersion.id,
+          }
+        : null;
+      readyDocumentSource.current = null;
+      setPdfFailure(null);
       setCanManageLayers(false);
       setEditing(false);
       setActiveLayerId(null);
       endAnnotationEditSession();
       setLoadState({ kind: "loading", scopeKey: workspace.scopeKey });
       setCloudState("checking");
-      const local = await findActiveOfflineScore(workspace.ownerKey, choirId, scoreId).catch(
-        () => undefined,
-      );
-      if (local) await restoreOfflineAnnotationSnapshot(workspace, local).catch(() => undefined);
-      if (active) setOffline(local ?? null);
+      const localPromise = findActiveOfflineScore(
+        workspace.ownerKey,
+        choirId,
+        scoreId,
+      ).catch(() => undefined);
+      const cloudLookupId = ++cloudLookupSequence.current.next;
+      const lookupPromise = lookupScoreCloudState(choirId, scoreId);
+      const localMatchesKnownCloudVersion = (local: OfflineScoreRecord) => {
+        const outcome = cloudOutcome.current;
+        if (outcome?.scopeKey === workspace.scopeKey) {
+          return outcome.state === "offline-allowed" || outcome.versionId === local.versionId;
+        }
+        return rememberedScore?.currentVersion.id === local.versionId;
+      };
+      const localShouldTakeOver = (local: OfflineScoreRecord) => {
+        if (!localMatchesKnownCloudVersion(local)) return false;
+        const readySource = readyDocumentSource.current as Pick<
+          ReaderPdfSource,
+          "scopeKey" | "kind" | "versionId"
+        > | null;
+        if (
+          readySource?.scopeKey === workspace.scopeKey &&
+          readySource.kind === "offline" &&
+          readySource.versionId === local.versionId
+        ) {
+          return false;
+        }
+        const outcome = cloudOutcome.current;
+        return (
+          documentReadyScopeKey.current !== workspace.scopeKey ||
+          (outcome?.scopeKey === workspace.scopeKey &&
+            outcome.state === "offline-allowed")
+        );
+      };
 
-      const lookup = await lookupScoreCloudState(choirId, scoreId);
+      void localPromise
+        .then(async (local) => {
+          if (!isCurrent()) return;
+          setOffline(local ?? null);
+          if (
+            local &&
+            localShouldTakeOver(local)
+          ) {
+            const data = await local.blob.arrayBuffer();
+            if (
+              isCurrent() &&
+              localShouldTakeOver(local)
+            ) {
+              if (
+                cloudOutcome.current?.scopeKey === workspace.scopeKey &&
+                cloudOutcome.current.state === "offline-allowed"
+              ) {
+                setScore(scoreFromOffline(local));
+              }
+              setLoadState({ kind: "loading", scopeKey: workspace.scopeKey });
+              setSource((current) => replaceSourceForScope(current, {
+                scopeKey: workspace.scopeKey,
+                data,
+                kind: "offline",
+                versionId: local.versionId,
+              }));
+            }
+          }
+          if (local) {
+            await restoreOfflineAnnotationSnapshot(workspace, local).catch(() => undefined);
+          }
+        })
+        .finally(() => {
+          if (isCurrent()) {
+            setLocalLookupState({ scopeKey: workspace.scopeKey, status: "settled" });
+          }
+        });
+
+      const [local, lookup] = await Promise.all([localPromise, lookupPromise]);
+      if (!isCurrent() || cloudLookupId < cloudLookupSequence.current.applied) return;
+      if (lookup.state !== "network-unavailable") {
+        cloudLookupSequence.current.applied = cloudLookupId;
+      }
+      cloudOutcome.current = cloudOutcomeForLookup(
+        cloudOutcome.current,
+        workspace.scopeKey,
+        lookup,
+      );
+      const cloudResponseIsCurrent = () =>
+        isCurrent() && cloudLookupId >= cloudLookupSequence.current.applied;
       if (lookup.state === "active") {
-        if (!active) return;
+        rememberReaderScore(identity, lookup.score);
         setCloudState("active");
         setScore(lookup.score);
-        setSource(`/api/choirs/${choirId}/scores/${scoreId}/pdf`);
+        const cloudDocumentConfirmation = confirmReaderDocumentVersion({
+          ownerKey: workspace.ownerKey,
+          choirId,
+          scoreId,
+          sourceKind: "cloud",
+          versionId: lookup.score.currentVersion.id,
+        });
+        const readySource = readyDocumentSource.current as Pick<
+          ReaderPdfSource,
+          "scopeKey" | "kind" | "versionId"
+        > | null;
+        const matchingOfflineDocumentReady =
+          local?.versionId === lookup.score.currentVersion.id &&
+          readySource?.scopeKey === workspace.scopeKey &&
+          readySource.kind === "offline" &&
+          readySource.versionId === lookup.score.currentVersion.id;
+        if (cloudDocumentConfirmation !== "match" && !matchingOfflineDocumentReady) {
+          setDocument(null);
+          setDocumentScopeKey(null);
+          documentReadyScopeKey.current = null;
+          readyDocumentSource.current = null;
+          setLoadState({ kind: "loading", scopeKey: workspace.scopeKey });
+          setPdfFailure(null);
+          setSource((current) => replaceSourceForScope(current, {
+            scopeKey: workspace.scopeKey,
+            data: cloudPdfSource(
+              choirId,
+              scoreId,
+              lookup.score.currentVersion.id,
+            ),
+            kind: "cloud",
+            versionId: lookup.score.currentVersion.id,
+          }, true));
+        }
+        if (
+          local?.versionId === lookup.score.currentVersion.id &&
+          documentReadyScopeKey.current !== workspace.scopeKey
+        ) {
+          const data = await local.blob.arrayBuffer();
+          if (!cloudResponseIsCurrent()) return;
+          setSource((current) => replaceSourceForScope(current, {
+            scopeKey: workspace.scopeKey,
+            data,
+            kind: "offline",
+            versionId: local.versionId,
+          }));
+        }
         return;
       }
 
-      if (!active) return;
+      if (!cloudResponseIsCurrent()) return;
+      if (lookup.state !== "network-unavailable") {
+        forgetReaderScore(identity, choirId, scoreId);
+        invalidateReaderDocument({
+          ownerKey: workspace.ownerKey,
+          choirId,
+          scoreId,
+          sourceKind: "cloud",
+        });
+      }
       if (lookup.state === "trashed") {
         setCloudState("trashed");
         setSyncOutcome("trash-preserved");
       } else {
         setCloudState("unavailable");
       }
-      if (local) {
+      if (local && localMatchesKnownCloudVersion(local)) {
         setScore(scoreFromOffline(local));
-        setSource(await local.blob.arrayBuffer());
+        const data = await local.blob.arrayBuffer();
+        if (!cloudResponseIsCurrent()) return;
+        setSource((current) => replaceSourceForScope(current, {
+          scopeKey: workspace.scopeKey,
+          data,
+          kind: "offline",
+          versionId: local.versionId,
+        }));
         return;
       }
+      if (lookup.state === "network-unavailable" && rememberedScore) return;
       setLoadState({
         kind: "error",
         scopeKey: workspace.scopeKey,
@@ -324,7 +525,7 @@ export default function ReaderPage() {
     return () => {
       active = false;
     };
-  }, [choirId, scoreId, workspace]);
+  }, [choirId, scoreId, session.data?.user.id, workspace]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -371,18 +572,97 @@ export default function ReaderPage() {
     let active = true;
     const revalidateCloudState = () => {
       if (!navigator.onLine || globalThis.document.visibilityState === "hidden") return;
+      const cloudLookupId = ++cloudLookupSequence.current.next;
       void lookupScoreCloudState(choirId, scoreId)
         .then(async (lookup) => {
-          if (!active) return;
-          if (lookup.state === "trashed") {
-            setCloudState("trashed");
-            setSyncOutcome("trash-preserved");
+          if (!active || cloudLookupId < cloudLookupSequence.current.applied) return;
+          if (lookup.state !== "network-unavailable") {
+            cloudLookupSequence.current.applied = cloudLookupId;
+          }
+          cloudOutcome.current = cloudOutcomeForLookup(
+            cloudOutcome.current,
+            workspace.scopeKey,
+            lookup,
+          );
+          const cloudResponseIsCurrent = () =>
+            active && cloudLookupId >= cloudLookupSequence.current.applied;
+          if (lookup.state !== "active") {
+            if (lookup.state === "network-unavailable") return;
+            forgetReaderScore(session.data?.user.id ?? "guest", choirId, scoreId);
+            invalidateReaderDocument({
+              ownerKey: workspace.ownerKey,
+              choirId,
+              scoreId,
+              sourceKind: "cloud",
+            });
+            setCloudState(lookup.state === "trashed" ? "trashed" : "unavailable");
+            if (lookup.state === "trashed") setSyncOutcome("trash-preserved");
+            if (offline) {
+              setScore(scoreFromOffline(offline));
+              const data = await offline.blob.arrayBuffer();
+              if (!cloudResponseIsCurrent()) return;
+              setLoadState({ kind: "loading", scopeKey: workspace.scopeKey });
+              setSource((current) => replaceSourceForScope(current, {
+                scopeKey: workspace.scopeKey,
+                data,
+                kind: "offline",
+                versionId: offline.versionId,
+              }));
+            } else {
+              setLoadState({
+                kind: "error",
+                scopeKey: workspace.scopeKey,
+                message: readerLoadFailureMessage(lookup.state),
+              });
+            }
             return;
           }
-          if (lookup.state !== "active") return;
+          rememberReaderScore(session.data?.user.id ?? "guest", lookup.score);
           setCloudState("active");
           setScore(lookup.score);
-          setSource(`/api/choirs/${choirId}/scores/${scoreId}/pdf`);
+          const cloudDocumentConfirmation = confirmReaderDocumentVersion({
+            ownerKey: workspace.ownerKey,
+            choirId,
+            scoreId,
+            sourceKind: "cloud",
+            versionId: lookup.score.currentVersion.id,
+          });
+          const readySource = readyDocumentSource.current as Pick<
+            ReaderPdfSource,
+            "scopeKey" | "kind" | "versionId"
+          > | null;
+          const matchingOfflineDocumentReady =
+            readySource?.scopeKey === workspace.scopeKey &&
+            readySource.kind === "offline" &&
+            readySource.versionId === lookup.score.currentVersion.id;
+          if (
+            cloudDocumentConfirmation !== "match" &&
+            !matchingOfflineDocumentReady
+          ) {
+            setLoadState({ kind: "loading", scopeKey: workspace.scopeKey });
+            setPdfFailure(null);
+          }
+          setSource((current) => {
+            if (
+              current?.scopeKey === workspace.scopeKey &&
+              ((current.kind === "offline" &&
+                current.versionId === lookup.score.currentVersion.id) ||
+                (current.kind === "cloud" &&
+                  cloudDocumentConfirmation === "match"))
+            ) {
+              return current;
+            }
+            return replaceSourceForScope(current, {
+              scopeKey: workspace.scopeKey,
+              data: cloudPdfSource(
+                choirId,
+                scoreId,
+                lookup.score.currentVersion.id,
+              ),
+              kind: "cloud",
+              versionId: lookup.score.currentVersion.id,
+            }, cloudDocumentConfirmation !== "match");
+          });
         })
         .catch(() => undefined);
     };
@@ -399,41 +679,80 @@ export default function ReaderPage() {
         revalidateCloudState,
       );
     };
-  }, [choirId, scoreId, workspace]);
+  }, [choirId, offline, scoreId, session.data?.user.id, workspace]);
 
   useEffect(() => {
-    if (!source) return;
+    if (!source || !workspace || source.scopeKey !== workspace.scopeKey) return;
     let active = true;
-    let destroyOpened: (() => Promise<void>) | undefined;
-    void loadPdfDocument(source)
-      .then((opened) => {
-        const nextDocument = opened.document;
-        destroyOpened = opened.destroy;
+    const lease = acquireReaderDocument({
+      ownerKey: workspace.ownerKey,
+      choirId,
+      scoreId,
+      source: source.data,
+      sourceKind: source.kind,
+      versionId: source.versionId,
+    });
+    void lease.promise
+      .then((nextDocument) => {
         if (active) {
           setDocument(nextDocument);
           setDocumentScopeKey(workspaceScopeKey);
+          documentReadyScopeKey.current = workspaceScopeKey;
+          readyDocumentSource.current = {
+            scopeKey: source.scopeKey,
+            kind: source.kind,
+            versionId: source.versionId,
+          };
+          setPdfFailure(null);
           if (workspaceScopeKey) {
             setLoadState({ kind: "ready", scopeKey: workspaceScopeKey });
           }
           setCurrentPage((page) => Math.min(page, nextDocument.numPages));
         }
       })
-      .catch(() => {
-        if (active && workspaceScopeKey) {
-          setLoadState({
-            kind: "error",
-            scopeKey: workspaceScopeKey,
-            message: "PDF 无法解析或文件暂时不可用。",
-          });
+      .catch((error) => {
+        if (!active || !workspaceScopeKey) return;
+        if (
+          error instanceof ReaderDocumentVersionMismatchError &&
+          source.kind === "cloud"
+        ) {
+          const expectedSource = cloudPdfSource(
+            choirId,
+            scoreId,
+            error.expectedVersionId,
+          );
+          if (
+            source.versionId === error.expectedVersionId &&
+            source.data === expectedSource
+          ) {
+            setPdfFailure({
+              source,
+            });
+            return;
+          }
+          setSource((current) => replaceSourceForScope(current, {
+            scopeKey: workspace.scopeKey,
+            data: expectedSource,
+            kind: "cloud",
+            versionId: error.expectedVersionId,
+          }));
+          return;
         }
+        setPdfFailure({
+          source,
+        });
       });
     return () => {
       active = false;
-      void destroyOpened?.();
+      lease.release();
       setDocument(null);
       setDocumentScopeKey(null);
+      documentReadyScopeKey.current = null;
+      if (readyDocumentSource.current?.scopeKey === source.scopeKey) {
+        readyDocumentSource.current = null;
+      }
     };
-  }, [setCurrentPage, source, workspaceScopeKey]);
+  }, [choirId, scoreId, setCurrentPage, source, workspace, workspaceScopeKey]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -515,8 +834,14 @@ export default function ReaderPage() {
       await activateVerifiedOfflineScore(record);
       const activeRecord = await findActiveOfflineScore(workspace.ownerKey, choirId, scoreId);
       setOffline(activeRecord ?? null);
-      if (typeof source !== "string" && activeRecord) {
-        setSource(await activeRecord.blob.arrayBuffer());
+      if (source?.kind === "offline" && activeRecord) {
+        const offlineData = await activeRecord.blob.arrayBuffer();
+        setSource((current) => replaceSourceForScope(current, {
+          scopeKey: workspace.scopeKey,
+          data: offlineData,
+          kind: "offline",
+          versionId: activeRecord.versionId,
+        }));
       }
       setDownloadMessage("离线副本已完整校验，可以离线打开。");
     } catch {
@@ -654,13 +979,34 @@ export default function ReaderPage() {
     return <p className="route-loading">正在打开本机工作区…</p>;
   }
 
-  if (loadState.kind === "error" && loadState.scopeKey === workspace.scopeKey) {
+  const loadError =
+    loadState.kind === "error" &&
+    loadState.scopeKey === workspace.scopeKey &&
+    localLookupState?.scopeKey === workspace.scopeKey &&
+    localLookupState.status === "settled"
+      ? loadState.message
+      : pdfFailure && readerPdfSourceIsCurrent(pdfFailure.source, source) &&
+          source?.kind === "offline"
+        ? "本机离线副本无法解析，现有批注仍然保留。"
+      : cloudState === "active" &&
+          localLookupState?.scopeKey === workspace.scopeKey &&
+          localLookupState.status === "settled" &&
+          pdfFailure && readerPdfSourceIsCurrent(pdfFailure.source, source)
+        ? "PDF 无法解析或文件暂时不可用。"
+        : cloudState === "unavailable" &&
+            localLookupState?.scopeKey === workspace.scopeKey &&
+            localLookupState.status === "settled" &&
+            source?.kind === "cloud" &&
+            pdfFailure && readerPdfSourceIsCurrent(pdfFailure.source, source)
+          ? readerLoadFailureMessage("network-unavailable")
+        : null;
+  if (loadError) {
     return (
       <main className="page-shell compact-page">
         <p className="eyebrow">乐谱阅读器</p>
         <h1>无法打开</h1>
         <p className="hero__copy" role="alert">
-          {loadState.message}
+          {loadError}
         </p>
         <Link className="primary-link" to={`/choirs/${choirId}`}>
           返回云盘
@@ -676,7 +1022,15 @@ export default function ReaderPage() {
     !document ||
     documentScopeKey !== workspace.scopeKey
   ) {
-    return <p className="route-loading">正在加载乐谱…</p>;
+    return (
+      <main className="reader-loading" aria-label="正在加载乐谱">
+        <div className="reader-loading__paper" aria-hidden="true" />
+        <div className="reader-loading__label" role="status">
+          <strong>{score?.fileName ?? "乐谱"}</strong>
+          <span>正在加载乐谱…</span>
+        </div>
+      </main>
+    );
   }
 
   const hasNewOfflineVersion =
@@ -1410,31 +1764,46 @@ type ScoreCloudLookup =
   | { state: "permission-denied" }
   | { state: "network-unavailable" };
 
+function cloudOutcomeForLookup(
+  current: ReaderCloudOutcome | null,
+  scopeKey: string,
+  lookup: ScoreCloudLookup,
+): ReaderCloudOutcome {
+  if (lookup.state === "active") {
+    return {
+      scopeKey,
+      state: "active",
+      versionId: lookup.score.currentVersion.id,
+    };
+  }
+  if (
+    lookup.state === "network-unavailable" &&
+    current?.scopeKey === scopeKey &&
+    current.state === "active"
+  ) {
+    return current;
+  }
+  return { scopeKey, state: "offline-allowed" };
+}
+
 async function lookupScoreCloudState(
   choirId: string,
   scoreId: string,
 ): Promise<ScoreCloudLookup> {
   try {
-    const response = await fetch(`/api/choirs/${choirId}/scores`);
+    const response = await fetch(
+      `/api/choirs/${choirId}/scores/${scoreId}/bootstrap`,
+    );
     if (response.status === 401 || response.status === 403) {
       return { state: "permission-denied" };
     }
     if (!response.ok) return response.status >= 500
       ? { state: "network-unavailable" }
       : { state: "missing" };
-    const payload = scoreListResponseSchema.parse(await response.json());
-    const score = payload.scores.find((item) => item.id === scoreId);
-    if (score) return { state: "active", score };
-
-    const statusResponse = await fetch(`/api/choirs/${choirId}/scores/${scoreId}/status`);
-    if (statusResponse.status === 401 || statusResponse.status === 403) {
-      return { state: "permission-denied" };
-    }
-    if (!statusResponse.ok) return statusResponse.status >= 500
-      ? { state: "network-unavailable" }
-      : { state: "missing" };
-    const status = scoreCloudStateSchema.parse(await statusResponse.json());
-    return status.state === "trashed" ? { state: "trashed" } : { state: "missing" };
+    const bootstrap = readerScoreBootstrapSchema.parse(await response.json());
+    return bootstrap.state === "active"
+      ? { state: "active", score: bootstrap.score }
+      : { state: "trashed" };
   } catch {
     return { state: "network-unavailable" };
   }
@@ -1469,6 +1838,31 @@ function scoreFromOffline(record: OfflineScoreRecord): ScoreSummary {
       createdAt: record.verifiedAt,
     },
   };
+}
+
+function cloudPdfSource(choirId: string, scoreId: string, versionId?: string) {
+  const scorePath = `/api/choirs/${choirId}/scores/${scoreId}`;
+  return versionId
+    ? `${scorePath}/versions/${encodeURIComponent(versionId)}/pdf`
+    : `${scorePath}/pdf`;
+}
+
+function replaceSourceForScope(
+  current: ReaderPdfSource | null,
+  next: ReaderPdfSource,
+  force = false,
+) {
+  if (current && current.scopeKey !== next.scopeKey) return current;
+  if (
+    !force &&
+    current &&
+    current.kind === next.kind &&
+    current.versionId === next.versionId &&
+    current.data === next.data
+  ) {
+    return current;
+  }
+  return next;
 }
 
 async function sha256Hex(data: ArrayBuffer) {
