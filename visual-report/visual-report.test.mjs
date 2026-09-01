@@ -43,6 +43,18 @@ test("fixture resolver isolates guest and member sessions", () => {
     identity: "guest",
   });
   assert.equal(JSON.parse(preview.body).choir.name, "公开体验云盘");
+  const previewAdmission = resolveFixtureRequest({
+    pathname: "/api/guest/session",
+    method: "POST",
+    identity: "member",
+  });
+  assert.match(previewAdmission.headers["set-cookie"], /same_page_guest=visual-preview/);
+  const signedInPreview = resolveFixtureRequest({
+    pathname: "/api/choirs/visual-preview-choir/scores",
+    identity: "member",
+    cookie: "same_page_guest=visual-preview",
+  });
+  assert.equal(JSON.parse(signedInPreview.body).permissions.canManage, false);
 });
 
 test("fixture resolver returns current score shapes and a generated PDF without secrets", () => {

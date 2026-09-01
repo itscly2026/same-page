@@ -139,7 +139,6 @@ describe("AppRoutes", () => {
       },
       isPending: false,
     } as ReturnType<typeof authClient.useSession>);
-
     const home = render(
       <MemoryRouter initialEntries={["/"]}>
         <AppRoutes />
@@ -160,6 +159,38 @@ describe("AppRoutes", () => {
       screen.queryByText("wechat-unionid@wechat.placeholder.invalid"),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "登录或注册" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the public preview entry visible after sign-in", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "user-1", email: "member@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string) =>
+        Promise.resolve(
+          input === "/api/guest/preview-choir"
+            ? Response.json({
+                choir: {
+                  id: "preview-choir",
+                  name: "公开体验云盘",
+                  guestAdmissionMode: "open",
+                },
+              })
+            : Response.json({ memberships: [] }),
+        ),
+      ),
+    );
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("link", { name: "访问公开体验云盘" }),
+    ).toHaveAttribute("href", "/choirs/preview-choir");
   });
 
   it("normalizes a grouped pasted invitation and enters as a guest", async () => {
@@ -684,14 +715,14 @@ describe("AppRoutes", () => {
     });
   });
 
-  it("returns a signed-in non-member from the preview choir to the home entry", async () => {
+  it("opens the preview read-only for a signed-in non-member without joining", async () => {
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "user-1", email: "member@example.test" } },
       isPending: false,
     } as ReturnType<typeof authClient.useSession>);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: string) => {
+    let admitted = false;
+    const fetchMock = vi.fn().mockImplementation(
+      (input: string, init?: RequestInit) => {
         if (
           input === "/api/guest/preview-choir" ||
           input === "/api/guest/choirs/preview-choir"
@@ -710,9 +741,32 @@ describe("AppRoutes", () => {
         if (input === "/api/choirs") {
           return Promise.resolve(Response.json({ memberships: [] }));
         }
+        if (input === "/api/guest/session" && init?.method === "POST") {
+          admitted = true;
+          return Promise.resolve(
+            Response.json({
+              choir: {
+                id: "preview-choir",
+                name: "公开体验云盘",
+                guestAdmissionMode: "open",
+              },
+              entryKind: "preview",
+            }),
+          );
+        }
+        if (input === "/api/choirs/preview-choir/scores" && admitted) {
+          return Promise.resolve(
+            Response.json({
+              scores: [],
+              storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
+              permissions: { canManage: false },
+            }),
+          );
+        }
         return Promise.resolve(Response.json({}, { status: 403 }));
-      }),
+      },
     );
+    vi.stubGlobal("fetch", fetchMock);
 
     render(
       <MemoryRouter initialEntries={["/choirs/preview-choir"]}>
@@ -721,12 +775,16 @@ describe("AppRoutes", () => {
     );
 
     expect(
-      await screen.findByRole("heading", {
-        name: "Every voice, on the same page.",
-      }),
+      await screen.findByRole("heading", { name: "公开体验云盘" }),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
-    expect(screen.queryByText("公开体验云盘")).not.toBeInTheDocument();
+    expect(screen.getByText("这里还没有 PDF 文件。")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ admission: "open", choirId: "preview-choir" }),
+    });
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/choirs/join", expect.anything());
   });
 
   it("lets an administrator rotate and then hide a one-time join code", async () => {

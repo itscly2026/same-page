@@ -22,6 +22,16 @@ export const visualReportScenarios = [
     ],
   },
   {
+    id: "home-member-preview-entry",
+    title: "首页 · 登录后的公开体验入口",
+    description: "登录用户仍能从独立入口访问公开体验云盘。",
+    device: "portrait",
+    identity: "member",
+    route: "/",
+    ready: { type: "role", role: "link", name: "访问公开体验云盘" },
+    actions: [],
+  },
+  {
     id: "home-entry-dialog-filled",
     title: "首页 · 邀请码填写",
     description: "横向 iPad 中邀请码以单一输入呈现 4–4 分组。",
@@ -79,6 +89,16 @@ export const visualReportScenarios = [
     identity: "admin",
     route: "/choirs/visual-choir",
     ready: { type: "role", role: "button", name: "上传 PDF" },
+    actions: [],
+  },
+  {
+    id: "library-preview-signed-in",
+    title: "文件库 · 登录用户只读体验",
+    description: "登录但未加入的用户以只读访客身份浏览公开体验云盘。",
+    device: "landscape",
+    identity: "member",
+    route: "/choirs/visual-preview-choir",
+    ready: { type: "selector", selector: ".file-list" },
     actions: [],
   },
   {

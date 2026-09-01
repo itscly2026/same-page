@@ -8,7 +8,8 @@ import {
   scoreFileNameSchema,
   scoreRenameRequestSchema,
 } from "../../src/shared/scores";
-import { requireChoirAdmin, requireChoirRead } from "../auth/authorization";
+import { requireChoirAdmin } from "../auth/authorization";
+import { resolveContextChoirReadAccess } from "../auth/choir-read-access";
 import { resolveContextPrincipal } from "../auth/context-principal";
 import { createDatabase } from "../db/database";
 import { scores } from "../db/schema";
@@ -341,8 +342,7 @@ async function resolveChoirAccess(
   context: Context<AppEnvironment>,
   choirId: string,
 ) {
-  const principal = await resolveContextPrincipal(context);
-  const access = await requireChoirRead(createDatabase(context.env.DB), principal, choirId);
+  const { access } = await resolveContextChoirReadAccess(context, choirId);
   return {
     canManage: access.kind === "membership" && access.membership.role === "admin",
   };

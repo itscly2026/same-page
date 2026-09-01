@@ -10,7 +10,7 @@ import {
   Popover,
   TextField,
 } from "react-aria-components";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 
 import { isInternalAuthEmail } from "../../shared/auth";
 import {
@@ -38,7 +38,6 @@ import { UploadDialog } from "../score-library/upload-dialog";
 
 export default function ChoirPage() {
   const { choirId = "" } = useParams();
-  const navigate = useNavigate();
   const session = authClient.useSession();
   const userId = session.data?.user.id;
   const [access, setAccess] = useState<ChoirAccessState>({ kind: "loading" });
@@ -73,16 +72,12 @@ export default function ChoirPage() {
     let active = true;
     void openChoir(choirId, Boolean(userId)).then((opened) => {
       if (!active) return;
-      if (opened.kind === "preview-redirect") {
-        void navigate("/", { replace: true });
-        return;
-      }
       setAccess(opened);
     });
     return () => {
       active = false;
     };
-  }, [choirId, navigate, userId, session.isPending]);
+  }, [choirId, userId, session.isPending]);
 
   const joinOpenChoir = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -355,7 +350,7 @@ async function openChoir(
   choirId: string,
   signedIn: boolean,
 ): Promise<
-  Exclude<ChoirAccessState, { kind: "loading" }> | { kind: "preview-redirect" }
+  Exclude<ChoirAccessState, { kind: "loading" }>
 > {
   const [choir, result] = await Promise.all([
     loadChoirSummary(choirId),
@@ -364,10 +359,8 @@ async function openChoir(
   if (result) return { kind: "opened", choir, result };
   const openAdmission = await loadOpenAdmissionChoir(choirId);
   if (!openAdmission) return { kind: "denied" };
-  if (signedIn) {
-    return openAdmission.entryKind === "preview"
-      ? { kind: "preview-redirect" }
-      : { kind: "join-required", choir: openAdmission.choir };
+  if (signedIn && openAdmission.entryKind !== "preview") {
+    return { kind: "join-required", choir: openAdmission.choir };
   }
   try {
     const admission = await fetch("/api/guest/session", {

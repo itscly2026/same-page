@@ -67,7 +67,7 @@ export function HomePage() {
   }, [userId]);
 
   useEffect(() => {
-    if (session.isPending || userId) return;
+    if (session.isPending) return;
     let active = true;
     void loadPreviewChoir().then((choir) => {
       if (active) setPreviewChoir(choir);
@@ -252,7 +252,7 @@ export function HomePage() {
           <Button className="primary-button hero-cta" onPress={() => setJoinOpen(true)}>
             进入云盘
           </Button>
-          {!userId && previewChoir ? (
+          {previewChoir ? (
             <Link className="hero-preview-link" to={`/choirs/${previewChoir.id}`}>
               访问公开体验云盘
             </Link>

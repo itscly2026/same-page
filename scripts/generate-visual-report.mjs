@@ -60,6 +60,7 @@ try {
         pathname: new URL(request.url()).pathname,
         method: request.method(),
         identity: scenario.identity,
+        cookie: request.headers()["cookie"] ?? "",
       });
       await route.fulfill(response);
     });

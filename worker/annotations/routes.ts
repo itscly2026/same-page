@@ -12,11 +12,11 @@ import {
 } from "../../src/shared/annotations";
 import {
   requireChoirAdmin,
-  requireChoirRead,
   requirePersonalLayerOwner,
   requireSharedLayerEdit,
 } from "../auth/authorization";
 import { resolveContextPrincipal } from "../auth/context-principal";
+import { resolveContextChoirReadAccess } from "../auth/choir-read-access";
 import type { Principal } from "../auth/principal";
 import { createDatabase } from "../db/database";
 import type { AppEnvironment } from "../env";
@@ -579,8 +579,7 @@ async function resolveScoreAccess(
 ): Promise<ResolvedScoreAccess | Response> {
   const choirId = context.req.param("choirId") ?? "";
   const scoreId = context.req.param("scoreId") ?? "";
-  const principal = await resolveContextPrincipal(context);
-  const access = await requireChoirRead(createDatabase(context.env.DB), principal, choirId);
+  const { principal, access } = await resolveContextChoirReadAccess(context, choirId);
   if (!principal) return context.json({ error: "forbidden" }, 403);
   const score = await context.env.DB.prepare(
     "SELECT trashed_at FROM scores WHERE id = ? AND choir_id = ?",
