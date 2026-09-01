@@ -40,7 +40,10 @@
 
 - Google 使用 Web application OAuth client，授权回调固定为
   `https://samepage.clyapps.com/api/auth/callback/google`，只申请 `openid`、`email`、
-  `profile`。上线前单独确认 consent screen、允许域名和测试/发布状态。
+  `profile`。OAuth 品牌配置中的应用首页为 `https://samepage.clyapps.com/`，隐私政策为
+  `https://samepage.clyapps.com/privacy`，Authorized domain 填根域 `clyapps.com`（不带协议、
+  子域或路径），并通过 Google Search Console 验证域名所有权。上线前单独确认 consent
+  screen、品牌信息、允许域名和测试/发布状态。
 - 微信只使用开放平台“网站应用”扫码登录，授权回调为
   `https://samepage.clyapps.com/api/auth/callback/wechat`，scope 必须是 `snsapi_login`；
   公众号网页授权不能替代该资质和配置。
