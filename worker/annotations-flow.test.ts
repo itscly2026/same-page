@@ -238,6 +238,95 @@ describe("annotation layers and object synchronization", () => {
     );
   });
 
+  it("rejects a version-zero delete while preserving positive-version OCC", async () => {
+    const fixture = await createFixture();
+    const annotationId = crypto.randomUUID();
+    const impossibleDelete = {
+      opId: crypto.randomUUID(),
+      annotationId,
+      layerId: fixture.layerId,
+      baseVersion: 0,
+      type: "delete" as const,
+      payload: null,
+    };
+    expect(await (await push(fixture, [impossibleDelete])).json()).toEqual({
+      results: [
+        {
+          opId: impossibleDelete.opId,
+          status: "conflict",
+          object: null,
+        },
+      ],
+    });
+
+    const create = operation(annotationId, fixture.layerId, 0, "待删除");
+    expect(await (await push(fixture, [create])).json()).toMatchObject({
+      results: [{ status: "accepted", object: { version: 1 } }],
+    });
+    const validDelete = {
+      ...impossibleDelete,
+      opId: crypto.randomUUID(),
+      baseVersion: 1,
+    };
+    expect(await (await push(fixture, [validDelete])).json()).toMatchObject({
+      results: [
+        {
+          status: "accepted",
+          object: { version: 2, deleted: true, payload: null },
+        },
+      ],
+    });
+    const staleDelete = { ...validDelete, opId: crypto.randomUUID() };
+    expect(await (await push(fixture, [staleDelete])).json()).toMatchObject({
+      results: [
+        {
+          status: "conflict",
+          object: { version: 2, deleted: true },
+        },
+      ],
+    });
+  });
+
+  it("allows only the operation that atomically claimed a concurrently reused opId", async () => {
+    const fixture = await createFixture();
+    const first = operation(
+      crypto.randomUUID(),
+      fixture.layerId,
+      0,
+      "并发操作甲",
+    );
+    const second = {
+      ...operation(crypto.randomUUID(), fixture.layerId, 0, "并发操作乙"),
+      opId: first.opId,
+    };
+    const responses = await Promise.all([
+      push(fixture, [first]),
+      push(fixture, [second]),
+    ]);
+    const statuses = await Promise.all(
+      responses.map(async (response) => {
+        const body = (await response.json()) as {
+          results: Array<{ status: string }>;
+        };
+        return body.results[0]?.status;
+      }),
+    );
+    expect(statuses.sort()).toEqual(["accepted", "op_id_reused"]);
+
+    const operationRow = await env.DB.prepare(
+      "SELECT annotation_id FROM annotation_sync_operations WHERE op_id = ?",
+    )
+      .bind(first.opId)
+      .first<{ annotation_id: string }>();
+    const objects = await env.DB.prepare(
+      "SELECT id FROM annotation_objects WHERE id IN (?, ?)",
+    )
+      .bind(first.annotationId, second.annotationId)
+      .all<{ id: string }>();
+    expect(objects.results).toHaveLength(1);
+    expect(objects.results[0]?.id).toBe(operationRow?.annotation_id);
+  });
+
   it("enforces revoked grants, choir boundaries, personal privacy and guest read-only access", async () => {
     const fixture = await createFixture();
     const member = await createMember(fixture.joinCode!, "member@example.test", "小王");
