@@ -32,6 +32,7 @@ import {
   type LogoutLocalSummary,
 } from "../auth/logout-local-data";
 import { AppHeader } from "../components/app-header";
+import { startLoadingJourney } from "../performance/loading-performance";
 import { JoinCodeField } from "../components/join-code-field";
 import { JOIN_CODE_LENGTH } from "../components/join-code";
 
@@ -290,7 +291,11 @@ export function HomePage() {
               进入云盘
             </Button>
             {previewChoir ? (
-              <Link className="hero-preview-link" to={`/choirs/${previewChoir.id}`}>
+              <Link
+                className="hero-preview-link"
+                to={`/choirs/${previewChoir.id}`}
+                onClick={() => startLoadingJourney("enter-drive", "warm")}
+              >
                 访问公开体验云盘
               </Link>
             ) : null}
@@ -370,7 +375,10 @@ export function HomePage() {
                                 className="membership-row"
                                 key={membership.id}
                                 to={`/choirs/${membership.choir.id}`}
-                                onClick={finishJoinDialog}
+                                onClick={() => {
+                                  startLoadingJourney("enter-drive", "warm");
+                                  finishJoinDialog();
+                                }}
                               >
                                 <span>
                                   <strong>{membership.choir.name}</strong>

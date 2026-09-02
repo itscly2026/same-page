@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { PDFDocumentProxy } from "./pdf-document";
+import { completeLoadingJourney } from "../performance/loading-performance";
 
 export function PdfPageCanvas({
   document,
@@ -78,6 +79,9 @@ export function PdfPageCanvas({
         }
         setError(false);
         lease?.ready();
+        window.requestAnimationFrame(() => {
+          completeLoadingJourney("open-score", "first-canvas-visible");
+        });
       })
       .catch((reason: unknown) => {
         if (active && !(reason instanceof Error && reason.name === "RenderingCancelledException")) {

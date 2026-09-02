@@ -43,6 +43,9 @@ jobs:
       - name: PWA update handover
         run: npm run test:pwa-update
 
+      - name: Loading performance feedback loop
+        run: npm run test:loading-performance
+
       - name: Visual report tests
         run: npm run test:visual-report
 

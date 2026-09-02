@@ -67,6 +67,11 @@ import {
 } from "../annotations/edit-history";
 import { authClient } from "../auth/auth-client";
 import {
+  ensureLoadingJourney,
+  markLoadingJourneyMilestone,
+  startLoadingJourney,
+} from "../performance/loading-performance";
+import {
   activateVerifiedOfflineScore,
   findActiveOfflineScore,
   localDatabase,
@@ -193,6 +198,9 @@ export default function ReaderPage() {
   const [showGestureHint, setShowGestureHint] = useState(
     () => !readBooleanPreference("reader-gesture-hint-seen"),
   );
+  useEffect(() => {
+    ensureLoadingJourney("open-score", "direct");
+  }, []);
   useEffect(() => {
     if (session.isPending) return;
     let active = true;
@@ -684,6 +692,7 @@ export default function ReaderPage() {
   useEffect(() => {
     if (!source || !workspace || source.scopeKey !== workspace.scopeKey) return;
     let active = true;
+    markLoadingJourneyMilestone("open-score", "pdf-task-start");
     const lease = acquireReaderDocument({
       ownerKey: workspace.ownerKey,
       choirId,
@@ -1006,7 +1015,11 @@ export default function ReaderPage() {
         <p className="hero__copy" role="alert">
           {loadError}
         </p>
-        <Link className="primary-link" to={`/choirs/${choirId}`}>
+        <Link
+          className="primary-link"
+          to={`/choirs/${choirId}`}
+          onClick={() => startLoadingJourney("exit-score", "warm")}
+        >
           返回云盘
         </Link>
       </main>
@@ -1088,6 +1101,7 @@ export default function ReaderPage() {
             aria-label="返回云盘"
             className="reader-chrome__back reader-icon-button"
             to={`/choirs/${choirId}`}
+            onClick={() => startLoadingJourney("exit-score", "warm")}
           >
             <ArrowLeft aria-hidden="true" size={22} />
           </Link>

@@ -10,10 +10,14 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   WECHAT_CLIENT_ID?: string;
   WECHAT_CLIENT_SECRET?: string;
+  PERFORMANCE_TEST_DELAY_MS?: string;
 }
 
 export interface AppEnvironment {
   Bindings: Env;
+  Variables: {
+    serverTiming?: import("./performance/server-timing").RequestServerTiming;
+  };
 }
 
 export interface WaitUntilContext {

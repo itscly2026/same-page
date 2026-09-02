@@ -14,6 +14,7 @@ import { resolveContextPrincipal } from "../auth/context-principal";
 import { createDatabase } from "../db/database";
 import { scores } from "../db/schema";
 import type { AppEnvironment } from "../env";
+import { measureServerTiming } from "../performance/server-timing";
 import { PdfValidationError, inspectPdf } from "./pdf-validation";
 import {
   ConcurrentReplacementError,
@@ -37,7 +38,7 @@ scoreRoutes.get("/choirs/:choirId/scores", async (context) => {
   const access = await resolveChoirAccess(context, choirId);
   const search = context.req.query("q")?.trim().slice(0, 120) ?? "";
   const pattern = `%${escapeLike(scoreFileNameKey(search))}%`;
-  const result = await context.env.DB.prepare(
+  const result = await measureServerTiming(context, "d1", () => context.env.DB.prepare(
     `SELECT scores.id, scores.choir_id, scores.file_name, scores.updated_at,
             versions.id AS version_id, versions.version_number,
             versions.size_bytes, versions.sha256, versions.etag,
@@ -49,8 +50,9 @@ scoreRoutes.get("/choirs/:choirId/scores", async (context) => {
        AND (? = '' OR scores.file_name_key LIKE ? ESCAPE '\\')`,
   )
     .bind(choirId, search, pattern)
-    .all<ScoreRow>();
-  const storage = await loadStorage(context, choirId);
+    .all<ScoreRow>());
+  const storage = await measureServerTiming(context, "d1", () =>
+    loadStorage(context, choirId));
   const serialized = result.results
     .map(serializeScoreRow)
     .sort((left, right) => fileNameCollator.compare(left.fileName, right.fileName));
@@ -88,11 +90,12 @@ scoreRoutes.get("/choirs/:choirId/scores/:scoreId/status", async (context) => {
   const choirId = context.req.param("choirId");
   const scoreId = context.req.param("scoreId");
   await resolveChoirAccess(context, choirId);
-  const row = await context.env.DB.prepare(
-    "SELECT trashed_at, trash_expires_at FROM scores WHERE id = ? AND choir_id = ?",
-  )
-    .bind(scoreId, choirId)
-    .first<{ trashed_at: number | null; trash_expires_at: number | null }>();
+  const row = await measureServerTiming(context, "d1", () =>
+    context.env.DB.prepare(
+      "SELECT trashed_at, trash_expires_at FROM scores WHERE id = ? AND choir_id = ?",
+    )
+      .bind(scoreId, choirId)
+      .first<{ trashed_at: number | null; trash_expires_at: number | null }>());
   if (!row) return context.json({ error: "score_not_found" }, 404);
   return context.json(
     row.trashed_at === null
@@ -105,8 +108,9 @@ scoreRoutes.get("/choirs/:choirId/scores/:scoreId/bootstrap", async (context) =>
   const choirId = context.req.param("choirId");
   const scoreId = context.req.param("scoreId");
   const access = await resolveChoirAccess(context, choirId);
-  const row = await context.env.DB.prepare(
-    `SELECT scores.id, scores.choir_id, scores.file_name, scores.updated_at,
+  const row = await measureServerTiming(context, "d1", () =>
+    context.env.DB.prepare(
+      `SELECT scores.id, scores.choir_id, scores.file_name, scores.updated_at,
             scores.trashed_at, scores.trash_expires_at,
             versions.id AS version_id, versions.version_number,
             versions.size_bytes, versions.sha256, versions.etag,
@@ -115,10 +119,10 @@ scoreRoutes.get("/choirs/:choirId/scores/:scoreId/bootstrap", async (context) =>
      INNER JOIN score_versions AS versions
        ON versions.id = scores.current_version_id AND versions.state = 'ready'
      WHERE scores.id = ? AND scores.choir_id = ?
-     LIMIT 1`,
-  )
-    .bind(scoreId, choirId)
-    .first<TrashedScoreRow>();
+       LIMIT 1`,
+    )
+      .bind(scoreId, choirId)
+      .first<TrashedScoreRow>());
   if (!row) return context.json({ error: "score_not_found" }, 404);
   if (row.trashed_at !== null) {
     return context.json({
@@ -307,7 +311,7 @@ async function serveScorePdf(
   const choirId = context.req.param("choirId") ?? "";
   const scoreId = context.req.param("scoreId") ?? "";
   await resolveChoirAccess(context, choirId);
-  const row = await context.env.DB.prepare(
+  const row = await measureServerTiming(context, "d1", () => context.env.DB.prepare(
     `SELECT scores.current_version_id, versions.id AS version_id,
             versions.object_key, versions.size_bytes, versions.etag,
             versions.sha256
@@ -319,7 +323,7 @@ async function serveScorePdf(
      LIMIT 1`,
   )
     .bind(scoreId, choirId, requestedVersionId ?? null)
-    .first<PdfRow>();
+    .first<PdfRow>());
   if (!row || !row.etag) {
     return context.json({ error: "score_not_found" }, 404);
   }
@@ -361,9 +365,10 @@ async function serveScorePdf(
     return new Response(null, { status, headers });
   }
 
-  const object = await context.env.SCORES_BUCKET.get(row.object_key, {
-    ...(range ? { range } : {}),
-  });
+  const object = await measureServerTiming(context, "r2", () =>
+    context.env.SCORES_BUCKET.get(row.object_key, {
+      ...(range ? { range } : {}),
+    }));
   if (!object || !("body" in object)) {
     return context.json({ error: "score_file_unavailable" }, 503);
   }
