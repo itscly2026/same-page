@@ -11,7 +11,7 @@ export const defaultSharedLayers: ReadonlyArray<{
   sortOrder: number;
 }> = [
   { slot: "E", name: "Ensemble", defaultColor: "#a12652", sortOrder: 0 },
-  { slot: "S", name: "Soprano", defaultColor: "#c2415d", sortOrder: 1 },
+  { slot: "S", name: "Soprano", defaultColor: "#7c3aed", sortOrder: 1 },
   { slot: "A", name: "Alto", defaultColor: "#8a5a00", sortOrder: 2 },
   { slot: "T", name: "Tenor", defaultColor: "#0f766e", sortOrder: 3 },
   { slot: "B", name: "Bass", defaultColor: "#3157a4", sortOrder: 4 },
@@ -95,10 +95,11 @@ export const driveLayerPreferenceUpdateSchema = z.object({
   colorOverride: colorOverrideSchema.optional(),
 });
 
-export const scoreLayerPreferenceUpdateSchema = z.object({
-  subscribed: z.boolean().nullable().optional(),
-  colorOverride: colorOverrideSchema.optional(),
-});
+export const scoreLayerPreferenceUpdateSchema = z
+  .object({
+    subscribed: z.boolean().nullable().optional(),
+  })
+  .strict();
 
 export const sharedLayerSettingUpdateSchema = z.object({
   defaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
@@ -108,7 +109,7 @@ export interface ResolvedSharedLayerPreference {
   subscribed: boolean;
   subscriptionSource: "score" | "drive" | "product";
   displayColor: string;
-  colorSource: "score" | "drive" | "admin" | "product";
+  colorSource: "drive" | "admin" | "product";
 }
 
 export function resolveSharedLayerPreference(input: {
@@ -117,7 +118,6 @@ export function resolveSharedLayerPreference(input: {
   driveSubscribed: boolean | null;
   driveColorOverride: string | null;
   scoreSubscriptionOverride: boolean | null;
-  scoreColorOverride: string | null;
 }): ResolvedSharedLayerPreference {
   const subscribed =
     input.scoreSubscriptionOverride ?? input.driveSubscribed ?? true;
@@ -128,17 +128,14 @@ export function resolveSharedLayerPreference(input: {
         ? "drive"
         : "product";
   const displayColor =
-    input.scoreColorOverride ??
     input.driveColorOverride ??
     input.adminDefaultColor ??
     input.productDefaultColor;
-  const colorSource = input.scoreColorOverride
-    ? "score"
-    : input.driveColorOverride
-      ? "drive"
-      : input.adminDefaultColor
-        ? "admin"
-        : "product";
+  const colorSource = input.driveColorOverride
+    ? "drive"
+    : input.adminDefaultColor
+      ? "admin"
+      : "product";
   return { subscribed, subscriptionSource, displayColor, colorSource };
 }
 
@@ -151,12 +148,11 @@ export interface AnnotationLayerSummary {
   subscribed: boolean;
   subscriptionSource: "score" | "drive" | "product" | "personal";
   displayColor: string;
-  colorSource: "score" | "drive" | "admin" | "product" | "personal";
+  colorSource: "drive" | "admin" | "product" | "personal";
   adminDefaultColor: string | null;
   driveSubscribed: boolean | null;
   driveColorOverride: string | null;
   scoreSubscriptionOverride: boolean | null;
-  scoreColorOverride: string | null;
   canEdit: boolean;
 }
 
@@ -180,12 +176,11 @@ export const annotationLayerSummarySchema = z.object({
   subscribed: z.boolean(),
   subscriptionSource: z.enum(["score", "drive", "product", "personal"]),
   displayColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  colorSource: z.enum(["score", "drive", "admin", "product", "personal"]),
+  colorSource: z.enum(["drive", "admin", "product", "personal"]),
   adminDefaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
   driveSubscribed: z.boolean().nullable(),
   driveColorOverride: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
   scoreSubscriptionOverride: z.boolean().nullable(),
-  scoreColorOverride: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
   canEdit: z.boolean(),
 });
 
@@ -208,4 +203,57 @@ export const annotationPullResponseSchema = z.object({
 export const annotationLayerListResponseSchema = z.object({
   layers: z.array(annotationLayerSummarySchema),
   permissions: z.object({ canManageLayers: z.boolean() }),
+});
+
+const driveIdentitySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+});
+
+export const driveLayerPreferenceSummarySchema = z.object({
+  slot: defaultSharedLayerSlotSchema,
+  name: z.string(),
+  subscribed: z.boolean(),
+  colorOverride: colorOverrideSchema,
+  adminDefaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  displayColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  colorSource: z.enum(["drive", "admin", "product"]),
+});
+
+export type DriveLayerPreferenceSummary = z.infer<
+  typeof driveLayerPreferenceSummarySchema
+>;
+
+export const driveLayerPreferencesResponseSchema = z.object({
+  drive: driveIdentitySchema,
+  layers: z.array(driveLayerPreferenceSummarySchema),
+});
+
+export const sharedLayerManagementSummarySchema = z.object({
+  slot: defaultSharedLayerSlotSchema,
+  name: z.string(),
+  defaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  grantedMemberCount: z.number().int().nonnegative(),
+});
+
+export type SharedLayerManagementSummary = z.infer<
+  typeof sharedLayerManagementSummarySchema
+>;
+
+export const sharedLayerManagementResponseSchema = z.object({
+  drive: driveIdentitySchema,
+  layers: z.array(sharedLayerManagementSummarySchema),
+});
+
+export const sharedLayerGrantMemberSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  role: z.enum(["admin", "member"]),
+  granted: z.boolean(),
+});
+
+export type SharedLayerGrantMember = z.infer<typeof sharedLayerGrantMemberSchema>;
+
+export const sharedLayerGrantListResponseSchema = z.object({
+  members: z.array(sharedLayerGrantMemberSchema),
 });

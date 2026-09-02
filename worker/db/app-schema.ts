@@ -249,7 +249,6 @@ export const userScoreLayerPreferences = sqliteTable(
     scoreId: text("score_id").notNull().references(() => scores.id, { onDelete: "cascade" }),
     slot: text("slot", { enum: ["E", "S", "A", "T", "B"] }).notNull(),
     subscribedOverride: integer("subscribed_override", { mode: "boolean" }),
-    colorOverride: text("color_override"),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [uniqueIndex("user_score_layer_preferences_uidx").on(table.userId, table.scoreId, table.slot)],

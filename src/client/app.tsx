@@ -8,6 +8,15 @@ import { HomePage } from "./routes/home-page";
 const ReaderPage = lazy(() => import("./routes/reader-page"));
 const AuthPage = lazy(() => import("./routes/auth-page"));
 const ChoirPage = lazy(() => import("./routes/choir-page"));
+const DriveLayerPreferencesPage = lazy(
+  () => import("./routes/drive-layer-preferences-page"),
+);
+const SharedLayerManagementPage = lazy(
+  () => import("./routes/shared-layer-management-page"),
+);
+const SharedLayerGrantsPage = lazy(
+  () => import("./routes/shared-layer-grants-page"),
+);
 const PrivacyPage = lazy(() => import("./routes/privacy-page"));
 
 export function AppRoutes() {
@@ -20,6 +29,18 @@ export function AppRoutes() {
           <Route path="/login" element={<AuthPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/choirs/:choirId" element={<ChoirPage />} />
+          <Route
+            path="/choirs/:choirId/preferences"
+            element={<DriveLayerPreferencesPage />}
+          />
+          <Route
+            path="/choirs/:choirId/shared-layers"
+            element={<SharedLayerManagementPage />}
+          />
+          <Route
+            path="/choirs/:choirId/shared-layers/:slot"
+            element={<SharedLayerGrantsPage />}
+          />
           <Route
             path="/choirs/:choirId/scores/:scoreId"
             element={<ReaderPage />}

@@ -53,7 +53,6 @@ describe("logout local privacy", () => {
       driveSubscribed: null,
       driveColorOverride: null,
       scoreSubscriptionOverride: null,
-      scoreColorOverride: "#445566",
       canEdit: true,
     };
     const personalLayer = {
@@ -158,7 +157,6 @@ describe("logout local privacy", () => {
         canEdit: false,
         subscribed: true,
         scoreSubscriptionOverride: null,
-        scoreColorOverride: null,
       }),
     ]);
     expect((await localDatabase.annotations.toArray()).map((entry) => entry.id)).toEqual([

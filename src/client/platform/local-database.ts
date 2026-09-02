@@ -116,7 +116,6 @@ export interface GuestLayerPreferenceRecord {
   scoreId: string;
   layerId: string;
   visible: boolean;
-  colorOverride: string | null;
 }
 
 export interface SyncLeaseRecord {
@@ -420,7 +419,6 @@ async function migrateLegacyLocalWorkspaces(transaction: Transaction) {
       canEdit: knownOwner ? layer.canEdit : false,
       subscribed: knownOwner ? layer.subscribed : true,
       scoreSubscriptionOverride: knownOwner ? layer.scoreSubscriptionOverride : null,
-      scoreColorOverride: knownOwner ? layer.scoreColorOverride : null,
     });
   }
   await tables.annotationLayers.clear();
@@ -500,7 +498,6 @@ async function migrateLegacyLocalWorkspaces(transaction: Transaction) {
           canEdit: knownOwner ? layer.canEdit : false,
           subscribed: knownOwner ? layer.subscribed : true,
           scoreSubscriptionOverride: knownOwner ? layer.scoreSubscriptionOverride : null,
-          scoreColorOverride: knownOwner ? layer.scoreColorOverride : null,
         })),
       annotations: legacySnapshot.annotations
         .filter(

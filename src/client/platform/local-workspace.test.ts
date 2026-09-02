@@ -258,7 +258,6 @@ function legacyLayer(scopeKey: string, id: string, kind: "shared" | "personal") 
     driveSubscribed: null,
     driveColorOverride: null,
     scoreSubscriptionOverride: null,
-    scoreColorOverride: "#445566",
     canEdit: true,
   };
 }

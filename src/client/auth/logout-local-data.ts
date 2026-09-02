@@ -92,7 +92,6 @@ export async function clearPrivateLocalDataAfterLogout() {
             key: localWorkspaceRecordKey(workspace, layer.id),
             canEdit: false,
             scoreSubscriptionOverride: null,
-            scoreColorOverride: null,
             subscribed: true,
           };
         }),
@@ -137,7 +136,6 @@ export async function clearPrivateLocalDataAfterLogout() {
                 key: localWorkspaceRecordKey(workspace, layer.id),
                 canEdit: false,
                 scoreSubscriptionOverride: null,
-                scoreColorOverride: null,
                 subscribed: true,
               })),
             annotations: score.annotationSnapshot.annotations.filter(

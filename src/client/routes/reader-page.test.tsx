@@ -231,6 +231,7 @@ describe("ReaderPage", () => {
       "ResizeObserver",
       class {
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );
@@ -1527,6 +1528,76 @@ describe("ReaderPage", () => {
     expect(screen.queryByText("编辑")).not.toBeInTheDocument();
   });
 
+  it("keeps the score layer panel focused on read subscriptions and effective colors", async () => {
+    vi.mocked(fetch).mockImplementation((input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/layers")) {
+        return Promise.resolve(Response.json({
+          layers: [
+            ...(["E", "S", "A", "T", "B"] as const).map((slot, index) => ({
+              id: `00000000-0000-4000-8000-00000000000${index}`,
+              kind: "shared" as const,
+              defaultSlot: slot,
+              name: ({ E: "Ensemble", S: "Soprano", A: "Alto", T: "Tenor", B: "Bass" })[slot],
+              sortOrder: index,
+              subscribed: slot === "E" || slot === "B",
+              subscriptionSource: slot === "B" ? "score" : "drive",
+              displayColor: index === 0 ? "#a12652" : "#3157a4",
+              colorSource: "drive",
+              adminDefaultColor: "#a12652",
+              driveSubscribed: slot === "E",
+              driveColorOverride: index === 0 ? "#a12652" : null,
+              scoreSubscriptionOverride: slot === "B" ? true : null,
+              canEdit: slot === "E",
+            })),
+            {
+              id: "11111111-1111-4111-8111-111111111111",
+              kind: "personal",
+              defaultSlot: null,
+              name: "Personal",
+              sortOrder: 10000,
+              subscribed: true,
+              subscriptionSource: "product",
+              displayColor: "#b4235a",
+              colorSource: "product",
+              adminDefaultColor: "#b4235a",
+              driveSubscribed: null,
+              driveColorOverride: null,
+              scoreSubscriptionOverride: null,
+              canEdit: true,
+            },
+          ],
+          permissions: { canManageLayers: true },
+        }));
+      }
+      return Promise.resolve(activeBootstrapResponse());
+    });
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByLabelText("翻页阅读");
+    toggleChrome();
+    fireEvent.click(screen.getByRole("button", { name: "图层" }));
+    const panel = screen.getByRole("complementary", { name: "图层" });
+
+    await within(panel).findByText("Ensemble");
+    expect(panel).toHaveTextContent("E·Ensemble");
+    expect(panel).toHaveTextContent("P·Personal");
+    expect(within(panel).getAllByRole("checkbox")).toHaveLength(5);
+    expect(within(panel).getByText("Personal")).toBeInTheDocument();
+    expect(within(panel).getByText("本谱")).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "恢复我的默认" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: /恢复 B · Bass/ })).toBeInTheDocument();
+    expect(within(panel).queryByText("Preferences")).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: /只读/ })).not.toBeInTheDocument();
+    expect(panel.querySelector('input[type="color"]')).toBeNull();
+  });
+
   it("identifies a persisted object conflict by page, layer and summary", async () => {
     await localDatabase.annotationConflicts.put({
       opId: "conflict-op",
@@ -1565,7 +1636,6 @@ describe("ReaderPage", () => {
                 driveSubscribed: null,
                 driveColorOverride: null,
                 scoreSubscriptionOverride: null,
-                scoreColorOverride: null,
                 canEdit: false,
               },
             ],
@@ -1833,7 +1903,7 @@ describe("ReaderPage", () => {
                 defaultSlot: slot,
                 name: ({ E: "Ensemble", S: "Soprano", A: "Alto", T: "Tenor", B: "Bass" })[slot],
                 sortOrder: index,
-                subscribed: slot === "E" || slot === "B",
+                subscribed: slot === "B",
                 subscriptionSource: "product",
                 displayColor: "#a12652",
                 colorSource: "product",
@@ -1841,7 +1911,6 @@ describe("ReaderPage", () => {
                 driveSubscribed: null,
                 driveColorOverride: null,
                 scoreSubscriptionOverride: null,
-                scoreColorOverride: null,
                 canEdit: slot === "E",
               })),
               {
@@ -1858,7 +1927,6 @@ describe("ReaderPage", () => {
                 driveSubscribed: null,
                 driveColorOverride: null,
                 scoreSubscriptionOverride: null,
-                scoreColorOverride: null,
                 canEdit: true,
               },
             ],
@@ -1964,8 +2032,8 @@ describe("ReaderPage", () => {
       screen.getByRole("button", { name: "S，Soprano，只读，查看权限说明" }),
     ).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "S，Soprano，只读，查看权限说明" }));
-    expect(screen.getByRole("dialog", { name: "View only" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.getByRole("dialog", { name: "仅可查看" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "知道了" }));
     fireEvent.click(screen.getByRole("button", { name: "E，Ensemble" }));
     expect(
       screen.getByRole("button", { name: "E，Ensemble" }),
@@ -1973,6 +2041,17 @@ describe("ReaderPage", () => {
       "aria-pressed",
       "true",
     );
+    expect(
+      await localDatabase.annotationLayers.get(
+        localWorkspaceRecordKey(
+          localWorkspace,
+          "00000000-0000-4000-8000-000000000000",
+        ),
+      ),
+    ).toMatchObject({
+      subscribed: false,
+      scoreSubscriptionOverride: null,
+    });
     const editingOverlay = screen.getByLabelText("第 1 页批注层");
     vi.spyOn(editingOverlay, "getBoundingClientRect").mockReturnValue({
       x: 0,
@@ -2049,7 +2128,6 @@ describe("ReaderPage", () => {
                 driveSubscribed: null,
                 driveColorOverride: null,
                 scoreSubscriptionOverride: null,
-                scoreColorOverride: null,
                 canEdit: false,
               },
             ],
@@ -2120,7 +2198,6 @@ describe("ReaderPage", () => {
             driveSubscribed: null,
             driveColorOverride: null,
             scoreSubscriptionOverride: null,
-            scoreColorOverride: null,
             canEdit: true,
           },
         ],
@@ -2210,7 +2287,6 @@ describe("ReaderPage", () => {
             driveSubscribed: null,
             driveColorOverride: null,
             scoreSubscriptionOverride: null,
-            scoreColorOverride: null,
             canEdit: true,
           },
         ],

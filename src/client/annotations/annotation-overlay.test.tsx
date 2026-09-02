@@ -41,7 +41,7 @@ const layers: AnnotationLayerSummary[] = [
     defaultSlot: "E",
     name: "Ensemble",
     sortOrder: 0,
-    subscribed: true,
+    subscribed: false,
     subscriptionSource: "product",
     displayColor: "#a12652",
     colorSource: "product",
@@ -49,7 +49,6 @@ const layers: AnnotationLayerSummary[] = [
     driveSubscribed: null,
     driveColorOverride: null,
     scoreSubscriptionOverride: null,
-    scoreColorOverride: null,
     canEdit: true,
   },
   {
@@ -66,7 +65,6 @@ const layers: AnnotationLayerSummary[] = [
     driveSubscribed: null,
     driveColorOverride: null,
     scoreSubscriptionOverride: null,
-    scoreColorOverride: null,
     canEdit: true,
   },
 ];
@@ -553,11 +551,11 @@ describe("AnnotationOverlay", () => {
     expect(await localDatabase.annotations.get(otherInk.key)).toMatchObject({ deleted: false });
   });
 
-  it("shows only the active layer while editing and subscriptions while reading", () => {
-    const active = annotation("active", activeLayerId, textPayload("G 内容", 0.2, 0.2));
+  it("shows only the active layer while editing even when it is unsubscribed", () => {
+    const active = annotation("active", activeLayerId, textPayload("E 内容", 0.2, 0.2));
     const other = annotation("other", otherLayerId, textPayload("B 内容", 0.4, 0.4));
     const view = renderOverlay([active, other], "text");
-    expect(screen.getByRole("button", { name: "G 内容" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "E 内容" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "B 内容" })).not.toBeInTheDocument();
 
     view.rerender(
@@ -571,7 +569,7 @@ describe("AnnotationOverlay", () => {
         activeLayerId={activeLayerId}
       />,
     );
-    expect(screen.getByRole("button", { name: "G 内容" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "E 内容" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "B 内容" })).toBeInTheDocument();
   });
 });

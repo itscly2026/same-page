@@ -180,13 +180,29 @@ export default function ChoirPage() {
       <Link className="header-action" to="/">
         其他云盘
       </Link>
-      {session.data?.user && !isInternalAuthEmail(session.data.user.email) ? (
-        <span className="account-email">{session.data.user.email}</span>
-      ) : !session.data?.user ? (
+      {session.data?.user ? (
+        <MenuTrigger>
+          <Button className="account-menu-button" aria-label="用户菜单">
+            <span className="account-menu-label">
+              {isInternalAuthEmail(session.data.user.email)
+                ? "我的"
+                : session.data.user.email}
+            </span>
+            <span className="account-menu-label account-menu-label--compact">
+              我的
+            </span>
+          </Button>
+          <Popover className="file-menu-popover account-menu-popover">
+            <Menu aria-label="用户菜单">
+              <MenuItem href={`/choirs/${choirId}/preferences`}>我的偏好</MenuItem>
+            </Menu>
+          </Popover>
+        </MenuTrigger>
+      ) : (
         <Link className="header-action header-action--primary" to="/login">
           登录或注册
         </Link>
-      ) : null}
+      )}
     </>
   );
 
@@ -264,6 +280,9 @@ export default function ChoirPage() {
                       if (key === "invite") setInviteManagementOpen(true);
                     }}
                   >
+                    <MenuItem href={`/choirs/${choirId}/shared-layers`}>
+                      共享层
+                    </MenuItem>
                     <MenuItem id="trash">回收站</MenuItem>
                     {choir?.guestAdmissionMode === "invite" ? (
                       <MenuItem id="invite">邀请码</MenuItem>
