@@ -15,6 +15,12 @@ import {
   clearReaderScoreCache,
   peekReaderScore,
 } from "./reader/reader-score-cache";
+import {
+  clearDriveLibraryCache,
+  driveCacheOwnerKey,
+  rememberDriveLibrary,
+  rememberDriveView,
+} from "./score-library/drive-library-cache";
 
 const localWorkspace = createLocalWorkspace(
   authenticatedLocalOwnerKey("user-1"),
@@ -32,6 +38,7 @@ vi.mock("./auth/auth-client", () => ({
 describe("AppRoutes", () => {
   beforeEach(async () => {
     clearReaderScoreCache();
+    clearDriveLibraryCache();
     await localDatabase.open();
     await activateAuthenticatedLocalOwner("user-1");
     vi.mocked(authClient.useSession).mockReturnValue({
@@ -1243,6 +1250,52 @@ describe("AppRoutes", () => {
       await screen.findByText("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。"),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /排练 10\.pdf.*2\.0 MB/ })).toBeInTheDocument();
+  });
+
+  it("restores a cached drive library while background refresh is delayed", async () => {
+    const ownerKey = driveCacheOwnerKey(null, "choir-1");
+    rememberDriveLibrary(ownerKey, "choir-1", {
+      choir: {
+        id: "choir-1",
+        name: "小红花云盘",
+        guestAdmissionMode: "invite",
+      },
+      result: {
+        scores: [
+          {
+            id: "cached-score",
+            choirId: "choir-1",
+            fileName: "缓存中的春日.pdf",
+            updatedAt: 1,
+            currentVersion: {
+              id: "cached-version",
+              versionNumber: 1,
+              sizeBytes: 2048,
+              sha256: "a".repeat(64),
+              etag: '"cached"',
+              pageCount: 2,
+              createdAt: 1,
+            },
+          },
+        ],
+        storage: { usedBytes: 2048, limitBytes: 1_073_741_824 },
+        permissions: { canManage: false },
+      },
+    });
+    rememberDriveView(ownerKey, "choir-1", { search: "春日", scrollTop: 320 });
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("link", { name: /缓存中的春日\.pdf/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "搜索文件名" })).toHaveValue("春日");
+    expect(screen.queryByText("正在打开云盘…")).not.toBeInTheDocument();
   });
 
   it("keeps only the newest immediate-search response", async () => {
