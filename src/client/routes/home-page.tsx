@@ -39,6 +39,29 @@ type JoinStep =
   | { kind: "invite" }
   | { kind: "display-name"; choir: ChoirSummary };
 
+const productFeatures = [
+  {
+    title: "不同声部，分层共享",
+    description:
+      "每份乐谱都包含 G、S、A、T、B 五个默认共享层，其中 G 用于全体关注的内容。获授权的人，可以在对应共享层留下批注。",
+  },
+  {
+    title: "只看需要的，也保留自己的",
+    description:
+      "你可以只显示与自己有关的共享层。你也拥有一个只有自己可见、可编辑的个人层。",
+  },
+  {
+    title: "有网就同步，没网不耽误",
+    description:
+      "打开乐谱即可获取最新的共享批注。提前下载离线副本后，断网时阅读和批注仍可继续；恢复联网后，本机内容会继续同步。",
+  },
+  {
+    title: "一份乐谱，适配每台设备",
+    description:
+      "无论使用 iPad、iPhone、Android 设备还是 Windows、macOS 电脑，都能打开同一份乐谱和批注。",
+  },
+] as const;
+
 export function HomePage() {
   const navigate = useNavigate();
   const session = authClient.useSession();
@@ -253,26 +276,52 @@ export function HomePage() {
         }
       />
 
-      <main className="marketing-hero" aria-labelledby="page-title">
-        <p className="hero-mark">Same Page</p>
-        <h1 id="page-title">Every voice, on the same page.</h1>
-        <p className="hero-zh">同页共谱，众声一心。</p>
-        <p className="hero-description">为合唱排练而设计的乐谱云盘。</p>
-        <div className="hero-actions">
-          <Button className="primary-button hero-cta" onPress={() => setJoinOpen(true)}>
-            进入云盘
-          </Button>
-          {previewChoir ? (
-            <Link className="hero-preview-link" to={`/choirs/${previewChoir.id}`}>
-              访问公开体验云盘
-            </Link>
+      <main className="marketing-content">
+        <section className="marketing-hero" aria-labelledby="page-title">
+          <p className="hero-mark">Same Page</p>
+          <h1 id="page-title">Every voice, on the same page.</h1>
+          <p className="hero-zh">同页共谱，众声一心。</p>
+          <p className="hero-description">为合唱排练而设计的乐谱云盘。</p>
+          <div className="hero-actions">
+            <Button
+              className="primary-button hero-cta"
+              onPress={() => setJoinOpen(true)}
+            >
+              进入云盘
+            </Button>
+            {previewChoir ? (
+              <Link className="hero-preview-link" to={`/choirs/${previewChoir.id}`}>
+                访问公开体验云盘
+              </Link>
+            ) : null}
+          </div>
+          {pageMessage ? (
+            <p className="form-message page-message" role="alert">
+              {pageMessage}
+            </p>
           ) : null}
-        </div>
-        {pageMessage ? (
-          <p className="form-message page-message" role="alert">
-            {pageMessage}
-          </p>
-        ) : null}
+        </section>
+
+        <section className="marketing-features" aria-label="产品特点">
+          {productFeatures.map((feature, index) => (
+            <article
+              className={`marketing-feature marketing-feature--${
+                index % 2 === 0 ? "left" : "right"
+              }`}
+              key={feature.title}
+            >
+              <div className="marketing-feature__copy">
+                <p className="marketing-feature__number" aria-hidden="true">
+                  {String(index + 1).padStart(2, "0")}
+                </p>
+                <h2>{feature.title}</h2>
+                <p className="marketing-feature__description">
+                  {feature.description}
+                </p>
+              </div>
+            </article>
+          ))}
+        </section>
       </main>
 
       <footer className="marketing-footer">

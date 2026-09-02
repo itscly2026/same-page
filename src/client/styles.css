@@ -480,7 +480,7 @@ h1 {
 
 .marketing-page {
   background:
-    radial-gradient(circle at 76% 35%, rgb(115 140 108 / 10%), transparent 24rem),
+    radial-gradient(circle at 76% 12rem, rgb(115 140 108 / 10%), transparent 24rem),
     var(--canvas);
 }
 
@@ -493,6 +493,74 @@ h1 {
   min-height: calc(100dvh - 5rem);
   margin: 0 auto;
   padding: clamp(5rem, 12vw, 9rem) 0 clamp(8rem, 16vw, 13rem);
+}
+
+.marketing-features {
+  width: min(76rem, calc(100% - 2.5rem));
+  margin: 0 auto;
+  border-top: 1px solid var(--line);
+}
+
+.marketing-feature {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: center;
+  min-height: clamp(23rem, 38vw, 31rem);
+  padding: clamp(4.5rem, 9vw, 7.5rem) 0;
+}
+
+.marketing-feature + .marketing-feature {
+  border-top: 1px solid var(--line);
+}
+
+.marketing-feature--left .marketing-feature__copy {
+  grid-column: 1 / span 5;
+}
+
+.marketing-feature--right .marketing-feature__copy {
+  grid-column: 8 / span 5;
+}
+
+.marketing-feature__copy {
+  max-width: 33rem;
+}
+
+.marketing-feature__number {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 0 0 1.5rem;
+  color: var(--sage);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.marketing-feature__number::after {
+  width: 2.75rem;
+  height: 1px;
+  background: currentColor;
+  content: "";
+  opacity: 0.55;
+}
+
+.marketing-feature h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(2.15rem, 4.4vw, 3.9rem);
+  font-weight: 680;
+  line-height: 1.08;
+  letter-spacing: -0.052em;
+  text-wrap: balance;
+}
+
+.marketing-feature__description {
+  max-width: 30rem;
+  margin: 1.5rem 0 0;
+  color: var(--muted);
+  font-size: clamp(1rem, 1.5vw, 1.12rem);
+  line-height: 1.85;
+  text-wrap: pretty;
 }
 
 .marketing-footer {
@@ -2470,9 +2538,31 @@ h1 {
     padding: 4.5rem 0 8rem;
   }
 
+  .marketing-features,
   .marketing-footer,
   .privacy-document {
     width: calc(100% - 2rem);
+  }
+
+  .marketing-feature {
+    display: block;
+    min-height: 0;
+    padding: 5.5rem 0 6rem;
+  }
+
+  .marketing-feature__copy {
+    max-width: 31rem;
+  }
+
+  .marketing-feature h2 {
+    max-width: 10ch;
+    font-size: clamp(2.35rem, 11vw, 3.35rem);
+  }
+
+  .marketing-feature__description {
+    margin-top: 1.35rem;
+    font-size: 1rem;
+    line-height: 1.8;
   }
 
   .marketing-hero h1 {

@@ -83,6 +83,38 @@ describe("AppRoutes", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("同页共谱，众声一心。")).toBeInTheDocument();
     expect(screen.getByText("为合唱排练而设计的乐谱云盘。")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "不同声部，分层共享" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "只看需要的，也保留自己的" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "有网就同步，没网不耽误" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "一份乐谱，适配每台设备" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "每份乐谱都包含 G、S、A、T、B 五个默认共享层，其中 G 用于全体关注的内容。获授权的人，可以在对应共享层留下批注。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "你可以只显示与自己有关的共享层。你也拥有一个只有自己可见、可编辑的个人层。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "打开乐谱即可获取最新的共享批注。提前下载离线副本后，断网时阅读和批注仍可继续；恢复联网后，本机内容会继续同步。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "无论使用 iPad、iPhone、Android 设备还是 Windows、macOS 电脑，都能打开同一份乐谱和批注。",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "登录" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "隐私政策" })).toHaveAttribute(
       "href",
