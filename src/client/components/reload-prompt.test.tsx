@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   registrationUpdateMock,
+  setRegistrationWaiting,
   setShouldNeedRefresh,
   updateServiceWorkerMock,
 } from "../../test/pwa-register-mock";
@@ -11,8 +12,13 @@ import { ReloadPrompt } from "./reload-prompt";
 describe("ReloadPrompt", () => {
   beforeEach(() => {
     setShouldNeedRefresh(true);
+    setRegistrationWaiting(true);
     updateServiceWorkerMock.mockClear();
     registrationUpdateMock.mockClear();
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
   });
 
   it("offers an explicit update action when a new service worker is waiting", () => {
@@ -21,6 +27,31 @@ describe("ReloadPrompt", () => {
     expect(screen.getByText("有新版本可用")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更新" }));
     expect(updateServiceWorkerMock).toHaveBeenCalledWith(true);
+    expect(screen.getByText("正在更新…")).toBeInTheDocument();
+  });
+
+  it("keeps the old build usable when the device goes offline", () => {
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+
+    render(<ReloadPrompt />);
+    fireEvent.click(screen.getByRole("button", { name: "更新" }));
+
+    expect(updateServiceWorkerMock).not.toHaveBeenCalled();
+    expect(screen.getByText("当前离线，联网后可重试更新")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+  });
+
+  it("recovers when the waiting service worker is no longer available", () => {
+    setRegistrationWaiting(false);
+
+    render(<ReloadPrompt />);
+    fireEvent.click(screen.getByRole("button", { name: "更新" }));
+
+    expect(updateServiceWorkerMock).not.toHaveBeenCalled();
+    expect(screen.getByText("更新尚未准备好，请重试")).toBeInTheDocument();
   });
 
   it("checks for an update after registration and when returning to the foreground", async () => {

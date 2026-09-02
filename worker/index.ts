@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 
+import { buildId } from "../src/shared/build";
 import { healthResponseSchema } from "../src/shared/health";
 import { annotationRoutes } from "./annotations/routes";
 import { AuthorizationError } from "./auth/authorization";
@@ -17,6 +18,7 @@ app.get("/api/health", (context) => {
       status: "ok",
       service: "same-page",
       runtime: "cloudflare-worker",
+      buildId,
     }),
   );
 });

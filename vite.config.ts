@@ -1,11 +1,19 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
 import react from "@vitejs/plugin-react";
+import { execFileSync } from "node:child_process";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 import { navigationFallbackDenylist } from "./src/client/pwa-navigation.ts";
 
+const buildId = process.env.SAME_PAGE_BUILD_ID
+  ?? process.env.GITHUB_SHA
+  ?? execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+
 export default defineConfig({
+  define: {
+    __SAME_PAGE_BUILD_ID__: JSON.stringify(buildId),
+  },
   build: {
     // The lazy reader contains the PDF.js display API (about 170 KiB gzip).
     // Keep the warning threshold explicit while the home/auth chunks remain
@@ -13,6 +21,16 @@ export default defineConfig({
     chunkSizeWarningLimit: 600,
   },
   plugins: [
+    {
+      name: "same-page-build-identity",
+      generateBundle() {
+        this.emitFile({
+          type: "asset",
+          fileName: "build.json",
+          source: `${JSON.stringify({ buildId })}\n`,
+        });
+      },
+    },
     react(),
     cloudflare(),
     VitePWA({
