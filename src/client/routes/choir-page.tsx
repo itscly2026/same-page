@@ -40,6 +40,14 @@ import {
 } from "../performance/loading-performance";
 import { rememberReaderScore } from "../reader/reader-score-cache";
 import {
+  driveCacheOwnerKey,
+  invalidateDriveLibrary,
+  readDriveLibrary,
+  rememberDriveLibrary,
+  rememberDriveView,
+  type DriveCacheOwnerKey,
+} from "../score-library/drive-library-cache";
+import {
   ScoreActionDialog,
   type ScoreAction,
   type ScoreActionSelection,
@@ -53,6 +61,7 @@ export default function ChoirPage() {
   const session = authClient.useSession();
   const userId = session.data?.user.id;
   const [access, setAccess] = useState<ChoirAccessState>({ kind: "loading" });
+  const [reloadSequence, setReloadSequence] = useState(0);
   const [openAdmissionDisplayName, setOpenAdmissionDisplayName] = useState("");
   const [search, setSearch] = useState("");
   const [searchMessage, setSearchMessage] = useState<string | null>(null);
@@ -67,6 +76,10 @@ export default function ChoirPage() {
   const [trashOpen, setTrashOpen] = useState(false);
   const searchTimer = useRef<number | null>(null);
   const scoreListRequest = useRef(0);
+  const viewState = useRef({ search: "", scrollTop: 0 });
+  const cacheOwner: DriveCacheOwnerKey | null = session.isPending
+    ? null
+    : driveCacheOwnerKey(userId ?? null, choirId);
   const currentChoir =
     access.kind === "opened" || access.kind === "join-required"
       ? access.choir
@@ -104,22 +117,66 @@ export default function ChoirPage() {
         return;
       }
       setSearchMessage(null);
-      setAccess({ kind: "opened", choir: currentChoir, result: next.result });
+      const opened = { kind: "opened" as const, choir: currentChoir, result: next.result };
+      setAccess(opened);
+      if (cacheOwner) {
+        rememberDriveLibrary(cacheOwner, choirId, opened);
+        rememberDriveView(cacheOwner, choirId, {
+          search: query,
+          scrollTop: viewState.current.scrollTop,
+        });
+      }
     },
-    [choirId, currentChoir, search],
+    [cacheOwner, choirId, currentChoir, search],
   );
 
   useEffect(() => {
-    if (session.isPending) return;
+    if (!cacheOwner) return;
     let active = true;
-    void openChoir(choirId, Boolean(userId)).then((opened) => {
+    const cached = readDriveLibrary(cacheOwner, choirId);
+    const query = cached?.search ?? "";
+    const restoreFrame = window.requestAnimationFrame(() => {
       if (!active) return;
+      if (!cached) {
+        setAccess({ kind: "loading" });
+        return;
+      }
+      viewState.current = { search: cached.search, scrollTop: cached.scrollTop };
+      setSearch(cached.search);
+      setAccess({ kind: "opened", choir: cached.choir, result: cached.result });
+      document.documentElement.scrollTop = cached.scrollTop;
+      document.body.scrollTop = cached.scrollTop;
+    });
+    void openChoir(choirId, Boolean(userId), query).then((opened) => {
+      if (!active) return;
+      if (opened.kind === "failed" && cached) {
+        setSearchMessage("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。");
+        return;
+      }
+      if (opened.kind === "opened") {
+        rememberDriveLibrary(cacheOwner, choirId, opened);
+        rememberDriveView(cacheOwner, choirId, {
+          search: query,
+          scrollTop: cached?.scrollTop ?? 0,
+        });
+      } else if (opened.kind === "denied") {
+        invalidateDriveLibrary(cacheOwner, choirId);
+      }
       setAccess(opened);
     });
     return () => {
       active = false;
+      window.cancelAnimationFrame(restoreFrame);
     };
-  }, [choirId, userId, session.isPending]);
+  }, [cacheOwner, choirId, reloadSequence, userId]);
+
+  useEffect(() => () => {
+    if (!cacheOwner) return;
+    rememberDriveView(cacheOwner, choirId, {
+      search: viewState.current.search,
+      scrollTop: window.scrollY,
+    });
+  }, [cacheOwner, choirId]);
 
   useEffect(
     () => () => {
@@ -130,6 +187,7 @@ export default function ChoirPage() {
 
   const updateSearch = (value: string) => {
     setSearch(value);
+    viewState.current.search = value;
     if (searchTimer.current !== null) window.clearTimeout(searchTimer.current);
     searchTimer.current = window.setTimeout(() => {
       searchTimer.current = null;
@@ -178,6 +236,11 @@ export default function ChoirPage() {
   const openScoreAction = (score: ScoreSummary, action: ScoreAction) => {
     setScoreAction({ score, action });
     setMessage(null);
+  };
+
+  const refreshAfterMutation = async () => {
+    if (cacheOwner) invalidateDriveLibrary(cacheOwner, choirId);
+    await refresh();
   };
 
   const rotateJoinCode = async () => {
@@ -266,6 +329,22 @@ export default function ChoirPage() {
           <h1>无法访问这个云盘</h1>
           <p className="hero__copy">请返回首页输入当前邀请码，或使用有成员关系的邮箱登录。</p>
           <Link className="primary-link" to="/">返回首页</Link>
+        </main>
+      </div>
+    );
+  }
+
+  if (access.kind === "failed") {
+    return (
+      <div className="app-page">
+        <AppHeader actions={headerActions} />
+        <main className="page-shell compact-page access-page">
+          <p className="eyebrow">云盘</p>
+          <h1>暂时无法打开云盘</h1>
+          <p className="hero__copy">网络或服务暂时不可用，请稍后重试。</p>
+          <Button className="primary-button" onPress={() => setReloadSequence((value) => value + 1)}>
+            重试
+          </Button>
         </main>
       </div>
     );
@@ -364,6 +443,12 @@ export default function ChoirPage() {
                     onClick={() =>
                       {
                         startLoadingJourney("open-score", "cold");
+                        if (cacheOwner) {
+                          rememberDriveView(cacheOwner, choirId, {
+                            search,
+                            scrollTop: window.scrollY,
+                          });
+                        }
                         rememberReaderScore(userId ?? "guest", score);
                       }
                     }
@@ -451,7 +536,7 @@ export default function ChoirPage() {
         choirId={choirId}
         isOpen={uploadOpen}
         onOpenChange={setUploadOpen}
-        onComplete={refresh}
+        onComplete={refreshAfterMutation}
         onQuotaBlocked={() => setQuotaBlocked(true)}
       />
       {scoreAction ? (
@@ -461,7 +546,7 @@ export default function ChoirPage() {
           selection={scoreAction}
           onClose={() => setScoreAction(null)}
           onComplete={async (nextMessage) => {
-            await refresh();
+            await refreshAfterMutation();
             setScoreAction(null);
             setMessage(nextMessage);
           }}
@@ -471,7 +556,7 @@ export default function ChoirPage() {
         <TrashDialog
           choirId={choirId}
           onClose={() => setTrashOpen(false)}
-          onRestored={refresh}
+          onRestored={refreshAfterMutation}
         />
       ) : null}
     </div>
@@ -481,17 +566,21 @@ export default function ChoirPage() {
 async function openChoir(
   choirId: string,
   signedIn: boolean,
+  query: string,
 ): Promise<
   Exclude<ChoirAccessState, { kind: "loading" }>
 > {
   if (signedIn) {
     await clearPreviewGuestSession({ keepForChoirId: choirId });
   }
-  const [choir, result] = await Promise.all([
+  const [choir, scoreList] = await Promise.all([
     loadChoirSummary(choirId),
-    fetchScoreList(choirId, ""),
+    requestScoreList(choirId, query),
   ]);
-  if (result) return { kind: "opened", choir, result };
+  if (scoreList.kind === "loaded") {
+    return { kind: "opened", choir, result: scoreList.result };
+  }
+  if (scoreList.kind === "failed") return { kind: "failed" };
   const openAdmission = await loadOpenAdmissionChoir(choirId);
   if (!openAdmission) return { kind: "denied" };
   if (signedIn && openAdmission.entryKind !== "preview") {
@@ -504,12 +593,13 @@ async function openChoir(
       body: JSON.stringify({ admission: "open", choirId }),
     });
     if (!admission.ok) return { kind: "denied" };
-    const admittedResult = await fetchScoreList(choirId, "");
-    return admittedResult
-      ? { kind: "opened", choir: openAdmission.choir, result: admittedResult }
+    const admittedResult = await requestScoreList(choirId, query);
+    if (admittedResult.kind === "failed") return { kind: "failed" };
+    return admittedResult.kind === "loaded"
+      ? { kind: "opened", choir: openAdmission.choir, result: admittedResult.result }
       : { kind: "denied" };
   } catch {
-    return { kind: "denied" };
+    return { kind: "failed" };
   }
 }
 
@@ -517,7 +607,8 @@ type ChoirAccessState =
   | { kind: "loading" }
   | { kind: "opened"; choir: ChoirSummary | null; result: ScoreListResponse }
   | { kind: "join-required"; choir: ChoirSummary }
-  | { kind: "denied" };
+  | { kind: "denied" }
+  | { kind: "failed" };
 
 async function loadOpenAdmissionChoir(choirId: string) {
   try {

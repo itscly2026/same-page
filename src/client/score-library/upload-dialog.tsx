@@ -37,7 +37,7 @@ export function UploadDialog({
     }));
     setUploads((current) => [...nextItems, ...current]);
 
-    await Promise.all(
+    const outcomes = await Promise.all(
       nextItems.filter((item) => item.status === "uploading").map(async (item) => {
         const form = new FormData();
         form.set("file", item.file);
@@ -62,6 +62,7 @@ export function UploadDialog({
                 : entry,
             ),
           );
+          return response.ok;
         } catch {
           setUploads((current) =>
             current.map((entry) =>
@@ -70,10 +71,11 @@ export function UploadDialog({
                 : entry,
             ),
           );
+          return false;
         }
       }),
     );
-    await onComplete();
+    if (outcomes.some(Boolean)) await onComplete();
   };
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
