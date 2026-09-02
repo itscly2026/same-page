@@ -97,7 +97,7 @@ describe("AppRoutes", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "每份乐谱都包含 G、S、A、T、B 五个默认共享层，其中 G 用于全体关注的内容。获授权的人，可以在对应共享层留下批注。",
+        "每份乐谱都包含 E、S、A、T、B 五个默认共享层，其中 E · Ensemble 用于所有人都关注的内容。获授权的人，可以在对应共享层留下批注。",
       ),
     ).toBeInTheDocument();
     expect(
