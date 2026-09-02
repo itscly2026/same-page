@@ -19,6 +19,7 @@ import {
   clearDriveLibraryCache,
   driveCacheOwnerKey,
   rememberDriveLibrary,
+  rememberDriveSummary,
   rememberDriveView,
 } from "./score-library/drive-library-cache";
 
@@ -54,6 +55,8 @@ describe("AppRoutes", () => {
             : Response.json(
             input === "/api/choirs"
               ? { memberships: [] }
+              : input.includes("/bootstrap")
+              ? driveBootstrapBody()
               : input.includes("/scores")
               ? {
                   scores: [],
@@ -758,14 +761,8 @@ describe("AppRoutes", () => {
         if (input === "/api/choirs") {
           return Promise.resolve(Response.json({ memberships: [membership] }));
         }
-        if (input.includes("/scores")) {
-          return Promise.resolve(
-            Response.json({
-              scores: [],
-              storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
-              permissions: { canManage: false },
-            }),
-          );
+        if (input.includes("/bootstrap")) {
+          return Promise.resolve(Response.json(driveBootstrapBody({ access: "membership" })));
         }
         return Promise.resolve(Response.json({}, { status: 404 }));
       },
@@ -825,14 +822,16 @@ describe("AppRoutes", () => {
         if (input === "/api/guest/session") {
           return Promise.resolve(Response.json({}, { status: 401 }));
         }
-        if (input.includes("/scores")) {
+        if (input.includes("/bootstrap")) {
           return Promise.resolve(
             admitted
-              ? Response.json({
-                  scores: [],
-                  storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
-                  permissions: { canManage: false },
-                })
+              ? Response.json(driveBootstrapBody({
+                  choir: {
+                    id: "spring-choir",
+                    name: "公开体验云盘",
+                    guestAdmissionMode: "open",
+                  },
+                }))
               : Response.json({}, { status: 403 }),
           );
         }
@@ -921,15 +920,21 @@ describe("AppRoutes", () => {
         if (input === "/api/guest/session") {
           return Promise.resolve(Response.json({}, { status: 401 }));
         }
-        return Promise.resolve(
-          joined
-            ? Response.json({
-                scores: [],
-                storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
-                permissions: { canManage: false },
-              })
-            : Response.json({}, { status: 403 }),
-        );
+        if (input.includes("/bootstrap")) {
+          return Promise.resolve(
+            joined
+              ? Response.json(driveBootstrapBody({
+                  choir: {
+                    id: "spring-choir",
+                    name: "公开体验云盘",
+                    guestAdmissionMode: "open",
+                  },
+                  access: "membership",
+                }))
+              : Response.json({}, { status: 403 }),
+          );
+        }
+        return Promise.resolve(Response.json({}, { status: 404 }));
       },
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -997,13 +1002,15 @@ describe("AppRoutes", () => {
             }),
           );
         }
-        if (input === "/api/choirs/preview-choir/scores" && admitted) {
+        if (input === "/api/choirs/preview-choir/bootstrap" && admitted) {
           return Promise.resolve(
-            Response.json({
-              scores: [],
-              storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
-              permissions: { canManage: false },
-            }),
+            Response.json(driveBootstrapBody({
+              choir: {
+                id: "preview-choir",
+                name: "公开体验云盘",
+                guestAdmissionMode: "open",
+              },
+            })),
           );
         }
         return Promise.resolve(Response.json({}, { status: 403 }));
@@ -1042,13 +1049,9 @@ describe("AppRoutes", () => {
             Response.json({ joinCode: "ABCDEFGH" }),
           );
         }
-        if (input.includes("/scores")) {
+        if (input.includes("/bootstrap")) {
           return Promise.resolve(
-            Response.json({
-              scores: [],
-              storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
-              permissions: { canManage: true },
-            }),
+            Response.json(driveBootstrapBody({ canManage: true, access: "membership" })),
           );
         }
         return Promise.resolve(
@@ -1101,12 +1104,8 @@ describe("AppRoutes", () => {
       isPending: false,
     } as ReturnType<typeof authClient.useSession>);
     vi.stubGlobal("fetch", vi.fn().mockImplementation((input: string) =>
-      Promise.resolve(input.includes("/scores")
-        ? Response.json({
-            scores: [],
-            storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
-            permissions: { canManage: false },
-          })
+      Promise.resolve(input.includes("/bootstrap")
+        ? Response.json(driveBootstrapBody({ access: "membership" }))
         : Response.json({
             choir: { id: "choir-1", name: "小红花云盘", guestAdmissionMode: "invite" },
           }))));
@@ -1130,13 +1129,18 @@ describe("AppRoutes", () => {
       isPending: false,
     } as ReturnType<typeof authClient.useSession>);
     const fetchMock = vi.fn().mockImplementation((input: string) => {
-      if (input.includes("/scores")) {
+      if (input.includes("/bootstrap")) {
         return Promise.resolve(
-          Response.json({
-            scores: [],
-            storage: { usedBytes: 900_000_000, limitBytes: 1_073_741_824 },
-            permissions: { canManage: true },
-          }),
+          Response.json(driveBootstrapBody({
+            choir: {
+              id: "spring-choir",
+              name: "公开体验云盘",
+              guestAdmissionMode: "open",
+            },
+            usedBytes: 900_000_000,
+            canManage: true,
+            access: "membership",
+          })),
         );
       }
       return Promise.resolve(
@@ -1175,8 +1179,13 @@ describe("AppRoutes", () => {
   it("shows members a filename-first list without administrator storage controls", async () => {
     const fetchMock = vi.fn().mockImplementation((input: string) =>
       Promise.resolve(
-        input.includes("/scores")
+        input.includes("/bootstrap")
           ? Response.json({
+              choir: {
+                id: "choir-1",
+                name: "小红花云盘",
+                guestAdmissionMode: "invite",
+              },
               scores: [
                 {
                   id: "score-10",
@@ -1195,7 +1204,7 @@ describe("AppRoutes", () => {
                 },
               ],
               storage: { usedBytes: 950_000_000, limitBytes: 1_073_741_824 },
-              permissions: { canManage: false },
+              permissions: { canManage: false, access: "guest" },
             })
           : Response.json({
               choir: {
@@ -1298,6 +1307,49 @@ describe("AppRoutes", () => {
     expect(screen.queryByText("正在打开云盘…")).not.toBeInTheDocument();
   });
 
+  it("reuses the home summary while one member bootstrap loads the drive", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "user-1", email: "member@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    const ownerKey = driveCacheOwnerKey("user-1", "choir-1");
+    rememberDriveSummary(ownerKey, {
+      id: "choir-1",
+      name: "已知云盘名称",
+      guestAdmissionMode: "invite",
+    });
+    let finishBootstrap!: (response: Response) => void;
+    const bootstrap = new Promise<Response>((resolve) => {
+      finishBootstrap = resolve;
+    });
+    const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+      if (input === "/api/choirs/choir-1/bootstrap") return bootstrap;
+      if (input === "/api/guest/session" && init?.method === "DELETE") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return Promise.resolve(Response.json({}, { status: 404 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "已知云盘名称" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("正在加载乐谱…")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map(([input]) => input)).toEqual([
+      "/api/choirs/choir-1/bootstrap",
+    ]);
+
+    finishBootstrap(Response.json(driveBootstrapBody({ access: "membership" })));
+    expect(await screen.findByText("这里还没有 PDF 文件。")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", { method: "DELETE" });
+  });
+
   it("keeps only the newest immediate-search response", async () => {
     let releaseSlow!: (response: Response) => void;
     const slowResponse = new Promise<Response>((resolve) => {
@@ -1308,8 +1360,10 @@ describe("AppRoutes", () => {
       if (input.endsWith("?q=%E6%96%B0")) {
         return Promise.resolve(scoreListResponse("新结果.pdf"));
       }
-      if (input.includes("/scores")) {
-        return Promise.resolve(scoreListResponse("初始结果.pdf"));
+      if (input.includes("/bootstrap")) {
+        return Promise.resolve(Response.json(driveBootstrapBody({
+          scores: scoreListBody("初始结果.pdf").scores,
+        })));
       }
       return Promise.resolve(
         Response.json({
@@ -1362,13 +1416,9 @@ describe("AppRoutes", () => {
             : Response.json({}, { status: 201 }),
         );
       }
-      if (input.includes("/scores")) {
+      if (input.includes("/bootstrap")) {
         return Promise.resolve(
-          Response.json({
-            scores: [],
-            storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
-            permissions: { canManage: true },
-          }),
+          Response.json(driveBootstrapBody({ canManage: true, access: "membership" })),
         );
       }
       return Promise.resolve(
@@ -1494,8 +1544,8 @@ describe("AppRoutes", () => {
   });
 });
 
-function scoreListResponse(fileName: string) {
-  return Response.json({
+function scoreListBody(fileName: string) {
+  return {
     scores: [
       {
         id: `score-${fileName}`,
@@ -1515,5 +1565,34 @@ function scoreListResponse(fileName: string) {
     ],
     storage: { usedBytes: 2048, limitBytes: 1_073_741_824 },
     permissions: { canManage: false },
-  });
+  };
+}
+
+function scoreListResponse(fileName: string) {
+  return Response.json(scoreListBody(fileName));
+}
+
+function driveBootstrapBody(options: {
+  choir?: { id: string; name: string; guestAdmissionMode: "invite" | "open" };
+  scores?: ReturnType<typeof scoreListBody>["scores"];
+  usedBytes?: number;
+  canManage?: boolean;
+  access?: "membership" | "guest";
+} = {}) {
+  return {
+    choir: options.choir ?? {
+      id: "choir-1",
+      name: "小红花云盘",
+      guestAdmissionMode: "invite" as const,
+    },
+    scores: options.scores ?? [],
+    storage: {
+      usedBytes: options.usedBytes ?? 0,
+      limitBytes: 1_073_741_824,
+    },
+    permissions: {
+      canManage: options.canManage ?? false,
+      access: options.access ?? "guest",
+    },
+  };
 }

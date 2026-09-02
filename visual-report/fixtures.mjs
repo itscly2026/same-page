@@ -159,6 +159,31 @@ export function resolveFixtureRequest({
     });
   }
 
+  if (method === "GET" && pathname === `/api/choirs/${choir.id}/bootstrap`) {
+    return json({
+      choir,
+      scores: [score, ...otherScores],
+      storage: { usedBytes: 1_572_864, limitBytes: 1_073_741_824 },
+      permissions: {
+        canManage: identity === "admin",
+        access: "membership",
+      },
+    });
+  }
+
+  if (
+    method === "GET" &&
+    pathname === `/api/choirs/${previewChoir.id}/bootstrap` &&
+    cookie.includes("same_page_guest=visual-preview")
+  ) {
+    return json({
+      choir: previewChoir,
+      scores: [{ ...score, choirId: previewChoir.id }],
+      storage: { usedBytes: score.currentVersion.sizeBytes, limitBytes: 1_073_741_824 },
+      permissions: { canManage: false, access: "guest" },
+    });
+  }
+
   if (
     method === "GET" &&
     pathname === `/api/choirs/${choir.id}/scores/${score.id}/bootstrap`

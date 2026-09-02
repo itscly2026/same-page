@@ -108,6 +108,18 @@ test("fixture resolver returns current score shapes and a generated PDF without 
   assert.doesNotMatch(pdf.body.toString("ascii"), /token|password|invite/i);
 });
 
+test("fixture resolver supports the single drive bootstrap", () => {
+  const response = resolveFixtureRequest({
+    pathname: "/api/choirs/visual-choir/bootstrap",
+    identity: "admin",
+  });
+  const payload = JSON.parse(response.body);
+
+  assert.equal(payload.choir.name, "示例云盘");
+  assert.equal(payload.scores[0].fileName, "排练示例 · 秋日合唱.pdf");
+  assert.deepEqual(payload.permissions, { canManage: true, access: "membership" });
+});
+
 test("fixture resolver exposes the current PDF version to the reader HEAD probe", () => {
   const response = resolveFixtureRequest({
     pathname: "/api/choirs/visual-choir/scores/visual-score/pdf",

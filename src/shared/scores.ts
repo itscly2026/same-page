@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { choirSummarySchema } from "./choirs";
 import { canonicalScoreFileNameKey } from "./score-file-name-key.mjs";
 
 export const MAX_PDF_BYTES = 20 * 1024 * 1024;
@@ -56,6 +57,14 @@ export const scoreListResponseSchema = z.object({
   }),
 });
 
+export const driveBootstrapResponseSchema = scoreListResponseSchema.extend({
+  choir: choirSummarySchema,
+  permissions: z.object({
+    canManage: z.boolean(),
+    access: z.enum(["membership", "guest"]),
+  }),
+});
+
 export const scoreTrashResponseSchema = z.object({
   scores: z.array(trashedScoreSummarySchema),
   storage: scoreStorageSchema,
@@ -81,4 +90,5 @@ export const readerScoreBootstrapSchema = z.discriminatedUnion("state", [
 export type ScoreSummary = z.infer<typeof scoreSummarySchema>;
 export type TrashedScoreSummary = z.infer<typeof trashedScoreSummarySchema>;
 export type ScoreListResponse = z.infer<typeof scoreListResponseSchema>;
+export type DriveBootstrapResponse = z.infer<typeof driveBootstrapResponseSchema>;
 export type ReaderScoreBootstrap = z.infer<typeof readerScoreBootstrapSchema>;

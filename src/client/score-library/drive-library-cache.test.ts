@@ -4,8 +4,10 @@ import {
   clearDriveLibraryCache,
   driveCacheOwnerKey,
   invalidateDriveLibrary,
+  readDriveSummary,
   readDriveLibrary,
   rememberDriveLibrary,
+  rememberDriveSummary,
   rememberDriveView,
 } from "./drive-library-cache";
 
@@ -47,5 +49,19 @@ describe("drive library cache", () => {
 
     expect(readDriveLibrary(owner, "drive-1")).toBeNull();
     expect(readDriveLibrary(owner, "drive-2")).not.toBeNull();
+  });
+
+  it("primes a drive summary before its library has loaded", () => {
+    const owner = driveCacheOwnerKey("user-1", "drive-1");
+    rememberDriveSummary(owner, {
+      id: "drive-1",
+      name: "首页已有云盘",
+      guestAdmissionMode: "invite",
+    });
+
+    expect(readDriveSummary(owner, "drive-1")).toMatchObject({
+      name: "首页已有云盘",
+    });
+    expect(readDriveLibrary(owner, "drive-1")).toBeNull();
   });
 });
