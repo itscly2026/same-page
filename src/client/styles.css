@@ -2619,17 +2619,28 @@ h1 {
 
 .annotation-text {
   position: absolute;
-  max-width: 18rem;
+  max-inline-size: 50cqi;
   border: 0;
-  padding: 0.2rem;
+  padding: 0;
   color: #a12652;
   background: transparent;
   font-weight: 700;
   line-height: 1.25;
+  overflow-wrap: anywhere;
   text-align: center;
   transform: translate(-50%, -50%);
   white-space: pre-wrap;
   touch-action: none;
+}
+
+.annotation-text::before {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  inline-size: max(100%, 44px);
+  block-size: max(100%, 44px);
+  content: "";
+  transform: translate(-50%, -50%);
 }
 
 .annotation-text:disabled {

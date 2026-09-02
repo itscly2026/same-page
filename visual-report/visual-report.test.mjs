@@ -40,6 +40,12 @@ test("visual report scenarios have stable unique ids and cover iPad plus narrow 
       `missing required #69 capture: ${requiredId}`,
     );
   }
+  assert.ok(
+    visualReportScenarios.some((scenario) => scenario.id === "reader-text-layout-fit"),
+  );
+  assert.ok(
+    visualReportScenarios.some((scenario) => scenario.id === "reader-text-layout-zoomed"),
+  );
 });
 
 test("fixture resolver isolates guest and member sessions", () => {
@@ -100,6 +106,17 @@ test("fixture resolver returns current score shapes and a generated PDF without 
   assert.equal(pdf.contentType, "application/pdf");
   assert.equal(pdf.body.subarray(0, 8).toString("ascii"), "%PDF-1.4");
   assert.doesNotMatch(pdf.body.toString("ascii"), /token|password|invite/i);
+});
+
+test("fixture resolver exposes the current PDF version to the reader HEAD probe", () => {
+  const response = resolveFixtureRequest({
+    pathname: "/api/choirs/visual-choir/scores/visual-score/pdf",
+    method: "HEAD",
+    identity: "member",
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers["x-score-version"], "visual-version-1");
 });
 
 test("fixture resolver supports the narrow reader bootstrap", () => {
