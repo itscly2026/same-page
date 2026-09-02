@@ -6,9 +6,12 @@ import { isInternalAuthEmail, PASSWORD_POLICY } from "../../src/shared/auth";
 import { createDatabase } from "../db/database";
 import { user } from "../db/schema";
 import type { AppEnvironment } from "../env";
-import { hashRateLimitIdentity } from "../security/join-code";
-import { consumeRateLimit } from "../security/rate-limit";
+import {
+  consumeRateLimit,
+  hashRateLimitIdentity,
+} from "../security/rate-limit";
 import type { Auth } from "./create-auth";
+import { enforceAuthOtpDeliveryRateLimit } from "./otp-delivery-rate-limit";
 
 const registrationRequestSchema = z.object({
   email: z
@@ -51,6 +54,9 @@ export async function requestRegistrationOtp(
   if (!parsed.success) return context.json({ error: "invalid_request" }, 400);
 
   const email = normalizeEmail(parsed.data.email);
+  const limited = await enforceAuthOtpDeliveryRateLimit(context, email);
+  if (limited) return limited;
+
   const existingUser = await findUserByEmail(context, email);
   if (existingUser?.emailVerified) {
     return context.json({ success: true });
@@ -62,6 +68,25 @@ export async function requestRegistrationOtp(
       // Better Auth's sign-in OTP primitive safely creates or promotes a user
       // after proving mailbox ownership. Its public sign-in route stays blocked.
       type: "sign-in",
+    }),
+  );
+}
+
+export async function requestPasswordResetOtp(
+  context: Context<AppEnvironment>,
+  auth: Auth,
+) {
+  const body = await parseJson(context);
+  const parsed = registrationRequestSchema.safeParse(body);
+  if (!parsed.success) return context.json({ error: "invalid_request" }, 400);
+
+  const email = normalizeEmail(parsed.data.email);
+  const limited = await enforceAuthOtpDeliveryRateLimit(context, email);
+  if (limited) return limited;
+
+  return auth.handler(
+    forwardAuthRequest(context, "/api/auth/email-otp/request-password-reset", {
+      email,
     }),
   );
 }

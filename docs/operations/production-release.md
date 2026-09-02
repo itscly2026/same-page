@@ -9,8 +9,9 @@
 - Worker：`same-page`，关闭 `workers.dev` 与 preview URL
 - D1：`same-page-production`（APAC）
 - R2：`same-page-production-scores`（APAC、Standard）
-- 邮件发件人：`Same Page <login@clyapps.com>`
-- Resend key：Same Page 独立、Sending access、只允许 `clyapps.com`
+- 邮件发件人：`Same Page <login@samepage.clyapps.com>`
+- Resend 发信域：`samepage.clyapps.com`，与根域真人邮件/Webmail 信誉隔离
+- Resend key：Same Page 独立、Sending access、只允许 `samepage.clyapps.com`
 - CI Cloudflare token：Same Page 独立，只包含 Workers Scripts Write、D1 Write、
   Workers R2 Storage Write、Account Settings Read，以及 `clyapps.com` 的 Workers
   Routes Write
@@ -28,13 +29,29 @@
    `RESEND_API_KEY`。需要启用第三方登录时，再设置完整的 `GOOGLE_CLIENT_ID` /
    `GOOGLE_CLIENT_SECRET` 和 `WECHAT_CLIENT_ID` / `WECHAT_CLIENT_SECRET`；缺少任意一项时
    对应入口会保持隐藏。
-4. 部署 Worker 与静态资源；Wrangler 的 custom domain 配置负责创建 DNS 记录和证书。
-5. 在 GitHub `production` environment 中设置 `CLOUDFLARE_API_TOKEN` 与
+4. 部署前先在 Resend 验证 `samepage.clyapps.com` 的 SPF、DKIM、DMARC 与 Return-Path，
+   创建仅允许该子域的 Sending-only key 并更新 Worker `RESEND_API_KEY`。发信子域记录不得
+   改动根域 MX、Cloudflare Email Routing 或 Webmail；不得在域未 verified 时切换 From。
+5. 部署 Worker 与静态资源；Wrangler 的 custom domain 配置负责创建 DNS 记录和证书。
+6. 在 GitHub `production` environment 中设置 `CLOUDFLARE_API_TOKEN` 与
    `CLOUDFLARE_ACCOUNT_ID`。
-6. 运行 `npm run verify:deployment -- https://samepage.clyapps.com`。
-7. 首位管理员完成 OTP 注册后，通过受控命令创建“小红花云盘”。自动化命令不显示
+7. 运行 `npm run verify:deployment -- https://samepage.clyapps.com`。
+8. 首位管理员完成 OTP 注册后，通过受控命令创建“小红花云盘”。自动化命令不显示
    初始邀请码；管理员首次登录后在云盘页面轮换，并立即通过私密渠道交付新码。
-8. 如需启用“公开体验”，使用 `--guest-admission open --preview-entry` 创建唯一的公开体验云盘；已有开放准入云盘必须通过受控 SQL 明确设置 `is_preview_entry = 1`，不得按名称自动匹配。
+9. 如需启用“公开体验”，使用 `--guest-admission open --preview-entry` 创建唯一的公开体验云盘；已有开放准入云盘必须通过受控 SQL 明确设置 `is_preview_entry = 1`，不得按名称自动匹配。
+
+## 认证邮件发送边界
+
+- 标准化邮箱共享 60 秒冷却与 3 次/15 分钟窗口；客户端身份共享 10 次/15 分钟窗口。
+  三者都由 Worker 执行，`429` 必须带 `Retry-After`，刷新或多标签页不能绕过。
+- 为避免通过限流差异探测用户是否存在，可投递地址与不可投递地址都消耗相同发送门槛；实际
+  成功发送数只会小于或等于门槛。D1 只保存 HMAC 后的邮箱和客户端标识，不保存原值。
+- 注册和密码重设共用上述门槛；新 OTP 发出后旧 OTP 失效，有效期 10 分钟，每个 OTP 最多
+  尝试 3 次。
+- 邮件主题不得包含 OTP；text/HTML 正文必须说明 `samepage.clyapps.com`、用途、10 分钟
+  有效期和非本人操作处理方式，不使用远程图片、营销内容或站外链接。
+- Resend `Delivered` 只表示收件服务器接受。发布证据必须把 provider 状态、实际 Inbox/Spam
+  位置和延迟分开记录，且不得包含 OTP、完整收件地址、Message-ID 或密钥。
 
 ## 第三方登录配置
 

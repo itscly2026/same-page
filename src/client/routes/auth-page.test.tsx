@@ -8,7 +8,6 @@ import AuthPage from "./auth-page";
 vi.mock("../auth/auth-client", () => ({
   authClient: {
     emailOtp: {
-      requestPasswordReset: vi.fn(),
       resetPassword: vi.fn(),
     },
     signIn: {
@@ -31,6 +30,9 @@ describe("AuthPage", () => {
             Response.json({ providers: ["google", "wechat"] }),
           );
         }
+        if (input === "/api/auth/email-otp/request-password-reset") {
+          return Promise.resolve(Response.json({ success: true }));
+        }
         if (input === "/api/guest/session" && !init?.method) {
           return Promise.resolve(new Response(null, { status: 401 }));
         }
@@ -46,10 +48,6 @@ describe("AuthPage", () => {
         redirect: true,
         url: "https://accounts.google.com/o/oauth2/v2/auth",
       },
-      error: null,
-    });
-    vi.mocked(authClient.emailOtp.requestPasswordReset).mockResolvedValue({
-      data: { success: true },
       error: null,
     });
     vi.mocked(authClient.emailOtp.resetPassword).mockResolvedValue({
@@ -500,9 +498,18 @@ describe("AuthPage", () => {
       screen.getByRole("button", { name: "发送密码重置验证码" }),
     );
     expect(await screen.findByLabelText("六位验证码")).toBeInTheDocument();
-    expect(authClient.emailOtp.requestPasswordReset).toHaveBeenCalledWith({
-      email: "admin@example.test",
-    });
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/email-otp/request-password-reset",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ email: "admin@example.test" }),
+      }),
+    );
+    expect(
+      screen.getByRole("button", {
+        name: "重新发送验证码（60 秒）",
+      }),
+    ).toBeDisabled();
   });
 
   it("moves focus to the result heading when post-authentication joining fails", async () => {

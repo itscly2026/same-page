@@ -27,7 +27,7 @@
   ],
   "vars": {
     "BETTER_AUTH_URL": "https://samepage.clyapps.com",
-    "AUTH_EMAIL_FROM": "Same Page <login@clyapps.com>"
+    "AUTH_EMAIL_FROM": "Same Page <login@samepage.clyapps.com>"
   },
   "assets": {
     "not_found_handling": "single-page-application",

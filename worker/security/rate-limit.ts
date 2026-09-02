@@ -1,6 +1,17 @@
+import { encodeBase64Url, signHmac } from "./crypto";
+
 export interface RateLimitResult {
   allowed: boolean;
   retryAfterSeconds: number;
+}
+
+export async function hashRateLimitIdentity(
+  identity: string,
+  secret: string,
+): Promise<string> {
+  return encodeBase64Url(
+    await signHmac(secret, "invite-rate-limit", identity),
+  );
 }
 
 export async function consumeRateLimit(
