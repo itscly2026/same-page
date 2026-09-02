@@ -1861,6 +1861,226 @@ h1 {
 .reader-layer-panel {
   min-height: 0;
   overflow: auto;
+  padding: 1rem 0.9rem 2rem;
+  background: #f6f6f4;
+}
+
+.layer-section + .layer-section {
+  margin-top: 1.35rem;
+}
+
+.layer-section__heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  padding: 0 0.35rem 0.55rem;
+}
+
+.layer-section__heading h3,
+.layer-section__heading p {
+  margin: 0;
+}
+
+.layer-section__heading h3 {
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.layer-section__heading p,
+.layer-section__heading > span {
+  margin-top: 0.12rem;
+  color: #77736f;
+  font-size: 0.68rem;
+}
+
+.layer-card-list {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid rgb(0 0 0 / 8%);
+  border-radius: 0.9rem;
+  background: rgb(0 0 0 / 8%);
+  box-shadow: 0 0.35rem 1.25rem rgb(0 0 0 / 5%);
+}
+
+.layer-card {
+  background: #fff;
+}
+
+.layer-section--personal .layer-card {
+  overflow: hidden;
+  border: 1px solid rgb(0 0 0 / 8%);
+  border-radius: 0.9rem;
+  box-shadow: 0 0.35rem 1.25rem rgb(0 0 0 / 5%);
+}
+
+.layer-section--personal .layer-card__main {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.layer-card__main {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 4.15rem;
+  padding: 0.65rem 0.8rem;
+}
+
+.layer-card__main > input[type="checkbox"] {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: #171717;
+}
+
+.layer-card__swatch {
+  width: 0.35rem;
+  height: 2.15rem;
+  border-radius: 999px;
+}
+
+.layer-card__identity {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.layer-card__identity strong {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  font-size: 0.9rem;
+  font-weight: 590;
+}
+
+.layer-card__identity strong span {
+  width: 1.15rem;
+  font-size: 1.05rem;
+  font-weight: 720;
+}
+
+.layer-card__identity small {
+  overflow: hidden;
+  color: #77736f;
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-color-input {
+  width: 1.8rem;
+  height: 1.8rem;
+  overflow: hidden;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  background: transparent;
+}
+
+.layer-lock-button,
+.text-button {
+  border: 0;
+  color: #5f5b57;
+  background: transparent;
+  cursor: pointer;
+}
+
+.layer-lock-button {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+}
+
+.layer-card__details {
+  border-top: 1px solid rgb(0 0 0 / 7%);
+  padding: 0.55rem 0.8rem 0.7rem 3.15rem;
+}
+
+.layer-card__details summary {
+  color: #706c68;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.layer-preference-grid {
+  display: grid;
+  gap: 0.65rem;
+  padding-top: 0.7rem;
+}
+
+.layer-preference-grid > div {
+  display: grid;
+  gap: 0.4rem;
+  border-left: 2px solid #ebe9e6;
+  padding-left: 0.65rem;
+  font-size: 0.72rem;
+}
+
+.layer-preference-grid label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.layer-permission-backdrop {
+  position: fixed;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  inset: 0;
+  padding: 1rem;
+  background: rgb(0 0 0 / 32%);
+  backdrop-filter: blur(8px);
+}
+
+.layer-permission-dialog {
+  width: min(22rem, 100%);
+  border-radius: 1rem;
+  padding: 1.35rem;
+  color: #171717;
+  background: #fff;
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 25%);
+}
+
+.layer-permission-dialog__icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  color: #5d5559;
+  background: #f2edef;
+}
+
+.layer-permission-dialog h2 {
+  margin: 0.85rem 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+.layer-permission-dialog p {
+  margin: 0.45rem 0;
+  color: #625e5b;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.layer-permission-dialog .primary-button {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.annotation-layer-slot {
+  position: relative;
+}
+
+.annotation-layer-slot__lock {
+  position: absolute;
+  top: 0.15rem;
+  right: 0.15rem;
 }
 
 .page-preview-strip {

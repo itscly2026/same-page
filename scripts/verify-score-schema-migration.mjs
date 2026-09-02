@@ -8,7 +8,6 @@ import {
   backfillLegacyScoreFileNames,
   executeD1,
 } from "./backfill-score-file-names.mjs";
-import { canonicalScoreFileNameKey } from "../src/shared/score-file-name-key.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const persistencePath = mkdtempSync(join(tmpdir(), "same-page-migration-"));
@@ -48,12 +47,14 @@ try {
     file: join(repositoryRoot, "migrations", "0008_text_annotation_font_scale.sql"),
     targetArgs,
   });
+  executeD1({
+    file: join(repositoryRoot, "migrations", "0009_fixed_layer_preferences.sql"),
+    targetArgs,
+  });
 
   verifySchema();
-  verifyMigratedNames();
   verifyDriveNames();
-  verifyDefaultSharedLayers();
-  verifyTextAnnotationMigration();
+  verifyContentReset();
   verifyRelatedRecords();
   process.stdout.write("Verified legacy score schema migration.\n");
 } finally {
@@ -89,28 +90,6 @@ function verifySchema() {
   assert(layerIndexes.includes("annotation_layers_default_slot_uidx"));
 }
 
-function verifyMigratedNames() {
-  const rows = query(
-    "SELECT id, choir_id, file_name, file_name_key FROM scores ORDER BY id",
-  );
-  assert.equal(rows.length, 4);
-  assert.equal(new Set(rows.map((row) => `${row.choir_id}\0${row.file_name_key}`)).size, 4);
-  for (const row of rows) {
-    assert(row.file_name.endsWith(".pdf"));
-    assert(row.file_name.length <= 255);
-    assert.equal(row.file_name, row.file_name.normalize("NFC"));
-    assert.equal(row.file_name_key, canonicalScoreFileNameKey(row.file_name));
-  }
-  assert.deepEqual(
-    rows.slice(0, 2).map((row) => [row.file_name, row.file_name_key]),
-    [
-      ["Été.pdf", "été.pdf"],
-      ["ÉTÉ (2).pdf", "été (2).pdf"],
-    ],
-  );
-  assert.equal(rows[3].file_name, "Untitled.pdf");
-}
-
 function verifyDriveNames() {
   assert.deepEqual(
     query("SELECT id, name FROM choirs ORDER BY id"),
@@ -122,60 +101,21 @@ function verifyDriveNames() {
 }
 
 function verifyRelatedRecords() {
-  assert.equal(query("SELECT id FROM score_versions").length, 1);
-  assert.equal(query("SELECT id FROM annotation_layers").length, 21);
-  assert.equal(query("SELECT id FROM annotation_objects").length, 1);
+  assert.equal(query("SELECT id FROM scores").length, 0);
+  assert.equal(query("SELECT id FROM score_versions").length, 0);
+  assert.equal(query("SELECT id FROM annotation_layers").length, 0);
+  assert.equal(query("SELECT id FROM annotation_objects").length, 0);
+  assert.equal(query("SELECT id FROM score_object_deletions").length, 1);
   assert.deepEqual(query("PRAGMA foreign_key_check"), []);
 }
 
-function verifyTextAnnotationMigration() {
-  const rows = query(
-    "SELECT payload_json FROM annotation_objects WHERE id = 'annotation'",
-  );
-  assert.equal(JSON.parse(rows[0].payload_json).fontScale, 0.024);
+function verifyContentReset() {
+  assert.equal(query("SELECT id FROM scores").length, 0);
+  assert.equal(query("SELECT id FROM score_versions").length, 0);
+  assert.equal(query("SELECT id FROM annotation_objects").length, 0);
   assert.equal(
-    query("SELECT op_id FROM annotation_sync_operations WHERE op_id = 'legacy-operation'")
-      .length,
+    query("SELECT op_id FROM annotation_sync_operations").length,
     0,
-  );
-}
-
-function verifyDefaultSharedLayers() {
-  const legacy = query(
-    "SELECT name, default_slot FROM annotation_layers WHERE id = 'layer'",
-  );
-  assert.deepEqual(legacy, [{ name: "Shared", default_slot: null }]);
-  const defaults = query(
-    `SELECT score_id, default_slot, kind, name
-     FROM annotation_layers
-     WHERE default_slot IS NOT NULL
-     ORDER BY score_id, sort_order`,
-  );
-  assert.equal(defaults.length, 20);
-  for (const scoreId of ["a", "b", "c", "d"]) {
-    assert.deepEqual(
-      defaults.filter((row) => row.score_id === scoreId),
-      ["G", "S", "A", "T", "B"].map((slot) => ({
-        score_id: scoreId,
-        default_slot: slot,
-        kind: "shared",
-        name: slot,
-      })),
-    );
-  }
-  executeD1({
-    command: `INSERT OR IGNORE INTO annotation_layers
-      (id, choir_id, score_id, kind, default_slot, name, sort_order,
-       default_color, created_at, updated_at)
-      VALUES ('duplicate-g', 'choir', 'a', 'shared', 'G', 'G duplicate', 99,
-              '#000000', 1, 1)`,
-    targetArgs,
-  });
-  assert.equal(
-    query(
-      "SELECT id FROM annotation_layers WHERE score_id = 'a' AND default_slot = 'G'",
-    ).length,
-    1,
   );
 }
 

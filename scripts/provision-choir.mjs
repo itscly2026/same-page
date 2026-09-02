@@ -40,6 +40,15 @@ export function provisionChoirFromCli(argv = process.argv.slice(2)) {
   const sql = [
     `INSERT INTO choirs (id, name, guest_admission_mode, guest_session_version, is_preview_entry, join_code_hash, storage_limit_bytes) VALUES (${quote(choirId)}, ${quote(options.choirName)}, ${quote(options.guestAdmission)}, 1, ${options.previewEntry ? 1 : 0}, ${quoteNullable(joinCodeHash)}, 1073741824);`,
     `INSERT INTO memberships (id, choir_id, user_id, display_name, role, status) VALUES (${quote(membershipId)}, ${quote(choirId)}, ${quote(user.id)}, ${quote(options.adminDisplayName)}, 'admin', 'active');`,
+    ...[
+      ["E", "#a12652"],
+      ["S", "#c2415d"],
+      ["A", "#8a5a00"],
+      ["T", "#0f766e"],
+      ["B", "#3157a4"],
+    ].map(([slot, color]) =>
+      `INSERT INTO choir_shared_layer_settings (choir_id, slot, default_color, updated_by_membership_id) VALUES (${quote(choirId)}, ${quote(slot)}, ${quote(color)}, ${quote(membershipId)});`,
+    ),
   ].join("\n");
 
   const temporaryDirectory = mkdtempSync(join(tmpdir(), "same-page-provision-"));

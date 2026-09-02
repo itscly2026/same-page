@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const defaultSharedLayerSlots = ["G", "S", "A", "T", "B"] as const;
+export const defaultSharedLayerSlots = ["E", "S", "A", "T", "B"] as const;
 export const defaultSharedLayerSlotSchema = z.enum(defaultSharedLayerSlots);
 export type DefaultSharedLayerSlot = z.infer<typeof defaultSharedLayerSlotSchema>;
 
@@ -10,11 +10,11 @@ export const defaultSharedLayers: ReadonlyArray<{
   defaultColor: string;
   sortOrder: number;
 }> = [
-  { slot: "G", name: "G", defaultColor: "#a12652", sortOrder: 0 },
-  { slot: "S", name: "S", defaultColor: "#c2415d", sortOrder: 1 },
-  { slot: "A", name: "A", defaultColor: "#8a5a00", sortOrder: 2 },
-  { slot: "T", name: "T", defaultColor: "#0f766e", sortOrder: 3 },
-  { slot: "B", name: "B", defaultColor: "#3157a4", sortOrder: 4 },
+  { slot: "E", name: "Ensemble", defaultColor: "#a12652", sortOrder: 0 },
+  { slot: "S", name: "Soprano", defaultColor: "#c2415d", sortOrder: 1 },
+  { slot: "A", name: "Alto", defaultColor: "#8a5a00", sortOrder: 2 },
+  { slot: "T", name: "Tenor", defaultColor: "#0f766e", sortOrder: 3 },
+  { slot: "B", name: "Bass", defaultColor: "#3157a4", sortOrder: 4 },
 ];
 
 export const normalizedCoordinateSchema = z.number().finite().min(0).max(1);
@@ -85,22 +85,62 @@ export const annotationPushRequestSchema = z.object({
   operations: z.array(annotationOperationSchema).min(1).max(100),
 });
 
-export const annotationLayerPreferenceSchema = z.object({
-  visible: z.boolean().optional(),
-  colorOverride: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .nullable()
-    .optional(),
+const colorOverrideSchema = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/)
+  .nullable();
+
+export const driveLayerPreferenceUpdateSchema = z.object({
+  subscribed: z.boolean().optional(),
+  colorOverride: colorOverrideSchema.optional(),
 });
 
-export const sharedLayerCreateSchema = z.object({
-  name: z.string().trim().min(1).max(80),
+export const scoreLayerPreferenceUpdateSchema = z.object({
+  subscribed: z.boolean().nullable().optional(),
+  colorOverride: colorOverrideSchema.optional(),
+});
+
+export const sharedLayerSettingUpdateSchema = z.object({
   defaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  sortOrder: z.number().int().min(0).max(10_000).default(0),
 });
 
-export const sharedLayerUpdateSchema = sharedLayerCreateSchema.partial();
+export interface ResolvedSharedLayerPreference {
+  subscribed: boolean;
+  subscriptionSource: "score" | "drive" | "product";
+  displayColor: string;
+  colorSource: "score" | "drive" | "admin" | "product";
+}
+
+export function resolveSharedLayerPreference(input: {
+  productDefaultColor: string;
+  adminDefaultColor: string | null;
+  driveSubscribed: boolean | null;
+  driveColorOverride: string | null;
+  scoreSubscriptionOverride: boolean | null;
+  scoreColorOverride: string | null;
+}): ResolvedSharedLayerPreference {
+  const subscribed =
+    input.scoreSubscriptionOverride ?? input.driveSubscribed ?? true;
+  const subscriptionSource =
+    input.scoreSubscriptionOverride !== null
+      ? "score"
+      : input.driveSubscribed !== null
+        ? "drive"
+        : "product";
+  const displayColor =
+    input.scoreColorOverride ??
+    input.driveColorOverride ??
+    input.adminDefaultColor ??
+    input.productDefaultColor;
+  const colorSource = input.scoreColorOverride
+    ? "score"
+    : input.driveColorOverride
+      ? "drive"
+      : input.adminDefaultColor
+        ? "admin"
+        : "product";
+  return { subscribed, subscriptionSource, displayColor, colorSource };
+}
 
 export interface AnnotationLayerSummary {
   id: string;
@@ -108,9 +148,15 @@ export interface AnnotationLayerSummary {
   defaultSlot: DefaultSharedLayerSlot | null;
   name: string;
   sortOrder: number;
-  defaultColor: string;
-  colorOverride: string | null;
-  visible: boolean;
+  subscribed: boolean;
+  subscriptionSource: "score" | "drive" | "product" | "personal";
+  displayColor: string;
+  colorSource: "score" | "drive" | "admin" | "product" | "personal";
+  adminDefaultColor: string | null;
+  driveSubscribed: boolean | null;
+  driveColorOverride: string | null;
+  scoreSubscriptionOverride: boolean | null;
+  scoreColorOverride: string | null;
   canEdit: boolean;
 }
 
@@ -131,9 +177,15 @@ export const annotationLayerSummarySchema = z.object({
   defaultSlot: defaultSharedLayerSlotSchema.nullable(),
   name: z.string(),
   sortOrder: z.number().int(),
-  defaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  colorOverride: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
-  visible: z.boolean(),
+  subscribed: z.boolean(),
+  subscriptionSource: z.enum(["score", "drive", "product", "personal"]),
+  displayColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  colorSource: z.enum(["score", "drive", "admin", "product", "personal"]),
+  adminDefaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
+  driveSubscribed: z.boolean().nullable(),
+  driveColorOverride: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
+  scoreSubscriptionOverride: z.boolean().nullable(),
+  scoreColorOverride: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
   canEdit: z.boolean(),
 });
 

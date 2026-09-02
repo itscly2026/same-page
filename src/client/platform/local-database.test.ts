@@ -22,7 +22,7 @@ describe("local annotation payload migration", () => {
     expect(migrateStoredTextPayload(migrated)).toBe(migrated);
   });
 
-  it("upgrades every persisted annotation payload location from database version 5", async () => {
+  it("clears superseded annotation and offline records from database version 5", async () => {
     const databaseName = `same-page-migration-${crypto.randomUUID()}`;
     const legacyDatabase = new Dexie(databaseName);
     legacyDatabase.version(5).stores(versionFiveStores);
@@ -75,27 +75,10 @@ describe("local annotation payload migration", () => {
     const migratedDatabase = new SamePageDatabase(databaseName);
     try {
       await migratedDatabase.open();
-      await expectTextScale(migratedDatabase.table("annotations"), annotationKey, "payload");
-      expect(await migratedDatabase.table("annotationOutbox").get("outbox")).toMatchObject({
-        opId: "outbox",
-        attemptedAt: 1,
-        payload: { fontScale: 0.024 },
-      });
-      expect(await migratedDatabase.table("annotations").get(annotationKey)).toMatchObject({
-        lastOpId: "outbox",
-      });
-
-      const conflict = await migratedDatabase.table("annotationConflicts").get("conflict");
-      expect(conflict).toMatchObject({
-        localPayload: { fontScale: 0.024 },
-        canonical: { payload: { fontScale: 0.024 } },
-      });
-      const offline = await migratedDatabase.table("offlineScores").get("offline");
-      expect(offline).toMatchObject({
-        annotationSnapshot: {
-          annotations: [{ payload: { fontScale: 0.024 } }],
-        },
-      });
+      expect(await migratedDatabase.table("annotations").count()).toBe(0);
+      expect(await migratedDatabase.table("annotationOutbox").count()).toBe(0);
+      expect(await migratedDatabase.table("annotationConflicts").count()).toBe(0);
+      expect(await migratedDatabase.table("offlineScores").count()).toBe(0);
     } finally {
       migratedDatabase.close();
       await Dexie.delete(databaseName);
@@ -118,8 +101,3 @@ const versionFiveStores = {
   syncLeases: "&scopeKey,ownerKey,expiresAt",
   annotationLayers: "&key,ownerKey,scopeKey,[scopeKey+id],kind,sortOrder",
 };
-
-async function expectTextScale(table: Dexie.Table, key: string, property: string) {
-  const record = await table.get(key);
-  expect(record).toMatchObject({ [property]: { fontScale: 0.024 } });
-}

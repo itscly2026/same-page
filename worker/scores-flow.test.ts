@@ -32,7 +32,8 @@ beforeEach(async () => {
       "DELETE FROM score_object_deletions",
       "DELETE FROM annotation_sync_operations",
       "DELETE FROM annotation_objects",
-      "DELETE FROM annotation_layer_preferences",
+      "DELETE FROM user_score_layer_preferences",
+      "DELETE FROM user_drive_layer_preferences",
       "DELETE FROM annotation_layers",
       "DELETE FROM shared_layer_edit_grants",
       "DELETE FROM score_versions",
@@ -79,11 +80,13 @@ describe("PDF file library and delivery", () => {
       .bind(tenUpload.id)
       .all<{ default_slot: string; kind: string; name: string }>();
     expect(defaultLayers.results).toEqual(
-      ["G", "S", "A", "T", "B"].map((slot) => ({
-        default_slot: slot,
-        kind: "shared",
-        name: slot,
-      })),
+      [
+        ["E", "Ensemble"],
+        ["S", "Soprano"],
+        ["A", "Alto"],
+        ["T", "Tenor"],
+        ["B", "Bass"],
+      ].map(([slot, name]) => ({ default_slot: slot, kind: "shared", name })),
     );
 
     const duplicate = await callWorker(
@@ -203,21 +206,20 @@ describe("PDF file library and delivery", () => {
       "同名.pdf",
       createMinimalPdf(612, 792),
     );
+    const trashLayer = await env.DB.prepare(
+      "SELECT id FROM annotation_layers WHERE score_id = ? AND default_slot = 'E'",
+    ).bind(original.id).first<{ id: string }>();
     await env.DB.batch([
-      env.DB.prepare(
-        `INSERT INTO annotation_layers
-          (id, choir_id, score_id, kind, name, sort_order, default_color)
-         VALUES ('trash-layer', ?, ?, 'shared', '指挥', 0, '#a12652')`,
-      ).bind(choirId, original.id),
       env.DB.prepare(
         `INSERT INTO annotation_objects
           (id, choir_id, score_id, layer_id, version, deleted, payload_json,
            created_by_display_name, updated_by_display_name, created_at, updated_at)
-         VALUES ('trash-annotation', ?, ?, 'trash-layer', 1, 0, ?,
+         VALUES ('trash-annotation', ?, ?, ?, 1, 0, ?,
                  '管理员', '管理员', 1, 1)`,
       ).bind(
         choirId,
         original.id,
+        trashLayer!.id,
         JSON.stringify({ kind: "text", pageNumber: 1, x: 0.1, y: 0.1, fontScale: 0.024, text: "保留" }),
       ),
     ]);

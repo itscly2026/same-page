@@ -1176,9 +1176,15 @@ describe("AppRoutes", () => {
       defaultSlot: null,
       name: "我的批注",
       sortOrder: 10_000,
-      defaultColor: "#b4235a",
-      colorOverride: null,
-      visible: true,
+      subscribed: true,
+      subscriptionSource: "product",
+      displayColor: "#b4235a",
+      colorSource: "product",
+      adminDefaultColor: "#b4235a",
+      driveSubscribed: null,
+      driveColorOverride: null,
+      scoreSubscriptionOverride: null,
+      scoreColorOverride: null,
       canEdit: true,
     });
     render(

@@ -23,6 +23,13 @@ const baseUrl = `http://127.0.0.1:${port}`;
 
 ensureSafeOutputPath(outputRoot);
 validateVisualReportScenarios();
+const requestedScenario = process.env.VISUAL_REPORT_SCENARIO;
+const scenarios = requestedScenario
+  ? visualReportScenarios.filter((scenario) => scenario.id === requestedScenario)
+  : visualReportScenarios;
+if (requestedScenario && scenarios.length !== 1) {
+  throw new Error(`Unknown visual report scenario: ${requestedScenario}`);
+}
 
 await rm(outputRoot, { recursive: true, force: true });
 await mkdir(screenshotsRoot, { recursive: true });
@@ -38,7 +45,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const captures = [];
 
-  for (const scenario of visualReportScenarios) {
+  for (const scenario of scenarios) {
     const deviceName = scenario.device === "desktop"
       ? "Desktop 1440 × 1000"
       : scenario.device === "landscape"
@@ -80,7 +87,14 @@ try {
       content:
         "*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important;caret-color:transparent!important}",
     });
-    if (scenario.waitsForPdf) await waitForRenderedPdf(page);
+    if (scenario.waitsForPdf) {
+      try {
+        await waitForRenderedPdf(page);
+      } catch (error) {
+        if (pageErrors.length > 0) throw pageErrors[0];
+        throw error;
+      }
+    }
     await runActions(page, scenario.actions);
     await waitForReady(page, scenario.ready);
     await waitForPageToSettle(page);
@@ -312,7 +326,9 @@ async function waitForPageToSettle(page) {
 
 async function waitForRenderedPdf(page) {
   await page.waitForFunction(() => {
-    const canvas = document.querySelector(".pdf-page-canvas [data-pdf-canvas-active]");
+    const canvas = document.querySelector(
+      ".page-reader__sheet[data-page-turn-current] .pdf-page-canvas [data-pdf-canvas-active], .continuous-reader .pdf-page-canvas [data-pdf-canvas-active]",
+    );
     if (!(canvas instanceof HTMLCanvasElement) || canvas.width < 100 || canvas.height < 100) {
       return false;
     }

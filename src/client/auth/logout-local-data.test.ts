@@ -45,9 +45,15 @@ describe("logout local privacy", () => {
       defaultSlot: null,
       name: "指挥",
       sortOrder: 0,
-      defaultColor: "#112233",
-      colorOverride: "#445566",
-      visible: false,
+      subscribed: false,
+      subscriptionSource: "product" as const,
+      displayColor: "#445566",
+      colorSource: "product" as const,
+      adminDefaultColor: "#112233",
+      driveSubscribed: null,
+      driveColorOverride: null,
+      scoreSubscriptionOverride: null,
+      scoreColorOverride: "#445566",
       canEdit: true,
     };
     const personalLayer = {
@@ -150,8 +156,9 @@ describe("logout local privacy", () => {
       expect.objectContaining({
         id: sharedLayer.id,
         canEdit: false,
-        visible: true,
-        colorOverride: null,
+        subscribed: true,
+        scoreSubscriptionOverride: null,
+        scoreColorOverride: null,
       }),
     ]);
     expect((await localDatabase.annotations.toArray()).map((entry) => entry.id)).toEqual([

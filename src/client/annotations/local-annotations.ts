@@ -51,28 +51,7 @@ export async function cacheAnnotationLayers(
 export async function updateCachedLayer(
   workspace: LocalWorkspace,
   layerId: string,
-  changes: Partial<Pick<AnnotationLayerSummary, "visible" | "colorOverride">>,
-) {
-  await assertLocalWorkspaceActive(workspace);
-  await localDatabase.transaction(
-    "rw",
-    [localDatabase.system, localDatabase.annotationLayers],
-    async () => {
-      await assertLocalWorkspaceActive(workspace);
-      await localDatabase.annotationLayers.update(
-        localWorkspaceRecordKey(workspace, layerId),
-        changes,
-      );
-    },
-  );
-}
-
-export async function updateCachedLayerMetadata(
-  workspace: LocalWorkspace,
-  layerId: string,
-  changes: Partial<
-    Pick<AnnotationLayerSummary, "name" | "defaultColor" | "sortOrder">
-  >,
+  changes: Partial<AnnotationLayerSummary>,
 ) {
   await assertLocalWorkspaceActive(workspace);
   await localDatabase.transaction(

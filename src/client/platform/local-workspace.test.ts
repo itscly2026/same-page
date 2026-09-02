@@ -8,7 +8,6 @@ import {
 import {
   activateAuthenticatedLocalOwner,
   assertLocalWorkspaceActive,
-  authenticatedLocalOwnerKey,
   resolveLocalWorkspace,
 } from "./local-workspace";
 
@@ -25,39 +24,23 @@ const legacyStores = {
 };
 
 describe("local workspace migration", () => {
-  it("binds legacy private records only when the previous user is reliable", async () => {
+  it("clears legacy private records even when the previous user is reliable", async () => {
     await seedLegacyDatabase("user-1");
 
     await localDatabase.open();
 
-    const ownerKey = authenticatedLocalOwnerKey("user-1");
-    expect(await localDatabase.annotations.toArray()).toEqual([
-      expect.objectContaining({ ownerKey, state: "draft", layerId: "personal" }),
-    ]);
-    expect(await localDatabase.annotationOutbox.toArray()).toEqual([
-      expect.objectContaining({ ownerKey, annotationId: "private-draft" }),
-    ]);
-    const offline = await localDatabase.offlineScores.toCollection().first();
-    expect(offline).toMatchObject({ ownerKey });
-    expect(offline?.annotationSnapshot.layers[0]).toMatchObject({ ownerKey });
+    expect(await localDatabase.annotations.count()).toBe(0);
+    expect(await localDatabase.annotationOutbox.count()).toBe(0);
+    expect(await localDatabase.offlineScores.count()).toBe(0);
   });
 
-  it("keeps only scrubbed shared offline content when no owner is reliable", async () => {
+  it("clears legacy shared offline content when no owner is reliable", async () => {
     await seedLegacyDatabase(null);
 
     await localDatabase.open();
 
-    const [offline] = await localDatabase.offlineScores.toArray();
-    expect(offline?.ownerKey).toMatch(/^guest:/);
-    expect(offline?.annotationSnapshot.layers).toEqual([
-      expect.objectContaining({ id: "shared", canEdit: false }),
-    ]);
-    expect(offline?.annotationSnapshot.annotations).toEqual([
-      expect.objectContaining({ id: "shared-synced", state: "synced" }),
-    ]);
-    expect(await localDatabase.annotations.toArray()).toEqual([
-      expect.objectContaining({ id: "shared-synced", state: "synced" }),
-    ]);
+    expect(await localDatabase.offlineScores.count()).toBe(0);
+    expect(await localDatabase.annotations.count()).toBe(0);
     expect(await localDatabase.annotationOutbox.count()).toBe(0);
   });
 
@@ -73,7 +56,7 @@ describe("local workspace migration", () => {
     localDatabase.close();
     randomUuid.mockRestore();
     await expect(localDatabase.open()).resolves.toBe(localDatabase);
-    expect(await localDatabase.offlineScores.count()).toBe(1);
+    expect(await localDatabase.offlineScores.count()).toBe(0);
     expect(await localDatabase.annotationOutbox.count()).toBe(0);
   });
 
@@ -267,9 +250,15 @@ function legacyLayer(scopeKey: string, id: string, kind: "shared" | "personal") 
     defaultSlot: null,
     name: id,
     sortOrder: kind === "shared" ? 0 : 10_000,
-    defaultColor: "#112233",
-    colorOverride: "#445566",
-    visible: false,
+    subscribed: false,
+    subscriptionSource: "product",
+    displayColor: "#445566",
+    colorSource: "product",
+    adminDefaultColor: "#112233",
+    driveSubscribed: null,
+    driveColorOverride: null,
+    scoreSubscriptionOverride: null,
+    scoreColorOverride: "#445566",
     canEdit: true,
   };
 }

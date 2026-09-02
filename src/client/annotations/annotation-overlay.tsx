@@ -119,11 +119,11 @@ export function AnnotationOverlay({
   const visualViewport = useVisualViewport(editing);
   const visibleLayerIds = new Set(
     layers
-      .filter((layer) => (editing ? layer.id === activeLayerId : layer.visible))
+      .filter((layer) => (editing ? layer.id === activeLayerId : layer.subscribed))
       .map((layer) => layer.id),
   );
   const layerColors = new Map(
-    layers.map((layer) => [layer.id, layer.colorOverride ?? layer.defaultColor]),
+    layers.map((layer) => [layer.id, layer.displayColor]),
   );
   const activeLayerColor = layerColors.get(activeLayerId ?? "") ?? "#a12652";
   const editorFontSize = textEditor
