@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+import { navigationFallbackDenylist } from "./src/client/pwa-navigation.ts";
+
 export default defineConfig({
   build: {
     // The lazy reader contains the PDF.js display API (about 170 KiB gzip).
@@ -55,6 +57,10 @@ export default defineConfig({
       workbox: {
         cleanupOutdatedCaches: true,
         navigateFallback: "/index.html",
+        // API navigations must always reach the Worker. In particular, OAuth
+        // callbacks carry one-time codes that the application shell cannot
+        // process and must never cache or render.
+        navigateFallbackDenylist: navigationFallbackDenylist,
         globPatterns: ["**/*.{js,mjs,css,html,ico,png,woff2}"],
         // PDF.js' worker is slightly larger than Workbox's 2 MiB default.
         // It is required to open a verified offline PDF, so keep it in the
