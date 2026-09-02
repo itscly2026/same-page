@@ -59,6 +59,17 @@ try {
   await page.getByRole("button", { name: "进入云盘", exact: true }).click();
   await page.getByRole("link", { name: /示例云盘/ }).click();
   await page.locator(".file-list").waitFor({ state: "visible" });
+  const enterRequests = [...requestOrder];
+  assert.equal(
+    enterRequests.filter((request) => request === "drive-bootstrap").length,
+    1,
+    `drive entry should use one bootstrap: ${JSON.stringify(enterRequests)}`,
+  );
+  assert.equal(
+    enterRequests.filter((request) => request === "score-list").length,
+    0,
+    `drive entry should not repeat the score list: ${JSON.stringify(enterRequests)}`,
+  );
   await page.locator(".file-row__open").first().click();
   await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({
     state: "visible",
@@ -150,6 +161,7 @@ async function waitForServer() {
 function classifyRequest(pathname) {
   if (pathname === "/api/auth/get-session") return "auth-session";
   if (pathname === "/api/choirs") return "drive-memberships";
+  if (/\/api\/choirs\/[^/]+\/bootstrap$/.test(pathname)) return "drive-bootstrap";
   if (pathname.endsWith("/bootstrap")) return "score-bootstrap";
   if (pathname.endsWith("/pdf")) return "pdf";
   if (pathname.endsWith("/layers")) return "layers";

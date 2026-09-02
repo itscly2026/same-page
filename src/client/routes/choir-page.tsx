@@ -18,19 +18,18 @@ import { Link, useParams } from "react-router-dom";
 
 import { isInternalAuthEmail } from "../../shared/auth";
 import {
-  choirMembershipsResponseSchema,
-  choirSummarySchema,
   guestSessionResponseSchema,
   rotateJoinCodeResponseSchema,
   type ChoirSummary,
 } from "../../shared/choirs";
 import {
+  driveBootstrapResponseSchema,
   scoreListResponseSchema,
   type ScoreListResponse,
   type ScoreSummary,
 } from "../../shared/scores";
 import { authClient } from "../auth/auth-client";
-import { clearPreviewGuestSession } from "../auth/preview-guest-session";
+import { clearGuestSession } from "../auth/preview-guest-session";
 import { AppHeader } from "../components/app-header";
 import {
   completeLoadingJourney,
@@ -43,6 +42,7 @@ import {
   driveCacheOwnerKey,
   invalidateDriveLibrary,
   readDriveLibrary,
+  readDriveSummary,
   rememberDriveLibrary,
   rememberDriveView,
   type DriveCacheOwnerKey,
@@ -133,12 +133,14 @@ export default function ChoirPage() {
   useEffect(() => {
     if (!cacheOwner) return;
     let active = true;
+    let networkSettled = false;
     const cached = readDriveLibrary(cacheOwner, choirId);
+    const cachedSummary = cached?.choir ?? readDriveSummary(cacheOwner, choirId);
     const query = cached?.search ?? "";
     const restoreFrame = window.requestAnimationFrame(() => {
-      if (!active) return;
+      if (!active || networkSettled) return;
       if (!cached) {
-        setAccess({ kind: "loading" });
+        setAccess({ kind: "loading", choir: cachedSummary ?? undefined });
         return;
       }
       viewState.current = { search: cached.search, scrollTop: cached.scrollTop };
@@ -148,6 +150,7 @@ export default function ChoirPage() {
       document.body.scrollTop = cached.scrollTop;
     });
     void openChoir(choirId, Boolean(userId), query).then((opened) => {
+      networkSettled = true;
       if (!active) return;
       if (opened.kind === "failed" && cached) {
         setSearchMessage("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。");
@@ -217,15 +220,13 @@ export default function ChoirPage() {
         );
         return;
       }
-      const [nextChoir, nextResult] = await Promise.all([
-        loadChoirSummary(choirId),
-        fetchScoreList(choirId, ""),
-      ]);
-      setAccess(
-        nextResult
-          ? { kind: "opened", choir: nextChoir ?? currentChoir, result: nextResult }
-          : { kind: "denied" },
-      );
+      const next = await requestDriveBootstrap(choirId, "");
+      if (next.kind === "loaded") {
+        setAccess(next.opened);
+        if (cacheOwner) rememberDriveLibrary(cacheOwner, choirId, next.opened);
+      } else {
+        setAccess({ kind: next.kind });
+      }
     } catch {
       setMessage("暂时无法加入这个云盘，请稍后再试。");
     } finally {
@@ -334,6 +335,20 @@ export default function ChoirPage() {
     );
   }
 
+  if (access.kind === "not-found") {
+    return (
+      <div className="app-page">
+        <AppHeader actions={headerActions} />
+        <main className="page-shell compact-page access-page">
+          <p className="eyebrow">云盘</p>
+          <h1>这个云盘不存在</h1>
+          <p className="hero__copy">链接可能已经失效，请返回首页重新选择云盘。</p>
+          <Link className="primary-link" to="/">返回首页</Link>
+        </main>
+      </div>
+    );
+  }
+
   if (access.kind === "failed") {
     return (
       <div className="app-page">
@@ -354,7 +369,18 @@ export default function ChoirPage() {
     return (
       <div className="app-page">
         <AppHeader actions={headerActions} />
-        <p className="route-loading">正在打开云盘…</p>
+        {access.choir ? (
+          <main className="page-shell file-library">
+            <header className="library-heading">
+              <div className="library-title">
+                <h1>{access.choir.name}</h1>
+                <p>正在加载乐谱…</p>
+              </div>
+            </header>
+          </main>
+        ) : (
+          <p className="route-loading">正在打开云盘…</p>
+        )}
       </div>
     );
   }
@@ -570,21 +596,17 @@ async function openChoir(
 ): Promise<
   Exclude<ChoirAccessState, { kind: "loading" }>
 > {
-  if (signedIn) {
-    await clearPreviewGuestSession({ keepForChoirId: choirId });
+  const bootstrap = await requestDriveBootstrap(choirId, query);
+  if (bootstrap.kind === "loaded") {
+    if (signedIn && bootstrap.access === "membership") void clearGuestSession();
+    return bootstrap.opened;
   }
-  const [choir, scoreList] = await Promise.all([
-    loadChoirSummary(choirId),
-    requestScoreList(choirId, query),
-  ]);
-  if (scoreList.kind === "loaded") {
-    return { kind: "opened", choir, result: scoreList.result };
-  }
-  if (scoreList.kind === "failed") return { kind: "failed" };
+  if (bootstrap.kind === "failed") return { kind: "failed" };
   const openAdmission = await loadOpenAdmissionChoir(choirId);
-  if (!openAdmission) return { kind: "denied" };
-  if (signedIn && openAdmission.entryKind !== "preview") {
-    return { kind: "join-required", choir: openAdmission.choir };
+  if (openAdmission.kind === "failed") return { kind: "failed" };
+  if (openAdmission.kind === "not-found") return { kind: bootstrap.kind };
+  if (signedIn && openAdmission.value.entryKind !== "preview") {
+    return { kind: "join-required", choir: openAdmission.value.choir };
   }
   try {
     const admission = await fetch("/api/guest/session", {
@@ -592,54 +614,73 @@ async function openChoir(
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ admission: "open", choirId }),
     });
-    if (!admission.ok) return { kind: "denied" };
-    const admittedResult = await requestScoreList(choirId, query);
-    if (admittedResult.kind === "failed") return { kind: "failed" };
-    return admittedResult.kind === "loaded"
-      ? { kind: "opened", choir: openAdmission.choir, result: admittedResult.result }
-      : { kind: "denied" };
+    if ([401, 403].includes(admission.status)) return { kind: "denied" };
+    if (!admission.ok) return { kind: "failed" };
+    const admitted = await requestDriveBootstrap(choirId, query);
+    return admitted.kind === "loaded" ? admitted.opened : { kind: admitted.kind };
   } catch {
     return { kind: "failed" };
   }
 }
 
 type ChoirAccessState =
-  | { kind: "loading" }
+  | { kind: "loading"; choir?: ChoirSummary }
   | { kind: "opened"; choir: ChoirSummary | null; result: ScoreListResponse }
   | { kind: "join-required"; choir: ChoirSummary }
   | { kind: "denied" }
+  | { kind: "not-found" }
   | { kind: "failed" };
 
 async function loadOpenAdmissionChoir(choirId: string) {
   try {
     const response = await fetch(`/api/guest/choirs/${choirId}`);
-    if (!response.ok) return null;
-    return guestSessionResponseSchema.parse(await response.json());
+    if (response.status === 404) return { kind: "not-found" as const };
+    if (!response.ok) return { kind: "failed" as const };
+    return {
+      kind: "loaded" as const,
+      value: guestSessionResponseSchema.parse(await response.json()),
+    };
   } catch {
-    return null;
+    return { kind: "failed" as const };
   }
 }
 
-async function loadChoirSummary(choirId: string) {
-  try {
-    const guestResponse = await fetch("/api/guest/session");
-    if (guestResponse.ok) {
-      const payload = (await guestResponse.json()) as { choir: unknown };
-      const guestChoir = choirSummarySchema.parse(payload.choir);
-      if (guestChoir.id === choirId) return guestChoir;
+type DriveBootstrapRequest =
+  | {
+      kind: "loaded";
+      access: "membership" | "guest";
+      opened: Extract<ChoirAccessState, { kind: "opened" }>;
     }
-    const memberResponse = await fetch("/api/choirs");
-    if (!memberResponse.ok) return null;
-    const payload = choirMembershipsResponseSchema.parse(await memberResponse.json());
-    return payload.memberships.find((item) => item.choir.id === choirId)?.choir ?? null;
-  } catch {
-    return null;
-  }
-}
+  | { kind: "denied" | "not-found" | "failed" };
 
-async function fetchScoreList(choirId: string, query: string) {
-  const loaded = await requestScoreList(choirId, query);
-  return loaded.kind === "loaded" ? loaded.result : null;
+async function requestDriveBootstrap(
+  choirId: string,
+  query: string,
+): Promise<DriveBootstrapRequest> {
+  try {
+    const response = await fetch(
+      `/api/choirs/${choirId}/bootstrap${query ? `?q=${encodeURIComponent(query)}` : ""}`,
+    );
+    if ([401, 403].includes(response.status)) return { kind: "denied" };
+    if (response.status === 404) return { kind: "not-found" };
+    if (!response.ok) return { kind: "failed" };
+    const payload = driveBootstrapResponseSchema.parse(await response.json());
+    return {
+      kind: "loaded",
+      access: payload.permissions.access,
+      opened: {
+        kind: "opened",
+        choir: payload.choir,
+        result: {
+          scores: payload.scores,
+          storage: payload.storage,
+          permissions: { canManage: payload.permissions.canManage },
+        },
+      },
+    };
+  } catch {
+    return { kind: "failed" };
+  }
 }
 
 type ScoreListRequest =

@@ -113,6 +113,43 @@ describe("PDF file library and delivery", () => {
       "练习 10.pdf",
     ]);
 
+    const driveBootstrap = await callWorker(`/api/choirs/${choirId}/bootstrap`, {
+      headers: { cookie: guestCookie },
+    });
+    expect(await driveBootstrap.json()).toMatchObject({
+      choir: { id: choirId, name: "小红花云盘", guestAdmissionMode: "invite" },
+      scores: [{ fileName: "练习 2.pdf" }, { fileName: "练习 10.pdf" }],
+      permissions: { canManage: false, access: "guest" },
+    });
+    expect(driveBootstrap.headers.get("Server-Timing")).toMatch(
+      /auth;dur=.*access;dur=.*d1;dur=.*total;dur=/,
+    );
+    const filteredDriveBootstrap = await callWorker(
+      `/api/choirs/${choirId}/bootstrap?q=${encodeURIComponent("10.PDF")}`,
+      { headers: { cookie: guestCookie } },
+    );
+    expect(await filteredDriveBootstrap.json()).toMatchObject({
+      choir: { id: choirId },
+      scores: [{ id: tenUpload.id, fileName: "练习 10.pdf" }],
+    });
+    const emptyDriveBootstrap = await callWorker(
+      `/api/choirs/${choirId}/bootstrap?q=${encodeURIComponent("没有结果")}`,
+      { headers: { cookie: guestCookie } },
+    );
+    expect(emptyDriveBootstrap.status).toBe(200);
+    expect(await emptyDriveBootstrap.json()).toMatchObject({
+      choir: { id: choirId },
+      scores: [],
+    });
+
+    const adminDriveBootstrap = await callWorker(
+      `/api/choirs/${choirId}/bootstrap`,
+      { headers: { cookie: adminCookie } },
+    );
+    expect(await adminDriveBootstrap.json()).toMatchObject({
+      permissions: { canManage: true, access: "membership" },
+    });
+
     const bootstrap = await callWorker(
       `/api/choirs/${choirId}/scores/${tenUpload.id}/bootstrap`,
       { headers: { cookie: guestCookie } },

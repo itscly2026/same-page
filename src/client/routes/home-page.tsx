@@ -32,9 +32,13 @@ import {
   type LogoutLocalSummary,
 } from "../auth/logout-local-data";
 import { AppHeader } from "../components/app-header";
-import { startLoadingJourney } from "../performance/loading-performance";
 import { JoinCodeField } from "../components/join-code-field";
 import { JOIN_CODE_LENGTH } from "../components/join-code";
+import { startLoadingJourney } from "../performance/loading-performance";
+import {
+  driveCacheOwnerKey,
+  rememberDriveSummary,
+} from "../score-library/drive-library-cache";
 
 type JoinStep =
   | { kind: "invite" }
@@ -87,7 +91,14 @@ export function HomePage() {
 
     let active = true;
     void loadMemberships().then((nextMemberships) => {
-      if (active) setMemberships(nextMemberships);
+      if (!active) return;
+      setMemberships(nextMemberships);
+      for (const membership of nextMemberships) {
+        rememberDriveSummary(
+          driveCacheOwnerKey(userId, membership.choir.id),
+          membership.choir,
+        );
+      }
     });
     return () => {
       active = false;
@@ -98,7 +109,14 @@ export function HomePage() {
     if (session.isPending) return;
     let active = true;
     void loadPreviewChoir().then((choir) => {
-      if (active) setPreviewChoir(choir);
+      if (!active) return;
+      setPreviewChoir(choir);
+      if (choir) {
+        rememberDriveSummary(
+          driveCacheOwnerKey(userId ?? null, choir.id),
+          choir,
+        );
+      }
     });
     return () => {
       active = false;

@@ -14,6 +14,7 @@ export interface DriveLibrarySnapshot {
 
 const MAX_DRIVES = 6;
 const libraries = new Map<string, DriveLibrarySnapshot>();
+const summaries = new Map<string, ChoirSummary>();
 let activeOwner: DriveCacheOwnerKey | null = null;
 
 onReaderIdentityChange(clearDriveLibraryCache);
@@ -53,6 +54,24 @@ export function rememberDriveLibrary(
     scrollTop: previous?.scrollTop ?? 0,
     updatedAt: Date.now(),
   });
+  if (library.choir) rememberSummary(choirId, library.choir);
+  evictOverflow();
+}
+
+export function readDriveSummary(
+  ownerKey: DriveCacheOwnerKey,
+  choirId: string,
+) {
+  activateOwner(ownerKey);
+  return summaries.get(choirId) ?? null;
+}
+
+export function rememberDriveSummary(
+  ownerKey: DriveCacheOwnerKey,
+  choir: ChoirSummary,
+) {
+  activateOwner(ownerKey);
+  rememberSummary(choir.id, choir);
   evictOverflow();
 }
 
@@ -73,23 +92,32 @@ export function invalidateDriveLibrary(
 ) {
   activateOwner(ownerKey);
   libraries.delete(choirId);
+  summaries.delete(choirId);
 }
 
 export function clearDriveLibraryCache() {
   libraries.clear();
+  summaries.clear();
   activeOwner = null;
 }
 
 function activateOwner(ownerKey: DriveCacheOwnerKey) {
   if (activeOwner === ownerKey) return;
   libraries.clear();
+  summaries.clear();
   activeOwner = ownerKey;
 }
 
 function evictOverflow() {
-  while (libraries.size > MAX_DRIVES) {
-    const oldest = libraries.keys().next().value;
+  while (summaries.size > MAX_DRIVES) {
+    const oldest = summaries.keys().next().value;
     if (oldest === undefined) return;
+    summaries.delete(oldest);
     libraries.delete(oldest);
   }
+}
+
+function rememberSummary(choirId: string, choir: ChoirSummary) {
+  summaries.delete(choirId);
+  summaries.set(choirId, choir);
 }

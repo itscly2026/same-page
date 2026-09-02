@@ -33,6 +33,69 @@ const fileNameCollator = new Intl.Collator("zh-CN", {
 
 export const scoreRoutes = new Hono<AppEnvironment>();
 
+scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
+  const choirId = context.req.param("choirId");
+  const access = await resolveChoirAccess(context, choirId);
+  const search = context.req.query("q")?.trim().slice(0, 120) ?? "";
+  const pattern = `%${escapeLike(scoreFileNameKey(search))}%`;
+  const rows = await measureServerTiming(context, "d1", () =>
+    context.env.DB.prepare(
+      `SELECT choirs.id AS drive_id, choirs.name AS drive_name,
+              choirs.guest_admission_mode, choirs.storage_used_bytes,
+              choirs.storage_limit_bytes,
+              scores.id AS score_id, scores.choir_id, scores.file_name,
+              scores.updated_at, versions.id AS version_id,
+              versions.version_number, versions.size_bytes, versions.sha256,
+              versions.etag, versions.page_count,
+              versions.created_at AS version_created_at
+       FROM choirs
+       LEFT JOIN scores
+         ON scores.choir_id = choirs.id AND scores.trashed_at IS NULL
+        AND (? = '' OR scores.file_name_key LIKE ? ESCAPE '\\')
+       LEFT JOIN score_versions AS versions
+         ON versions.id = scores.current_version_id AND versions.state = 'ready'
+       WHERE choirs.id = ?`,
+    )
+      .bind(search, pattern, choirId)
+      .all<DriveBootstrapRow>());
+  const drive = rows.results[0];
+  if (!drive) return context.json({ error: "not_found" }, 404);
+  const serialized = rows.results
+    .filter((row): row is DriveBootstrapScoreRow =>
+      row.score_id !== null && row.version_id !== null)
+    .map((row) => serializeScoreRow({
+      id: row.score_id,
+      choir_id: row.choir_id,
+      file_name: row.file_name,
+      updated_at: row.updated_at,
+      version_id: row.version_id,
+      version_number: row.version_number,
+      size_bytes: row.size_bytes,
+      sha256: row.sha256,
+      etag: row.etag,
+      page_count: row.page_count,
+      version_created_at: row.version_created_at,
+    }))
+    .sort((left, right) => fileNameCollator.compare(left.fileName, right.fileName));
+
+  return context.json({
+    choir: {
+      id: drive.drive_id,
+      name: drive.drive_name,
+      guestAdmissionMode: drive.guest_admission_mode,
+    },
+    scores: serialized,
+    storage: {
+      usedBytes: drive.storage_used_bytes,
+      limitBytes: drive.storage_limit_bytes,
+    },
+    permissions: {
+      canManage: access.canManage,
+      access: access.kind,
+    },
+  });
+});
+
 scoreRoutes.get("/choirs/:choirId/scores", async (context) => {
   const choirId = context.req.param("choirId");
   const access = await resolveChoirAccess(context, choirId);
@@ -381,6 +444,7 @@ async function resolveChoirAccess(
 ) {
   const { access } = await resolveContextChoirReadAccess(context, choirId);
   return {
+    kind: access.kind,
     canManage: access.kind === "membership" && access.membership.role === "admin",
   };
 }
@@ -533,4 +597,37 @@ interface PdfRow {
   size_bytes: number;
   etag: string | null;
   sha256: string;
+}
+
+interface DriveBootstrapRow {
+  drive_id: string;
+  drive_name: string;
+  guest_admission_mode: "invite" | "open";
+  storage_used_bytes: number;
+  storage_limit_bytes: number;
+  score_id: string | null;
+  choir_id: string | null;
+  file_name: string | null;
+  updated_at: number | null;
+  version_id: string | null;
+  version_number: number | null;
+  size_bytes: number | null;
+  sha256: string | null;
+  etag: string | null;
+  page_count: number | null;
+  version_created_at: number | null;
+}
+
+interface DriveBootstrapScoreRow extends DriveBootstrapRow {
+  score_id: string;
+  choir_id: string;
+  file_name: string;
+  updated_at: number;
+  version_id: string;
+  version_number: number;
+  size_bytes: number;
+  sha256: string;
+  etag: string;
+  page_count: number;
+  version_created_at: number;
 }
