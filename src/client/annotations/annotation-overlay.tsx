@@ -439,8 +439,9 @@ export function AnnotationOverlay({
         opened: openOnPointerDown,
         editor,
       };
-      // Mounting the native control during Pencil pointerdown restores the
-      // browser activation shape that previously opened the standard keyboard.
+      // Mount the native control during Pencil pointerdown so the editing
+      // session starts with a focused input. iPadOS still decides whether that
+      // input uses Scribble or the full-width software keyboard.
       if (openOnPointerDown) openTextEditor(editor);
       return;
     }
