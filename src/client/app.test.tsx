@@ -162,6 +162,178 @@ describe("AppRoutes", () => {
     );
   });
 
+  it("edits drive-scoped defaults from My Preferences", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "user-1", email: "singer@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+      if (input === "/api/choirs/choir-1/shared-layer-preferences" && !init?.method) {
+        return Promise.resolve(Response.json({
+          drive: { id: "choir-1", name: "小红花云盘" },
+          layers: [
+            {
+              slot: "E",
+              name: "Ensemble",
+              subscribed: true,
+              colorOverride: null,
+              adminDefaultColor: "#a12652",
+              displayColor: "#a12652",
+              colorSource: "admin",
+            },
+          ],
+        }));
+      }
+      if (input === "/api/choirs/choir-1/shared-layers/E/preference") {
+        return Promise.resolve(Response.json({ preference: { subscribed: false, colorOverride: null } }));
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/preferences"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "我的图层偏好" })).toBeInTheDocument();
+    expect(await screen.findByText("适用于：小红花云盘")).toBeInTheDocument();
+    const subscribed = await screen.findByRole("checkbox", { name: "E · Ensemble 默认订阅" });
+    expect(subscribed).toBeChecked();
+    fireEvent.click(subscribed);
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/choirs/choir-1/shared-layers/E/preference",
+        expect.objectContaining({ method: "PUT", body: JSON.stringify({ subscribed: false }) }),
+      );
+    });
+  });
+
+  it("rolls back only the failed layer preference when saves overlap", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "user-1", email: "singer@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    let releaseEnsemble!: (response: Response) => void;
+    let releaseSoprano!: (response: Response) => void;
+    const ensembleSave = new Promise<Response>((resolve) => {
+      releaseEnsemble = resolve;
+    });
+    const sopranoSave = new Promise<Response>((resolve) => {
+      releaseSoprano = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+      if (!init?.method) {
+        return Promise.resolve(Response.json({
+          drive: { id: "choir-1", name: "小红花云盘" },
+          layers: ["E", "S"].map((slot) => ({
+            slot,
+            name: slot === "E" ? "Ensemble" : "Soprano",
+            subscribed: true,
+            colorOverride: null,
+            adminDefaultColor: slot === "E" ? "#a12652" : "#7c3aed",
+            displayColor: slot === "E" ? "#a12652" : "#7c3aed",
+            colorSource: "admin",
+          })),
+        }));
+      }
+      if (input.endsWith("/E/preference")) return ensembleSave;
+      if (input.endsWith("/S/preference")) return sopranoSave;
+      return Promise.resolve(new Response(null, { status: 404 }));
+    }));
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/preferences"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "E · Ensemble 默认订阅" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "S · Soprano 默认订阅" }));
+    releaseSoprano(Response.json({ preference: { subscribed: false } }));
+    releaseEnsemble(new Response(null, { status: 500 }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: "E · Ensemble 默认订阅" })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "S · Soprano 默认订阅" })).not.toBeChecked();
+    });
+  });
+
+  it("lists fixed shared layers in drive management", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "admin-1", email: "admin@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
+      drive: { id: "choir-1", name: "小红花云盘" },
+      layers: [
+        {
+          slot: "E",
+          name: "Ensemble",
+          defaultColor: "#a12652",
+          grantedMemberCount: 2,
+        },
+      ],
+    })));
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/shared-layers"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "共享层管理" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /E · Ensemble.*已授权 2 位成员/ })).toHaveAttribute(
+      "href",
+      "/choirs/choir-1/shared-layers/E",
+    );
+  });
+
+  it("edits member grants from one shared-layer detail page", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "admin-1", email: "admin@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+      if (input === "/api/choirs/choir-1/shared-layers" && !init?.method) {
+        return Promise.resolve(Response.json({
+          drive: { id: "choir-1", name: "小红花云盘" },
+          layers: [{ slot: "E", name: "Ensemble", defaultColor: "#a12652", grantedMemberCount: 0 }],
+        }));
+      }
+      if (input === "/api/choirs/choir-1/shared-layers/E/grants" && !init?.method) {
+        return Promise.resolve(Response.json({ members: [
+          { id: "admin-membership", displayName: "管理员", role: "admin", granted: true },
+          { id: "member-membership", displayName: "小林", role: "member", granted: false },
+        ] }));
+      }
+      if (input === "/api/choirs/choir-1/shared-layers/E/grants/member-membership") {
+        return Promise.resolve(Response.json({ grant: { membershipId: "member-membership", granted: true } }));
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/shared-layers/E"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "E · Ensemble 编辑权限" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "管理员 管理员" })).toBeDisabled();
+    const member = screen.getByRole("checkbox", { name: "小林" });
+    expect(member).not.toBeChecked();
+    fireEvent.click(member);
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/choirs/choir-1/shared-layers/E/grants/member-membership",
+        expect.objectContaining({ method: "PUT", body: JSON.stringify({ granted: true }) }),
+      );
+    });
+  });
+
   it("shows the public preview as the third independent signed-out entry", async () => {
     vi.stubGlobal(
       "fetch",
@@ -893,6 +1065,10 @@ describe("AppRoutes", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "管理" }));
+    expect(await screen.findByRole("menuitem", { name: "共享层" })).toHaveAttribute(
+      "href",
+      "/choirs/choir-1/shared-layers",
+    );
     fireEvent.click(await screen.findByRole("menuitem", { name: "邀请码" }));
     expect(await screen.findByRole("dialog", { name: "邀请码" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "轮换邀请码" }));
@@ -910,6 +1086,35 @@ describe("AppRoutes", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "已复制，隐藏邀请码" }));
     expect(screen.queryByLabelText("新的八位邀请码")).not.toBeInTheDocument();
+  });
+
+  it("links signed-in members to drive-scoped My Preferences", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: { user: { id: "user-1", email: "member@example.test" } },
+      isPending: false,
+    } as ReturnType<typeof authClient.useSession>);
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((input: string) =>
+      Promise.resolve(input.includes("/scores")
+        ? Response.json({
+            scores: [],
+            storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
+            permissions: { canManage: false },
+          })
+        : Response.json({
+            choir: { id: "choir-1", name: "小红花云盘", guestAdmissionMode: "invite" },
+          }))));
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "用户菜单" }));
+    expect(await screen.findByRole("menuitem", { name: "我的偏好" })).toHaveAttribute(
+      "href",
+      "/choirs/choir-1/preferences",
+    );
   });
 
   it("keeps management tools but hides invite-code controls for open guest admission", async () => {
@@ -1216,7 +1421,6 @@ describe("AppRoutes", () => {
       driveSubscribed: null,
       driveColorOverride: null,
       scoreSubscriptionOverride: null,
-      scoreColorOverride: null,
       canEdit: true,
     });
     render(

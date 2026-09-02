@@ -51,6 +51,10 @@ try {
     file: join(repositoryRoot, "migrations", "0009_fixed_layer_preferences.sql"),
     targetArgs,
   });
+  executeD1({
+    file: join(repositoryRoot, "migrations", "0010_remove_score_layer_colors.sql"),
+    targetArgs,
+  });
 
   verifySchema();
   verifyDriveNames();
@@ -88,6 +92,16 @@ function verifySchema() {
     (row) => row.name,
   );
   assert(layerIndexes.includes("annotation_layers_default_slot_uidx"));
+  const scorePreferenceColumns = query(
+    "PRAGMA table_info(user_score_layer_preferences)",
+  ).map((row) => row.name);
+  assert(!scorePreferenceColumns.includes("color_override"));
+  assert.deepEqual(
+    query(
+      "SELECT default_color FROM choir_shared_layer_settings WHERE choir_id = 'choir' AND slot = 'S'",
+    ),
+    [{ default_color: "#7c3aed" }],
+  );
 }
 
 function verifyDriveNames() {

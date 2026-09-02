@@ -1,21 +1,57 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveSharedLayerPreference } from "./annotations";
+import {
+  annotationLayerSummarySchema,
+  resolveSharedLayerPreference,
+  scoreLayerPreferenceUpdateSchema,
+} from "./annotations";
+
+describe("scoreLayerPreferenceUpdateSchema", () => {
+  it("accepts only score subscription overrides", () => {
+    expect(scoreLayerPreferenceUpdateSchema.safeParse({ subscribed: false }).success).toBe(true);
+    expect(scoreLayerPreferenceUpdateSchema.safeParse({ subscribed: null }).success).toBe(true);
+    expect(scoreLayerPreferenceUpdateSchema.safeParse({ colorOverride: "#445566" }).success).toBe(false);
+  });
+
+  it("does not expose a score-level color override in layer summaries", () => {
+    const parsed = annotationLayerSummarySchema.safeParse({
+      id: "11111111-1111-4111-8111-111111111111",
+      kind: "shared",
+      defaultSlot: "E",
+      name: "Ensemble",
+      sortOrder: 0,
+      subscribed: true,
+      subscriptionSource: "drive",
+      displayColor: "#333333",
+      colorSource: "drive",
+      adminDefaultColor: "#222222",
+      driveSubscribed: true,
+      driveColorOverride: "#333333",
+      scoreSubscriptionOverride: null,
+      scoreColorOverride: "#444444",
+      canEdit: true,
+    });
+
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data).not.toHaveProperty("scoreColorOverride");
+    }
+  });
+});
 
 describe("resolveSharedLayerPreference", () => {
-  it("uses score overrides before drive and administrator defaults", () => {
+  it("uses a score subscription override and a drive color independently", () => {
     expect(resolveSharedLayerPreference({
       productDefaultColor: "#111111",
       adminDefaultColor: "#222222",
       driveSubscribed: false,
       driveColorOverride: "#333333",
       scoreSubscriptionOverride: true,
-      scoreColorOverride: "#444444",
     })).toEqual({
       subscribed: true,
       subscriptionSource: "score",
-      displayColor: "#444444",
-      colorSource: "score",
+      displayColor: "#333333",
+      colorSource: "drive",
     });
   });
 
@@ -26,7 +62,6 @@ describe("resolveSharedLayerPreference", () => {
       driveSubscribed: false,
       driveColorOverride: null,
       scoreSubscriptionOverride: null,
-      scoreColorOverride: null,
     })).toEqual({
       subscribed: false,
       subscriptionSource: "drive",
@@ -42,7 +77,6 @@ describe("resolveSharedLayerPreference", () => {
       driveSubscribed: null,
       driveColorOverride: null,
       scoreSubscriptionOverride: null,
-      scoreColorOverride: null,
     })).toEqual({
       subscribed: true,
       subscriptionSource: "product",

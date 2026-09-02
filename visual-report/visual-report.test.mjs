@@ -24,6 +24,22 @@ test("visual report scenarios have stable unique ids and cover iPad plus narrow 
   assert.ok(
     visualReportScenarios.some((scenario) => scenario.id === "reader-layer-lock"),
   );
+  for (const requiredId of [
+    "reader-layers",
+    "reader-layers-portrait",
+    "layer-preferences",
+    "shared-layer-management",
+    "shared-layer-grants",
+    "reader-text-ready",
+    "reader-edit-shared-layer",
+    "reader-edit-unsubscribed-layer",
+    "reader-edit-unsubscribed-exit",
+  ]) {
+    assert.ok(
+      visualReportScenarios.some((scenario) => scenario.id === requiredId),
+      `missing required #69 capture: ${requiredId}`,
+    );
+  }
 });
 
 test("fixture resolver isolates guest and member sessions", () => {
@@ -97,6 +113,34 @@ test("fixture resolver supports the narrow reader bootstrap", () => {
   assert.equal(body.state, "active");
   assert.equal(body.score.fileName, "排练示例 · 秋日合唱.pdf");
   assert.equal(body.permissions.canManage, false);
+});
+
+test("fixture resolver covers drive-scoped layer settings and edit isolation", () => {
+  const preferences = resolveFixtureRequest({
+    pathname: "/api/choirs/visual-choir/shared-layer-preferences",
+    identity: "member",
+  });
+  const management = resolveFixtureRequest({
+    pathname: "/api/choirs/visual-choir/shared-layers",
+    identity: "admin",
+  });
+  const grants = resolveFixtureRequest({
+    pathname: "/api/choirs/visual-choir/shared-layers/E/grants",
+    identity: "admin",
+  });
+  const editLayers = resolveFixtureRequest({
+    pathname: "/api/choirs/visual-choir/scores/visual-score/layers",
+    identity: "admin",
+    scenarioId: "reader-edit-unsubscribed-layer",
+  });
+
+  assert.equal(JSON.parse(preferences.body).layers.length, 5);
+  assert.equal(JSON.parse(management.body).layers.length, 5);
+  assert.equal(JSON.parse(grants.body).members.length, 3);
+  const ensemble = JSON.parse(editLayers.body).layers.find((layer) => layer.defaultSlot === "E");
+  assert.equal(ensemble.subscribed, false);
+  assert.equal(ensemble.canEdit, true);
+  assert.equal(ensemble.scoreSubscriptionOverride, null);
 });
 
 test("unknown API requests fail closed instead of reaching the current Worker", () => {

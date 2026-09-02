@@ -50,7 +50,6 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
             drive_preferences.subscribed AS drive_subscribed,
             drive_preferences.color_override AS drive_color_override,
             score_preferences.subscribed_override AS score_subscribed_override,
-            score_preferences.color_override AS score_color_override,
             CASE
               WHEN layers.kind = 'personal' AND layers.owner_user_id = ? THEN 1
               WHEN ? = 1 THEN 1
@@ -80,6 +79,93 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
   return context.json({
     layers: rows.results.map(serializeLayer),
     permissions: { canManageLayers: access.membership?.role === "admin" },
+  });
+});
+
+annotationRoutes.get("/choirs/:choirId/shared-layer-preferences", async (context) => {
+  const choirId = context.req.param("choirId");
+  const principal = await resolveContextPrincipal(context);
+  await requireChoirRead(createDatabase(context.env.DB), principal, choirId);
+  if (principal?.kind !== "user") {
+    return context.json({ error: "guest_preferences_are_local" }, 403);
+  }
+
+  const drive = await readDriveIdentity(context, choirId);
+  if (!drive) return context.json({ error: "choir_not_found" }, 404);
+  const rows = await context.env.DB.prepare(
+    `SELECT settings.slot, settings.default_color AS admin_default_color,
+            preferences.subscribed, preferences.color_override
+     FROM choir_shared_layer_settings AS settings
+     LEFT JOIN user_drive_layer_preferences AS preferences
+       ON preferences.choir_id = settings.choir_id
+      AND preferences.slot = settings.slot
+      AND preferences.user_id = ?
+     WHERE settings.choir_id = ?`,
+  ).bind(principal.userId, choirId).all<{
+    slot: "E" | "S" | "A" | "T" | "B";
+    admin_default_color: string;
+    subscribed: number | null;
+    color_override: string | null;
+  }>();
+  const bySlot = new Map(rows.results.map((row) => [row.slot, row]));
+
+  return context.json({
+    drive,
+    layers: defaultSharedLayers.map((layer) => {
+      const row = bySlot.get(layer.slot);
+      const adminDefaultColor = row?.admin_default_color ?? layer.defaultColor;
+      const colorOverride = row?.color_override ?? null;
+      return {
+        slot: layer.slot,
+        name: layer.name,
+        subscribed: row?.subscribed !== 0,
+        colorOverride,
+        adminDefaultColor,
+        displayColor: colorOverride ?? adminDefaultColor ?? layer.defaultColor,
+        colorSource: colorOverride
+          ? "drive" as const
+          : row?.admin_default_color
+            ? "admin" as const
+            : "product" as const,
+      };
+    }),
+  });
+});
+
+annotationRoutes.get("/choirs/:choirId/shared-layers", async (context) => {
+  const choirId = context.req.param("choirId");
+  const principal = await resolveContextPrincipal(context);
+  await requireChoirAdmin(createDatabase(context.env.DB), principal, choirId);
+  const drive = await readDriveIdentity(context, choirId);
+  if (!drive) return context.json({ error: "choir_not_found" }, 404);
+  const rows = await context.env.DB.prepare(
+    `SELECT settings.slot, settings.default_color,
+            COUNT(granted_members.id) AS granted_member_count
+     FROM choir_shared_layer_settings AS settings
+     LEFT JOIN shared_layer_edit_grants AS grants
+       ON grants.choir_id = settings.choir_id AND grants.slot = settings.slot
+     LEFT JOIN memberships AS granted_members
+       ON granted_members.id = grants.membership_id
+      AND granted_members.choir_id = settings.choir_id
+      AND granted_members.status = 'active'
+      AND granted_members.role = 'member'
+     WHERE settings.choir_id = ?
+     GROUP BY settings.slot, settings.default_color`,
+  ).bind(choirId).all<{
+    slot: "E" | "S" | "A" | "T" | "B";
+    default_color: string;
+    granted_member_count: number;
+  }>();
+  const bySlot = new Map(rows.results.map((row) => [row.slot, row]));
+
+  return context.json({
+    drive,
+    layers: defaultSharedLayers.map((layer) => ({
+      slot: layer.slot,
+      name: layer.name,
+      defaultColor: bySlot.get(layer.slot)?.default_color ?? layer.defaultColor,
+      grantedMemberCount: Number(bySlot.get(layer.slot)?.granted_member_count ?? 0),
+    })),
   });
 });
 
@@ -142,27 +228,23 @@ annotationRoutes.put("/choirs/:choirId/scores/:scoreId/shared-layers/:slot/prefe
     return context.json({ error: "invalid_preference" }, 400);
   }
   const existing = await context.env.DB.prepare(
-    "SELECT subscribed_override, color_override FROM user_score_layer_preferences WHERE user_id = ? AND score_id = ? AND slot = ?",
+    "SELECT subscribed_override FROM user_score_layer_preferences WHERE user_id = ? AND score_id = ? AND slot = ?",
   ).bind(access.principal.userId, access.scoreId, slot.data).first<{
-    subscribed_override: number | null; color_override: string | null;
+    subscribed_override: number | null;
   }>();
   const subscribed = parsed.data.subscribed === undefined
     ? existing?.subscribed_override == null ? null : existing.subscribed_override === 1
     : parsed.data.subscribed;
-  const colorOverride = parsed.data.colorOverride === undefined
-    ? existing?.color_override ?? null
-    : parsed.data.colorOverride?.toLowerCase() ?? null;
   await context.env.DB.prepare(
     `INSERT INTO user_score_layer_preferences
-       (user_id, choir_id, score_id, slot, subscribed_override, color_override, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+       (user_id, choir_id, score_id, slot, subscribed_override, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(user_id, score_id, slot) DO UPDATE SET
        subscribed_override = excluded.subscribed_override,
-       color_override = excluded.color_override,
        updated_at = excluded.updated_at`,
   ).bind(access.principal.userId, access.choirId, access.scoreId, slot.data,
-    subscribed === null ? null : subscribed ? 1 : 0, colorOverride, Date.now()).run();
-  return context.json({ preference: { subscribed, colorOverride } });
+    subscribed === null ? null : subscribed ? 1 : 0, Date.now()).run();
+  return context.json({ preference: { subscribed } });
 });
 
 annotationRoutes.get("/choirs/:choirId/shared-layers/:slot/grants", async (context) => {
@@ -564,6 +646,12 @@ async function visibleLayer(
     }>();
 }
 
+async function readDriveIdentity(context: Context<AppEnvironment>, choirId: string) {
+  return context.env.DB.prepare("SELECT id, name FROM choirs WHERE id = ?")
+    .bind(choirId)
+    .first<{ id: string; name: string }>();
+}
+
 function serializeLayer(row: LayerRow) {
   if (row.kind === "personal") {
     return {
@@ -580,7 +668,6 @@ function serializeLayer(row: LayerRow) {
       driveSubscribed: null,
       driveColorOverride: null,
       scoreSubscriptionOverride: null,
-      scoreColorOverride: null,
       canEdit: row.can_edit === 1,
     };
   }
@@ -594,7 +681,6 @@ function serializeLayer(row: LayerRow) {
     driveColorOverride: row.drive_color_override,
     scoreSubscriptionOverride:
       row.score_subscribed_override === null ? null : row.score_subscribed_override === 1,
-    scoreColorOverride: row.score_color_override,
   });
   return {
     id: row.id,
@@ -608,7 +694,6 @@ function serializeLayer(row: LayerRow) {
     driveColorOverride: row.drive_color_override,
     scoreSubscriptionOverride:
       row.score_subscribed_override === null ? null : row.score_subscribed_override === 1,
-    scoreColorOverride: row.score_color_override,
     canEdit: row.can_edit === 1,
   };
 }
@@ -695,7 +780,6 @@ interface LayerRow {
   drive_subscribed: number | null;
   drive_color_override: string | null;
   score_subscribed_override: number | null;
-  score_color_override: string | null;
   can_edit: number;
 }
 

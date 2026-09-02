@@ -328,7 +328,7 @@ describe("annotation layers and object synchronization", () => {
     expect(objects.results[0]?.id).toBe(operationRow?.annotation_id);
   });
 
-  it("resolves score preferences over user drive defaults and administrator colors", async () => {
+  it("resolves score subscriptions over user drive defaults without score colors", async () => {
     const fixture = await createFixture();
     const member = await createMember(fixture.joinCode!, "preference@example.test", "小周");
     const drivePath = `/api/choirs/${fixture.choirId}/shared-layers/E/preference`;
@@ -339,7 +339,11 @@ describe("annotation layers and object synchronization", () => {
       method: "PUT",
     })).status).toBe(200);
     expect((await callWorker(scorePath, {
-      ...jsonRequest(member.cookie, { subscribed: true, colorOverride: "#445566" }),
+      ...jsonRequest(member.cookie, { colorOverride: "#445566" }),
+      method: "PUT",
+    })).status).toBe(400);
+    expect((await callWorker(scorePath, {
+      ...jsonRequest(member.cookie, { subscribed: true }),
       method: "PUT",
     })).status).toBe(200);
 
@@ -347,14 +351,14 @@ describe("annotation layers and object synchronization", () => {
     expect(customized).toMatchObject({
       subscribed: true,
       subscriptionSource: "score",
-      displayColor: "#445566",
-      colorSource: "score",
+      displayColor: "#112233",
+      colorSource: "drive",
       driveSubscribed: false,
       scoreSubscriptionOverride: true,
     });
 
     expect((await callWorker(scorePath, {
-      ...jsonRequest(member.cookie, { subscribed: null, colorOverride: null }),
+      ...jsonRequest(member.cookie, { subscribed: null }),
       method: "PUT",
     })).status).toBe(200);
     expect((await callWorker(drivePath, {
@@ -375,8 +379,77 @@ describe("annotation layers and object synchronization", () => {
       displayColor: "#abcdef",
       colorSource: "admin",
       scoreSubscriptionOverride: null,
-      scoreColorOverride: null,
     });
+  });
+
+  it("lists drive-scoped personal preferences and administrator layer summaries", async () => {
+    const fixture = await createFixture();
+    const member = await createMember(fixture.joinCode!, "settings@example.test", "小林");
+    const preferencePath = `/api/choirs/${fixture.choirId}/shared-layer-preferences`;
+    const managementPath = `/api/choirs/${fixture.choirId}/shared-layers`;
+
+    const preferences = await callWorker(preferencePath, {
+      headers: { cookie: member.cookie },
+    });
+    expect(preferences.status).toBe(200);
+    expect(await preferences.json()).toMatchObject({
+      drive: { id: fixture.choirId, name: "小红花云盘" },
+      layers: expect.arrayContaining([
+        {
+          slot: "E",
+          name: "Ensemble",
+          subscribed: true,
+          colorOverride: null,
+          adminDefaultColor: "#a12652",
+          displayColor: "#a12652",
+          colorSource: "admin",
+        },
+      ]),
+    });
+
+    expect((await callWorker(managementPath, {
+      headers: { cookie: member.cookie },
+    })).status).toBe(403);
+    const management = await callWorker(managementPath, {
+      headers: { cookie: fixture.adminCookie },
+    });
+    expect(management.status).toBe(200);
+    expect(await management.json()).toMatchObject({
+      drive: { id: fixture.choirId, name: "小红花云盘" },
+      layers: expect.arrayContaining([
+        {
+          slot: "E",
+          name: "Ensemble",
+          defaultColor: "#a12652",
+          grantedMemberCount: 0,
+        },
+      ]),
+    });
+
+    const memberRow = await createDatabase(env.DB).query.memberships.findFirst({
+      where: eq(memberships.userId, member.userId),
+    });
+    const grantPath = `/api/choirs/${fixture.choirId}/shared-layers/E/grants/${memberRow!.id}`;
+    expect((await callWorker(grantPath, {
+      ...jsonRequest(fixture.adminCookie, { granted: true }),
+      method: "PUT",
+    })).status).toBe(200);
+    const grantedManagement = await callWorker(managementPath, {
+      headers: { cookie: fixture.adminCookie },
+    });
+    expect(((await grantedManagement.json()) as {
+      layers: Array<{ slot: string; grantedMemberCount: number }>;
+    }).layers.find((layer) => layer.slot === "E")?.grantedMemberCount).toBe(1);
+
+    await env.DB.prepare("UPDATE memberships SET status = 'removed' WHERE id = ?")
+      .bind(memberRow!.id)
+      .run();
+    const removedManagement = await callWorker(managementPath, {
+      headers: { cookie: fixture.adminCookie },
+    });
+    expect(((await removedManagement.json()) as {
+      layers: Array<{ slot: string; grantedMemberCount: number }>;
+    }).layers.find((layer) => layer.slot === "E")?.grantedMemberCount).toBe(0);
   });
 
   it("enforces revoked grants, choir boundaries, personal privacy and guest read-only access", async () => {

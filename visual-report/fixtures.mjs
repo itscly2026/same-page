@@ -49,7 +49,7 @@ const otherScores = [
 
 const layers = [
   layer("00000000-0000-4000-8000-000000000001", "shared", "E", "Ensemble", 0, "#a12652"),
-  layer("00000000-0000-4000-8000-000000000002", "shared", "S", "Soprano", 1, "#c2415d"),
+  layer("00000000-0000-4000-8000-000000000002", "shared", "S", "Soprano", 1, "#7c3aed"),
   layer("00000000-0000-4000-8000-000000000003", "shared", "A", "Alto", 2, "#8a5a00"),
   layer("00000000-0000-4000-8000-000000000004", "shared", "T", "Tenor", 3, "#0f766e"),
   layer("00000000-0000-4000-8000-000000000005", "shared", "B", "Bass", 4, "#3157a4"),
@@ -83,6 +83,7 @@ export function resolveFixtureRequest({
   pathname,
   method = "GET",
   identity = "guest",
+  scenarioId = "",
   cookie = "",
 }) {
   if (method === "GET" && pathname === "/api/auth/social-providers") {
@@ -197,9 +198,65 @@ export function resolveFixtureRequest({
     return json({
       layers: layers.map((entry) => ({
         ...entry,
+        ...(entry.defaultSlot === "B"
+          ? {
+              subscribed: false,
+              subscriptionSource: "score",
+              driveSubscribed: true,
+              scoreSubscriptionOverride: false,
+            }
+          : {}),
+        ...(entry.defaultSlot === "E" && scenarioId.startsWith("reader-edit-unsubscribed")
+          ? {
+              subscribed: false,
+              subscriptionSource: "drive",
+              driveSubscribed: false,
+              scoreSubscriptionOverride: null,
+            }
+          : {}),
         canEdit: entry.kind === "personal" || identity === "admin",
       })),
       permissions: { canManageLayers: identity === "admin" },
+    });
+  }
+
+  if (method === "GET" && pathname === `/api/choirs/${choir.id}/shared-layer-preferences`) {
+    return json({
+      drive: { id: choir.id, name: choir.name },
+      layers: layers.filter((entry) => entry.kind === "shared").map((entry) => ({
+        slot: entry.defaultSlot,
+        name: entry.name,
+        subscribed: entry.defaultSlot !== "B",
+        colorOverride: entry.defaultSlot === "E" ? "#7c3aed" : null,
+        adminDefaultColor: entry.adminDefaultColor,
+        displayColor: entry.defaultSlot === "E" ? "#7c3aed" : entry.displayColor,
+        colorSource: entry.defaultSlot === "E" ? "drive" : "admin",
+      })),
+    });
+  }
+
+  if (method === "GET" && pathname === `/api/choirs/${choir.id}/shared-layers`) {
+    return json({
+      drive: { id: choir.id, name: choir.name },
+      layers: layers.filter((entry) => entry.kind === "shared").map((entry, index) => ({
+        slot: entry.defaultSlot,
+        name: entry.name,
+        defaultColor: entry.adminDefaultColor,
+        grantedMemberCount: [2, 1, 0, 1, 0][index],
+      })),
+    });
+  }
+
+  if (
+    method === "GET" &&
+    /^\/api\/choirs\/visual-choir\/shared-layers\/[ESATB]\/grants$/.test(pathname)
+  ) {
+    return json({
+      members: [
+        { id: "visual-membership-admin", displayName: "林老师", role: "admin", granted: true },
+        { id: "visual-membership-member", displayName: "周宁", role: "member", granted: true },
+        { id: "visual-membership-guest", displayName: "陈夏", role: "member", granted: false },
+      ],
     });
   }
 
@@ -235,7 +292,6 @@ function layer(id, kind, defaultSlot, name, sortOrder, defaultColor, canEdit = f
     driveSubscribed: null,
     driveColorOverride: null,
     scoreSubscriptionOverride: null,
-    scoreColorOverride: null,
     canEdit,
   };
 }

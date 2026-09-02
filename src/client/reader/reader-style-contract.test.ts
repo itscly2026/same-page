@@ -61,7 +61,7 @@ describe("reader control style contract", () => {
       /\.reader-icon-button \{[\s\S]*?width: 2\.75rem;[\s\S]*?min-width: 2\.75rem;/,
     );
     expect(styles).toMatch(
-      /\.annotation-controls \.annotation-tool-button,[\s\S]*?width: 2\.75rem;[\s\S]*?min-height: 2\.75rem;/,
+      /\.annotation-controls \.annotation-layer-slot,\s*\.annotation-controls \.annotation-tool-button \{[\s\S]*?min-width: 2\.75rem;[\s\S]*?width: 2\.75rem;[\s\S]*?min-height: 2\.75rem;/,
     );
   });
 
