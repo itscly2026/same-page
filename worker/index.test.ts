@@ -10,11 +10,14 @@ describe("Same Page Worker", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(healthResponseSchema.parse(await response.json())).toEqual({
+    const payload = healthResponseSchema.parse(await response.json());
+    expect(payload).toEqual({
       status: "ok",
       service: "same-page",
       runtime: "cloudflare-worker",
+      buildId: expect.any(String),
     });
+    expect(payload.buildId.length).toBeGreaterThan(0);
   });
 
   it("keeps unknown API routes inside the JSON API boundary", async () => {

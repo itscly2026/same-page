@@ -7,8 +7,15 @@ export const updateServiceWorkerMock = vi.fn(async () => undefined);
 export const registrationUpdateMock = vi.fn(async () => undefined);
 const registration = {
   installing: null,
+  waiting: {} as ServiceWorker,
   update: registrationUpdateMock,
 } as unknown as ServiceWorkerRegistration;
+
+export function setRegistrationWaiting(waiting: boolean) {
+  Object.assign(registration, {
+    waiting: waiting ? ({} as ServiceWorker) : null,
+  });
+}
 
 export function setShouldNeedRefresh(value: boolean) {
   shouldNeedRefresh = value;

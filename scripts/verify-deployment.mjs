@@ -3,9 +3,18 @@ import assert from "node:assert/strict";
 const baseUrl = new URL(process.argv[2] || "https://samepage.clyapps.com");
 assert.equal(baseUrl.protocol, "https:", "deployment verification requires HTTPS");
 
+const [health, build] = await Promise.all([
+  readHealth(),
+  readBuild(),
+]);
+assert.equal(
+  health.buildId,
+  build.buildId,
+  "Worker and application assets must come from the same build",
+);
+
 const checks = [
-  verifyHealth(),
-  verifyAppShell(),
+  verifyAppShell(build.buildId),
   verifyManifest(),
   verifyServiceWorker(),
   verifySocialProviderBoundary(),
@@ -24,29 +33,64 @@ async function request(path, init) {
   return response;
 }
 
-async function verifyHealth() {
+async function readHealth() {
   const response = await request("/api/health");
   assert.equal(response.status, 200, "health endpoint must return 200");
-  assert.deepEqual(await response.json(), {
-    status: "ok",
-    service: "same-page",
-    runtime: "cloudflare-worker",
-  });
+  const payload = await response.json();
+  assert.equal(payload.status, "ok");
+  assert.equal(payload.service, "same-page");
+  assert.equal(payload.runtime, "cloudflare-worker");
+  assert.equal(typeof payload.buildId, "string");
+  assert.ok(payload.buildId.length > 0, "health build id must not be empty");
+  return payload;
 }
 
-async function verifyAppShell() {
+async function readBuild() {
+  const response = await request("/build.json");
+  assert.equal(response.status, 200, "build identity must return 200");
+  const payload = await response.json();
+  assert.equal(typeof payload.buildId, "string");
+  assert.ok(payload.buildId.length > 0, "asset build id must not be empty");
+  return payload;
+}
+
+async function verifyAppShell(expectedBuildId) {
   const response = await request("/");
   assert.equal(response.status, 200, "application shell must return 200");
   assert.match(response.headers.get("content-type") || "", /text\/html/);
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.equal(response.headers.get("referrer-policy"), "no-referrer");
-  assert.match(await response.text(), /<title>Same Page<\/title>/);
+  const html = await response.text();
+  assert.match(html, /<title>Same Page<\/title>/);
+  const scriptPath = html.match(/src="(\/assets\/[^\"]+\.js)"/)?.[1];
+  assert.ok(scriptPath, "application shell must load a hashed script");
+  const script = await request(scriptPath);
+  assert.equal(script.status, 200, "application script must return 200");
+  assert.match(
+    script.headers.get("cache-control") || "",
+    /max-age=31536000.*immutable/,
+    "hashed application assets must be immutable",
+  );
+  assert.match(
+    await script.text(),
+    new RegExp(escapeRegExp(expectedBuildId)),
+    "application script must contain the active build identity",
+  );
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function verifyManifest() {
   const response = await request("/manifest.webmanifest");
   assert.equal(response.status, 200, "web app manifest must return 200");
   const manifest = await response.json();
+  assert.match(
+    response.headers.get("cache-control") || "",
+    /no-cache|max-age=0/,
+    "manifest must be revalidated",
+  );
   assert.equal(manifest.name, "Same Page");
   assert.equal(manifest.display, "fullscreen");
 }
@@ -57,6 +101,11 @@ async function verifyServiceWorker() {
   assert.match(
     response.headers.get("content-type") || "",
     /javascript|text\/plain/,
+  );
+  assert.match(
+    response.headers.get("cache-control") || "",
+    /no-cache|max-age=0/,
+    "service worker must be revalidated",
   );
   assert.ok((await response.text()).length > 100, "service worker is empty");
 }

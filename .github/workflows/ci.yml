@@ -40,6 +40,9 @@ jobs:
       - name: Install Playwright WebKit
         run: npx playwright install --with-deps webkit
 
+      - name: PWA update handover
+        run: npm run test:pwa-update
+
       - name: Visual report tests
         run: npm run test:visual-report
 
