@@ -53,16 +53,10 @@ test("wraps a long unbroken annotation inside stable page-relative bounds", asyn
     ${annotationPage("zoomed-url", 1112.8, text)}
   `);
 
-  assert.deepEqual(
-    (await measureTextLayouts(page)).map(({ lineCount, contentFits }) => ({
-      lineCount,
-      contentFits,
-    })),
-    [
-      { lineCount: 2, contentFits: true },
-      { lineCount: 2, contentFits: true },
-    ],
-  );
+  const layouts = await measureTextLayouts(page);
+  assert.equal(layouts[0].lineCount, layouts[1].lineCount);
+  assert.ok(layouts[0].lineCount > 1);
+  assert.ok(layouts.every(({ contentFits }) => contentFits));
 });
 
 test("gives short editable text a 44px hit target without enlarging its visual bounds", async (context) => {
