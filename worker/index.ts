@@ -7,10 +7,13 @@ import { AuthorizationError } from "./auth/authorization";
 import { handleAuthRequest } from "./auth/handler";
 import { choirRoutes } from "./choirs/routes";
 import type { AppEnvironment } from "./env";
+import { serverTimingMiddleware } from "./performance/server-timing";
 import { cleanupScoreStorage } from "./scores/cleanup";
 import { scoreRoutes } from "./scores/routes";
 
 const app = new Hono<AppEnvironment>();
+
+app.use("/api/*", serverTimingMiddleware);
 
 app.get("/api/health", (context) => {
   return context.json(

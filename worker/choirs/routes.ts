@@ -15,6 +15,7 @@ import {
 import { createDatabase } from "../db/database";
 import { choirs, memberships } from "../db/schema";
 import type { AppEnvironment } from "../env";
+import { measureServerTiming } from "../performance/server-timing";
 import {
   createGuestSessionToken,
   GUEST_SESSION_COOKIE,
@@ -153,8 +154,8 @@ choirRoutes.get("/choirs", async (context) => {
   }
 
   const database = createDatabase(context.env.DB);
-  const rows = await database
-    .select({
+  const rows = await measureServerTiming(context, "d1", () =>
+    database.select({
       id: memberships.id,
       displayName: memberships.displayName,
       role: memberships.role,
@@ -170,7 +171,7 @@ choirRoutes.get("/choirs", async (context) => {
         eq(memberships.status, "active"),
         eq(choirs.isPreviewEntry, false),
       ),
-    );
+    ));
 
   return context.json({
     memberships: rows.map((row) => ({

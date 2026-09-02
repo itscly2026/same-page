@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import type { AppEnvironment } from "../env";
 import { createDatabase } from "../db/database";
 import { AuthorizationError, requireChoirRead } from "./authorization";
+import { measureServerTiming } from "../performance/server-timing";
 import {
   resolveContextGuestPrincipal,
   resolveContextPrincipal,
@@ -18,7 +19,8 @@ export async function resolveContextChoirReadAccess(
     try {
       return {
         principal: userOrGuest,
-        access: await requireChoirRead(database, userOrGuest, choirId),
+        access: await measureServerTiming(context, "access", () =>
+          requireChoirRead(database, userOrGuest, choirId)),
       };
     } catch (error) {
       if (!(error instanceof AuthorizationError) || userOrGuest.kind !== "user") {
@@ -30,6 +32,7 @@ export async function resolveContextChoirReadAccess(
   const guest = await resolveContextGuestPrincipal(context);
   return {
     principal: guest,
-    access: await requireChoirRead(database, guest, choirId),
+    access: await measureServerTiming(context, "access", () =>
+      requireChoirRead(database, guest, choirId)),
   };
 }

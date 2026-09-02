@@ -32,6 +32,12 @@ import {
 import { authClient } from "../auth/auth-client";
 import { clearPreviewGuestSession } from "../auth/preview-guest-session";
 import { AppHeader } from "../components/app-header";
+import {
+  completeLoadingJourney,
+  ensureLoadingJourney,
+  isLoadingJourneyActive,
+  startLoadingJourney,
+} from "../performance/loading-performance";
 import { rememberReaderScore } from "../reader/reader-score-cache";
 import {
   ScoreActionDialog,
@@ -65,6 +71,24 @@ export default function ChoirPage() {
     access.kind === "opened" || access.kind === "join-required"
       ? access.choir
       : null;
+
+  useEffect(() => {
+    if (!isLoadingJourneyActive("exit-score")) {
+      ensureLoadingJourney("enter-drive", "direct");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (access.kind !== "opened") return;
+    const frame = window.requestAnimationFrame(() => {
+      if (isLoadingJourneyActive("exit-score")) {
+        completeLoadingJourney("exit-score", "drive-list-restored");
+      } else {
+        completeLoadingJourney("enter-drive", "drive-list-usable");
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [access]);
 
   const refresh = useCallback(
     async (query = search) => {
@@ -338,7 +362,10 @@ export default function ChoirPage() {
                     className="file-row__open"
                     to={`/choirs/${choirId}/scores/${score.id}`}
                     onClick={() =>
-                      rememberReaderScore(userId ?? "guest", score)
+                      {
+                        startLoadingJourney("open-score", "cold");
+                        rememberReaderScore(userId ?? "guest", score);
+                      }
                     }
                   >
                     <span className="pdf-file-icon" aria-hidden="true">PDF</span>

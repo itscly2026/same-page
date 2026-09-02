@@ -105,6 +105,9 @@ describe("PDF file library and delivery", () => {
       permissions: { canManage: boolean };
     };
     expect(guestPayload.permissions).toEqual({ canManage: false });
+    expect(guestList.headers.get("Server-Timing")).toMatch(
+      /auth;dur=.*access;dur=.*d1;dur=.*total;dur=/,
+    );
     expect(guestPayload.scores.map((score) => score.fileName)).toEqual([
       "练习 2.pdf",
       "练习 10.pdf",
@@ -146,6 +149,9 @@ describe("PDF file library and delivery", () => {
       headers: { cookie: guestCookie, Range: "bytes=0-7" },
     });
     expect(rangeResponse.status).toBe(206);
+    expect(rangeResponse.headers.get("Server-Timing")).toMatch(
+      /auth;dur=.*access;dur=.*d1;dur=.*r2;dur=.*total;dur=/,
+    );
     expect(rangeResponse.headers.get("Content-Range")).toBe(
       `bytes 0-7/${tenPdf.byteLength}`,
     );
