@@ -48,12 +48,12 @@ const otherScores = [
 ];
 
 const layers = [
-  layer("00000000-0000-4000-8000-000000000001", "shared", "G", "G", 0, "#a12652"),
-  layer("00000000-0000-4000-8000-000000000002", "shared", "S", "S", 1, "#c2415d"),
-  layer("00000000-0000-4000-8000-000000000003", "shared", "A", "A", 2, "#8a5a00"),
-  layer("00000000-0000-4000-8000-000000000004", "shared", "T", "T", 3, "#0f766e"),
-  layer("00000000-0000-4000-8000-000000000005", "shared", "B", "B", 4, "#3157a4"),
-  layer("00000000-0000-4000-8000-000000000006", "personal", null, "我的批注", 100, "#6750a4", true),
+  layer("00000000-0000-4000-8000-000000000001", "shared", "E", "Ensemble", 0, "#a12652"),
+  layer("00000000-0000-4000-8000-000000000002", "shared", "S", "Soprano", 1, "#c2415d"),
+  layer("00000000-0000-4000-8000-000000000003", "shared", "A", "Alto", 2, "#8a5a00"),
+  layer("00000000-0000-4000-8000-000000000004", "shared", "T", "Tenor", 3, "#0f766e"),
+  layer("00000000-0000-4000-8000-000000000005", "shared", "B", "Bass", 4, "#3157a4"),
+  layer("00000000-0000-4000-8000-000000000006", "personal", null, "Personal", 100, "#6750a4", true),
 ];
 
 const annotations = [
@@ -175,7 +175,7 @@ export function resolveFixtureRequest({
   }
 
   if (
-    method === "GET" &&
+    (method === "GET" || method === "HEAD") &&
     (pathname === `/api/choirs/${choir.id}/scores/${score.id}/pdf` ||
       pathname ===
         `/api/choirs/${choir.id}/scores/${score.id}/versions/${score.currentVersion.id}/pdf`)
@@ -188,6 +188,7 @@ export function resolveFixtureRequest({
         "accept-ranges": "bytes",
         "cache-control": "no-store",
         "content-length": String(samplePdf.byteLength),
+        "x-score-version": score.currentVersion.id,
       },
     };
   }
@@ -226,9 +227,15 @@ function layer(id, kind, defaultSlot, name, sortOrder, defaultColor, canEdit = f
     defaultSlot,
     name,
     sortOrder,
-    defaultColor,
-    colorOverride: null,
-    visible: true,
+    subscribed: true,
+    subscriptionSource: kind === "personal" ? "personal" : "product",
+    displayColor: defaultColor,
+    colorSource: kind === "personal" ? "personal" : "admin",
+    adminDefaultColor: kind === "personal" ? null : defaultColor,
+    driveSubscribed: null,
+    driveColorOverride: null,
+    scoreSubscriptionOverride: null,
+    scoreColorOverride: null,
     canEdit,
   };
 }

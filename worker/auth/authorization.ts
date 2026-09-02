@@ -63,7 +63,7 @@ export async function requireSharedLayerEdit(
   database: Database,
   principal: Principal | null,
   choirId: string,
-  sharedLayerId: string,
+  slot: "E" | "S" | "A" | "T" | "B",
 ) {
   if (!principal || principal.kind !== "user") {
     throw new AuthorizationError();
@@ -84,7 +84,7 @@ export async function requireSharedLayerEdit(
   const grant = await database.query.sharedLayerEditGrants.findFirst({
     where: and(
       eq(sharedLayerEditGrants.choirId, choirId),
-      eq(sharedLayerEditGrants.sharedLayerId, sharedLayerId),
+      eq(sharedLayerEditGrants.slot, slot),
       eq(sharedLayerEditGrants.membershipId, membership.id),
     ),
   });

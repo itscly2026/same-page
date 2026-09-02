@@ -21,6 +21,9 @@ test("visual report scenarios have stable unique ids and cover iPad plus narrow 
   assert.ok(
     visualReportScenarios.some((scenario) => scenario.id === "reader-page-turn-half"),
   );
+  assert.ok(
+    visualReportScenarios.some((scenario) => scenario.id === "reader-layer-lock"),
+  );
 });
 
 test("fixture resolver isolates guest and member sessions", () => {

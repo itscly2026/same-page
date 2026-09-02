@@ -1,4 +1,5 @@
 import { hashJoinCode, generateJoinCode } from "../security/join-code";
+import { defaultSharedLayers } from "../../src/shared/annotations";
 
 export const DEFAULT_CHOIR_NAME = "小红花云盘";
 export const CHOIR_STORAGE_LIMIT_BYTES = 1_073_741_824;
@@ -26,6 +27,7 @@ export async function provisionChoir(options: {
     ? await hashJoinCode(joinCode, options.inviteSecret)
     : null;
 
+  const membershipId = crypto.randomUUID();
   await options.binding.batch([
     options.binding
       .prepare(
@@ -49,11 +51,18 @@ export async function provisionChoir(options: {
          VALUES (?, ?, ?, ?, 'admin', 'active')`,
       )
       .bind(
-        crypto.randomUUID(),
+        membershipId,
         choirId,
         options.adminUserId,
         options.adminDisplayName,
       ),
+    ...defaultSharedLayers.map((layer) =>
+      options.binding.prepare(
+        `INSERT INTO choir_shared_layer_settings
+          (choir_id, slot, default_color, updated_by_membership_id)
+         VALUES (?, ?, ?, ?)`,
+      ).bind(choirId, layer.slot, layer.defaultColor, membershipId),
+    ),
   ]);
 
   return { choirId, joinCode };

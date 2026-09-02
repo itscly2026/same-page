@@ -91,8 +91,9 @@ export async function clearPrivateLocalDataAfterLogout() {
             ...workspace,
             key: localWorkspaceRecordKey(workspace, layer.id),
             canEdit: false,
-            colorOverride: null,
-            visible: true,
+            scoreSubscriptionOverride: null,
+            scoreColorOverride: null,
+            subscribed: true,
           };
         }),
       );
@@ -135,8 +136,9 @@ export async function clearPrivateLocalDataAfterLogout() {
                 ...workspace,
                 key: localWorkspaceRecordKey(workspace, layer.id),
                 canEdit: false,
-                colorOverride: null,
-                visible: true,
+                scoreSubscriptionOverride: null,
+                scoreColorOverride: null,
+                subscribed: true,
               })),
             annotations: score.annotationSnapshot.annotations.filter(
               (annotation) =>

@@ -215,7 +215,39 @@ export class SamePageDatabase extends Dexie {
           "&key,ownerKey,scopeKey,[scopeKey+id],kind,sortOrder",
       })
       .upgrade(migrateStoredTextPayloads);
+    this.version(7)
+      .stores({
+        system: "&key",
+        offlineScores:
+          "&key,ownerKey,scopeKey,[ownerKey+choirId+scoreId],versionId,active,verifiedAt",
+        annotations:
+          "&key,ownerKey,scopeKey,[scopeKey+layerId],[scopeKey+state],id,updatedAt",
+        annotationOutbox:
+          "&opId,ownerKey,scopeKey,[scopeKey+annotationId],createdAt",
+        annotationConflicts:
+          "&opId,ownerKey,scopeKey,[scopeKey+annotationId],createdAt",
+        annotationSyncCursors: "&scopeKey,ownerKey,[ownerKey+choirId+scoreId]",
+        guestLayerPreferences:
+          "&key,ownerKey,scopeKey,[scopeKey+layerId]",
+        syncLeases: "&scopeKey,ownerKey,expiresAt",
+        annotationLayers:
+          "&key,ownerKey,scopeKey,[scopeKey+id],kind,sortOrder",
+      })
+      .upgrade(clearSupersededLayerModelData);
   }
+}
+
+async function clearSupersededLayerModelData(transaction: Transaction) {
+  await Promise.all([
+    "offlineScores",
+    "annotations",
+    "annotationOutbox",
+    "annotationConflicts",
+    "annotationSyncCursors",
+    "guestLayerPreferences",
+    "syncLeases",
+    "annotationLayers",
+  ].map((table) => transaction.table(table).clear()));
 }
 
 async function migrateStoredTextPayloads(transaction: Transaction) {
@@ -386,8 +418,9 @@ async function migrateLegacyLocalWorkspaces(transaction: Transaction) {
       ...scope,
       key: annotationRecordKey(scope.scopeKey, layer.id),
       canEdit: knownOwner ? layer.canEdit : false,
-      visible: knownOwner ? layer.visible : true,
-      colorOverride: knownOwner ? layer.colorOverride : null,
+      subscribed: knownOwner ? layer.subscribed : true,
+      scoreSubscriptionOverride: knownOwner ? layer.scoreSubscriptionOverride : null,
+      scoreColorOverride: knownOwner ? layer.scoreColorOverride : null,
     });
   }
   await tables.annotationLayers.clear();
@@ -465,8 +498,9 @@ async function migrateLegacyLocalWorkspaces(transaction: Transaction) {
           ...scope,
           key: annotationRecordKey(scope.scopeKey, layer.id),
           canEdit: knownOwner ? layer.canEdit : false,
-          visible: knownOwner ? layer.visible : true,
-          colorOverride: knownOwner ? layer.colorOverride : null,
+          subscribed: knownOwner ? layer.subscribed : true,
+          scoreSubscriptionOverride: knownOwner ? layer.scoreSubscriptionOverride : null,
+          scoreColorOverride: knownOwner ? layer.scoreColorOverride : null,
         })),
       annotations: legacySnapshot.annotations
         .filter(

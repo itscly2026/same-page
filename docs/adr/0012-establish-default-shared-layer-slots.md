@@ -1,3 +1,22 @@
-# Establish stable default shared-layer slots
+# Fix the annotation model to ESATB and Personal
 
-Every score will contain one shared layer for each stable slot G, S, A, T and B, while administrators may continue to create additional custom shared layers. G has the same visibility, grant, attribution and synchronization behavior as the other default slots; it is only the conventional place for annotations everyone should notice. Slot identity is stored independently from the editable display name, so existing or custom layers with matching names are never silently reclassified. Per-user layer visibility remains a subscription preference rather than a voice membership or edit grant.
+Every score contains exactly five shared layers: E · Ensemble, S · Soprano,
+A · Alto, T · Tenor and B · Bass. E is the shared place for annotations that
+matter to the whole ensemble. A signed-in user also has exactly one P · Personal
+layer per score.
+
+Shared layers are product slots rather than administrator-created records.
+Administrators cannot add, rename, delete or reorder them. They configure a
+default color and edit grants for each slot at drive scope. Edit grants therefore
+apply consistently to the same slot across every score in the drive.
+
+Shared-layer subscription and color are reading preferences, independent from
+edit permission. Subscription resolves from score override, then the user's
+drive default, then the product default. Color resolves from score override,
+the user's drive override, the administrator's drive default, then the product
+default. Personal has neither subscription nor administrator configuration.
+
+This replaces the earlier G/S/A/T/B plus custom-layer model. Because the product
+is in greenfield development and the existing PDFs and annotations are
+disposable, the migration rebuilds annotation tables and invalidates cached
+offline content instead of preserving ambiguous legacy layer identities.

@@ -1507,7 +1507,7 @@ describe("ReaderPage", () => {
     await finishPageTurn();
     expect(currentRenderedPage()).toBe("3");
     fireEvent.click(screen.getByRole("button", { name: "图层" }));
-    expect(screen.getByLabelText("图层显示与颜色")).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "图层" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭页面与图层" }));
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.queryByText("尚未同步批注")).not.toBeInTheDocument();
@@ -1554,12 +1554,18 @@ describe("ReaderPage", () => {
               {
                 id: "11111111-1111-4111-8111-111111111111",
                 kind: "shared",
-                defaultSlot: "G",
-                name: "G",
+                defaultSlot: "E",
+                name: "Ensemble",
                 sortOrder: 0,
-                defaultColor: "#a12652",
-                colorOverride: null,
-                visible: true,
+                subscribed: true,
+                subscriptionSource: "product",
+                displayColor: "#a12652",
+                colorSource: "product",
+                adminDefaultColor: "#a12652",
+                driveSubscribed: null,
+                driveColorOverride: null,
+                scoreSubscriptionOverride: null,
+                scoreColorOverride: null,
                 canEdit: false,
               },
             ],
@@ -1582,7 +1588,7 @@ describe("ReaderPage", () => {
       await screen.findByText("仍有 1 项本机冲突待处理"),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText("第 2 页 · G · 第二页力度轻一些"),
+      await screen.findByText("第 2 页 · Ensemble · 第二页力度轻一些"),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "前往第 2 页" }));
     expect(
@@ -1821,37 +1827,38 @@ describe("ReaderPage", () => {
         return Promise.resolve(
           Response.json({
             layers: [
-              ...(["G", "S", "A", "T", "B"] as const).map((slot, index) => ({
+              ...(["E", "S", "A", "T", "B"] as const).map((slot, index) => ({
                 id: `00000000-0000-4000-8000-00000000000${index}`,
                 kind: "shared" as const,
                 defaultSlot: slot,
-                name: slot,
+                name: ({ E: "Ensemble", S: "Soprano", A: "Alto", T: "Tenor", B: "Bass" })[slot],
                 sortOrder: index,
-                defaultColor: "#a12652",
-                colorOverride: null,
-                visible: slot === "G" || slot === "B",
-                canEdit: slot === "G",
+                subscribed: slot === "E" || slot === "B",
+                subscriptionSource: "product",
+                displayColor: "#a12652",
+                colorSource: "product",
+                adminDefaultColor: "#a12652",
+                driveSubscribed: null,
+                driveColorOverride: null,
+                scoreSubscriptionOverride: null,
+                scoreColorOverride: null,
+                canEdit: slot === "E",
               })),
-              {
-                id: "33333333-3333-4333-8333-333333333333",
-                kind: "shared",
-                defaultSlot: null,
-                name: "指挥提示",
-                sortOrder: 5,
-                defaultColor: "#6b3fa0",
-                colorOverride: null,
-                visible: false,
-                canEdit: true,
-              },
               {
                 id: "11111111-1111-4111-8111-111111111111",
                 kind: "personal",
                 defaultSlot: null,
-                name: "我的批注",
+                name: "Personal",
                 sortOrder: 10000,
-                defaultColor: "#b4235a",
-                colorOverride: null,
-                visible: true,
+                subscribed: true,
+                subscriptionSource: "product",
+                displayColor: "#b4235a",
+                colorSource: "product",
+                adminDefaultColor: "#b4235a",
+                driveSubscribed: null,
+                driveColorOverride: null,
+                scoreSubscriptionOverride: null,
+                scoreColorOverride: null,
                 canEdit: true,
               },
             ],
@@ -1941,7 +1948,7 @@ describe("ReaderPage", () => {
     expect(
       screen.getByRole("button", { name: "整条橡皮" }).querySelector("svg"),
     ).not.toBeNull();
-    expect(screen.getByRole("button", { name: "U，我的批注" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "P，Personal" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -1952,19 +1959,20 @@ describe("ReaderPage", () => {
           .querySelectorAll<HTMLButtonElement>(".annotation-layer-slot"),
         (button) => button.textContent,
       ),
-    ).toEqual(["G", "S", "A", "T", "B", "U"]);
+    ).toEqual(["E", "S", "A", "T", "B", "P"]);
     expect(
-      screen.getByRole("button", { name: "S，女高音共享层，只读" }),
-    ).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "G，共同关注共享层" }));
+      screen.getByRole("button", { name: "S，Soprano，只读，查看权限说明" }),
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "S，Soprano，只读，查看权限说明" }));
+    expect(screen.getByRole("dialog", { name: "View only" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "E，Ensemble" }));
     expect(
-      screen.getByRole("button", { name: "G，共同关注共享层" }),
+      screen.getByRole("button", { name: "E，Ensemble" }),
     ).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-    expect(screen.getByRole("combobox", { name: "其他编辑层" })).toHaveValue("");
-    expect(screen.getByRole("option", { name: "指挥提示" })).toBeInTheDocument();
     const editingOverlay = screen.getByLabelText("第 1 页批注层");
     vi.spyOn(editingOverlay, "getBoundingClientRect").mockReturnValue({
       x: 0,
@@ -2009,7 +2017,7 @@ describe("ReaderPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
     expect(
-      screen.getByRole("button", { name: "G，共同关注共享层" }),
+      screen.getByRole("button", { name: "E，Ensemble" }),
     ).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -2033,9 +2041,15 @@ describe("ReaderPage", () => {
                 defaultSlot: null,
                 name: "指挥",
                 sortOrder: 0,
-                defaultColor: "#a12652",
-                colorOverride: null,
-                visible: true,
+                subscribed: true,
+                subscriptionSource: "product",
+                displayColor: "#a12652",
+                colorSource: "product",
+                adminDefaultColor: "#a12652",
+                driveSubscribed: null,
+                driveColorOverride: null,
+                scoreSubscriptionOverride: null,
+                scoreColorOverride: null,
                 canEdit: false,
               },
             ],
@@ -2098,9 +2112,15 @@ describe("ReaderPage", () => {
             defaultSlot: null,
             name: "我的批注",
             sortOrder: 10000,
-            defaultColor: "#b4235a",
-            colorOverride: null,
-            visible: true,
+            subscribed: true,
+            subscriptionSource: "product",
+            displayColor: "#b4235a",
+            colorSource: "product",
+            adminDefaultColor: "#b4235a",
+            driveSubscribed: null,
+            driveColorOverride: null,
+            scoreSubscriptionOverride: null,
+            scoreColorOverride: null,
             canEdit: true,
           },
         ],
@@ -2182,9 +2202,15 @@ describe("ReaderPage", () => {
             defaultSlot: null,
             name: "我的批注",
             sortOrder: 10_000,
-            defaultColor: "#b4235a",
-            colorOverride: null,
-            visible: true,
+            subscribed: true,
+            subscriptionSource: "product",
+            displayColor: "#b4235a",
+            colorSource: "product",
+            adminDefaultColor: "#b4235a",
+            driveSubscribed: null,
+            driveColorOverride: null,
+            scoreSubscriptionOverride: null,
+            scoreColorOverride: null,
             canEdit: true,
           },
         ],

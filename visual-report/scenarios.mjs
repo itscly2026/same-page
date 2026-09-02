@@ -235,6 +235,21 @@ export const visualReportScenarios = [
     waitsForPdf: true,
   },
   {
+    id: "reader-layer-lock",
+    title: "阅读器 · 共享层只读说明",
+    description: "点击可见但无编辑权的共享层锁后，清楚说明权限边界与申请方式。",
+    device: "portrait",
+    identity: "member",
+    route: "/choirs/visual-choir/scores/visual-score",
+    ready: { type: "role", role: "dialog", name: "View only" },
+    actions: [
+      { type: "clickCenter", selector: ".page-reader__viewport" },
+      { type: "clickRole", role: "button", name: "图层" },
+      { type: "clickRole", role: "button", name: "Ensemble 只读，查看权限说明" },
+    ],
+    waitsForPdf: true,
+  },
+  {
     id: "reader-text-ready",
     title: "阅读器 · 文本待命",
     description: "进入编辑模式后默认个人层与文本提示。",

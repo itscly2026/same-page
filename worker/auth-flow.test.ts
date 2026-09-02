@@ -1055,7 +1055,7 @@ describe("authentication and choir boundaries", () => {
         database,
         { kind: "user", userId: member!.id },
         provisioned.choirId,
-        "shared-layer-1",
+        "E",
       ),
     ).rejects.toThrow("Forbidden");
 
@@ -1068,7 +1068,7 @@ describe("authentication and choir boundaries", () => {
     await database.insert(sharedLayerEditGrants).values({
       id: crypto.randomUUID(),
       choirId: provisioned.choirId,
-      sharedLayerId: "shared-layer-1",
+      slot: "E",
       membershipId: memberMembership!.id,
     });
     await expect(
@@ -1076,7 +1076,7 @@ describe("authentication and choir boundaries", () => {
         database,
         { kind: "user", userId: member!.id },
         provisioned.choirId,
-        "shared-layer-1",
+        "E",
       ),
     ).resolves.toMatchObject({ id: memberMembership!.id });
 

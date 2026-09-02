@@ -41,7 +41,8 @@ beforeEach(async () => {
     [
       "DELETE FROM annotation_sync_operations",
       "DELETE FROM annotation_objects",
-      "DELETE FROM annotation_layer_preferences",
+      "DELETE FROM user_score_layer_preferences",
+      "DELETE FROM user_drive_layer_preferences",
       "DELETE FROM shared_layer_edit_grants",
       "DELETE FROM annotation_layers",
       "DELETE FROM score_object_deletions",
@@ -327,13 +328,64 @@ describe("annotation layers and object synchronization", () => {
     expect(objects.results[0]?.id).toBe(operationRow?.annotation_id);
   });
 
+  it("resolves score preferences over user drive defaults and administrator colors", async () => {
+    const fixture = await createFixture();
+    const member = await createMember(fixture.joinCode!, "preference@example.test", "小周");
+    const drivePath = `/api/choirs/${fixture.choirId}/shared-layers/E/preference`;
+    const scorePath = `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/shared-layers/E/preference`;
+
+    expect((await callWorker(drivePath, {
+      ...jsonRequest(member.cookie, { subscribed: false, colorOverride: "#112233" }),
+      method: "PUT",
+    })).status).toBe(200);
+    expect((await callWorker(scorePath, {
+      ...jsonRequest(member.cookie, { subscribed: true, colorOverride: "#445566" }),
+      method: "PUT",
+    })).status).toBe(200);
+
+    const customized = await layerBySlot(fixture, member.cookie, "E");
+    expect(customized).toMatchObject({
+      subscribed: true,
+      subscriptionSource: "score",
+      displayColor: "#445566",
+      colorSource: "score",
+      driveSubscribed: false,
+      scoreSubscriptionOverride: true,
+    });
+
+    expect((await callWorker(scorePath, {
+      ...jsonRequest(member.cookie, { subscribed: null, colorOverride: null }),
+      method: "PUT",
+    })).status).toBe(200);
+    expect((await callWorker(drivePath, {
+      ...jsonRequest(member.cookie, { colorOverride: null }),
+      method: "PUT",
+    })).status).toBe(200);
+    expect((await callWorker(
+      `/api/choirs/${fixture.choirId}/shared-layers/E/settings`,
+      {
+        ...jsonRequest(fixture.adminCookie, { defaultColor: "#abcdef" }),
+        method: "PUT",
+      },
+    )).status).toBe(200);
+
+    expect(await layerBySlot(fixture, member.cookie, "E")).toMatchObject({
+      subscribed: false,
+      subscriptionSource: "drive",
+      displayColor: "#abcdef",
+      colorSource: "admin",
+      scoreSubscriptionOverride: null,
+      scoreColorOverride: null,
+    });
+  });
+
   it("enforces revoked grants, choir boundaries, personal privacy and guest read-only access", async () => {
     const fixture = await createFixture();
     const member = await createMember(fixture.joinCode!, "member@example.test", "小王");
     const memberRow = await createDatabase(env.DB).query.memberships.findFirst({
       where: eq(memberships.userId, member.userId),
     });
-    const grantPath = `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/layers/${fixture.layerId}/grants/${memberRow!.id}`;
+    const grantPath = `/api/choirs/${fixture.choirId}/shared-layers/E/grants/${memberRow!.id}`;
     const grant = await callWorker(
       grantPath,
       { ...jsonRequest(fixture.adminCookie, { granted: true }), method: "PUT" },
@@ -433,9 +485,11 @@ async function createFixture() {
   const scoreId = ((await upload.json()) as { score: { id: string } }).score.id;
   const layerResponse = await callWorker(
     `/api/choirs/${provisioned.choirId}/scores/${scoreId}/layers`,
-    jsonRequest(admin.cookie, { name: "指挥批注", defaultColor: "#a12652", sortOrder: 0 }),
+    { headers: { cookie: admin.cookie } },
   );
-  const layerId = ((await layerResponse.json()) as { layer: { id: string } }).layer.id;
+  const layerId = ((await layerResponse.json()) as {
+    layers: Array<{ id: string; defaultSlot: string | null }>;
+  }).layers.find((layer) => layer.defaultSlot === "E")!.id;
   return {
     adminCookie: admin.cookie,
     adminUserId: admin.userId,
@@ -458,6 +512,21 @@ async function createMember(joinCode: string, email: string, name: string) {
   );
   expect(joined.status).toBe(201);
   return account;
+}
+
+async function layerBySlot(
+  fixture: { choirId: string; scoreId: string },
+  cookie: string,
+  slot: string,
+) {
+  const response = await callWorker(
+    `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/layers`,
+    { headers: { cookie } },
+  );
+  const body = (await response.json()) as {
+    layers: Array<Record<string, unknown> & { defaultSlot: string | null }>;
+  };
+  return body.layers.find((layer) => layer.defaultSlot === slot);
 }
 
 async function signIn(email: string) {

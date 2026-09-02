@@ -5,6 +5,7 @@ import {
   Ellipsis,
   Eraser,
   Layers,
+  Lock,
   Maximize2,
   Minus,
   Pencil,
@@ -45,7 +46,6 @@ import {
   reapplyAnnotationConflict,
   retryScoreSyncErrors,
   updateCachedLayer,
-  updateCachedLayerMetadata,
 } from "../annotations/local-annotations";
 import { requestOutboxRecovery } from "../annotations/outbox-recovery";
 import { syncAnnotations } from "../annotations/sync";
@@ -550,9 +550,8 @@ export default function ReaderPage() {
           ? body.layers
           : body.layers.map((layer) => ({
               ...layer,
-              visible: previousById.get(layer.id)?.visible ?? layer.visible,
-              colorOverride:
-                previousById.get(layer.id)?.colorOverride ?? layer.colorOverride,
+              subscribed: previousById.get(layer.id)?.subscribed ?? layer.subscribed,
+              displayColor: previousById.get(layer.id)?.displayColor ?? layer.displayColor,
             }));
         await cacheAnnotationLayers(workspace, layersToCache);
         if (active) setCanManageLayers(body.permissions.canManageLayers);
@@ -814,9 +813,8 @@ export default function ReaderPage() {
           ? layerBody.layers
           : layerBody.layers.map((layer) => ({
               ...layer,
-              visible: currentById.get(layer.id)?.visible ?? layer.visible,
-              colorOverride:
-                currentById.get(layer.id)?.colorOverride ?? layer.colorOverride,
+              subscribed: currentById.get(layer.id)?.subscribed ?? layer.subscribed,
+              displayColor: currentById.get(layer.id)?.displayColor ?? layer.displayColor,
             })),
       );
       await syncAnnotations(workspace, { pull: true });
@@ -1361,18 +1359,11 @@ function EditingControls({
   onToolChange(tool: AnnotationTool): void;
   onLayerChange(layerId: string): void;
 }) {
+  const [lockedLayer, setLockedLayer] = useState<AnnotationLayerSummary | null>(null);
   const defaultLayers = new Map(
-    layers
-      .filter((layer) => layer.defaultSlot !== null)
-      .map((layer) => [layer.defaultSlot, layer]),
+    layers.filter((layer) => layer.defaultSlot !== null).map((layer) => [layer.defaultSlot, layer]),
   );
   const personalLayer = layers.find((layer) => layer.kind === "personal");
-  const customLayers = layers.filter(
-    (layer) => layer.kind === "shared" && layer.defaultSlot === null,
-  );
-  const activeCustom = customLayers.some((layer) => layer.id === activeLayerId)
-    ? activeLayerId
-    : "";
 
   return (
     <section className="annotation-controls" aria-label="批注工具">
@@ -1384,33 +1375,16 @@ function EditingControls({
             layer={defaultLayers.get(slot)}
             activeLayerId={activeLayerId}
             onLayerChange={onLayerChange}
+            onLocked={setLockedLayer}
           />
         ))}
         <LayerSlotButton
-          slot="U"
+          slot="P"
           layer={personalLayer}
           activeLayerId={activeLayerId}
           onLayerChange={onLayerChange}
+          onLocked={setLockedLayer}
         />
-        {customLayers.length > 0 ? (
-          <label className="annotation-custom-layer-select">
-            <span className="visually-hidden">其他编辑层</span>
-            <select
-              aria-label="其他编辑层"
-              value={activeCustom ?? ""}
-              onChange={(event) => {
-                if (event.target.value) onLayerChange(event.target.value);
-              }}
-            >
-              <option value="">…</option>
-              {customLayers.map((layer) => (
-                <option value={layer.id} key={layer.id} disabled={!layer.canEdit}>
-                  {layer.name}{layer.canEdit ? "" : "（只读）"}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
       </div>
       <div className="segmented-control" aria-label="批注工具">
         {(["text", "ink", "eraser"] as const).map((entry) => (
@@ -1425,28 +1399,17 @@ function EditingControls({
           </Button>
         ))}
       </div>
-      <Button
-        aria-label="撤销"
-        className="annotation-tool-button"
-        onPress={() =>
-          activeLayerId
-            ? void undoAnnotationEdit(workspace, activeLayerId)
-            : undefined
-        }
-      >
+      <Button aria-label="撤销" className="annotation-tool-button"
+        onPress={() => activeLayerId ? void undoAnnotationEdit(workspace, activeLayerId) : undefined}>
         <Undo2 aria-hidden="true" size={20} />
       </Button>
-      <Button
-        aria-label="重做"
-        className="annotation-tool-button"
-        onPress={() =>
-          activeLayerId
-            ? void redoAnnotationEdit(workspace, activeLayerId)
-            : undefined
-        }
-      >
+      <Button aria-label="重做" className="annotation-tool-button"
+        onPress={() => activeLayerId ? void redoAnnotationEdit(workspace, activeLayerId) : undefined}>
         <Redo2 aria-hidden="true" size={20} />
       </Button>
+      {lockedLayer ? (
+        <LayerPermissionDialog layer={lockedLayer} onClose={() => setLockedLayer(null)} />
+      ) : null}
     </section>
   );
 }
@@ -1456,36 +1419,56 @@ function LayerSlotButton({
   layer,
   activeLayerId,
   onLayerChange,
+  onLocked,
 }: {
-  slot: DefaultSharedLayerSlot | "U";
+  slot: DefaultSharedLayerSlot | "P";
   layer: AnnotationLayerSummary | undefined;
   activeLayerId: string | null;
   onLayerChange(layerId: string): void;
+  onLocked(layer: AnnotationLayerSummary): void;
 }) {
-  const label =
-    slot === "U"
-      ? "U，我的批注"
-      : `${slot}，${{
-          G: "共同关注",
-          S: "女高音",
-          A: "女低音",
-          T: "男高音",
-          B: "男低音",
-        }[slot]}共享层`;
+  const label = slot === "P" ? "P，Personal" : `${slot}，${layer?.name ?? slot}`;
   return (
     <Button
-      aria-label={`${label}${layer?.canEdit ? "" : "，只读"}`}
+      aria-label={`${label}${layer?.canEdit ? "" : "，只读，查看权限说明"}`}
       aria-pressed={layer?.id === activeLayerId}
       className="annotation-layer-slot"
-      isDisabled={!layer?.canEdit}
-      onPress={() => (layer ? onLayerChange(layer.id) : undefined)}
+      onPress={() => {
+        if (!layer) return;
+        if (!layer.canEdit) onLocked(layer);
+        else onLayerChange(layer.id);
+      }}
     >
       <span>{slot}</span>
-      <i
-        aria-hidden="true"
-        style={{ background: layer?.colorOverride ?? layer?.defaultColor ?? "transparent" }}
-      />
+      <i aria-hidden="true" style={{ background: layer?.displayColor ?? "transparent" }} />
+      {layer && !layer.canEdit ? <Lock aria-hidden="true" className="annotation-layer-slot__lock" size={11} /> : null}
     </Button>
+  );
+}
+
+function LayerPermissionDialog({
+  layer,
+  onClose,
+}: {
+  layer: AnnotationLayerSummary;
+  onClose(): void;
+}) {
+  return (
+    <div className="layer-permission-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        aria-labelledby="layer-permission-title"
+        aria-modal="true"
+        className="layer-permission-dialog"
+        role="dialog"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="layer-permission-dialog__icon"><Lock aria-hidden="true" size={20} /></div>
+        <h2 id="layer-permission-title">View only</h2>
+        <p>You can view {layer.defaultSlot} · {layer.name}, but you cannot add or edit annotations in this shared layer.</p>
+        <p>Contact a drive administrator to request edit access.</p>
+        <Button autoFocus className="primary-button" onPress={onClose}>Done</Button>
+      </section>
+    </div>
   );
 }
 
@@ -1506,201 +1489,200 @@ function LayerPanel({
   canManageLayers: boolean;
   signedIn: boolean;
 }) {
-  const updatePreference = async (
+  const [lockedLayer, setLockedLayer] = useState<AnnotationLayerSummary | null>(null);
+  const sharedLayers = layers.filter((layer) => layer.kind === "shared");
+  const personalLayer = layers.find((layer) => layer.kind === "personal");
+
+  const saveScorePreference = async (
     layer: AnnotationLayerSummary,
-    changes: Partial<Pick<AnnotationLayerSummary, "visible" | "colorOverride">>,
+    changes: { subscribed?: boolean | null; colorOverride?: string | null },
   ) => {
-    await updateCachedLayer(workspace, layer.id, changes);
-    if (!signedIn) return;
+    if (!layer.defaultSlot) return;
+    if (signedIn) {
+      const response = await fetch(
+        `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/shared-layers/${layer.defaultSlot}/preference`,
+        { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(changes) },
+      );
+      if (!response.ok) throw new Error("score_preference_update_failed");
+    }
+    const scoreSubscriptionOverride = changes.subscribed === undefined
+      ? layer.scoreSubscriptionOverride
+      : changes.subscribed;
+    const scoreColorOverride = changes.colorOverride === undefined
+      ? layer.scoreColorOverride
+      : changes.colorOverride;
+    await updateCachedLayer(workspace, layer.id, {
+      scoreSubscriptionOverride,
+      scoreColorOverride,
+      subscribed: scoreSubscriptionOverride ?? layer.driveSubscribed ?? true,
+      subscriptionSource: scoreSubscriptionOverride !== null ? "score" : layer.driveSubscribed !== null ? "drive" : "product",
+      displayColor: scoreColorOverride ?? layer.driveColorOverride ?? layer.adminDefaultColor ?? layer.displayColor,
+      colorSource: scoreColorOverride ? "score" : layer.driveColorOverride ? "drive" : layer.adminDefaultColor ? "admin" : "product",
+    });
+  };
+
+  const saveDrivePreference = async (
+    layer: AnnotationLayerSummary,
+    changes: { subscribed?: boolean; colorOverride?: string | null },
+  ) => {
+    if (!layer.defaultSlot || !signedIn) return;
     const response = await fetch(
-      `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/layers/${layer.id}/preference`,
-      {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(changes),
-      },
+      `/api/choirs/${workspace.choirId}/shared-layers/${layer.defaultSlot}/preference`,
+      { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(changes) },
     );
-    if (!response.ok) throw new Error("preference_update_failed");
+    if (!response.ok) throw new Error("drive_preference_update_failed");
+    const driveSubscribed = changes.subscribed ?? layer.driveSubscribed ?? true;
+    const driveColorOverride = changes.colorOverride === undefined
+      ? layer.driveColorOverride
+      : changes.colorOverride;
+    await updateCachedLayer(workspace, layer.id, {
+      driveSubscribed,
+      driveColorOverride,
+      subscribed: layer.scoreSubscriptionOverride ?? driveSubscribed,
+      subscriptionSource: layer.scoreSubscriptionOverride !== null ? "score" : "drive",
+      displayColor: layer.scoreColorOverride ?? driveColorOverride ?? layer.adminDefaultColor ?? layer.displayColor,
+      colorSource: layer.scoreColorOverride ? "score" : driveColorOverride ? "drive" : layer.adminDefaultColor ? "admin" : "product",
+    });
   };
 
   return (
-    <section className="reader-layer-panel" aria-label="图层显示与颜色">
-      <div className="annotation-layer-list">
-          {layers.map((layer) => (
-            <div key={layer.id}>
-              <label>
+    <section className="reader-layer-panel" aria-label="图层">
+      <div className="layer-section">
+        <div className="layer-section__heading">
+          <div><h3>共享层</h3><p>Shared annotations</p></div>
+          <span>{sharedLayers.filter((layer) => layer.subscribed).length} / 5</span>
+        </div>
+        <div className="layer-card-list">
+          {sharedLayers.map((layer) => (
+            <article className="layer-card" key={layer.id}>
+              <div className="layer-card__main">
                 <input
+                  aria-label={`订阅 ${layer.defaultSlot} · ${layer.name}`}
+                  checked={layer.subscribed}
                   type="checkbox"
-                  checked={layer.visible}
-                  onChange={(event) =>
-                    void updatePreference(layer, { visible: event.target.checked })
-                  }
+                  onChange={(event) => void saveScorePreference(layer, { subscribed: event.target.checked })}
                 />
-                {layer.name}
-              </label>
-              {layer.kind === "shared" ? (
-                <>
-                  <label>
-                    本机显示颜色
-                    <input
-                      type="color"
-                      value={layer.colorOverride ?? layer.defaultColor}
-                      onChange={(event) =>
-                        void updatePreference(layer, {
-                          colorOverride: event.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                  {canManageLayers ? (
-                    <>
-                      <SharedLayerEditor
-                        workspace={workspace}
-                        layer={layer}
-                      />
-                      <LayerGrantManager
-                        choirId={workspace.choirId}
-                        scoreId={workspace.scoreId}
-                        layerId={layer.id}
-                      />
-                    </>
+                <span className="layer-card__swatch" style={{ background: layer.displayColor }} />
+                <div className="layer-card__identity">
+                  <strong><span>{layer.defaultSlot}</span>{layer.name}</strong>
+                  <small>{layer.scoreSubscriptionOverride === null && layer.scoreColorOverride === null
+                    ? "Following drive defaults"
+                    : "Customized for this score"}</small>
+                </div>
+                {!layer.canEdit ? (
+                  <Button className="layer-lock-button" aria-label={`${layer.name} 只读，查看权限说明`}
+                    onPress={() => setLockedLayer(layer)}>
+                    <Lock aria-hidden="true" size={16} />
+                  </Button>
+                ) : null}
+                <input
+                  aria-label={`${layer.defaultSlot} · ${layer.name} 谱子颜色`}
+                  className="layer-color-input"
+                  type="color"
+                  value={layer.displayColor}
+                  onChange={(event) => void saveScorePreference(layer, { colorOverride: event.target.value })}
+                />
+              </div>
+              <details className="layer-card__details">
+                <summary>Preferences</summary>
+                <div className="layer-preference-grid">
+                  <div>
+                    <strong>This score</strong>
+                    <Button className="text-button" onPress={() => void saveScorePreference(layer, {
+                      subscribed: null, colorOverride: null,
+                    })}>Use drive defaults</Button>
+                  </div>
+                  {signedIn ? (
+                    <div>
+                      <strong>Drive default</strong>
+                      <label>
+                        <input type="checkbox" checked={layer.driveSubscribed ?? true}
+                          onChange={(event) => void saveDrivePreference(layer, { subscribed: event.target.checked })} />
+                        Subscribe by default
+                      </label>
+                      <label>
+                        Color
+                        <input type="color"
+                          value={layer.driveColorOverride ?? layer.adminDefaultColor ?? layer.displayColor}
+                          onChange={(event) => void saveDrivePreference(layer, { colorOverride: event.target.value })} />
+                      </label>
+                    </div>
                   ) : null}
-                </>
-              ) : null}
-            </div>
+                  {canManageLayers && layer.defaultSlot ? (
+                    <AdminLayerSettings workspace={workspace} layer={layer} />
+                  ) : null}
+                </div>
+              </details>
+            </article>
           ))}
-          {canManageLayers ? (
-            <form
-              className="annotation-layer-create"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const form = event.currentTarget;
-                const data = new FormData(form);
-                void fetch(`/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/layers`, {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({
-                    name: data.get("name"),
-                    defaultColor: data.get("color"),
-                    sortOrder: layers.filter((layer) => layer.kind === "shared").length,
-                  }),
-                })
-                  .then(async (response) => {
-                    if (!response.ok) throw new Error("layer_create_failed");
-                    const body = (await response.json()) as {
-                      layer: {
-                        id: string;
-                        kind: "shared";
-                        defaultSlot: null;
-                        name: string;
-                        defaultColor: string;
-                        sortOrder: number;
-                      };
-                    };
-                    await cacheAnnotationLayers(workspace, [
-                      ...layers,
-                      {
-                        ...body.layer,
-                        visible: true,
-                        colorOverride: null,
-                        canEdit: true,
-                      },
-                    ]);
-                    form.reset();
-                  });
-              }}
-            >
-              <input name="name" aria-label="共享层名称" placeholder="新共享层" required maxLength={80} />
-              <input name="color" aria-label="共享层默认颜色" type="color" defaultValue="#a12652" />
-              <Button type="submit">新建共享层</Button>
-            </form>
-          ) : null}
+        </div>
       </div>
+      {personalLayer ? (
+        <div className="layer-section layer-section--personal">
+          <div className="layer-section__heading">
+            <div><h3>个人层</h3><p>Private to you</p></div>
+          </div>
+          <article className="layer-card">
+            <div className="layer-card__main">
+              <span className="layer-card__swatch" style={{ background: personalLayer.displayColor }} />
+              <div className="layer-card__identity">
+                <strong><span>P</span>Personal</strong>
+                <small>Always available · No subscription</small>
+              </div>
+            </div>
+          </article>
+        </div>
+      ) : null}
+      {lockedLayer ? <LayerPermissionDialog layer={lockedLayer} onClose={() => setLockedLayer(null)} /> : null}
     </section>
   );
 }
 
-function SharedLayerEditor({
+function AdminLayerSettings({
   workspace,
   layer,
 }: {
   workspace: LocalWorkspace;
   layer: AnnotationLayerSummary;
 }) {
+  const [defaultColor, setDefaultColor] = useState(layer.adminDefaultColor ?? layer.displayColor);
+  if (!layer.defaultSlot) return null;
   return (
-    <details className="shared-layer-editor">
-      <summary>层设置</summary>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          const data = new FormData(event.currentTarget);
-          const update = {
-            name: String(data.get("name") ?? ""),
-            defaultColor: String(data.get("defaultColor") ?? ""),
-            sortOrder: Number(data.get("sortOrder")),
-          };
-          void fetch(
-            `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/layers/${layer.id}`,
-            {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(update),
-            },
-          ).then(async (response) => {
-            if (!response.ok) throw new Error("layer_update_failed");
-            await updateCachedLayerMetadata(workspace, layer.id, update);
-          });
-        }}
-      >
-        <input name="name" aria-label={`${layer.name}名称`} defaultValue={layer.name} required maxLength={80} />
-        <input
-          name="defaultColor"
-          aria-label={`${layer.name}默认颜色`}
-          type="color"
-          defaultValue={layer.defaultColor}
-        />
-        <input
-          name="sortOrder"
-          aria-label={`${layer.name}顺序`}
-          type="number"
-          min={0}
-          max={10000}
-          defaultValue={layer.sortOrder}
-        />
-        <Button type="submit">保存层设置</Button>
-      </form>
-    </details>
+    <div>
+      <strong>Admin controls</strong>
+      <label>
+        Shared default color
+        <input type="color" value={defaultColor} onChange={(event) => setDefaultColor(event.target.value)} />
+      </label>
+      <Button className="text-button" onPress={() => {
+        void fetch(`/api/choirs/${workspace.choirId}/shared-layers/${layer.defaultSlot}/settings`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ defaultColor }),
+        });
+      }}>Save default</Button>
+      <LayerGrantManager choirId={workspace.choirId} slot={layer.defaultSlot} />
+    </div>
   );
 }
 
 function LayerGrantManager({
   choirId,
-  scoreId,
-  layerId,
+  slot,
 }: {
   choirId: string;
-  scoreId: string;
-  layerId: string;
+  slot: DefaultSharedLayerSlot;
 }) {
   const [members, setMembers] = useState<Array<{
-    id: string;
-    displayName: string;
-    role: "admin" | "member";
-    granted: boolean;
+    id: string; displayName: string; role: "admin" | "member"; granted: boolean;
   }> | null>(null);
-
   const load = async () => {
-    const response = await fetch(
-      `/api/choirs/${choirId}/scores/${scoreId}/layers/${layerId}/grants`,
-    );
+    const response = await fetch(`/api/choirs/${choirId}/shared-layers/${slot}/grants`);
     if (!response.ok) return;
     const body = (await response.json()) as { members: NonNullable<typeof members> };
     setMembers(body.members);
   };
-
-  if (!members) {
-    return <Button onPress={() => void load()}>编辑权限</Button>;
-  }
+  if (!members) return <Button className="text-button" onPress={() => void load()}>Edit access</Button>;
   return (
     <div className="annotation-grants">
       {members.map((member) => (
@@ -1711,22 +1693,16 @@ function LayerGrantManager({
             disabled={member.role === "admin"}
             onChange={(event) => {
               const granted = event.target.checked;
-              setMembers((current) =>
-                current?.map((entry) =>
-                  entry.id === member.id ? { ...entry, granted } : entry,
-                ) ?? null,
-              );
-              void fetch(
-                `/api/choirs/${choirId}/scores/${scoreId}/layers/${layerId}/grants/${member.id}`,
-                {
-                  method: "PUT",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ granted }),
-                },
-              );
+              setMembers((current) => current?.map((entry) =>
+                entry.id === member.id ? { ...entry, granted } : entry) ?? null);
+              void fetch(`/api/choirs/${choirId}/shared-layers/${slot}/grants/${member.id}`, {
+                method: "PUT",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ granted }),
+              });
             }}
           />
-          {member.displayName}{member.role === "admin" ? "（管理员）" : ""}
+          {member.displayName}{member.role === "admin" ? " (admin)" : ""}
         </label>
       ))}
     </div>
