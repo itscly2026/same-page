@@ -66,6 +66,7 @@ interface PendingTextPlacement {
   startY: number;
   editor: TextEditorState;
   moved: boolean;
+  opened: boolean;
 }
 
 interface TextSelection {
@@ -210,18 +211,15 @@ export function AnnotationOverlay({
       setTextEditor(editor);
       updateInteraction("composing-text");
     });
-    // iPadOS WebKit opens the software keyboard only when focus remains in the
-    // direct user-gesture stack. Synchronously activating the already-mounted
-    // composer makes the textarea visible and focusable before this call.
     const input = textInputRef.current;
-    if (input) input.value = editor.initial;
     const cursor = editor.initial.length;
-    focusTextInput({ start: cursor, end: cursor, direction: "none" });
+    input?.setSelectionRange(cursor, cursor, "none");
   };
 
   const closeTextEditor = () => {
     setFontScaleAdjusting(false);
     textSelection.current = null;
+    pendingTextPlacement.current = null;
     setTextEditor(null);
     updateInteraction("idle");
     const input = textInputRef.current;
@@ -423,21 +421,27 @@ export function AnnotationOverlay({
       const bounds = event.currentTarget.getBoundingClientRect();
       const position = point(event);
       capturePointer(event.currentTarget, event.pointerId);
+      const editor: TextEditorState = {
+        id: crypto.randomUUID(),
+        x: position.x,
+        y: position.y,
+        initial: "",
+        fontScale: DEFAULT_TEXT_FONT_SCALE,
+        pageWidth: bounds.width,
+        source: "new",
+      };
+      const openOnPointerDown = event.pointerType === "pen";
       pendingTextPlacement.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
         moved: false,
-        editor: {
-          id: crypto.randomUUID(),
-          x: position.x,
-          y: position.y,
-          initial: "",
-          fontScale: DEFAULT_TEXT_FONT_SCALE,
-          pageWidth: bounds.width,
-          source: "new",
-        },
+        opened: openOnPointerDown,
+        editor,
       };
+      // Mounting the native control during Pencil pointerdown restores the
+      // browser activation shape that previously opened the standard keyboard.
+      if (openOnPointerDown) openTextEditor(editor);
       return;
     }
     if (tool === "eraser") {
@@ -470,6 +474,10 @@ export function AnnotationOverlay({
         ) > TEXT_DRAG_THRESHOLD_PX
       ) {
         pendingPlacement.moved = true;
+        if (pendingPlacement.opened) {
+          pendingPlacement.opened = false;
+          closeTextEditor();
+        }
       }
       return;
     }
@@ -504,7 +512,7 @@ export function AnnotationOverlay({
       if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
-      if (!pendingPlacement.moved) {
+      if (!pendingPlacement.moved && !pendingPlacement.opened) {
         openTextEditor(pendingPlacement.editor);
       }
       return;
@@ -542,6 +550,7 @@ export function AnnotationOverlay({
         onPointerUp={pointerUp}
         onPointerCancel={(event) => {
           if (pendingTextPlacement.current?.pointerId === event.pointerId) {
+            if (pendingTextPlacement.current.opened) closeTextEditor();
             pendingTextPlacement.current = null;
           } else if (textTransform.current?.pointers.has(event.pointerId)) cancelTextTransform();
           else pointerUp(event);
@@ -673,29 +682,32 @@ export function AnnotationOverlay({
           </button>
           <button tabIndex={textEditor ? 0 : -1} type="submit">完成</button>
         </header>
-        <textarea
-          aria-label={textEditor ? "批注文本" : undefined}
-          name="text"
-          ref={textInputRef}
-          tabIndex={textEditor ? 0 : -1}
-          inputMode="text"
-          maxLength={1000}
-          rows={1}
-          style={{
-            color: activeLayerColor,
-            fontSize: textEditor ? editorFontSize : undefined,
-          }}
-          onChange={(event) => setEditorText(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              cancelTextEditor();
-            } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              void finishTextEditor();
-            }
-          }}
-        />
+        {textEditor ? (
+          <textarea
+            aria-label="批注文本"
+            autoFocus
+            name="text"
+            ref={textInputRef}
+            inputMode="text"
+            maxLength={1000}
+            rows={1}
+            style={{
+              color: activeLayerColor,
+              fontSize: editorFontSize,
+            }}
+            value={editorText}
+            onChange={(event) => setEditorText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                cancelTextEditor();
+              } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                void finishTextEditor();
+              }
+            }}
+          />
+        ) : null}
         <label className="annotation-font-scale">
           <output
             aria-hidden={fontScaleAdjusting ? undefined : "true"}

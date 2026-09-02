@@ -2410,6 +2410,10 @@ h1 {
   background: #fff;
 }
 
+.pdf-page-canvas canvas[hidden] {
+  display: none;
+}
+
 .pdf-page-canvas--error {
   display: grid;
   place-items: center;
