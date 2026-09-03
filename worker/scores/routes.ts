@@ -10,7 +10,10 @@ import {
 } from "../../src/shared/scores";
 import { requireChoirAdmin } from "../auth/authorization";
 import { resolveContextChoirReadAccess } from "../auth/choir-read-access";
-import { resolveContextPrincipal } from "../auth/context-principal";
+import {
+  resolveContextPrincipal,
+  resolveContextPrincipalCandidates,
+} from "../auth/context-principal";
 import { createDatabase } from "../db/database";
 import { scores } from "../db/schema";
 import type { AppEnvironment } from "../env";
@@ -35,7 +38,10 @@ export const scoreRoutes = new Hono<AppEnvironment>();
 
 scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
   const choirId = context.req.param("choirId");
-  const access = await resolveChoirAccess(context, choirId);
+  const candidates = await resolveContextPrincipalCandidates(context);
+  const userId = candidates.user?.userId ?? "";
+  const guestChoirId = candidates.guest?.choirId ?? "";
+  const guestSessionVersion = candidates.guest?.guestSessionVersion ?? -1;
   const search = context.req.query("q")?.trim().slice(0, 120) ?? "";
   const pattern = `%${escapeLike(scoreFileNameKey(search))}%`;
   const rows = await measureServerTiming(context, "d1", () =>
@@ -43,23 +49,55 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
       `SELECT choirs.id AS drive_id, choirs.name AS drive_name,
               choirs.guest_admission_mode, choirs.storage_used_bytes,
               choirs.storage_limit_bytes,
+              memberships.id AS membership_id,
+              memberships.role AS membership_role,
+              CASE WHEN choirs.id = ? AND choirs.guest_session_version = ?
+                THEN 1 ELSE 0 END AS guest_access,
               scores.id AS score_id, scores.choir_id, scores.file_name,
               scores.updated_at, versions.id AS version_id,
               versions.version_number, versions.size_bytes, versions.sha256,
               versions.etag, versions.page_count,
               versions.created_at AS version_created_at
        FROM choirs
+       LEFT JOIN memberships
+         ON memberships.choir_id = choirs.id
+        AND memberships.user_id = ?
+        AND memberships.status = 'active'
        LEFT JOIN scores
          ON scores.choir_id = choirs.id AND scores.trashed_at IS NULL
+        AND (memberships.id IS NOT NULL OR
+             (choirs.id = ? AND choirs.guest_session_version = ?))
         AND (? = '' OR scores.file_name_key LIKE ? ESCAPE '\\')
        LEFT JOIN score_versions AS versions
          ON versions.id = scores.current_version_id AND versions.state = 'ready'
        WHERE choirs.id = ?`,
     )
-      .bind(search, pattern, choirId)
+      .bind(
+        guestChoirId,
+        guestSessionVersion,
+        userId,
+        guestChoirId,
+        guestSessionVersion,
+        search,
+        pattern,
+        choirId,
+      )
       .all<DriveBootstrapRow>());
   const drive = rows.results[0];
   if (!drive) return context.json({ error: "not_found" }, 404);
+  const access = await measureServerTiming(context, "access", async () => {
+    if (drive.membership_id) {
+      return {
+        kind: "membership" as const,
+        canManage: drive.membership_role === "admin",
+      };
+    }
+    if (drive.guest_access === 1) {
+      return { kind: "guest" as const, canManage: false };
+    }
+    return null;
+  });
+  if (!access) return context.json({ error: "forbidden" }, 403);
   const serialized = rows.results
     .filter((row): row is DriveBootstrapScoreRow =>
       row.score_id !== null && row.version_id !== null)
@@ -605,6 +643,9 @@ interface DriveBootstrapRow {
   guest_admission_mode: "invite" | "open";
   storage_used_bytes: number;
   storage_limit_bytes: number;
+  membership_id: string | null;
+  membership_role: "admin" | "member" | null;
+  guest_access: 0 | 1;
   score_id: string | null;
   choir_id: string | null;
   file_name: string | null;
