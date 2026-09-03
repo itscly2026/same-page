@@ -38,6 +38,8 @@ import {
   startLoadingJourney,
 } from "../performance/loading-performance";
 import { rememberReaderScore } from "../reader/reader-score-cache";
+import { classifyReaderOpen } from "../reader/reader-reopen-tracker";
+import { scheduleReaderRuntimePreload } from "../reader/reader-runtime";
 import {
   driveCacheOwnerKey,
   invalidateDriveLibrary,
@@ -102,6 +104,11 @@ export default function ChoirPage() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [access]);
+
+  useEffect(() => {
+    if (access.kind !== "opened") return;
+    return scheduleReaderRuntimePreload();
+  }, [access.kind]);
 
   const refresh = useCallback(
     async (query = search) => {
@@ -468,7 +475,10 @@ export default function ChoirPage() {
                     to={`/choirs/${choirId}/scores/${score.id}`}
                     onClick={() =>
                       {
-                        startLoadingJourney("open-score", "cold");
+                        startLoadingJourney(
+                          "open-score",
+                          classifyReaderOpen(userId ?? "guest", choirId, score.id),
+                        );
                         if (cacheOwner) {
                           rememberDriveView(cacheOwner, choirId, {
                             search,

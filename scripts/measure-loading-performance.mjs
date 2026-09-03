@@ -55,6 +55,9 @@ try {
   });
 
   const page = await context.newPage();
+  const pdfWorkerPrepared = page.waitForResponse((response) =>
+    /\/assets\/pdf\.worker-.*\.mjs$/.test(new URL(response.url()).pathname),
+  );
   await page.goto(origin, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "进入云盘", exact: true }).click();
   await page.getByRole("link", { name: /示例云盘/ }).click();
@@ -70,6 +73,8 @@ try {
     0,
     `drive entry should not repeat the score list: ${JSON.stringify(enterRequests)}`,
   );
+  await page.locator("html[data-reader-runtime='ready']").waitFor();
+  await pdfWorkerPrepared;
   await page.locator(".file-row__open").first().click();
   await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({
     state: "visible",
@@ -78,6 +83,18 @@ try {
   returningToDrive = true;
   await page.getByRole("link", { name: "返回云盘", exact: true }).click();
   await page.locator(".file-list").waitFor({ state: "visible" });
+  await page.waitForFunction(() =>
+    window.__SAME_PAGE_DIAGNOSTICS__?.loadingPerformance().records.some(
+      (record) => record.name === "exit-score:duration",
+    ));
+  await page.locator(".file-row__open").first().click();
+  await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({
+    state: "visible",
+  });
+  await page.waitForFunction(() =>
+    window.__SAME_PAGE_DIAGNOSTICS__?.loadingPerformance().records.filter(
+      (record) => record.name === "open-score:duration",
+    ).length >= 2);
 
   const diagnostics = await page.evaluate(() =>
     window.__SAME_PAGE_DIAGNOSTICS__?.loadingPerformance());
@@ -106,6 +123,14 @@ try {
   assert.ok(
     typeof exitDuration === "number" && exitDuration <= 200,
     `cached drive return exceeded 200ms: ${exitDuration}`,
+  );
+  const coldOpen = journeys.find((record) =>
+    record.journey === "open-score" && record.cacheCategory === "cold")?.duration;
+  const reopen = journeys.find((record) =>
+    record.journey === "open-score" && record.cacheCategory === "reopen")?.duration;
+  assert.ok(
+    typeof coldOpen === "number" && typeof reopen === "number" && reopen <= coldOpen,
+    `reader reopen regressed: cold=${coldOpen}, reopen=${reopen}`,
   );
   const regressions = evaluateLoadingBudget(journeys, Object.fromEntries(
     expectedJourneys.map((journey) => [journey, maxDurationMs]),

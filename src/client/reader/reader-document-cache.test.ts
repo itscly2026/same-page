@@ -53,6 +53,39 @@ describe("reader document cache", () => {
     expect(destroy).toHaveBeenCalledTimes(1);
   });
 
+  it("bounds retained PDF documents under rapid score switching", async () => {
+    const leases = [];
+    for (const scoreId of ["one", "two", "three"]) {
+      const lease = acquireReaderDocument({
+        ownerKey: ownerA,
+        choirId: "choir",
+        scoreId,
+        source: `/${scoreId}.pdf`,
+        sourceKind: "cloud",
+        versionId: "version-1",
+      });
+      await lease.promise;
+      lease.release();
+      leases.push(lease);
+    }
+
+    expect(loadPdfDocument).toHaveBeenCalledTimes(3);
+    expect(destroy).toHaveBeenCalledTimes(1);
+
+    const reopened = acquireReaderDocument({
+      ownerKey: ownerA,
+      choirId: "choir",
+      scoreId: "one",
+      source: "/one.pdf",
+      sourceKind: "cloud",
+      versionId: "version-1",
+    });
+    await reopened.promise;
+    expect(loadPdfDocument).toHaveBeenCalledTimes(4);
+    reopened.release();
+    expect(leases).toHaveLength(3);
+  });
+
   it("does not claim a version match before a PDF task exists", () => {
     expect(
       confirmReaderDocumentVersion({

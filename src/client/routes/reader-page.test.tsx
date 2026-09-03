@@ -2007,7 +2007,7 @@ describe("ReaderPage", () => {
     expect(screen.queryByRole("button", { name: "下一页" })).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(screen.getByText("编辑模式 · 第 1 页")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "文本" })).toHaveAttribute(
+    expect(await screen.findByRole("button", { name: "文本" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );

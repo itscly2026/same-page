@@ -1,31 +1,17 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import {
-  ArrowLeft,
-  Download,
-  Ellipsis,
-  Eraser,
-  Layers,
-  Lock,
-  Maximize2,
-  Minus,
-  Pencil,
-  Plus,
-  Redo2,
-  RefreshCw,
-  Rows3,
-  Type,
-  Undo2,
+  ArrowLeft, Download, Ellipsis, Layers, Maximize2, Minus, Pencil, Plus,
+  RefreshCw, Rows3,
 } from "lucide-react";
 import {
   useEffect,
+  lazy,
   useRef,
   useState,
+  Suspense,
 } from "react";
 import {
   Button,
-  Dialog,
-  DialogTrigger,
-  Popover,
 } from "react-aria-components";
 import { Link, useParams } from "react-router-dom";
 
@@ -33,7 +19,6 @@ import {
   annotationLayerListResponseSchema,
   defaultSharedLayerSlots,
   type AnnotationLayerSummary,
-  type DefaultSharedLayerSlot,
 } from "../../shared/annotations";
 import {
   readerScoreBootstrapSchema,
@@ -50,7 +35,6 @@ import {
   queueScoreDrafts,
   reapplyAnnotationConflict,
   retryScoreSyncErrors,
-  updateCachedLayer,
 } from "../annotations/local-annotations";
 import { requestOutboxRecovery } from "../annotations/outbox-recovery";
 import { syncAnnotations } from "../annotations/sync";
@@ -62,8 +46,6 @@ import {
 import {
   beginAnnotationEditSession,
   endAnnotationEditSession,
-  redoAnnotationEdit,
-  undoAnnotationEdit,
 } from "../annotations/edit-history";
 import { authClient } from "../auth/auth-client";
 import {
@@ -115,6 +97,17 @@ import {
 } from "../reader/reader-sync-status";
 
 type ReaderPanel = "layers" | "pages";
+
+const ReaderEditingControls = lazy(() =>
+  import("../reader/reader-editing-controls").then((module) => ({
+    default: module.ReaderEditingControls,
+  })),
+);
+const ReaderLayerPanel = lazy(() =>
+  import("../reader/reader-layer-panel").then((module) => ({
+    default: module.ReaderLayerPanel,
+  })),
+);
 
 type ReaderCloudOutcome =
   | { scopeKey: string; state: "active"; versionId: string }
@@ -1226,14 +1219,16 @@ export default function ReaderPage() {
             ) : null}
           </header>
           {annotationInteraction !== "transforming-text" ? (
-            <EditingControls
-              workspace={workspace}
-              layers={layers}
-              tool={tool}
-              activeLayerId={activeLayerId}
-              onToolChange={setTool}
-              onLayerChange={selectEditingLayer}
-            />
+            <Suspense fallback={<p role="status">正在准备批注工具…</p>}>
+              <ReaderEditingControls
+                workspace={workspace}
+                layers={layers}
+                tool={tool}
+                activeLayerId={activeLayerId}
+                onToolChange={setTool}
+                onLayerChange={selectEditingLayer}
+              />
+            </Suspense>
           ) : null}
         </>
       ) : null}
@@ -1268,11 +1263,13 @@ export default function ReaderPage() {
                 关闭
               </Button>
             </header>
-            <LayerPanel
-              workspace={workspace}
-              layers={layers}
-              signedIn={Boolean(session.data?.user.id)}
-            />
+            <Suspense fallback={<p role="status">正在准备图层…</p>}>
+              <ReaderLayerPanel
+                workspace={workspace}
+                layers={layers}
+                signedIn={Boolean(session.data?.user.id)}
+              />
+            </Suspense>
           </aside>
         </div>
       ) : null}
@@ -1354,255 +1351,6 @@ export default function ReaderPage() {
         )}
       </div>
     </main>
-  );
-}
-
-function EditingControls({
-  workspace,
-  layers,
-  tool,
-  activeLayerId,
-  onToolChange,
-  onLayerChange,
-}: {
-  workspace: LocalWorkspace;
-  layers: AnnotationLayerSummary[];
-  tool: AnnotationTool;
-  activeLayerId: string | null;
-  onToolChange(tool: AnnotationTool): void;
-  onLayerChange(layerId: string): void;
-}) {
-  const defaultLayers = new Map(
-    layers.filter((layer) => layer.defaultSlot !== null).map((layer) => [layer.defaultSlot, layer]),
-  );
-  const personalLayer = layers.find((layer) => layer.kind === "personal");
-
-  return (
-    <section className="annotation-controls" aria-label="批注工具">
-      <div className="annotation-control-group" aria-label="编辑层">
-        <div className="annotation-layer-switcher">
-          {defaultSharedLayerSlots.map((slot) => (
-            <LayerSlotButton
-              key={slot}
-              slot={slot}
-              layer={defaultLayers.get(slot)}
-              activeLayerId={activeLayerId}
-              onLayerChange={onLayerChange}
-            />
-          ))}
-          <LayerSlotButton
-            slot="P"
-            layer={personalLayer}
-            activeLayerId={activeLayerId}
-            onLayerChange={onLayerChange}
-          />
-        </div>
-      </div>
-      <div className="annotation-control-group" aria-label="工具">
-        <div className="segmented-control" aria-label="批注工具">
-          {(["text", "ink", "eraser"] as const).map((entry) => (
-            <Button
-              aria-label={{ text: "文本", ink: "画笔", eraser: "整条橡皮" }[entry]}
-              aria-pressed={tool === entry}
-              className="annotation-tool-button"
-              key={entry}
-              onPress={() => onToolChange(entry)}
-            >
-              <AnnotationToolIcon tool={entry} />
-            </Button>
-          ))}
-        </div>
-      </div>
-      <div className="annotation-control-group annotation-history-controls" aria-label="历史">
-        <Button aria-label="撤销" className="annotation-tool-button"
-          onPress={() => activeLayerId ? void undoAnnotationEdit(workspace, activeLayerId) : undefined}>
-          <Undo2 aria-hidden="true" size={20} />
-        </Button>
-        <Button aria-label="重做" className="annotation-tool-button"
-          onPress={() => activeLayerId ? void redoAnnotationEdit(workspace, activeLayerId) : undefined}>
-          <Redo2 aria-hidden="true" size={20} />
-        </Button>
-      </div>
-    </section>
-  );
-}
-
-function LayerSlotButton({
-  slot,
-  layer,
-  activeLayerId,
-  onLayerChange,
-}: {
-  slot: DefaultSharedLayerSlot | "P";
-  layer: AnnotationLayerSummary | undefined;
-  activeLayerId: string | null;
-  onLayerChange(layerId: string): void;
-}) {
-  const label = slot === "P" ? "P，Personal" : `${slot}，${layer?.name ?? slot}`;
-  const button = (
-    <Button
-      aria-label={`${label}${layer?.canEdit ? "" : "，只读，查看权限说明"}`}
-      aria-pressed={layer?.id === activeLayerId}
-      className="annotation-layer-slot"
-      onPress={() => {
-        if (!layer) return;
-        if (layer.canEdit) onLayerChange(layer.id);
-      }}
-    >
-      <span>{slot}</span>
-      <i aria-hidden="true" style={{ background: layer?.displayColor ?? "transparent" }} />
-      {layer && !layer.canEdit ? <Lock aria-hidden="true" className="annotation-layer-slot__lock" size={11} /> : null}
-    </Button>
-  );
-  if (!layer || layer.canEdit) return button;
-  return (
-    <DialogTrigger>
-      {button}
-      <Popover className="layer-permission-popover" offset={12} placement="top">
-        <Dialog aria-label="仅可查看" className="layer-permission-dialog">
-          {({ close }) => <LayerPermissionContent layer={layer} onClose={close} />}
-        </Dialog>
-      </Popover>
-    </DialogTrigger>
-  );
-}
-
-function LayerPermissionContent({
-  layer,
-  onClose,
-}: {
-  layer: AnnotationLayerSummary;
-  onClose(): void;
-}) {
-  return (
-    <>
-      <div className="layer-permission-dialog__icon"><Lock aria-hidden="true" size={20} /></div>
-      <h2>仅可查看</h2>
-      <p>{layer.defaultSlot} · {layer.name} 可以查看，但只有云盘管理员和被授权成员可以编辑。</p>
-      <p>如需编辑权限，请联系云盘管理员。</p>
-      <Button className="primary-button" onPress={onClose}>知道了</Button>
-    </>
-  );
-}
-
-function AnnotationToolIcon({ tool }: { tool: AnnotationTool }) {
-  if (tool === "text") return <Type aria-hidden="true" size={20} strokeWidth={2} />;
-  if (tool === "ink") return <Pencil aria-hidden="true" size={20} strokeWidth={2} />;
-  return <Eraser aria-hidden="true" size={20} strokeWidth={2} />;
-}
-
-function LayerPanel({
-  workspace,
-  layers,
-  signedIn,
-}: {
-  workspace: LocalWorkspace;
-  layers: AnnotationLayerSummary[];
-  signedIn: boolean;
-}) {
-  const sharedLayers = layers.filter((layer) => layer.kind === "shared");
-  const personalLayer = layers.find((layer) => layer.kind === "personal");
-  const overriddenLayers = sharedLayers.filter(
-    (layer) => layer.scoreSubscriptionOverride !== null,
-  );
-
-  const saveScorePreference = async (
-    layer: AnnotationLayerSummary,
-    changes: { subscribed: boolean | null },
-  ) => {
-    if (!layer.defaultSlot) return;
-    if (signedIn) {
-      const response = await fetch(
-        `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/shared-layers/${layer.defaultSlot}/preference`,
-        { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(changes) },
-      );
-      if (!response.ok) throw new Error("score_preference_update_failed");
-    }
-    const scoreSubscriptionOverride = changes.subscribed;
-    await updateCachedLayer(workspace, layer.id, {
-      scoreSubscriptionOverride,
-      subscribed: scoreSubscriptionOverride ?? layer.driveSubscribed ?? true,
-      subscriptionSource: scoreSubscriptionOverride !== null ? "score" : layer.driveSubscribed !== null ? "drive" : "product",
-    });
-  };
-
-  return (
-    <section className="reader-layer-panel" aria-label="图层">
-      <div className="layer-section">
-        <div className="layer-section__heading">
-          <div><h3>共享层</h3></div>
-          <div className="layer-section__actions">
-            <span>{sharedLayers.filter((layer) => layer.subscribed).length} / 5</span>
-            {overriddenLayers.length > 0 ? (
-              <Button
-                className="layer-section__restore"
-                onPress={() => void Promise.all(overriddenLayers.map((layer) =>
-                  saveScorePreference(layer, { subscribed: null })))}
-              >
-                恢复我的默认
-              </Button>
-            ) : null}
-          </div>
-        </div>
-        <div className="layer-card-list">
-          {sharedLayers.map((layer) => (
-            <article className="layer-card" key={layer.id}>
-              <div className="layer-card__main">
-                <input
-                  aria-label={`订阅 ${layer.defaultSlot} · ${layer.name}`}
-                  checked={layer.subscribed}
-                  type="checkbox"
-                  onChange={(event) => void saveScorePreference(layer, { subscribed: event.target.checked })}
-                />
-                <span
-                  aria-label={`${layer.defaultSlot} · ${layer.name} 当前颜色`}
-                  className="layer-color-preview"
-                  style={{ background: layer.displayColor }}
-                />
-                <div className="layer-card__identity">
-                  <strong>
-                    <span className="layer-card__slot">{layer.defaultSlot}</span>
-                    <span aria-hidden="true" className="layer-card__separator">·</span>
-                    {layer.name}
-                  </strong>
-                </div>
-                {layer.scoreSubscriptionOverride !== null ? (
-                  <span className="layer-card__score-override">本谱</span>
-                ) : null}
-                {layer.scoreSubscriptionOverride !== null ? (
-                  <Button
-                    aria-label={`恢复 ${layer.defaultSlot} · ${layer.name} 的云盘默认订阅`}
-                    className="layer-card__restore"
-                    onPress={() => void saveScorePreference(layer, { subscribed: null })}
-                  >
-                    恢复
-                  </Button>
-                ) : null}
-              </div>
-            </article>
-          ))}
-        </div>
-      </div>
-      {personalLayer ? (
-        <div className="layer-section layer-section--personal">
-          <div className="layer-section__heading">
-          <div><h3>个人层</h3></div>
-          </div>
-          <article className="layer-card">
-            <div className="layer-card__main">
-              <span className="layer-color-preview" style={{ background: personalLayer.displayColor }} />
-              <div className="layer-card__identity">
-                <strong>
-                  <span className="layer-card__slot">P</span>
-                  <span aria-hidden="true" className="layer-card__separator">·</span>
-                  Personal
-                </strong>
-              </div>
-            </div>
-          </article>
-        </div>
-      ) : null}
-    </section>
   );
 }
 

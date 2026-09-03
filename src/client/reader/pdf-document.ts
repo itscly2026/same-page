@@ -7,6 +7,15 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
+export function preloadPdfWorkerAsset(target: Document = document) {
+  if (target.head.querySelector("link[data-same-page-pdf-worker]")) return;
+  const preload = target.createElement("link");
+  preload.rel = "modulepreload";
+  preload.href = pdfWorkerUrl;
+  preload.dataset.samePagePdfWorker = "true";
+  target.head.append(preload);
+}
+
 export interface PdfDocumentLoad {
   promise: Promise<{
     document: PDFDocumentProxy;
