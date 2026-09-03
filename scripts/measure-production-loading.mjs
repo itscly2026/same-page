@@ -116,9 +116,10 @@ async function measureScenario(context, name, existingPage) {
 
     await openScore(page, 0);
     await returnToCachedDrive(page);
-    await openScore(page, 1);
+    await openScore(page);
     await returnToCachedDrive(page);
-    await openScore(page, 0);
+    await page.waitForTimeout(15_250);
+    await openScore(page);
     if (round === rounds - 1) {
       await context.setOffline(true);
       await returnToCachedDrive(page);
@@ -187,9 +188,9 @@ function assertRequiredJourneyEvidence(samples, records, name, round) {
   }
 }
 
-async function openScore(page, index) {
+async function openScore(page, index = 0) {
   const links = page.locator(".file-row__open");
-  assert.ok(await links.count() > index, "public performance fixture needs at least two scores");
+  assert.ok(await links.count() > index, "public performance fixture has no score");
   await links.nth(index).click();
   await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
 }
