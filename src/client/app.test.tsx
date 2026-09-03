@@ -18,6 +18,7 @@ import {
 import {
   clearDriveLibraryCache,
   driveCacheOwnerKey,
+  prepareDriveLibraryReturn,
   readDriveLibrary,
   rememberDriveLibrary,
   rememberDriveSummary,
@@ -1331,6 +1332,37 @@ describe("AppRoutes", () => {
       if (originalScrollTop) Object.defineProperty(root, "scrollTop", originalScrollTop);
       else Reflect.deleteProperty(root, "scrollTop");
     }
+  });
+
+  it("restores an explicitly returning drive while session refresh is offline", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({
+      data: null,
+      isPending: true,
+    } as ReturnType<typeof authClient.useSession>);
+    const ownerKey = driveCacheOwnerKey(null, "choir-1");
+    rememberDriveLibrary(ownerKey, "choir-1", {
+      choir: {
+        id: "choir-1",
+        name: "离线返回云盘",
+        guestAdmissionMode: "open",
+      },
+      result: {
+        scores: [],
+        storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
+        permissions: { canManage: false },
+      },
+    });
+    prepareDriveLibraryReturn(ownerKey, "choir-1");
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1"]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "离线返回云盘" })).toBeInTheDocument();
+    expect(screen.queryByText("正在打开云盘…")).not.toBeInTheDocument();
   });
 
   it("discards a cached library when revalidation says the drive no longer exists", async () => {

@@ -16,6 +16,7 @@ const MAX_DRIVES = 6;
 const libraries = new Map<string, DriveLibrarySnapshot>();
 const summaries = new Map<string, ChoirSummary>();
 let activeOwner: DriveCacheOwnerKey | null = null;
+let returningDrive: { ownerKey: DriveCacheOwnerKey; choirId: string } | null = null;
 
 onReaderIdentityChange(clearDriveLibraryCache);
 
@@ -93,18 +94,35 @@ export function invalidateDriveLibrary(
   activateOwner(ownerKey);
   libraries.delete(choirId);
   summaries.delete(choirId);
+  if (returningDrive?.choirId === choirId) returningDrive = null;
+}
+
+export function prepareDriveLibraryReturn(
+  ownerKey: DriveCacheOwnerKey,
+  choirId: string,
+) {
+  if (activeOwner !== ownerKey || !libraries.has(choirId)) return;
+  returningDrive = { ownerKey, choirId };
+}
+
+export function readReturningDriveCacheOwner(choirId: string) {
+  return returningDrive?.choirId === choirId
+    ? returningDrive.ownerKey
+    : null;
 }
 
 export function clearDriveLibraryCache() {
   libraries.clear();
   summaries.clear();
   activeOwner = null;
+  returningDrive = null;
 }
 
 function activateOwner(ownerKey: DriveCacheOwnerKey) {
   if (activeOwner === ownerKey) return;
   libraries.clear();
   summaries.clear();
+  returningDrive = null;
   activeOwner = ownerKey;
 }
 
