@@ -43,8 +43,10 @@ import { scheduleReaderRuntimePreload } from "../reader/reader-runtime";
 import {
   driveCacheOwnerKey,
   invalidateDriveLibrary,
+  prepareDriveLibraryReturn,
   readDriveLibrary,
   readDriveSummary,
+  readReturningDriveCacheOwner,
   rememberDriveLibrary,
   rememberDriveView,
   type DriveCacheOwnerKey,
@@ -81,7 +83,7 @@ export default function ChoirPage() {
   const viewState = useRef({ search: "", scrollTop: 0 });
   const pendingScrollRestore = useRef<number | null>(null);
   const cacheOwner: DriveCacheOwnerKey | null = session.isPending
-    ? null
+    ? readReturningDriveCacheOwner(choirId)
     : driveCacheOwnerKey(userId ?? null, choirId);
   const currentChoir =
     access.kind === "opened" || access.kind === "join-required"
@@ -505,6 +507,7 @@ export default function ChoirPage() {
                             search,
                             scrollTop: window.scrollY,
                           });
+                          prepareDriveLibraryReturn(cacheOwner, choirId);
                         }
                         rememberReaderScore(userId ?? "guest", score);
                       }

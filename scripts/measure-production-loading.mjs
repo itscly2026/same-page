@@ -202,7 +202,20 @@ async function returnToCachedDrive(page) {
     ).length ?? 0);
   await page.locator(".page-reader__viewport").click({ position: { x: 250, y: 250 } });
   await page.getByRole("link", { name: "返回云盘", exact: true }).click();
-  await page.locator(".file-list").waitFor({ state: "visible" });
+  try {
+    await page.locator(".file-list").waitFor({ state: "visible" });
+  } catch (error) {
+    const state = await page.evaluate(() => {
+      const text = document.body.innerText;
+      if (text.includes("正在打开云盘")) return "route-loading";
+      if (text.includes("正在加载乐谱")) return "library-loading";
+      if (text.includes("暂时无法打开云盘")) return "drive-failed";
+      if (text.includes("无法打开这个云盘")) return "drive-denied";
+      if (text.includes("这个云盘不存在")) return "drive-not-found";
+      return "unknown";
+    });
+    throw new Error(`cached drive did not become visible: ${state}`, { cause: error });
+  }
   await page.waitForFunction((previousCount) =>
     window.__SAME_PAGE_DIAGNOSTICS__?.loadingPerformance().records.filter(
       (record) => record.name === "exit-score:duration",
