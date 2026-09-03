@@ -18,7 +18,6 @@ import {
 import {
   clearDriveLibraryCache,
   driveCacheOwnerKey,
-  prepareDriveLibraryReturn,
   readDriveLibrary,
   rememberDriveLibrary,
   rememberDriveSummary,
@@ -1334,7 +1333,7 @@ describe("AppRoutes", () => {
     }
   });
 
-  it("restores an explicitly returning drive while session refresh is offline", async () => {
+  it("restores a guest drive while session refresh is offline", async () => {
     vi.mocked(authClient.useSession).mockReturnValue({
       data: null,
       isPending: true,
@@ -1352,7 +1351,6 @@ describe("AppRoutes", () => {
         permissions: { canManage: false },
       },
     });
-    prepareDriveLibraryReturn(ownerKey, "choir-1");
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
 
     render(

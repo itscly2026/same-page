@@ -83,7 +83,7 @@ export default function ChoirPage() {
   const viewState = useRef({ search: "", scrollTop: 0 });
   const pendingScrollRestore = useRef<number | null>(null);
   const cacheOwner: DriveCacheOwnerKey | null = session.isPending
-    ? readReturningDriveCacheOwner(choirId)
+    ? readReturningDriveCacheOwner(choirId) ?? driveCacheOwnerKey(null, choirId)
     : driveCacheOwnerKey(userId ?? null, choirId);
   const currentChoir =
     access.kind === "opened" || access.kind === "join-required"
