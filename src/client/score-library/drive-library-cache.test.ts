@@ -42,7 +42,10 @@ describe("drive library cache", () => {
   it("invalidates only the denied drive for the active owner", () => {
     const owner = driveCacheOwnerKey("user-1", "drive-1");
     for (const driveId of ["drive-1", "drive-2"]) {
-      rememberDriveLibrary(owner, driveId, { choir: null, result });
+      rememberDriveLibrary(owner, driveId, {
+        choir: { id: driveId, name: driveId, guestAdmissionMode: "invite" },
+        result,
+      });
     }
 
     invalidateDriveLibrary(owner, "drive-1");

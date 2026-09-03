@@ -2,6 +2,7 @@ import { lazy, Suspense, useLayoutEffect } from "react";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import { ReloadPrompt } from "./components/reload-prompt";
+import { markRouteTransitionMilestones } from "./performance/loading-performance";
 import { LocalIdentityObserver } from "./platform/local-identity-observer";
 import { ReaderPage } from "./reader/reader-runtime";
 import { HomePage } from "./routes/home-page";
@@ -57,6 +58,7 @@ function RouteScrollReset() {
   useLayoutEffect(() => {
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
+    markRouteTransitionMilestones();
   }, [pathname]);
 
   return null;

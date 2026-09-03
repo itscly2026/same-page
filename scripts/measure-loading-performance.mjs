@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import process from "node:process";
 
 import { webkit } from "@playwright/test";
+import { classifyPerformanceRequest } from "./loading-performance-report.mjs";
 
 import { evaluateLoadingBudget } from "./loading-performance-budget.mjs";
 import { resolveFixtureRequest } from "../visual-report/fixtures.mjs";
@@ -40,7 +41,7 @@ try {
   await context.route("**/api/**", async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
-    requestOrder.push(classifyRequest(pathname));
+      requestOrder.push(classifyPerformanceRequest(pathname));
     const requestDelay = returningToDrive ? returnDelayMs : controlledDelayMs;
     if (requestDelay > 0) await delay(requestDelay);
     await route.fulfill(resolveFixtureRequest({
@@ -181,19 +182,6 @@ async function waitForServer() {
     await delay(150);
   }
   throw new Error("Preview server did not start", { cause: lastError });
-}
-
-function classifyRequest(pathname) {
-  if (pathname === "/api/auth/get-session") return "auth-session";
-  if (pathname === "/api/choirs") return "drive-memberships";
-  if (/\/api\/choirs\/[^/]+\/bootstrap$/.test(pathname)) return "drive-bootstrap";
-  if (pathname.endsWith("/bootstrap")) return "score-bootstrap";
-  if (pathname.endsWith("/pdf")) return "pdf";
-  if (pathname.endsWith("/layers")) return "layers";
-  if (pathname.endsWith("/annotations")) return "annotations";
-  if (/\/choirs\/[^/]+\/scores$/.test(pathname)) return "score-list";
-  if (pathname.startsWith("/api/guest/")) return "guest-session";
-  return "other-api";
 }
 
 function delay(milliseconds) {

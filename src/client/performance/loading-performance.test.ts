@@ -4,6 +4,7 @@ import {
   completeLoadingJourney,
   getLoadingPerformanceSnapshot,
   markLoadingMilestone,
+  markRouteTransitionMilestones,
   resetLoadingPerformance,
   startLoadingJourney,
 } from "./loading-performance";
@@ -38,5 +39,18 @@ describe("loading performance diagnostics", () => {
       completeLoadingJourney("enter-drive", "drive-list-usable");
       expect(getLoadingPerformanceSnapshot().records.at(-1)?.cacheCategory).toBe(category);
     }
+  });
+
+  it("records the route commit for whichever loading journey is active", () => {
+    startLoadingJourney("open-score", "cold");
+    markRouteTransitionMilestones();
+
+    expect(getLoadingPerformanceSnapshot().records).toContainEqual(
+      expect.objectContaining({
+        name: "route-transition-committed",
+        journey: "open-score",
+        cacheCategory: "cold",
+      }),
+    );
   });
 });
