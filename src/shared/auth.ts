@@ -5,6 +5,8 @@ export const PASSWORD_POLICY = {
   maxLength: 128,
 } as const;
 
+export const AUTH_OTP_COOLDOWN_SECONDS = 60;
+
 export const authFlowResponseSchema = z.object({
   flow: z.enum(["sign-in", "sign-up"]),
 });

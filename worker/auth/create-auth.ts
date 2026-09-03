@@ -7,9 +7,15 @@ import { createDatabase } from "../db/database";
 import { schema } from "../db/schema";
 import { sendAuthOtp } from "../email/send-otp";
 import type { Env, WaitUntilContext } from "../env";
-import { hashRateLimitIdentity } from "../security/join-code";
-import { consumeRateLimit } from "../security/rate-limit";
+import {
+  consumeRateLimit,
+  hashRateLimitIdentity,
+} from "../security/rate-limit";
 import { createSocialProviderOptions } from "./social-providers";
+import {
+  AUTH_OTP_CLIENT_MAX,
+  AUTH_OTP_WINDOW_SECONDS,
+} from "./otp-delivery-rate-limit";
 
 export function createAuth(env: Env, executionContext: WaitUntilContext) {
   const database = createDatabase(env.DB);
@@ -92,6 +98,10 @@ export function createAuth(env: Env, executionContext: WaitUntilContext) {
       emailOTP({
         expiresIn: 600,
         allowedAttempts: 3,
+        rateLimit: {
+          window: AUTH_OTP_WINDOW_SECONDS,
+          max: AUTH_OTP_CLIENT_MAX,
+        },
         storeOTP: "hashed",
         disableSignUp: false,
         async sendVerificationOTP({ email, otp, type }) {

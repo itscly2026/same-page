@@ -22,8 +22,8 @@ beforeEach(async () => {
   deliveredOtp = "";
   network.use(
     http.post("https://api.resend.com/emails", async ({ request }) => {
-      const body = (await request.json()) as { subject: string };
-      deliveredOtp = body.subject.slice(0, 6);
+      const body = (await request.json()) as { text: string };
+      deliveredOtp = body.text.match(/验证码：([0-9]{6})/)?.[1] ?? "";
       return HttpResponse.json({ id: crypto.randomUUID() });
     }),
   );

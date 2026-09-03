@@ -23,9 +23,11 @@ import {
 import {
   generateJoinCode,
   hashJoinCode,
-  hashRateLimitIdentity,
 } from "../security/join-code";
-import { consumeRateLimit } from "../security/rate-limit";
+import {
+  consumeRateLimit,
+  hashRateLimitIdentity,
+} from "../security/rate-limit";
 import { findAdmissibleChoir } from "./admission";
 
 export const choirRoutes = new Hono<AppEnvironment>();

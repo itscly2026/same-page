@@ -34,6 +34,7 @@ import {
   sharedLayerEditGrants,
   user,
 } from "./db/schema";
+import { hashRateLimitIdentity } from "./security/rate-limit";
 import {
   cookieFrom,
   registerWithPassword,
@@ -42,6 +43,8 @@ import {
 
 const network = setupNetwork();
 const deliveredEmails: Array<{
+  from: string;
+  html: string;
   subject: string;
   to: string;
   text: string;
@@ -555,7 +558,14 @@ describe("authentication and choir boundaries", () => {
       afterOtpSent: expectOtpStoredAsHash,
     });
     const deliveredAfterRegistration = deliveredEmails.length;
-    expect(deliveredEmails.at(-1)?.subject).toContain("完成 Same Page 注册");
+    expect(deliveredEmails.at(-1)).toMatchObject({
+      from: "Same Page <login@example.test>",
+      subject: "Same Page 注册验证码",
+    });
+    expect(deliveredEmails.at(-1)?.subject).not.toMatch(/\d{6}/);
+    expect(deliveredEmails.at(-1)?.text).toContain("samepage.clyapps.com");
+    expect(deliveredEmails.at(-1)?.text).toContain("10 分钟");
+    expect(deliveredEmails.at(-1)?.html).toContain("samepage.clyapps.com");
     const passwordLogin = await signInWithPassword({
       callWorker,
       email: adminEmail,
@@ -611,7 +621,8 @@ describe("authentication and choir boundaries", () => {
         body: JSON.stringify({ email: adminEmail }),
       },
     );
-    expect(verifiedEmailOtp.status).toBe(200);
+    expect(verifiedEmailOtp.status).toBe(429);
+    expect(verifiedEmailOtp.headers.get("Retry-After")).toBeTruthy();
     expect(deliveredEmails).toHaveLength(deliveredAfterRegistration);
 
     const unknownEmailReset = await callWorker(
@@ -1107,7 +1118,9 @@ describe("authentication and choir boundaries", () => {
     );
     expect(requestReset.status).toBe(200);
     const otp = latestOtp();
-    expect(deliveredEmails.at(-1)?.subject).toContain("重设 Same Page 密码");
+    expect(deliveredEmails.at(-1)?.subject).toBe(
+      "Same Page 密码重设验证码",
+    );
     await expectOtpStoredAsHash(otp);
 
     const newPassword = "new secure administrator password";
@@ -1190,6 +1203,7 @@ describe("authentication and choir boundaries", () => {
       email,
       latestOtp,
     });
+    await expireOtpCooldown(email);
 
     const requestReset = await callWorker(
       "/api/auth/email-otp/request-password-reset",
@@ -1245,12 +1259,174 @@ describe("authentication and choir boundaries", () => {
     }>();
     expect(storedKey?.key).not.toContain("203.0.113.9");
   });
+
+  it("enforces OTP cooldown and mailbox windows without storing raw identities", async () => {
+    const email = "rate-limited@example.test";
+    const client = "203.0.113.41";
+
+    const first = await requestRegistrationOtp(email, client);
+    expect(first.status).toBe(200);
+    expect(deliveredEmails).toHaveLength(1);
+
+    const duplicate = await requestRegistrationOtp(email, client);
+    expect(duplicate.status).toBe(429);
+    expect(Number(duplicate.headers.get("Retry-After"))).toBeGreaterThan(0);
+    expect(deliveredEmails).toHaveLength(1);
+
+    await expireOtpCooldown(email);
+    expect((await requestRegistrationOtp(email, client)).status).toBe(200);
+    await expireOtpCooldown(email);
+    expect((await requestRegistrationOtp(email, client)).status).toBe(200);
+    expect(deliveredEmails).toHaveLength(3);
+
+    await expireOtpCooldown(email);
+    const emailLimited = await requestRegistrationOtp(email, "203.0.113.99");
+    expect(emailLimited.status).toBe(429);
+    expect(Number(emailLimited.headers.get("Retry-After"))).toBeGreaterThan(
+      60,
+    );
+    expect(deliveredEmails).toHaveLength(3);
+
+    const storedKeys = await env.DB.prepare(
+      "SELECT key FROM rate_limits ORDER BY key",
+    ).all<{ key: string }>();
+    const serializedKeys = JSON.stringify(storedKeys.results);
+    expect(serializedKeys).not.toContain(email);
+    expect(serializedKeys).not.toContain(client);
+  });
+
+  it("limits one client across independent mailboxes", async () => {
+    const client = "203.0.113.42";
+    for (let index = 0; index < 10; index += 1) {
+      const response = await requestRegistrationOtp(
+        `client-window-${index}@example.test`,
+        client,
+      );
+      expect(response.status, `request ${index + 1}`).toBe(200);
+    }
+    expect(deliveredEmails).toHaveLength(10);
+
+    const limited = await requestRegistrationOtp(
+      "client-window-overflow@example.test",
+      client,
+    );
+    expect(limited.status).toBe(429);
+    expect(deliveredEmails).toHaveLength(10);
+
+    const independent = await requestRegistrationOtp(
+      "independent-client@example.test",
+      "203.0.113.43",
+    );
+    expect(independent.status).toBe(200);
+    expect(deliveredEmails).toHaveLength(11);
+  });
+
+  it("applies the same cooldown to password-reset delivery", async () => {
+    const email = "reset-cooldown@example.test";
+    const database = createDatabase(env.DB);
+    await database.insert(user).values({
+      id: crypto.randomUUID(),
+      name: "重设密码用户",
+      email,
+      emailVerified: true,
+    });
+
+    const first = await callWorker(
+      "/api/auth/email-otp/request-password-reset",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "CF-Connecting-IP": "203.0.113.44",
+        },
+        body: JSON.stringify({ email }),
+      },
+    );
+    expect(first.status).toBe(200);
+    expect(deliveredEmails).toHaveLength(1);
+
+    const duplicate = await callWorker(
+      "/api/auth/email-otp/request-password-reset",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "CF-Connecting-IP": "203.0.113.45",
+        },
+        body: JSON.stringify({ email }),
+      },
+    );
+    expect(duplicate.status).toBe(429);
+    expect(duplicate.headers.get("Retry-After")).toBeTruthy();
+    expect(deliveredEmails).toHaveLength(1);
+  });
+
+  it("invalidates the previous registration OTP when a new one is sent", async () => {
+    const email = "latest-otp@example.test";
+    expect((await requestRegistrationOtp(email)).status).toBe(200);
+    const previousOtp = latestOtp();
+
+    let currentOtp = previousOtp;
+    for (
+      let attempt = 0;
+      attempt < 2 && currentOtp === previousOtp;
+      attempt += 1
+    ) {
+      await expireOtpCooldown(email);
+      expect((await requestRegistrationOtp(email)).status).toBe(200);
+      currentOtp = latestOtp();
+    }
+    expect(currentOtp).not.toBe(previousOtp);
+
+    const stale = await completeRegistrationWithOtp(email, previousOtp);
+    expect(stale.status).toBe(400);
+    const current = await completeRegistrationWithOtp(email, currentOtp);
+    expect(current.status).toBe(200);
+  });
 });
 
 function latestOtp() {
-  const otp = deliveredEmails.at(-1)?.subject.match(/^([0-9]{6}) /)?.[1];
+  const otp = deliveredEmails.at(-1)?.text.match(/验证码：([0-9]{6})/)?.[1];
   expect(otp).toBeDefined();
   return otp!;
+}
+
+async function requestRegistrationOtp(
+  email: string,
+  client = "203.0.113.40",
+) {
+  return callWorker("/api/auth/registration/request-otp", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "CF-Connecting-IP": client,
+    },
+    body: JSON.stringify({ email }),
+  });
+}
+
+async function completeRegistrationWithOtp(email: string, otp: string) {
+  return callWorker("/api/auth/registration/complete", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      email,
+      otp,
+      password: "correct horse battery staple",
+    }),
+  });
+}
+
+async function expireOtpCooldown(email: string) {
+  const key = await hashRateLimitIdentity(
+    `auth-otp:email-cooldown:${email.trim().toLowerCase()}`,
+    env.INVITE_SECRET,
+  );
+  await env.DB.prepare(
+    "UPDATE rate_limits SET window_expires_at = 0 WHERE key = ?",
+  )
+    .bind(key)
+    .run();
 }
 
 async function expectOtpStoredAsHash(otp: string) {

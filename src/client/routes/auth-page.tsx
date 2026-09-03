@@ -16,6 +16,7 @@ import {
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import {
+  AUTH_OTP_COOLDOWN_SECONDS,
   authFlowResponseSchema,
   authSessionResponseSchema,
   PASSWORD_POLICY,
@@ -60,6 +61,8 @@ export default function AuthPage() {
       ? "第三方登录没有完成，请重试或继续使用邮箱。"
       : null,
   );
+  const [otpRetryAt, setOtpRetryAt] = useState(0);
+  const [otpClock, setOtpClock] = useState(() => Date.now());
   const [socialProviders, setSocialProviders] = useState<SocialAuthProvider[]>([]);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const previousViewRef = useRef<AuthView>(view);
@@ -71,6 +74,38 @@ export default function AuthPage() {
       previousViewRef.current = view;
     }
   }, [view]);
+
+  useEffect(() => {
+    if (otpRetryAt <= Date.now()) return;
+
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setOtpClock(now);
+      if (now >= otpRetryAt) clearInterval(timer);
+    }, 1_000);
+    return () => clearInterval(timer);
+  }, [otpRetryAt]);
+
+  const otpRetrySeconds = Math.max(
+    0,
+    Math.ceil((otpRetryAt - otpClock) / 1_000),
+  );
+
+  const rememberOtpCooldown = (response: Response) => {
+    const retryAfter = Number(response.headers.get("Retry-After"));
+    const seconds =
+      response.status === 429 && Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.ceil(retryAfter)
+        : response.ok
+          ? AUTH_OTP_COOLDOWN_SECONDS
+          : 0;
+    if (seconds > 0) {
+      const now = Date.now();
+      setOtpClock(now);
+      setOtpRetryAt(now + seconds * 1_000);
+    }
+    return seconds;
+  };
 
   useEffect(() => {
     let active = true;
@@ -148,10 +183,16 @@ export default function AuthPage() {
     });
     setSubmitting(false);
     if (!delivery?.ok) {
-      setMessage("暂时无法发送验证码，请稍后再试。");
+      const retryAfter = delivery ? rememberOtpCooldown(delivery) : 0;
+      setMessage(
+        retryAfter > 0
+          ? `发送太频繁，请在 ${retryAfter} 秒后再试。`
+          : "暂时无法发送验证码，请稍后再试。",
+      );
       return;
     }
 
+    rememberOtpCooldown(delivery);
     setView("verify-registration");
     setMessage("验证码已经发送，请检查收件箱和垃圾邮件。");
   };
@@ -181,9 +222,12 @@ export default function AuthPage() {
       email: normalizedEmail(email),
     });
     setSubmitting(false);
+    const retryAfter = delivery ? rememberOtpCooldown(delivery) : 0;
     setMessage(
       !delivery?.ok
-        ? "暂时无法发送验证码，请稍后再试。"
+        ? retryAfter > 0
+          ? `发送太频繁，请在 ${retryAfter} 秒后再试。`
+          : "暂时无法发送验证码，请稍后再试。"
         : "新的验证码已经发送。",
     );
   };
@@ -192,16 +236,43 @@ export default function AuthPage() {
     event.preventDefault();
     setSubmitting(true);
     setMessage(null);
-    const { error } = await authClient.emailOtp.requestPasswordReset({
-      email: normalizedEmail(email),
-    });
+    const delivery = await postJson(
+      "/api/auth/email-otp/request-password-reset",
+      {
+        email: normalizedEmail(email),
+      },
+    );
     setSubmitting(false);
-    if (error) {
-      setMessage("暂时无法发送验证码，请稍后再试。");
+    if (!delivery?.ok) {
+      const retryAfter = delivery ? rememberOtpCooldown(delivery) : 0;
+      setMessage(
+        retryAfter > 0
+          ? `发送太频繁，请在 ${retryAfter} 秒后再试。`
+          : "暂时无法发送验证码，请稍后再试。",
+      );
       return;
     }
+    rememberOtpCooldown(delivery);
     setView("reset-password");
     setMessage("密码重置验证码已经发送。");
+  };
+
+  const resendPasswordResetOtp = async () => {
+    setSubmitting(true);
+    setMessage(null);
+    const delivery = await postJson(
+      "/api/auth/email-otp/request-password-reset",
+      { email: normalizedEmail(email) },
+    );
+    setSubmitting(false);
+    const retryAfter = delivery ? rememberOtpCooldown(delivery) : 0;
+    setMessage(
+      !delivery?.ok
+        ? retryAfter > 0
+          ? `发送太频繁，请在 ${retryAfter} 秒后再试。`
+          : "暂时无法发送验证码，请稍后再试。"
+        : "新的密码重置验证码已经发送。",
+    );
   };
 
   const resetPassword = async (event: FormEvent) => {
@@ -350,6 +421,7 @@ export default function AuthPage() {
     setPassword("");
     setPasswordConfirmation("");
     setOtp("");
+    setOtpRetryAt(0);
     setMessage(null);
   };
 
@@ -444,10 +516,10 @@ export default function AuthPage() {
               <Button
                 type="button"
                 className="text-button"
-                isDisabled={submitting}
+                isDisabled={submitting || otpRetrySeconds > 0}
                 onPress={() => void resendRegistrationOtp()}
               >
-                重新发送验证码
+                {resendButtonLabel(otpRetrySeconds)}
               </Button>
               <Button type="button" className="text-button" onPress={changeEmail}>
                 更换邮箱
@@ -504,13 +576,10 @@ export default function AuthPage() {
               <Button
                 type="button"
                 className="text-button"
-                onPress={() => {
-                  setView("request-reset");
-                  setOtp("");
-                  setMessage(null);
-                }}
+                isDisabled={submitting || otpRetrySeconds > 0}
+                onPress={() => void resendPasswordResetOtp()}
               >
-                重新获取验证码
+                {resendButtonLabel(otpRetrySeconds)}
               </Button>
             </Form>
           ),
@@ -786,6 +855,12 @@ function OtpField(props: {
 
 function normalizedEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+function resendButtonLabel(retrySeconds: number) {
+  return retrySeconds > 0
+    ? `重新发送验证码（${retrySeconds} 秒）`
+    : "重新发送验证码";
 }
 
 async function postJson(path: string, body: unknown) {

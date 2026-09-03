@@ -3,7 +3,7 @@ export interface Env {
   SCORES_BUCKET: R2Bucket;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
-  RESEND_API_KEY: string;
+  RESEND_API_KEY_SAMEPAGE: string;
   AUTH_EMAIL_FROM: string;
   INVITE_SECRET: string;
   GOOGLE_CLIENT_ID?: string;

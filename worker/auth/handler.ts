@@ -5,6 +5,7 @@ import type { AppEnvironment } from "../env";
 import { createAuth } from "./create-auth";
 import {
   completeRegistration,
+  requestPasswordResetOtp,
   requestRegistrationOtp,
   resolveAuthFlow,
 } from "./registration";
@@ -16,11 +17,13 @@ const VERIFY_EMAIL_PATH = "/api/auth/email-otp/verify-email";
 const SIGN_UP_PATH = "/api/auth/sign-up/email";
 const REGISTRATION_REQUEST_PATH = "/api/auth/registration/request-otp";
 const REGISTRATION_COMPLETE_PATH = "/api/auth/registration/complete";
+const PASSWORD_RESET_REQUEST_PATH =
+  "/api/auth/email-otp/request-password-reset";
 const AUTH_FLOW_PATH = "/api/auth/flow";
 const SOCIAL_PROVIDERS_PATH = "/api/auth/social-providers";
 const EMAIL_AUTH_PATHS = new Set([
   "/api/auth/sign-in/email",
-  "/api/auth/email-otp/request-password-reset",
+  PASSWORD_RESET_REQUEST_PATH,
   "/api/auth/email-otp/reset-password",
 ]);
 
@@ -53,6 +56,9 @@ export async function handleAuthRequest(context: Context<AppEnvironment>) {
   }
   if (path === REGISTRATION_COMPLETE_PATH && context.req.method === "POST") {
     return completeRegistration(context, auth);
+  }
+  if (path === PASSWORD_RESET_REQUEST_PATH && context.req.method === "POST") {
+    return requestPasswordResetOtp(context, auth);
   }
 
   if (

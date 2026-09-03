@@ -31,12 +31,3 @@ export async function hashJoinCode(
 ): Promise<string> {
   return encodeBase64Url(await signHmac(inviteSecret, "join-code", code));
 }
-
-export async function hashRateLimitIdentity(
-  identity: string,
-  inviteSecret: string,
-): Promise<string> {
-  return encodeBase64Url(
-    await signHmac(inviteSecret, "invite-rate-limit", identity),
-  );
-}
