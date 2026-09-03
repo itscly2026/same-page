@@ -107,6 +107,9 @@ describe("useReaderGestures", () => {
     const content = screen.getByTestId("gesture-content");
     mockGeometry(viewport, content);
     await waitFor(() => expect(renderPage).toHaveBeenCalledTimes(1));
+    // Ignore any initial PDF layout frame; this assertion scopes the frame
+    // count to the pointer burst below.
+    frames.clear();
 
     fireEvent.pointerDown(viewport, { pointerId: 1, clientX: 200, clientY: 200 });
     fireEvent.pointerDown(viewport, { pointerId: 2, clientX: 400, clientY: 200 });

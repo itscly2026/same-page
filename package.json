@@ -18,6 +18,7 @@
     "test:visual-report": "node --test visual-report/*.test.mjs",
     "test:pwa-update": "node scripts/verify-pwa-update.mjs",
     "test:loading-performance": "npm run build && node scripts/measure-loading-performance.mjs",
+    "measure:production-loading": "node scripts/measure-production-loading.mjs",
     "test:migrations": "node scripts/verify-score-schema-migration.mjs",
     "check": "npm run lint && npm run typecheck && npm run test && npm run test:worker && npm run test:visual-report && npm run test:migrations && npm run build",
     "visual:report": "npm run build && node scripts/generate-visual-report.mjs",
