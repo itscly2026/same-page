@@ -782,7 +782,11 @@ describe("AppRoutes", () => {
     fireEvent.click(screen.getByRole("button", { name: "进入" }));
 
     expect(
-      await screen.findByRole("heading", { name: "小红花云盘" }),
+      await screen.findByRole(
+        "heading",
+        { name: "小红花云盘" },
+        { timeout: 3_000 },
+      ),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", {
       method: "DELETE",

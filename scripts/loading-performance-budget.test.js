@@ -1,10 +1,9 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 
 import { evaluateLoadingBudget } from "./loading-performance-budget.mjs";
 
 test("controlled delay crosses the regression budget and fails", () => {
-  assert.deepEqual(
+  expect(
     evaluateLoadingBudget(
       [
         { journey: "enter-drive", duration: 220 },
@@ -13,6 +12,5 @@ test("controlled delay crosses the regression budget and fails", () => {
       ],
       { "enter-drive": 200, "open-score": 500, "exit-score": 200 },
     ),
-    [{ journey: "enter-drive", duration: 220, budget: 200 }],
-  );
+  ).toEqual([{ journey: "enter-drive", duration: 220, budget: 200 }]);
 });
