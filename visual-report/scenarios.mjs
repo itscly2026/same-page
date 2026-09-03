@@ -6,7 +6,11 @@ export const visualReportScenarios = [
     device: "portrait",
     identity: "guest",
     route: "/",
-    ready: { type: "role", role: "heading", name: "Every voice, on the same page." },
+    ready: {
+      type: "role",
+      role: "heading",
+      name: "Harmony begins on the Same Page",
+    },
     actions: [],
   },
   {

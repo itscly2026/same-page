@@ -298,9 +298,19 @@ export function HomePage() {
       <main className="marketing-content">
         <section className="marketing-hero" aria-labelledby="page-title">
           <p className="hero-mark">Same Page</p>
-          <h1 id="page-title">Every voice, on the same page.</h1>
-          <p className="hero-zh">同页共谱，众声一心。</p>
-          <p className="hero-description">为合唱排练而设计的乐谱云盘。</p>
+          <h1 id="page-title" lang="en">
+            Harmony begins on the Same Page
+          </h1>
+          <p className="hero-zh" lang="zh-CN">
+            你的笔记我的谱
+          </p>
+          <div className="hero-description">
+            <p lang="en">
+              A cloud-based score library built for choir rehearsals and shared
+              annotations.
+            </p>
+            <p lang="zh-CN">为合唱排练与共享批注打造的乐谱云盘。</p>
+          </div>
           <div className="hero-actions">
             <Button
               className="primary-button hero-cta"

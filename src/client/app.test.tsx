@@ -90,10 +90,17 @@ describe("AppRoutes", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Every voice, on the same page." }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("同页共谱，众声一心。")).toBeInTheDocument();
-    expect(screen.getByText("为合唱排练而设计的乐谱云盘。")).toBeInTheDocument();
+      screen.getByRole("heading", { name: "Harmony begins on the Same Page" }),
+    ).toHaveAttribute("lang", "en");
+    expect(screen.getByText("你的笔记我的谱")).toHaveAttribute("lang", "zh-CN");
+    expect(
+      screen.getByText(
+        "A cloud-based score library built for choir rehearsals and shared annotations.",
+      ),
+    ).toHaveAttribute("lang", "en");
+    expect(
+      screen.getByText("为合唱排练与共享批注打造的乐谱云盘。"),
+    ).toHaveAttribute("lang", "zh-CN");
     expect(
       screen.getByRole("heading", { name: "不同声部，分层共享" }),
     ).toBeInTheDocument();
