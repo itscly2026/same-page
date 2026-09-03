@@ -73,4 +73,19 @@ describe("ReloadPrompt", () => {
     fireEvent(document, new Event("visibilitychange"));
     await waitFor(() => expect(registrationUpdateMock).toHaveBeenCalledTimes(2));
   });
+
+  it("shows a recoverable status when the background update check fails", async () => {
+    setShouldNeedRefresh(false);
+    registrationUpdateMock.mockRejectedValueOnce(new Error("offline"));
+
+    render(<ReloadPrompt />);
+
+    expect(
+      await screen.findByText("更新检查失败，请稍后重试"),
+    ).toBeInTheDocument();
+    registrationUpdateMock.mockResolvedValueOnce(undefined);
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    await waitFor(() => expect(registrationUpdateMock).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("更新检查失败，请稍后重试")).not.toBeInTheDocument();
+  });
 });

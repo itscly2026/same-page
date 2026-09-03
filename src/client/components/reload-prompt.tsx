@@ -11,6 +11,7 @@ export function ReloadPrompt() {
     | { phase: "error"; message: string }
   >({ phase: "idle" });
   const updateTimeout = useRef<number | null>(null);
+  const checkingUpdate = useRef(false);
   const clearUpdateTimeout = useCallback(() => {
     if (updateTimeout.current === null) return;
     window.clearTimeout(updateTimeout.current);
@@ -41,43 +42,50 @@ export function ReloadPrompt() {
     },
   });
 
+  const checkForUpdate = useCallback(async () => {
+    if (
+      !registration ||
+      checkingUpdate.current ||
+      registration.installing ||
+      !navigator.onLine
+    ) {
+      return;
+    }
+    checkingUpdate.current = true;
+    try {
+      await registration.update();
+      setUpdateState((current) =>
+        current.phase === "error" ? { phase: "idle" } : current,
+      );
+    } catch {
+      setUpdateState({
+        phase: "error",
+        message: "更新检查失败，请稍后重试",
+      });
+    } finally {
+      checkingUpdate.current = false;
+    }
+  }, [registration]);
+
   useEffect(() => {
     if (!registration) return;
     let active = true;
-    let checking = false;
-    const checkForUpdate = async () => {
-      if (
-        !active ||
-        checking ||
-        registration.installing ||
-        !navigator.onLine
-      ) {
-        return;
-      }
-      checking = true;
-      try {
-        await registration.update();
-      } catch {
-        // A failed check must not interrupt offline use or app startup.
-      } finally {
-        checking = false;
-      }
-    };
     const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") void checkForUpdate();
+      if (active && document.visibilityState === "visible") void checkForUpdate();
     };
 
-    void checkForUpdate();
+    const initialCheck = window.setTimeout(() => void checkForUpdate(), 0);
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       active = false;
+      window.clearTimeout(initialCheck);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [registration]);
+  }, [checkForUpdate, registration]);
 
   useEffect(() => clearUpdateTimeout, [clearUpdateTimeout]);
 
-  if (!needRefresh && !offlineReady) {
+  if (!needRefresh && !offlineReady && updateState.phase !== "error") {
     return null;
   }
 
@@ -143,6 +151,8 @@ export function ReloadPrompt() {
           >
             {updateState.phase === "error" ? "重试" : "更新"}
           </Button>
+        ) : updateState.phase === "error" ? (
+          <Button onPress={() => void checkForUpdate()}>重试</Button>
         ) : null}
         <Button onPress={close}>关闭</Button>
       </div>

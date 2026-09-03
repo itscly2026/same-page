@@ -5,7 +5,7 @@ import { onReaderIdentityChange } from "../reader/reader-cache-events";
 export type DriveCacheOwnerKey = `user:${string}` | `guest:${string}`;
 
 export interface DriveLibrarySnapshot {
-  choir: ChoirSummary | null;
+  choir: ChoirSummary;
   result: ScoreListResponse;
   search: string;
   scrollTop: number;
@@ -54,7 +54,7 @@ export function rememberDriveLibrary(
     scrollTop: previous?.scrollTop ?? 0,
     updatedAt: Date.now(),
   });
-  if (library.choir) rememberSummary(choirId, library.choir);
+  rememberSummary(choirId, library.choir);
   evictOverflow();
 }
 

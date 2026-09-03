@@ -79,6 +79,7 @@ export default function ChoirPage() {
   const searchTimer = useRef<number | null>(null);
   const scoreListRequest = useRef(0);
   const viewState = useRef({ search: "", scrollTop: 0 });
+  const pendingScrollRestore = useRef<number | null>(null);
   const cacheOwner: DriveCacheOwnerKey | null = session.isPending
     ? null
     : driveCacheOwnerKey(userId ?? null, choirId);
@@ -106,6 +107,18 @@ export default function ChoirPage() {
   }, [access]);
 
   useEffect(() => {
+    if (access.kind !== "opened" || pendingScrollRestore.current === null) return;
+    const frame = window.requestAnimationFrame(() => {
+      const scrollTop = pendingScrollRestore.current;
+      if (scrollTop === null) return;
+      document.documentElement.scrollTop = scrollTop;
+      document.body.scrollTop = scrollTop;
+      pendingScrollRestore.current = null;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [access]);
+
+  useEffect(() => {
     if (access.kind !== "opened") return;
     return scheduleReaderRuntimePreload();
   }, [access.kind]);
@@ -124,6 +137,10 @@ export default function ChoirPage() {
         return;
       }
       setSearchMessage(null);
+      if (!currentChoir) {
+        setAccess({ kind: "failed" });
+        return;
+      }
       const opened = { kind: "opened" as const, choir: currentChoir, result: next.result };
       setAccess(opened);
       if (cacheOwner) {
@@ -152,9 +169,8 @@ export default function ChoirPage() {
       }
       viewState.current = { search: cached.search, scrollTop: cached.scrollTop };
       setSearch(cached.search);
+      pendingScrollRestore.current = cached.scrollTop;
       setAccess({ kind: "opened", choir: cached.choir, result: cached.result });
-      document.documentElement.scrollTop = cached.scrollTop;
-      document.body.scrollTop = cached.scrollTop;
     });
     void openChoir(choirId, Boolean(userId), query).then((opened) => {
       networkSettled = true;
@@ -164,12 +180,17 @@ export default function ChoirPage() {
         return;
       }
       if (opened.kind === "opened") {
+        if (cached) {
+          viewState.current = { search: cached.search, scrollTop: cached.scrollTop };
+          setSearch(cached.search);
+          pendingScrollRestore.current = cached.scrollTop;
+        }
         rememberDriveLibrary(cacheOwner, choirId, opened);
         rememberDriveView(cacheOwner, choirId, {
           search: query,
           scrollTop: cached?.scrollTop ?? 0,
         });
-      } else if (opened.kind === "denied") {
+      } else if (opened.kind === "denied" || opened.kind === "not-found") {
         invalidateDriveLibrary(cacheOwner, choirId);
       }
       setAccess(opened);
@@ -401,7 +422,7 @@ export default function ChoirPage() {
       <main className="page-shell file-library">
         <header className="library-heading">
           <div className="library-title">
-            <h1>{choir?.name ?? "乐谱"}</h1>
+                <h1>{choir.name}</h1>
             <p>{result.scores.length} 份乐谱</p>
           </div>
           {result.permissions.canManage ? (
@@ -420,7 +441,7 @@ export default function ChoirPage() {
                       共享层
                     </MenuItem>
                     <MenuItem id="trash">回收站</MenuItem>
-                    {choir?.guestAdmissionMode === "invite" ? (
+                    {choir.guestAdmissionMode === "invite" ? (
                       <MenuItem id="invite">邀请码</MenuItem>
                     ) : null}
                     <MenuItem id="storage" isDisabled>
@@ -635,7 +656,7 @@ async function openChoir(
 
 type ChoirAccessState =
   | { kind: "loading"; choir?: ChoirSummary }
-  | { kind: "opened"; choir: ChoirSummary | null; result: ScoreListResponse }
+  | { kind: "opened"; choir: ChoirSummary; result: ScoreListResponse }
   | { kind: "join-required"; choir: ChoirSummary }
   | { kind: "denied" }
   | { kind: "not-found" }

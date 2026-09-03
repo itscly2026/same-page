@@ -1,108 +1,196 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import process from "node:process";
 
 import { webkit } from "@playwright/test";
 
-const origin = new URL(process.argv[2] ?? "https://samepage.clyapps.com").origin;
-const browser = await webkit.launch({ headless: true });
+import {
+  classifyPerformanceRequest,
+  summarizeJourneySamples,
+} from "./loading-performance-report.mjs";
 
-try {
-  const results = [];
-  results.push(await measureScenario("clean-web", "block"));
-  results.push(await measureScenario("updated-pwa", "allow"));
-  process.stdout.write(`${JSON.stringify({ origin, results }, null, 2)}\n`);
-} finally {
-  await browser.close();
+const origin = new URL(process.argv[2] ?? "https://samepage.clyapps.com").origin;
+const options = parseOptions(process.argv.slice(3));
+const rounds = Number(process.env.SAME_PAGE_PERFORMANCE_ROUNDS ?? "3");
+assert.ok(Number.isInteger(rounds) && rounds >= 2, "at least two production samples are required");
+assert.ok(options.pwaProfile, "--pwa-profile is required for a real cross-deployment update");
+assert.ok(options.pwaEvidence, "--pwa-evidence is required for a real cross-deployment update");
+
+const cleanWeb = await measureCleanWeb();
+const updatedPwa = await measureUpdatedPwa();
+process.stdout.write(`${JSON.stringify({ origin, rounds, results: [cleanWeb, updatedPwa] }, null, 2)}\n`);
+
+async function measureCleanWeb() {
+  const browser = await webkit.launch({ headless: true });
+  try {
+    const context = await browser.newContext({ locale: "zh-CN", serviceWorkers: "block" });
+    try {
+      return await measureScenario(context, "clean-web");
+    } finally {
+      await context.close();
+    }
+  } finally {
+    await browser.close();
+  }
 }
 
-async function measureScenario(name, serviceWorkers) {
-  const context = await browser.newContext({ locale: "zh-CN", serviceWorkers });
+async function measureUpdatedPwa() {
+  const priorEvidence = JSON.parse(await readFile(options.pwaEvidence, "utf8"));
+  assert.equal(priorEvidence.origin, origin, "PWA evidence belongs to another origin");
+  assert.ok(priorEvidence.documentAssets?.length > 0, "PWA evidence has no prior assets");
+  const context = await webkit.launchPersistentContext(options.pwaProfile, {
+    headless: true,
+    locale: "zh-CN",
+    serviceWorkers: "allow",
+  });
+  try {
+    const page = context.pages()[0] ?? await context.newPage();
+    await page.goto(origin, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+    const oldAssetsStillCached = await page.evaluate(async (assetPaths) => {
+      const results = await Promise.all(assetPaths.map((path) => caches.match(path)));
+      return results.every(Boolean);
+    }, priorEvidence.documentAssets);
+    assert.equal(oldAssetsStillCached, true, "prepared PWA no longer contains the prior production assets");
+
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (!registration) throw new Error("service_worker_registration_missing");
+      await registration.update();
+    });
+    await page.getByText("有新版本可用", { exact: true }).waitFor({ timeout: 30_000 });
+    await Promise.all([
+      page.waitForEvent("domcontentloaded"),
+      page.getByRole("button", { name: "更新", exact: true }).click(),
+    ]);
+    const activeBuild = await readActiveBuild(page);
+    const activeAssets = await documentAssets(page);
+    assert.ok(
+      activeAssets.some((asset) => !priorEvidence.documentAssets.includes(asset)),
+      "PWA handover did not load the deployed asset set",
+    );
+
+    const result = await measureScenario(context, "updated-pwa", page);
+    return {
+      ...result,
+      updateHandover: {
+        priorBuildId: priorEvidence.buildId,
+        activeBuildId: activeBuild.buildId,
+        oldAssetsWereCached: oldAssetsStillCached,
+        userConfirmed: true,
+        controllerState: result.serviceWorker,
+      },
+    };
+  } finally {
+    await context.close();
+  }
+}
+
+async function measureScenario(context, name, existingPage) {
   const requestOrder = [];
   context.on("request", (request) => {
     const pathname = new URL(request.url()).pathname;
-    if (pathname.startsWith("/api/")) requestOrder.push(classifyRequest(pathname));
-  });
-  const page = await context.newPage();
-  await page.goto(origin, { waitUntil: "domcontentloaded" });
-
-  if (serviceWorkers === "allow") {
-    await page.evaluate(async () => {
-      await Promise.race([
-        navigator.serviceWorker.ready,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("service_worker_timeout")), 20_000)),
-      ]);
-    });
-    if (!(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)))) {
-      await page.reload({ waitUntil: "domcontentloaded" });
+    if (pathname.startsWith("/api/")) {
+      requestOrder.push(classifyPerformanceRequest(pathname));
     }
+  });
+  const page = existingPage ?? await context.newPage();
+  const journeySamples = [];
+  const roundsReport = [];
+  let activeBuildId;
+  let networkFailure = "not-run";
+
+  for (let round = 0; round < rounds; round += 1) {
+    if (round > 0 || !existingPage) {
+      await page.goto(origin, { waitUntil: "domcontentloaded" });
+    }
+    const build = await readActiveBuild(page);
+    activeBuildId ??= build.buildId;
+    assert.equal(build.buildId, activeBuildId, `${name}: build changed between samples`);
+    const requestStart = requestOrder.length;
+
+    await page.getByRole("link", { name: "访问公开体验云盘" }).click();
+    await page.locator(".file-list").waitFor({ state: "visible" });
+    const entryEnd = requestOrder.length;
+    await page.locator("html[data-reader-runtime='ready']").waitFor();
+
+    await openScore(page, 0);
+    await returnToCachedDrive(page);
+    await openScore(page, 1);
+    await returnToCachedDrive(page);
+    await openScore(page, 0);
+    if (round === rounds - 1) {
+      await context.setOffline(true);
+      await returnToCachedDrive(page);
+      await page.getByText("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。").waitFor();
+      assert.equal(await page.locator(".file-list").isVisible(), true, `${name}: cached list lost offline`);
+      await context.setOffline(false);
+      networkFailure = "cached-drive-visible";
+    } else {
+      await returnToCachedDrive(page);
+    }
+
+    const finalDiagnostics = await diagnostics(page);
+    assert.equal(finalDiagnostics.buildId, activeBuildId, `${name}: mixed build assets`);
+    const samples = finalDiagnostics.records
+      .filter((record) => record.name.endsWith(":duration"))
+      .map(({ journey, duration, cacheCategory }) => ({ journey, duration, cacheCategory }));
+    assertRequiredJourneyEvidence(samples, finalDiagnostics.records, name, round);
+    journeySamples.push(...samples);
+
+    const entryRequests = requestOrder.slice(requestStart, entryEnd);
+    const expectedBootstraps = round === 0 ? [1, 2] : [1];
+    assert.ok(
+      expectedBootstraps.includes(entryRequests.filter((entry) => entry === "drive-bootstrap").length),
+      `${name}: drive entry contains a duplicate bootstrap waterfall`,
+    );
+    assert.equal(entryRequests.includes("score-list"), false, `${name}: duplicate score-list waterfall`);
+    roundsReport.push({
+      round: round + 1,
+      requests: requestOrder.slice(requestStart),
+      journeys: samples.map(roundJourney),
+    });
   }
-
-  const build = await page.evaluate(async () =>
-    fetch("/build.json", { cache: "no-store" }).then((response) => response.json()));
-  const initialDiagnostics = await diagnostics(page);
-  assert.equal(initialDiagnostics.buildId, build.buildId, `${name}: mixed build assets`);
-  if (serviceWorkers === "allow") {
-    assert.equal(initialDiagnostics.serviceWorker, "activated", `${name}: inactive worker`);
-  }
-
-  await page.getByRole("link", { name: "访问公开体验云盘" }).click();
-  await page.locator(".file-list").waitFor({ state: "visible" });
-  const entryEnd = requestOrder.length;
-  await page.locator("html[data-reader-runtime='ready']").waitFor();
-
-  await openFirstScore(page);
-  await returnToCachedDrive(page);
-  await openFirstScore(page);
-  await context.setOffline(true);
-  await returnToCachedDrive(page);
-  await page.getByText("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。").waitFor();
-  assert.equal(await page.locator(".file-list").isVisible(), true, `${name}: cached list lost offline`);
-  await context.setOffline(false);
 
   const finalDiagnostics = await diagnostics(page);
-  assert.equal(finalDiagnostics.buildId, build.buildId, `${name}: build changed during measurement`);
-  const journeys = finalDiagnostics.records
-    .filter((record) => record.name.endsWith(":duration"))
-    .map(({ journey, duration, cacheCategory }) => ({
-      journey,
-      duration: Math.round(duration * 10) / 10,
-      cacheCategory,
-    }));
-  assert.ok(journeys.some((record) => record.journey === "enter-drive"), `${name}: missing drive entry`);
-  assert.ok(journeys.some((record) =>
-    record.journey === "open-score" && record.cacheCategory === "cold"), `${name}: missing cold open`);
-  assert.ok(journeys.some((record) =>
-    record.journey === "open-score" && record.cacheCategory === "reopen"), `${name}: missing reopen`);
-  assert.ok(journeys.filter((record) => record.journey === "exit-score").length >= 2,
-    `${name}: missing cached exits`);
-
-  const entryRequests = requestOrder.slice(0, entryEnd);
-  assert.equal(entryRequests.filter((entry) => entry === "drive-bootstrap").length, 2,
-    `${name}: public preview should deny once, admit once, then bootstrap once`);
-  assert.equal(entryRequests.includes("score-list"), false, `${name}: duplicate score-list waterfall`);
-
   const serverTiming = await page.evaluate(() =>
     performance.getEntriesByType("resource")
       .filter((entry) => entry.name.includes("/api/"))
       .flatMap((entry) => entry.serverTiming.map((timing) => timing.name))
       .filter((value, index, values) => values.indexOf(value) === index));
-
-  await context.close();
   return {
     scenario: name,
-    buildId: finalDiagnostics.buildId,
+    buildId: activeBuildId,
     serviceWorker: finalDiagnostics.serviceWorker,
     displayMode: finalDiagnostics.displayMode,
-    journeys,
-    requestOrder,
+    journeySummary: summarizeJourneySamples(journeySamples),
+    rounds: roundsReport,
     serverTiming,
-    networkFailure: "cached-drive-visible",
+    networkFailure,
   };
 }
 
-async function openFirstScore(page) {
-  await page.locator(".file-row__open").first().click();
+function assertRequiredJourneyEvidence(samples, records, name, round) {
+  for (const category of ["cold", "warm", "reopen"]) {
+    assert.ok(samples.some((record) =>
+      record.journey === "open-score" && record.cacheCategory === category),
+    `${name} round ${round + 1}: missing ${category} open`);
+  }
+  assert.ok(samples.some((record) => record.journey === "enter-drive"),
+    `${name} round ${round + 1}: missing drive entry`);
+  assert.ok(samples.filter((record) => record.journey === "exit-score").length >= 3,
+    `${name} round ${round + 1}: missing cached exits`);
+  for (const journey of ["enter-drive", "open-score", "exit-score"]) {
+    assert.ok(records.some((record) =>
+      record.name === "route-transition-committed" && record.journey === journey),
+    `${name} round ${round + 1}: missing ${journey} route transition`);
+  }
+}
+
+async function openScore(page, index) {
+  const links = page.locator(".file-row__open");
+  assert.ok(await links.count() > index, "public performance fixture needs at least two scores");
+  await links.nth(index).click();
   await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
 }
 
@@ -120,6 +208,14 @@ async function returnToCachedDrive(page) {
     ).length > previousCount, completedExits);
 }
 
+async function readActiveBuild(page) {
+  const build = await page.evaluate(async () =>
+    fetch("/build.json", { cache: "no-store" }).then((response) => response.json()));
+  const currentDiagnostics = await diagnostics(page);
+  assert.equal(currentDiagnostics.buildId, build.buildId, "page and deployment builds differ");
+  return build;
+}
+
 async function diagnostics(page) {
   const result = await page.evaluate(() =>
     window.__SAME_PAGE_DIAGNOSTICS__?.loadingPerformance());
@@ -127,15 +223,24 @@ async function diagnostics(page) {
   return result;
 }
 
-function classifyRequest(pathname) {
-  if (pathname === "/api/auth/get-session") return "auth-session";
-  if (pathname === "/api/choirs") return "drive-memberships";
-  if (/\/api\/choirs\/[^/]+\/bootstrap$/.test(pathname)) return "drive-bootstrap";
-  if (pathname.endsWith("/bootstrap")) return "score-bootstrap";
-  if (pathname.endsWith("/pdf")) return "pdf";
-  if (pathname.endsWith("/layers")) return "layers";
-  if (pathname.endsWith("/annotations")) return "annotations";
-  if (/\/choirs\/[^/]+\/scores$/.test(pathname)) return "score-list";
-  if (pathname.startsWith("/api/guest/")) return "guest-session";
-  return "other-api";
+async function documentAssets(page) {
+  return page.evaluate(() => [...document.querySelectorAll("script[src],link[rel='stylesheet']")]
+    .map((element) => new URL(element.getAttribute("src") ?? element.getAttribute("href") ?? "", location.origin).pathname)
+    .filter((pathname) => pathname.startsWith("/assets/")));
+}
+
+function roundJourney({ journey, duration, cacheCategory }) {
+  return { journey, duration: Math.round(duration * 10) / 10, cacheCategory };
+}
+
+function parseOptions(args) {
+  const parsed = {};
+  for (let index = 0; index < args.length; index += 2) {
+    const key = args[index];
+    const value = args[index + 1];
+    if (key === "--pwa-profile") parsed.pwaProfile = value;
+    else if (key === "--pwa-evidence") parsed.pwaEvidence = value;
+    else throw new Error(`unknown option: ${key}`);
+  }
+  return parsed;
 }

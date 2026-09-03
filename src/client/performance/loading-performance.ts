@@ -65,6 +65,19 @@ export function markLoadingJourneyMilestone(
   if (activeJourneys.has(journey)) markLoadingMilestone(name);
 }
 
+export function markRouteTransitionMilestones() {
+  for (const [journey, active] of activeJourneys) {
+    const name = "route-transition-committed";
+    record({
+      name,
+      startTime: now(),
+      journey,
+      cacheCategory: active.cacheCategory,
+    });
+    mark(`${journey}:${name}`);
+  }
+}
+
 export function isLoadingJourneyActive(journey: LoadingJourney) {
   return activeJourneys.has(journey);
 }

@@ -18,6 +18,7 @@ import {
 import {
   clearDriveLibraryCache,
   driveCacheOwnerKey,
+  readDriveLibrary,
   rememberDriveLibrary,
   rememberDriveSummary,
   rememberDriveView,
@@ -1298,17 +1299,66 @@ describe("AppRoutes", () => {
     rememberDriveView(ownerKey, "choir-1", { search: "春日", scrollTop: 320 });
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
 
+    const root = document.documentElement;
+    const originalScrollTop = Object.getOwnPropertyDescriptor(root, "scrollTop");
+    let scrollTop = 0;
+    let restoredAfterListCommit = false;
+    Object.defineProperty(root, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value;
+        if (value === 320) {
+          restoredAfterListCommit = document.querySelector(".file-list") !== null;
+        }
+      },
+    });
+
+    try {
+      render(
+        <MemoryRouter initialEntries={["/choirs/choir-1"]}>
+          <AppRoutes />
+        </MemoryRouter>,
+      );
+
+      expect(
+        await screen.findByRole("link", { name: /缓存中的春日\.pdf/ }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("searchbox", { name: "搜索文件名" })).toHaveValue("春日");
+      expect(screen.queryByText("正在打开云盘…")).not.toBeInTheDocument();
+      await waitFor(() => expect(restoredAfterListCommit).toBe(true));
+    } finally {
+      if (originalScrollTop) Object.defineProperty(root, "scrollTop", originalScrollTop);
+      else Reflect.deleteProperty(root, "scrollTop");
+    }
+  });
+
+  it("discards a cached library when revalidation says the drive no longer exists", async () => {
+    const ownerKey = driveCacheOwnerKey(null, "choir-1");
+    rememberDriveLibrary(ownerKey, "choir-1", {
+      choir: {
+        id: "choir-1",
+        name: "已删除云盘",
+        guestAdmissionMode: "invite",
+      },
+      result: {
+        scores: [],
+        storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
+        permissions: { canManage: false },
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(
+      Response.json({ error: "not_found" }, { status: 404 }),
+    )));
+
     render(
       <MemoryRouter initialEntries={["/choirs/choir-1"]}>
         <AppRoutes />
       </MemoryRouter>,
     );
 
-    expect(
-      await screen.findByRole("link", { name: /缓存中的春日\.pdf/ }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("searchbox", { name: "搜索文件名" })).toHaveValue("春日");
-    expect(screen.queryByText("正在打开云盘…")).not.toBeInTheDocument();
+    expect(await screen.findByText("这个云盘不存在")).toBeInTheDocument();
+    expect(readDriveLibrary(ownerKey, "choir-1")).toBeNull();
   });
 
   it("reuses the home summary while one member bootstrap loads the drive", async () => {

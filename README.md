@@ -220,7 +220,8 @@ iPad 方向、稳定完成条件和必要的用户操作；请求数据统一由
 真实 iPad Safari 浏览器工具栏、虚拟键盘、PWA 全屏、安全区、Apple Pencil 或实体设备
 交互。真实设备验收仍按 production release runbook 独立记录。
 
-Reader 路由和 PDF.js 从首页 bundle 中拆出，进入 `/reader` 时才加载。PWA 只由
+Reader 路由和 PDF.js 从首页 bundle 中拆出；进入云盘后，浏览器仅在空闲时预载
+Reader 路由和 PDF.js worker，不提前请求任何乐谱 PDF。PWA 只由
 `vite-plugin-pwa` 生成并注册一个 Service Worker，更新通过页面提示由用户确认。
 生产资源、发布流程和实机门槛见
 [production release runbook](./docs/operations/production-release.md)。

@@ -8,6 +8,7 @@ describe("reader reopen tracking", () => {
     notifyReaderIdentityChange();
     expect(classifyReaderOpen("one", "drive", "score")).toBe("cold");
     expect(classifyReaderOpen("one", "drive", "score")).toBe("reopen");
+    expect(classifyReaderOpen("one", "drive", "other-score")).toBe("warm");
     expect(classifyReaderOpen("two", "drive", "score")).toBe("cold");
     notifyReaderIdentityChange();
     expect(classifyReaderOpen("one", "drive", "score")).toBe("cold");
