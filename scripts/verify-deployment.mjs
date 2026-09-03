@@ -1,20 +1,16 @@
 import assert from "node:assert/strict";
 
+import {
+  assetSetContainsBuildId,
+  shellJavaScriptAssets,
+} from "./deployment-identity.mjs";
+
 const baseUrl = new URL(process.argv[2] || "https://samepage.clyapps.com");
 assert.equal(baseUrl.protocol, "https:", "deployment verification requires HTTPS");
 
-const [health, build] = await Promise.all([
-  readHealth(),
-  readBuild(),
-]);
-assert.equal(
-  health.buildId,
-  build.buildId,
-  "Worker and application assets must come from the same build",
-);
+await readCoherentDeployment();
 
 const checks = [
-  verifyAppShell(build.buildId),
   verifyManifest(),
   verifyServiceWorker(),
   verifySocialProviderBoundary(),
@@ -48,6 +44,11 @@ async function readHealth() {
 async function readBuild() {
   const response = await request("/build.json");
   assert.equal(response.status, 200, "build identity must return 200");
+  assert.match(
+    response.headers.get("content-type") || "",
+    /application\/json/,
+    "build identity must be JSON rather than an old application shell",
+  );
   const payload = await response.json();
   assert.equal(typeof payload.buildId, "string");
   assert.ok(payload.buildId.length > 0, "asset build id must not be empty");
@@ -62,24 +63,46 @@ async function verifyAppShell(expectedBuildId) {
   assert.equal(response.headers.get("referrer-policy"), "no-referrer");
   const html = await response.text();
   assert.match(html, /<title>Same Page<\/title>/);
-  const scriptPath = html.match(/src="(\/assets\/[^\"]+\.js)"/)?.[1];
-  assert.ok(scriptPath, "application shell must load a hashed script");
-  const script = await request(scriptPath);
-  assert.equal(script.status, 200, "application script must return 200");
-  assert.match(
-    script.headers.get("cache-control") || "",
-    /max-age=31536000.*immutable/,
-    "hashed application assets must be immutable",
-  );
-  assert.match(
-    await script.text(),
-    new RegExp(escapeRegExp(expectedBuildId)),
-    "application script must contain the active build identity",
+  const scriptPaths = shellJavaScriptAssets(html);
+  assert.ok(scriptPaths.length > 0, "application shell must load hashed scripts");
+  const scripts = await Promise.all(scriptPaths.map(async (scriptPath) => {
+    const script = await request(scriptPath);
+    assert.equal(script.status, 200, "application script must return 200");
+    assert.match(
+      script.headers.get("cache-control") || "",
+      /max-age=31536000.*immutable/,
+      "hashed application assets must be immutable",
+    );
+    return script.text();
+  }));
+  assert.equal(
+    assetSetContainsBuildId(scripts, expectedBuildId),
+    true,
+    "application asset graph must contain the active build identity",
   );
 }
 
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+async function readCoherentDeployment() {
+  const attempts = 12;
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const [health, build] = await Promise.all([readHealth(), readBuild()]);
+      assert.equal(
+        health.buildId,
+        build.buildId,
+        "Worker and application assets must come from the same build",
+      );
+      await verifyAppShell(build.buildId);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+      }
+    }
+  }
+  throw new Error("production build did not become coherent", { cause: lastError });
 }
 
 async function verifyManifest() {
