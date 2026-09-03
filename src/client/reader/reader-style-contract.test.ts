@@ -40,20 +40,29 @@ describe("reader control style contract", () => {
 
   it("uses compact floating reader controls instead of a full-width white bar", () => {
     expect(styles).toMatch(
-      /\.reader-chrome \{[\s\S]*?pointer-events: none;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/,
+      /\.reader-chrome \{[\s\S]*?pointer-events: none;[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto minmax\(0, 1fr\);[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/,
     );
     expect(styles).toMatch(
-      /\.reader-chrome__back,[\s\S]*?background: rgb\(255 255 255 \/ 96%\);/,
+      /\.reader-chrome__back,\s*\.reader-chrome__actions \{[\s\S]*?background: rgb\(255 255 255 \/ 96%\);/,
+    );
+    expect(styles).toMatch(
+      /\.reader-shell::before \{[\s\S]*?pointer-events: none;[\s\S]*?z-index: 10;[\s\S]*?linear-gradient\([\s\S]*?transparent 100%[\s\S]*?opacity: 0;/,
+    );
+    expect(styles).toMatch(
+      /\.reader-shell\[data-chrome-visible\]::before \{\s*opacity: 1;/,
     );
     expect(styles).toMatch(
       /\.reader-more-menu \{[\s\S]*?pointer-events: auto;/,
     );
     expect(styles).toMatch(
-      /\.annotation-controls \{[\s\S]*?color: #000;[\s\S]*?background: #fff;/,
+      /\.annotation-controls \{[\s\S]*?left: 50%;[\s\S]*?width: max-content;[\s\S]*?overflow-x: auto;[\s\S]*?background: #fff;[\s\S]*?transform: translateX\(-50%\);/,
     );
     expect(styles).toMatch(
       /\.page-preview-strip \{[\s\S]*?color: #000;[\s\S]*?background: #fff;/,
     );
+    const titleRules = styles.match(/\.reader-chrome__title \{([^}]*)\}/)?.[1] ?? "";
+    expect(titleRules).toMatch(/max-width:[\s\S]*?text-align: center;/);
+    expect(titleRules).not.toMatch(/background|border|box-shadow|padding/);
   });
 
   it("keeps icon controls at least 44 CSS pixels square", () => {
@@ -62,6 +71,9 @@ describe("reader control style contract", () => {
     );
     expect(styles).toMatch(
       /\.annotation-controls \.annotation-layer-slot,\s*\.annotation-controls \.annotation-tool-button \{[\s\S]*?min-width: 2\.75rem;[\s\S]*?width: 2\.75rem;[\s\S]*?min-height: 2\.75rem;/,
+    );
+    expect(styles).toMatch(
+      /\.reader-chrome button\[aria-pressed="true"\],[\s\S]*?color: #fff;[\s\S]*?background: #111;/,
     );
   });
 

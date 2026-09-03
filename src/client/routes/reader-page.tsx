@@ -881,7 +881,7 @@ export default function ReaderPage() {
     });
     if (layout === "continuous") setLayout("page");
     setZoom(1);
-    setChromeVisible(false);
+    setChromeVisible(true);
     setMoreOpen(false);
     setReaderPanel(null);
     setActiveLayerId(editableLayer.id);
@@ -1079,31 +1079,40 @@ export default function ReaderPage() {
     conflictCount: conflicts.length,
     syncErrorCount,
   });
+  const readerTitle = displayReaderTitle(score.fileName);
 
   return (
-    <main className="reader-shell">
+    <main className="reader-shell" data-chrome-visible={chromeVisible || undefined}>
       <h1 className="visually-hidden">{score.fileName}</h1>
       {cloudState === "trashed" ? (
         <aside className="reader-alert reader-alert--trash" role="alert">
           乐谱已移入回收站。本机离线副本和未同步批注仍保留，恢复后可继续同步。
         </aside>
       ) : null}
-      {!editing && chromeVisible ? (
+      {chromeVisible ? (
         <header className="reader-chrome" aria-label="阅读器控制">
           <Link
             aria-label="返回云盘"
+            aria-disabled={editing || undefined}
             className="reader-chrome__back reader-icon-button"
             to={`/choirs/${choirId}`}
-            onClick={() => startLoadingJourney("exit-score", "warm")}
+            onClick={(event) => {
+              if (editing) {
+                event.preventDefault();
+                return;
+              }
+              startLoadingJourney("exit-score", "warm");
+            }}
           >
             <ArrowLeft aria-hidden="true" size={22} />
           </Link>
-          <strong className="reader-chrome__title">{score.fileName}</strong>
+          <strong className="reader-chrome__title">{readerTitle}</strong>
           <div className="reader-chrome__actions">
             <Button
               aria-label="页面位置"
               aria-expanded={readerPanel === "pages"}
               className="reader-page-button"
+              isDisabled={editing}
               onPress={() => openReaderPanel("pages")}
             >
               {currentPage} / {document.numPages}
@@ -1112,6 +1121,7 @@ export default function ReaderPage() {
               aria-label="图层"
               aria-expanded={readerPanel === "layers"}
               className="reader-icon-button"
+              isDisabled={editing}
               onPress={() => openReaderPanel("layers")}
             >
               <Layers aria-hidden="true" size={21} />
@@ -1119,8 +1129,10 @@ export default function ReaderPage() {
             {cloudState !== "trashed" && layers.some((layer) => layer.canEdit) ? (
               <Button
                 aria-label="编辑"
+                aria-pressed={editing}
                 className="reader-icon-button"
-                onPress={beginEditing}
+                isDisabled={editing && annotationInteraction === "composing-text"}
+                onPress={() => editing ? void finishEditing() : beginEditing()}
               >
                 <Pencil aria-hidden="true" size={21} />
               </Button>
@@ -1129,6 +1141,7 @@ export default function ReaderPage() {
               aria-label="更多"
               aria-expanded={moreOpen}
               className="reader-icon-button"
+              isDisabled={editing}
               onPress={() => setMoreOpen((open) => !open)}
             >
               <Ellipsis aria-hidden="true" size={23} />
@@ -1207,30 +1220,17 @@ export default function ReaderPage() {
         />
       ) : null}
 
-      {editing ? (
-        <>
-          <header className="reader-edit-header">
-            <div>
-              <strong>{score.fileName}</strong>
-              <span>编辑模式 · 第 {currentPage} 页</span>
-            </div>
-            {annotationInteraction !== "composing-text" ? (
-              <Button onPress={() => void finishEditing()}>完成</Button>
-            ) : null}
-          </header>
-          {annotationInteraction !== "transforming-text" ? (
-            <Suspense fallback={<p role="status">正在准备批注工具…</p>}>
-              <ReaderEditingControls
-                workspace={workspace}
-                layers={layers}
-                tool={tool}
-                activeLayerId={activeLayerId}
-                onToolChange={setTool}
-                onLayerChange={selectEditingLayer}
-              />
-            </Suspense>
-          ) : null}
-        </>
+      {editing && annotationInteraction !== "transforming-text" ? (
+        <Suspense fallback={<p role="status">正在准备批注工具…</p>}>
+          <ReaderEditingControls
+            workspace={workspace}
+            layers={layers}
+            tool={tool}
+            activeLayerId={activeLayerId}
+            onToolChange={setTool}
+            onLayerChange={selectEditingLayer}
+          />
+        </Suspense>
       ) : null}
 
       {!editing && showGestureHint ? (
@@ -1360,6 +1360,11 @@ function readBooleanPreference(key: string) {
   } catch {
     return false;
   }
+}
+
+function displayReaderTitle(fileName: string) {
+  const title = fileName.replace(/\.pdf$/i, "");
+  return title || fileName;
 }
 
 function readStringPreference(key: string) {
