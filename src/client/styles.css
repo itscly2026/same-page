@@ -709,7 +709,7 @@ h1 {
   max-width: 14ch;
   font-size: clamp(3.3rem, 8.5vw, 7.4rem);
   line-height: 0.95;
-  letter-spacing: -0.065em;
+  letter-spacing: -0.045em;
 }
 
 .hero-zh {
