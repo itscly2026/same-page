@@ -1952,6 +1952,10 @@ describe("ReaderPage", () => {
     expect(screen.queryByLabelText("批注文本")).not.toBeInTheDocument();
 
     if (!screen.queryByLabelText("阅读器控制")) toggleChrome();
+    expect(screen.getByText("练声曲", { selector: ".reader-chrome__title" })).toBeInTheDocument();
+    expect(
+      screen.queryByText("练声曲.pdf", { selector: ".reader-chrome__title" }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     fireEvent.click(screen.getByRole("button", { name: "连续滚动" }));
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
@@ -2001,12 +2005,18 @@ describe("ReaderPage", () => {
     });
     continuousReader.scrollTop = 40;
     fireEvent.scroll(continuousReader);
-    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
-    expect(screen.getByText(/编辑模式/)).toBeInTheDocument();
+    const editButton = await screen.findByRole("button", { name: "编辑" });
+    fireEvent.click(editButton);
+    expect(editButton).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText(/编辑模式/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("阅读器控制")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "页面位置" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "图层" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "更多" })).toBeDisabled();
     expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "下一页" })).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(screen.getByText("编辑模式 · 第 1 页")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "页面位置" })).toHaveTextContent("1 / 3");
     expect(await screen.findByRole("button", { name: "文本" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -2076,21 +2086,11 @@ describe("ReaderPage", () => {
     );
 
     virtualTestState.itemSize = 200;
-    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    fireEvent.click(editButton);
+    expect(editButton).toHaveAttribute("aria-pressed", "false");
     const restoredReader = await screen.findByLabelText("连续滚动阅读");
     await waitFor(() => expect(restoredReader.scrollTop).toBe(80));
-    fireEvent.pointerDown(restoredReader, {
-      pointerId: 8,
-      pointerType: "touch",
-      clientX: 100,
-      clientY: 100,
-    });
-    fireEvent.pointerUp(restoredReader, {
-      pointerId: 8,
-      pointerType: "touch",
-      clientX: 100,
-      clientY: 100,
-    });
+    expect(screen.getByLabelText("阅读器控制")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.getByText("200%")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
@@ -2218,8 +2218,10 @@ describe("ReaderPage", () => {
     await screen.findByLabelText("翻页阅读");
     expect(screen.getByText("离线练声曲.pdf")).toBeInTheDocument();
     toggleChrome();
-    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
-    expect(screen.getByText(/编辑模式/)).toBeInTheDocument();
+    const editButton = await screen.findByRole("button", { name: "编辑" });
+    fireEvent.click(editButton);
+    expect(editButton).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText(/编辑模式/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "文本" })).toHaveAttribute(
       "aria-pressed",
       "true",
