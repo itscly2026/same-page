@@ -20,7 +20,7 @@ export default defineConfig({
           BETTER_AUTH_SECRET:
             "test-better-auth-secret-with-at-least-32-characters",
           BETTER_AUTH_URL: "https://same-page.test",
-          RESEND_API_KEY: "re_test_key",
+          RESEND_API_KEY_SAMEPAGE: "re_test_key",
           AUTH_EMAIL_FROM: "Same Page <login@example.test>",
           INVITE_SECRET: "test-invite-secret-with-at-least-32-characters",
           GOOGLE_CLIENT_ID: "test-google-client-id",

@@ -26,12 +26,14 @@
 1. 创建生产 D1 与 R2，并核对区域、名称和绑定。
 2. 对生产 D1 执行全部 `migrations/`。
 3. 在 Worker Secret 中设置彼此独立的 `BETTER_AUTH_SECRET`、`INVITE_SECRET` 与
-   `RESEND_API_KEY`。需要启用第三方登录时，再设置完整的 `GOOGLE_CLIENT_ID` /
+   `RESEND_API_KEY_SAMEPAGE`。需要启用第三方登录时，再设置完整的 `GOOGLE_CLIENT_ID` /
    `GOOGLE_CLIENT_SECRET` 和 `WECHAT_CLIENT_ID` / `WECHAT_CLIENT_SECRET`；缺少任意一项时
    对应入口会保持隐藏。
 4. 部署前先在 Resend 验证 `samepage.clyapps.com` 的 SPF、DKIM、DMARC 与 Return-Path，
-   创建仅允许该子域的 Sending-only key 并更新 Worker `RESEND_API_KEY`。发信子域记录不得
-   改动根域 MX、Cloudflare Email Routing 或 Webmail；不得在域未 verified 时切换 From。
+   创建仅允许该子域的 Sending-only key，并先写入尚未被当前版本读取的 Worker
+   `RESEND_API_KEY_SAMEPAGE`。代码部署时才切换到该 Secret，避免旧发件人与新密钥不匹配；
+   旧 Secret 和旧 key 仅保留到真实投递验收完成，以便回滚。发信子域记录不得改动根域 MX、
+   Cloudflare Email Routing 或 Webmail；不得在域未 verified 时切换 From。
 5. 部署 Worker 与静态资源；Wrangler 的 custom domain 配置负责创建 DNS 记录和证书。
 6. 在 GitHub `production` environment 中设置 `CLOUDFLARE_API_TOKEN` 与
    `CLOUDFLARE_ACCOUNT_ID`。

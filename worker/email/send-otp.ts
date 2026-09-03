@@ -6,7 +6,7 @@ import type { Env } from "../env";
 export type AuthOtpPurpose = "registration" | "forget-password";
 
 export async function sendAuthOtp(
-  env: Pick<Env, "AUTH_EMAIL_FROM" | "RESEND_API_KEY">,
+  env: Pick<Env, "AUTH_EMAIL_FROM" | "RESEND_API_KEY_SAMEPAGE">,
   email: string,
   otp: string,
   purpose: AuthOtpPurpose,
@@ -15,7 +15,7 @@ export async function sendAuthOtp(
     throw new Error("OTP delivery blocked for internal authentication email");
   }
   const message = buildAuthOtpEmail(otp, purpose);
-  const resend = new Resend(env.RESEND_API_KEY);
+  const resend = new Resend(env.RESEND_API_KEY_SAMEPAGE);
   const { error } = await resend.emails.send({
     from: env.AUTH_EMAIL_FROM,
     to: email,

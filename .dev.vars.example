@@ -1,6 +1,6 @@
 BETTER_AUTH_SECRET=replace-with-at-least-32-random-characters
 BETTER_AUTH_URL=http://127.0.0.1:5173
-RESEND_API_KEY=re_replace_me
+RESEND_API_KEY_SAMEPAGE=re_replace_me
 AUTH_EMAIL_FROM=Same Page <login@samepage.example.com>
 INVITE_SECRET=replace-with-a-separate-32-character-secret
 # Optional. A provider appears only when both values in its pair are set.
