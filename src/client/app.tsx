@@ -3,9 +3,9 @@ import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import { ReloadPrompt } from "./components/reload-prompt";
 import { LocalIdentityObserver } from "./platform/local-identity-observer";
+import { ReaderPage } from "./reader/reader-runtime";
 import { HomePage } from "./routes/home-page";
 
-const ReaderPage = lazy(() => import("./routes/reader-page"));
 const AuthPage = lazy(() => import("./routes/auth-page"));
 const ChoirPage = lazy(() => import("./routes/choir-page"));
 const DriveLayerPreferencesPage = lazy(

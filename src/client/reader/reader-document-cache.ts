@@ -6,6 +6,7 @@ import {
 import { onReaderIdentityChange } from "./reader-cache-events";
 
 const RELEASE_DELAY_MS = 15_000;
+const MAX_RETAINED_DOCUMENTS = 2;
 
 interface CachedDocument {
   ownerKey: LocalWorkspaceOwnerKey;
@@ -101,11 +102,14 @@ export function acquireReaderDocument(options: {
   } else if (options.versionId && !cached.version.expected) {
     cached.version.expected = options.versionId;
   }
+  documents.delete(key);
+  documents.set(key, cached);
   cached.references += 1;
   if (cached.releaseTimer !== null) {
     window.clearTimeout(cached.releaseTimer);
     cached.releaseTimer = null;
   }
+  evictInactiveOverflow();
   let released = false;
   return {
     promise: cached.promise.catch((error) => {
@@ -186,7 +190,18 @@ function documentKey(options: {
 function release(key: string, cached: CachedDocument) {
   cached.references = Math.max(0, cached.references - 1);
   if (cached.references > 0 || documents.get(key) !== cached) return;
+  evictInactiveOverflow();
+  if (documents.get(key) !== cached) return;
   cached.releaseTimer = window.setTimeout(() => evict(key, cached), RELEASE_DELAY_MS);
+}
+
+function evictInactiveOverflow() {
+  while (documents.size > MAX_RETAINED_DOCUMENTS) {
+    const inactive = [...documents.entries()].find(([, cached]) =>
+      cached.references === 0);
+    if (!inactive) return;
+    evict(...inactive);
+  }
 }
 
 function evict(key: string, cached: CachedDocument) {

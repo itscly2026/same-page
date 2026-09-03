@@ -1,7 +1,9 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   type CSSProperties,
+  lazy,
   type RefObject,
+  Suspense,
   type TransitionEvent as ReactTransitionEvent,
   useEffect,
   useRef,
@@ -10,10 +12,9 @@ import {
 import { Button } from "react-aria-components";
 
 import type { AnnotationLayerSummary } from "../../shared/annotations";
-import {
-  AnnotationOverlay,
-  type AnnotationOverlayInteraction,
-  type AnnotationTool,
+import type {
+  AnnotationOverlayInteraction,
+  AnnotationTool,
 } from "../annotations/annotation-overlay";
 import type { LocalAnnotationRecord } from "../platform/local-database";
 import type { LocalWorkspace } from "../platform/local-workspace";
@@ -27,6 +28,11 @@ import type { PagedReader, PagedReaderItem } from "./use-paged-reader";
 import { useReaderGestures } from "./use-reader-gestures";
 
 const PAGE_TURN_GUTTER_PX = 14;
+const AnnotationOverlay = lazy(() =>
+  import("../annotations/annotation-overlay").then((module) => ({
+    default: module.AnnotationOverlay,
+  })),
+);
 
 export interface AnnotationPageProps {
   workspace: LocalWorkspace;
@@ -468,11 +474,13 @@ function AnnotatedPdfPage({
         aspectRatio={resolvedAspectRatio}
         onRenderStart={onPageRenderStart}
       />
-      <AnnotationOverlay
-        {...annotationProps}
-        key={`${pageNumber}:${annotationProps.editing ? `edit:${annotationProps.activeLayerId}:${annotationProps.tool}` : "read"}`}
-        pageNumber={pageNumber}
-      />
+      <Suspense fallback={null}>
+        <AnnotationOverlay
+          {...annotationProps}
+          key={`${pageNumber}:${annotationProps.editing ? `edit:${annotationProps.activeLayerId}:${annotationProps.tool}` : "read"}`}
+          pageNumber={pageNumber}
+        />
+      </Suspense>
     </div>
   );
 }
