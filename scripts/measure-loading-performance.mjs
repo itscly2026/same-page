@@ -4,6 +4,10 @@ import process from "node:process";
 
 import { webkit } from "@playwright/test";
 import { classifyPerformanceRequest } from "./loading-performance-report.mjs";
+import {
+  detachedProcessGroup,
+  stopChildProcessTree,
+} from "./process-lifecycle.mjs";
 
 import { evaluateLoadingBudget } from "./loading-performance-budget.mjs";
 import { resolveFixtureRequest } from "../visual-report/fixtures.mjs";
@@ -41,7 +45,7 @@ try {
   await context.route("**/api/**", async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
-      requestOrder.push(classifyPerformanceRequest(pathname));
+    requestOrder.push(classifyPerformanceRequest(pathname));
     const requestDelay = returningToDrive ? returnDelayMs : controlledDelayMs;
     if (requestDelay > 0) await delay(requestDelay);
     await route.fulfill(resolveFixtureRequest({
@@ -156,7 +160,7 @@ try {
   throw error;
 } finally {
   await browser?.close();
-  preview.kill("SIGTERM");
+  await stopChildProcessTree(preview);
 }
 
 function startPreviewServer(previewPort) {
@@ -164,7 +168,12 @@ function startPreviewServer(previewPort) {
   return spawn(
     executable,
     ["run", "preview", "--", "--host", "127.0.0.1", "--port", String(previewPort), "--strictPort"],
-    { cwd: process.cwd(), env: process.env, stdio: ["ignore", "pipe", "pipe"] },
+    {
+      cwd: process.cwd(),
+      detached: detachedProcessGroup(),
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
   );
 }
 
