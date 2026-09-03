@@ -184,6 +184,52 @@ describe("AnnotationOverlay", () => {
     expect(await localDatabase.annotations.count()).toBe(0);
   });
 
+  it("grows the text field to keep multiline input visible", () => {
+    installVisualViewport();
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    mockBounds(overlay);
+    openNewText(overlay);
+    const input = screen.getByLabelText("批注文本") as HTMLTextAreaElement;
+    Object.defineProperty(input, "scrollHeight", {
+      configurable: true,
+      value: 54,
+    });
+
+    fireEvent.change(input, { target: { value: "第一行\n第二行\n第三行" } });
+
+    expect(input.rows).toBe(2);
+    expect(input).toHaveStyle({ height: "54px", overflowY: "hidden" });
+  });
+
+  it("caps long text inside the visual viewport and recalculates after viewport changes", () => {
+    const visualViewport = installVisualViewport();
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    mockBounds(overlay);
+    openNewText(overlay);
+    const input = screen.getByLabelText("批注文本") as HTMLTextAreaElement;
+    let scrollHeight = 900;
+    Object.defineProperty(input, "scrollHeight", {
+      configurable: true,
+      get: () => scrollHeight,
+    });
+
+    fireEvent.change(input, { target: { value: Array(20).fill("一行文字").join("\n") } });
+    expect(Number.parseFloat(input.style.height)).toBeLessThan(768);
+    expect(input).toHaveStyle({ overflowY: "auto" });
+    expect(input.scrollTop).toBe(900);
+
+    Object.assign(visualViewport, { height: 320 });
+    act(() => visualViewport.dispatchEvent(new Event("resize")));
+    expect(Number.parseFloat(input.style.height)).toBeLessThan(320);
+
+    scrollHeight = 160;
+    Object.assign(visualViewport, { width: 700 });
+    act(() => visualViewport.dispatchEvent(new Event("resize")));
+    expect(input).toHaveStyle({ height: "160px", overflowY: "hidden" });
+  });
+
   it("does not open text composition for a drag or cancelled placement", () => {
     const focus = vi.spyOn(HTMLTextAreaElement.prototype, "focus");
     renderOverlay([], "text");
@@ -356,6 +402,34 @@ describe("AnnotationOverlay", () => {
           fontScale: 0.04,
           text: "第一行\n第二行",
         },
+      });
+    });
+  });
+
+  it("completes text from the empty backdrop without completing from editor controls", async () => {
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    mockBounds(overlay);
+    openNewText(overlay);
+    const composer = screen.getByRole("form", { name: "文字输入" });
+    fireEvent.change(screen.getByLabelText("批注文本"), {
+      target: { value: "外围完成" },
+    });
+
+    fireEvent.click(screen.getByRole("slider", { name: "字号" }));
+    expect(screen.getByRole("form", { name: "文字输入" })).toBeInTheDocument();
+    expect(await localDatabase.annotations.count()).toBe(0);
+
+    fireEvent.pointerDown(composer);
+    fireEvent.pointerCancel(composer);
+    expect(screen.getByRole("form", { name: "文字输入" })).toBeInTheDocument();
+    expect(await localDatabase.annotations.count()).toBe(0);
+
+    fireEvent.click(composer);
+    expect(screen.queryByRole("form", { name: "文字输入" })).not.toBeInTheDocument();
+    await waitFor(async () => {
+      expect(await localDatabase.annotations.toCollection().first()).toMatchObject({
+        payload: { kind: "text", text: "外围完成" },
       });
     });
   });

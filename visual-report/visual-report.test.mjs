@@ -34,10 +34,12 @@ test("visual report scenarios have stable unique ids and cover iPad plus narrow 
     "reader-edit-shared-layer",
     "reader-edit-unsubscribed-layer",
     "reader-edit-unsubscribed-exit",
+    "reader-controls-narrow",
+    "reader-text-compose-multiline",
   ]) {
     assert.ok(
       visualReportScenarios.some((scenario) => scenario.id === requiredId),
-      `missing required #69 capture: ${requiredId}`,
+      `missing required reader capture: ${requiredId}`,
     );
   }
   assert.ok(

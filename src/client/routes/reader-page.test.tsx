@@ -1484,6 +1484,14 @@ describe("ReaderPage", () => {
     expect(screen.getByRole("link", { name: "返回云盘" }).querySelector("svg")).not.toBeNull();
     expect(screen.getByRole("button", { name: "图层" }).querySelector("svg")).not.toBeNull();
     expect(screen.getByRole("button", { name: "更多" }).querySelector("svg")).not.toBeNull();
+    const actionCapsule = document.querySelector(".reader-chrome__actions");
+    expect(actionCapsule).not.toBeNull();
+    expect(
+      within(actionCapsule as HTMLElement).queryByRole("button", { name: "页面位置" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "页面位置" })).toHaveClass(
+      "reader-page-indicator",
+    );
     expect(screen.queryByLabelText("页面缩略图")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "页面位置" }));
     const pageStrip = screen.getByLabelText("页面缩略图");
@@ -1526,6 +1534,123 @@ describe("ReaderPage", () => {
       screen.queryByText("轻点页面中央显示控制，点按两侧或左右滑动翻页"),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("编辑")).not.toBeInTheDocument();
+  });
+
+  it("keeps editing discoverable and retries when layer preparation fails", async () => {
+    let layerAttempts = 0;
+    vi.mocked(fetch).mockImplementation((input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/layers")) {
+        layerAttempts += 1;
+        if (layerAttempts === 1) {
+          return Promise.resolve(new Response("unavailable", { status: 503 }));
+        }
+        return Promise.resolve(Response.json({
+          layers: [
+            {
+              id: "11111111-1111-4111-8111-111111111111",
+              kind: "personal",
+              defaultSlot: null,
+              name: "Personal",
+              sortOrder: 10_000,
+              subscribed: true,
+              subscriptionSource: "personal",
+              displayColor: "#b4235a",
+              colorSource: "product",
+              adminDefaultColor: "#b4235a",
+              driveSubscribed: null,
+              driveColorOverride: null,
+              scoreSubscriptionOverride: null,
+              canEdit: true,
+            },
+          ],
+          permissions: { canManageLayers: false },
+        }));
+      }
+      return Promise.resolve(activeBootstrapResponse());
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByLabelText("翻页阅读");
+    toggleChrome();
+    const editButton = await screen.findByRole("button", { name: "编辑" });
+    expect(editButton).toHaveAttribute("data-state", "failed");
+    expect(editButton.querySelector("svg")).not.toBeNull();
+    expect(screen.getByText("编辑准备失败，点按铅笔重试")).toHaveAttribute(
+      "role",
+      "status",
+    );
+    expect(
+      Array.from(
+        document.querySelectorAll<HTMLButtonElement>(".reader-chrome__actions button"),
+        (button) => button.getAttribute("aria-label"),
+      ),
+    ).toEqual(["编辑", "图层", "更多"]);
+
+    fireEvent.click(editButton);
+    await waitFor(() => {
+      expect(editButton).toHaveAttribute("data-state", "ready");
+    });
+    expect(layerAttempts).toBe(2);
+
+    fireEvent.click(editButton);
+    expect(editButton).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText(/编辑模式/)).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "文本" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("distinguishes layer preparation from a confirmed read-only score", async () => {
+    let resolveLayers!: (response: Response) => void;
+    const layerResponse = new Promise<Response>((resolve) => {
+      resolveLayers = resolve;
+    });
+    vi.mocked(fetch).mockImplementation((input: string | URL | Request) =>
+      String(input).includes("/layers")
+        ? layerResponse
+        : Promise.resolve(activeBootstrapResponse()),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes>
+          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByLabelText("翻页阅读");
+    toggleChrome();
+    expect(screen.getByRole("button", { name: "编辑" })).toHaveAttribute(
+      "data-state",
+      "preparing",
+    );
+    expect(screen.getByText("正在准备编辑…")).toHaveAttribute("role", "status");
+    expect(screen.getByRole("button", { name: "编辑" })).toBeDisabled();
+
+    await act(async () => {
+      resolveLayers(Response.json({
+        layers: [],
+        permissions: { canManageLayers: false },
+      }));
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "编辑" })).toHaveAttribute(
+        "data-state",
+        "read-only",
+      );
+    });
+    expect(screen.getByRole("button", { name: "编辑" })).toBeDisabled();
+    expect(screen.getByText("此乐谱为只读状态")).toHaveAttribute("role", "status");
   });
 
   it("keeps the score layer panel focused on read subscriptions and effective colors", async () => {
@@ -2006,6 +2131,7 @@ describe("ReaderPage", () => {
     continuousReader.scrollTop = 40;
     fireEvent.scroll(continuousReader);
     const editButton = await screen.findByRole("button", { name: "编辑" });
+    await waitFor(() => expect(editButton).toHaveAttribute("data-state", "ready"));
     fireEvent.click(editButton);
     expect(editButton).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText(/编辑模式/)).not.toBeInTheDocument();
@@ -2094,6 +2220,12 @@ describe("ReaderPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.getByText("200%")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "编辑" })).toHaveAttribute(
+        "data-state",
+        "ready",
+      );
+    });
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
     expect(
       screen.getByRole("button", { name: "E，Ensemble" }),
@@ -2219,10 +2351,11 @@ describe("ReaderPage", () => {
     expect(screen.getByText("离线练声曲.pdf")).toBeInTheDocument();
     toggleChrome();
     const editButton = await screen.findByRole("button", { name: "编辑" });
+    await waitFor(() => expect(editButton).toHaveAttribute("data-state", "ready"));
     fireEvent.click(editButton);
     expect(editButton).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText(/编辑模式/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "文本" })).toHaveAttribute(
+    expect(await screen.findByRole("button", { name: "文本" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -2337,7 +2470,15 @@ describe("ReaderPage", () => {
       "本机离线副本和未同步批注仍保留，恢复后可继续同步",
     );
     toggleChrome();
-    expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑" })).toHaveAttribute(
+      "data-state",
+      "trashed",
+    );
+    expect(screen.getByRole("button", { name: "编辑" })).toBeDisabled();
+    expect(screen.getByText("乐谱在回收站中，恢复后可编辑")).toHaveAttribute(
+      "role",
+      "status",
+    );
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.getByRole("button", { name: "立即同步" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "下载离线副本" })).toBeDisabled();

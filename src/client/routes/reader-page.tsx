@@ -98,6 +98,11 @@ import {
 
 type ReaderPanel = "layers" | "pages";
 
+type ReaderLayerPreparation = {
+  scopeKey: string;
+  status: "preparing" | "ready" | "failed" | "read-only";
+};
+
 const ReaderEditingControls = lazy(() =>
   import("../reader/reader-editing-controls").then((module) => ({
     default: module.ReaderEditingControls,
@@ -169,6 +174,9 @@ export default function ReaderPage() {
   const [chromeVisible, setChromeVisible] = useState(false);
   const [readerPanel, setReaderPanel] = useState<ReaderPanel | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [layerPreparation, setLayerPreparation] =
+    useState<ReaderLayerPreparation | null>(null);
+  const [layerPreparationAttempt, setLayerPreparationAttempt] = useState(0);
   const [editingOrigin, setEditingOrigin] = useState<{
     layout: ReaderLayout;
     page: number;
@@ -280,6 +288,13 @@ export default function ReaderPage() {
     { scopeKey: null, count: 0 },
   );
   const layers = layerQuery.scopeKey === workspace?.scopeKey ? layerQuery.entries : [];
+  const editAvailability = cloudState === "trashed"
+    ? "trashed"
+    : layers.some((layer) => layer.canEdit)
+      ? "ready"
+      : !workspace || layerPreparation?.scopeKey !== workspace.scopeKey
+        ? "preparing"
+        : layerPreparation.status;
   const annotations =
     annotationQuery.scopeKey === workspace?.scopeKey ? annotationQuery.entries : [];
   const pendingCount =
@@ -537,6 +552,7 @@ export default function ReaderPage() {
     if (cloudState === "trashed") return;
     let active = true;
     void (async () => {
+      let preparedLayers: AnnotationLayerSummary[];
       try {
         const layerResponse = await fetch(
           `/api/choirs/${choirId}/scores/${scoreId}/layers`,
@@ -557,6 +573,21 @@ export default function ReaderPage() {
               subscribed: previousById.get(layer.id)?.subscribed ?? layer.subscribed,
             }));
         await cacheAnnotationLayers(workspace, layersToCache);
+        preparedLayers = body.layers;
+        if (active) {
+          setLayerPreparation({
+            scopeKey: workspace.scopeKey,
+            status: preparedLayers.some((layer) => layer.canEdit) ? "ready" : "read-only",
+          });
+        }
+      } catch {
+        if (active) {
+          setLayerPreparation({ scopeKey: workspace.scopeKey, status: "failed" });
+          setSyncOutcome("none");
+        }
+        return;
+      }
+      try {
         await syncAnnotations(workspace, { pull: true });
         if (active) setSyncOutcome("synced");
       } catch {
@@ -566,7 +597,14 @@ export default function ReaderPage() {
     return () => {
       active = false;
     };
-  }, [choirId, cloudState, scoreId, session.data?.user.id, workspace]);
+  }, [
+    choirId,
+    cloudState,
+    layerPreparationAttempt,
+    scoreId,
+    session.data?.user.id,
+    workspace,
+  ]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -892,6 +930,21 @@ export default function ReaderPage() {
     setSyncOutcome("local-draft");
   };
 
+  const requestEditing = () => {
+    if (layers.some((layer) => layer.canEdit)) {
+      beginEditing();
+      return;
+    }
+    if (editAvailability === "failed") {
+      if (workspace) {
+        setLayerPreparation({ scopeKey: workspace.scopeKey, status: "preparing" });
+      }
+      setLayerPreparationAttempt((attempt) => attempt + 1);
+      return;
+    }
+    if (editAvailability === "ready") beginEditing();
+  };
+
   const finishEditing = async () => {
     if (!workspace) return;
     setEditing(false);
@@ -1107,45 +1160,68 @@ export default function ReaderPage() {
             <ArrowLeft aria-hidden="true" size={22} />
           </Link>
           <strong className="reader-chrome__title">{readerTitle}</strong>
-          <div className="reader-chrome__actions">
+          <div className="reader-chrome__actions-stack">
+            <div className="reader-chrome__actions">
+              <Button
+                aria-describedby={editAvailability === "ready" ? undefined : "reader-edit-status"}
+                aria-label="编辑"
+                className="reader-icon-button"
+                data-state={editAvailability}
+                aria-pressed={editing}
+                isDisabled={
+                  editAvailability === "preparing" ||
+                  editAvailability === "read-only" ||
+                  editAvailability === "trashed" ||
+                  (editing && annotationInteraction === "composing-text")
+                }
+                onPress={() => editing ? void finishEditing() : requestEditing()}
+              >
+                <Pencil aria-hidden="true" size={21} />
+              </Button>
+              <Button
+                aria-label="图层"
+                aria-expanded={readerPanel === "layers"}
+                className="reader-icon-button"
+                isDisabled={editing}
+                onPress={() => openReaderPanel("layers")}
+              >
+                <Layers aria-hidden="true" size={21} />
+              </Button>
+              <Button
+                aria-label="更多"
+                aria-expanded={moreOpen}
+                className="reader-icon-button"
+                isDisabled={editing}
+                onPress={() => setMoreOpen((open) => !open)}
+              >
+                <Ellipsis aria-hidden="true" size={23} />
+              </Button>
+            </div>
             <Button
               aria-label="页面位置"
               aria-expanded={readerPanel === "pages"}
-              className="reader-page-button"
+              className="reader-page-indicator"
               isDisabled={editing}
               onPress={() => openReaderPanel("pages")}
             >
               {currentPage} / {document.numPages}
             </Button>
-            <Button
-              aria-label="图层"
-              aria-expanded={readerPanel === "layers"}
-              className="reader-icon-button"
-              isDisabled={editing}
-              onPress={() => openReaderPanel("layers")}
-            >
-              <Layers aria-hidden="true" size={21} />
-            </Button>
-            {cloudState !== "trashed" && layers.some((layer) => layer.canEdit) ? (
-              <Button
-                aria-label="编辑"
-                aria-pressed={editing}
-                className="reader-icon-button"
-                isDisabled={editing && annotationInteraction === "composing-text"}
-                onPress={() => editing ? void finishEditing() : beginEditing()}
+            {editAvailability !== "ready" ? (
+              <p
+                className="reader-edit-status"
+                data-state={editAvailability}
+                id="reader-edit-status"
+                role="status"
               >
-                <Pencil aria-hidden="true" size={21} />
-              </Button>
+                {editAvailability === "preparing"
+                  ? "正在准备编辑…"
+                  : editAvailability === "failed"
+                    ? "编辑准备失败，点按铅笔重试"
+                    : editAvailability === "read-only"
+                      ? "此乐谱为只读状态"
+                      : "乐谱在回收站中，恢复后可编辑"}
+              </p>
             ) : null}
-            <Button
-              aria-label="更多"
-              aria-expanded={moreOpen}
-              className="reader-icon-button"
-              isDisabled={editing}
-              onPress={() => setMoreOpen((open) => !open)}
-            >
-              <Ellipsis aria-hidden="true" size={23} />
-            </Button>
           </div>
           {moreOpen ? (
             <aside className="reader-more-menu" aria-label="更多阅读选项">
