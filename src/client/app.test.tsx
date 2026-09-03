@@ -1351,7 +1351,10 @@ describe("AppRoutes", () => {
         permissions: { canManage: false },
       },
     });
-    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new TypeError("offline"))),
+    );
 
     render(
       <MemoryRouter initialEntries={["/choirs/choir-1"]}>
@@ -1361,6 +1364,9 @@ describe("AppRoutes", () => {
 
     expect(await screen.findByRole("heading", { name: "离线返回云盘" })).toBeInTheDocument();
     expect(screen.queryByText("正在打开云盘…")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。"),
+    ).toBeInTheDocument();
   });
 
   it("discards a cached library when revalidation says the drive no longer exists", async () => {

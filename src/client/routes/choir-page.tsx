@@ -160,11 +160,13 @@ export default function ChoirPage() {
     if (!cacheOwner) return;
     let active = true;
     let networkSettled = false;
+    let cacheRestored = false;
     const cached = readDriveLibrary(cacheOwner, choirId);
     const cachedSummary = cached?.choir ?? readDriveSummary(cacheOwner, choirId);
     const query = cached?.search ?? "";
-    const restoreFrame = window.requestAnimationFrame(() => {
-      if (!active || networkSettled) return;
+    const restoreCache = () => {
+      if (!active || cacheRestored) return;
+      cacheRestored = true;
       if (!cached) {
         setAccess({ kind: "loading", choir: cachedSummary ?? undefined });
         return;
@@ -173,11 +175,16 @@ export default function ChoirPage() {
       setSearch(cached.search);
       pendingScrollRestore.current = cached.scrollTop;
       setAccess({ kind: "opened", choir: cached.choir, result: cached.result });
+    };
+    const restoreFrame = window.requestAnimationFrame(() => {
+      if (networkSettled) return;
+      restoreCache();
     });
     void openChoir(choirId, Boolean(userId), query).then((opened) => {
       networkSettled = true;
       if (!active) return;
       if (opened.kind === "failed" && cached) {
+        restoreCache();
         setSearchMessage("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。");
         return;
       }
