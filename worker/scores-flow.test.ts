@@ -240,6 +240,90 @@ describe("PDF file library and delivery", () => {
     expect(twoUpload.id).not.toBe(tenUpload.id);
   });
 
+  it("keeps member priority while enforcing guest and membership revocation", async () => {
+    const { adminCookie, choirId, joinCode } = await createAdminChoir();
+    const guestCookie = await createGuestCookie(joinCode!);
+    const preparedSql: string[] = [];
+    const observedDatabase = new Proxy(env.DB, {
+      get(target, property) {
+        if (property === "prepare") {
+          return (sql: string) => {
+            preparedSql.push(sql);
+            return target.prepare(sql);
+          };
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const observedEnvironment = new Proxy(env, {
+      get(target, property) {
+        return property === "DB"
+          ? observedDatabase
+          : Reflect.get(target, property, target);
+      },
+    });
+    const measuredGuestBootstrap = await callWorker(
+      `/api/choirs/${choirId}/bootstrap`,
+      { headers: { cookie: guestCookie } },
+      observedEnvironment,
+    );
+    expect(measuredGuestBootstrap.status).toBe(200);
+    expect(preparedSql).toHaveLength(1);
+    expect(preparedSql[0]).toMatch(/LEFT JOIN memberships[\s\S]*LEFT JOIN scores/);
+    expect(measuredGuestBootstrap.headers.get("Server-Timing")).toMatch(
+      /auth;dur=.*access;dur=.*d1;dur=.*total;dur=/,
+    );
+    const nonmember = await registerWithPassword({
+      callWorker,
+      email: "score-nonmember@example.test",
+      latestOtp: () => deliveredOtp,
+    });
+
+    const memberPriority = await callWorker(`/api/choirs/${choirId}/bootstrap`, {
+      headers: { cookie: `${adminCookie}; ${guestCookie}` },
+    });
+    expect(await memberPriority.json()).toMatchObject({
+      permissions: { canManage: true, access: "membership" },
+    });
+
+    const guestFallback = await callWorker(`/api/choirs/${choirId}/bootstrap`, {
+      headers: { cookie: `${nonmember.cookie}; ${guestCookie}` },
+    });
+    expect(await guestFallback.json()).toMatchObject({
+      permissions: { canManage: false, access: "guest" },
+    });
+
+    const rotation = await callWorker(`/api/choirs/${choirId}/join-code/rotate`, {
+      method: "POST",
+      headers: { cookie: adminCookie },
+    });
+    const rotated = (await rotation.json()) as { joinCode: string };
+    expect(rotation.status).toBe(200);
+    expect(
+      (await callWorker(`/api/choirs/${choirId}/bootstrap`, {
+        headers: { cookie: guestCookie },
+      })).status,
+    ).toBe(403);
+
+    const currentGuestCookie = await createGuestCookie(rotated.joinCode);
+    await env.DB.prepare(
+      "UPDATE memberships SET status = 'removed' WHERE choir_id = ? AND role = 'admin'",
+    ).bind(choirId).run();
+    expect(
+      (await callWorker(`/api/choirs/${choirId}/bootstrap`, {
+        headers: { cookie: adminCookie },
+      })).status,
+    ).toBe(403);
+    const removedMemberGuestFallback = await callWorker(
+      `/api/choirs/${choirId}/bootstrap`,
+      { headers: { cookie: `${adminCookie}; ${currentGuestCookie}` } },
+    );
+    expect(await removedMemberGuestFallback.json()).toMatchObject({
+      permissions: { canManage: false, access: "guest" },
+    });
+  });
+
   it("moves files to trash, resolves restore conflicts, and automatically purges expired data", async () => {
     const { adminCookie, choirId, joinCode } = await createAdminChoir();
     const guestCookie = await createGuestCookie(joinCode!);
@@ -496,11 +580,15 @@ async function clearBucket() {
   } while (cursor);
 }
 
-async function callWorker(path: string, init: RequestInit = {}) {
+async function callWorker(
+  path: string,
+  init: RequestInit = {},
+  runtimeEnvironment: typeof env = env,
+) {
   const context = createExecutionContext();
   const response = await worker.fetch(
     new Request(`https://same-page.test${path}`, init),
-    env,
+    runtimeEnvironment,
     context,
   );
   await waitOnExecutionContext(context);
