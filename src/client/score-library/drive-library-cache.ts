@@ -12,13 +12,32 @@ export interface DriveLibrarySnapshot {
   updatedAt: number;
 }
 
+export interface DriveLibraryCacheDiagnostic {
+  event:
+    | "identity-clear"
+    | "invalidate"
+    | "owner-switch"
+    | "prepare-return"
+    | "read-hit"
+    | "read-miss"
+    | "remember-library";
+  ownerKind: "guest" | "user" | null;
+  libraryCount: number;
+  hasReturningDrive: boolean;
+}
+
 const MAX_DRIVES = 6;
+const MAX_DIAGNOSTICS = 30;
 const libraries = new Map<string, DriveLibrarySnapshot>();
 const summaries = new Map<string, ChoirSummary>();
+const diagnostics: DriveLibraryCacheDiagnostic[] = [];
 let activeOwner: DriveCacheOwnerKey | null = null;
 let returningDrive: { ownerKey: DriveCacheOwnerKey; choirId: string } | null = null;
 
-onReaderIdentityChange(clearDriveLibraryCache);
+onReaderIdentityChange(() => {
+  recordDiagnostic("identity-clear");
+  clearDriveLibraryCache();
+});
 
 export function driveCacheOwnerKey(
   authenticatedUserId: string | null,
@@ -35,9 +54,13 @@ export function readDriveLibrary(
 ): DriveLibrarySnapshot | null {
   activateOwner(ownerKey);
   const cached = libraries.get(choirId);
-  if (!cached) return null;
+  if (!cached) {
+    recordDiagnostic("read-miss");
+    return null;
+  }
   libraries.delete(choirId);
   libraries.set(choirId, cached);
+  recordDiagnostic("read-hit");
   return { ...cached };
 }
 
@@ -57,6 +80,7 @@ export function rememberDriveLibrary(
   });
   rememberSummary(choirId, library.choir);
   evictOverflow();
+  recordDiagnostic("remember-library");
 }
 
 export function readDriveSummary(
@@ -95,6 +119,7 @@ export function invalidateDriveLibrary(
   libraries.delete(choirId);
   summaries.delete(choirId);
   if (returningDrive?.choirId === choirId) returningDrive = null;
+  recordDiagnostic("invalidate");
 }
 
 export function prepareDriveLibraryReturn(
@@ -103,6 +128,7 @@ export function prepareDriveLibraryReturn(
 ) {
   if (activeOwner !== ownerKey || !libraries.has(choirId)) return;
   returningDrive = { ownerKey, choirId };
+  recordDiagnostic("prepare-return");
 }
 
 export function readReturningDriveCacheOwner(choirId: string) {
@@ -118,12 +144,27 @@ export function clearDriveLibraryCache() {
   returningDrive = null;
 }
 
+export function getDriveLibraryCacheDiagnostics() {
+  return diagnostics.map((diagnostic) => ({ ...diagnostic }));
+}
+
 function activateOwner(ownerKey: DriveCacheOwnerKey) {
   if (activeOwner === ownerKey) return;
   libraries.clear();
   summaries.clear();
   returningDrive = null;
   activeOwner = ownerKey;
+  recordDiagnostic("owner-switch");
+}
+
+function recordDiagnostic(event: DriveLibraryCacheDiagnostic["event"]) {
+  diagnostics.push({
+    event,
+    ownerKind: activeOwner?.startsWith("user:") ? "user" : activeOwner ? "guest" : null,
+    libraryCount: libraries.size,
+    hasReturningDrive: returningDrive !== null,
+  });
+  if (diagnostics.length > MAX_DIAGNOSTICS) diagnostics.shift();
 }
 
 function evictOverflow() {

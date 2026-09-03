@@ -196,6 +196,12 @@ async function openScore(page, index = 0) {
 }
 
 async function returnToCachedDrive(page) {
+  await page.evaluate(() => {
+    sessionStorage.removeItem("same-page:return-navigation");
+    window.addEventListener("beforeunload", () => {
+      sessionStorage.setItem("same-page:return-navigation", "full-navigation");
+    }, { once: true });
+  });
   const completedExits = await page.evaluate(() =>
     window.__SAME_PAGE_DIAGNOSTICS__?.loadingPerformance().records.filter(
       (record) => record.name === "exit-score:duration",
@@ -205,16 +211,25 @@ async function returnToCachedDrive(page) {
   try {
     await page.locator(".file-list").waitFor({ state: "visible" });
   } catch (error) {
-    const state = await page.evaluate(() => {
+    const failure = await page.evaluate(() => {
       const text = document.body.innerText;
-      if (text.includes("正在打开云盘")) return "route-loading";
-      if (text.includes("正在加载乐谱")) return "library-loading";
-      if (text.includes("暂时无法打开云盘")) return "drive-failed";
-      if (text.includes("无法打开这个云盘")) return "drive-denied";
-      if (text.includes("这个云盘不存在")) return "drive-not-found";
-      return "unknown";
+      const navigation = sessionStorage.getItem("same-page:return-navigation")
+        ?? "client-route";
+      const state = text.includes("正在打开云盘") ? `route-loading:${navigation}`
+        : text.includes("正在加载乐谱") ? `library-loading:${navigation}`
+          : text.includes("暂时无法打开云盘") ? `drive-failed:${navigation}`
+            : text.includes("无法打开这个云盘") ? `drive-denied:${navigation}`
+              : text.includes("这个云盘不存在") ? `drive-not-found:${navigation}`
+                : `unknown:${navigation}`;
+      return {
+        state,
+        cache: window.__SAME_PAGE_DIAGNOSTICS__?.driveLibraryCache?.() ?? [],
+      };
     });
-    throw new Error(`cached drive did not become visible: ${state}`, { cause: error });
+    throw new Error(
+      `cached drive did not become visible: ${failure.state}; cache=${JSON.stringify(failure.cache)}`,
+      { cause: error },
+    );
   }
   await page.waitForFunction((previousCount) =>
     window.__SAME_PAGE_DIAGNOSTICS__?.loadingPerformance().records.filter(

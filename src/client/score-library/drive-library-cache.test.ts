@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearDriveLibraryCache,
   driveCacheOwnerKey,
+  getDriveLibraryCacheDiagnostics,
   invalidateDriveLibrary,
   prepareDriveLibraryReturn,
   readDriveSummary,
@@ -84,5 +85,28 @@ describe("drive library cache", () => {
     expect(readReturningDriveCacheOwner("drive-2")).toBeNull();
     clearDriveLibraryCache();
     expect(readReturningDriveCacheOwner("drive-1")).toBeNull();
+  });
+
+  it("exposes only sanitized cache lifecycle diagnostics", () => {
+    const owner = driveCacheOwnerKey("private-user-id", "private-drive-id");
+    rememberDriveLibrary(owner, "private-drive-id", {
+      choir: {
+        id: "private-drive-id",
+        name: "Private drive name",
+        guestAdmissionMode: "invite",
+      },
+      result,
+    });
+    prepareDriveLibraryReturn(owner, "private-drive-id");
+    readDriveLibrary(owner, "private-drive-id");
+
+    const diagnostics = getDriveLibraryCacheDiagnostics();
+    expect(diagnostics.at(-1)).toMatchObject({
+      event: "read-hit",
+      ownerKind: "user",
+      libraryCount: 1,
+      hasReturningDrive: true,
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain("private");
   });
 });
