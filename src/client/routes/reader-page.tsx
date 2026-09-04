@@ -1,7 +1,8 @@
+import "../reader/reader-ux.css";
 import { DiagnosticResponseError, parseDiagnosticResponse, diagnosticFetch, pdfFailureCategory, recordFailure } from "../diagnostics/diagnostics";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
-  ArrowLeft, Download, Ellipsis, Layers, Maximize2, Minus, Pencil, Plus,
+  ArrowLeft, Download, Ellipsis, Layers, Maximize2, Minus, Pencil, Plus, BookOpen,
   RefreshCw, Rows3,
 } from "lucide-react";
 import {
@@ -12,7 +13,7 @@ import {
   Suspense,
 } from "react";
 import {
-  Button,
+  Button, Dialog, Modal, ModalOverlay,
 } from "react-aria-components";
 import { Link, useParams } from "react-router-dom";
 
@@ -40,8 +41,6 @@ import {
 import { requestOutboxRecovery } from "../annotations/outbox-recovery";
 import { syncAnnotations } from "../annotations/sync";
 import {
-  captureOfflineAnnotationSnapshot,
-  ensureOfflineAppShell,
   restoreOfflineAnnotationSnapshot,
 } from "../annotations/offline-snapshot";
 import {
@@ -55,17 +54,18 @@ import {
   startLoadingJourney,
 } from "../performance/loading-performance";
 import {
-  activateVerifiedOfflineScore,
-  findActiveOfflineScore,
   localDatabase,
   type OfflineScoreRecord,
 } from "../platform/local-database";
 import {
   isLocalWorkspaceActive,
-  localWorkspaceRecordKey,
   resolveLocalWorkspace,
   type LocalWorkspace,
 } from "../platform/local-workspace";
+import { findVerifiedOfflineScore, hasCompleteOfflineLayers } from "../offline/offline-score-verification";
+import { offlineScoreLabel, useOfflineScore } from "../offline/use-offline-score";
+import { driveCacheOwnerKey } from "../score-library/drive-library-cache";
+import { recordScoreOpened } from "../score-library/library-view-state";
 import type { PDFDocumentProxy } from "../reader/pdf-document";
 import {
   acquireReaderDocument,
@@ -148,7 +148,7 @@ export default function ReaderPage() {
     false,
   );
   const [score, setScore] = useState<ScoreSummary | null>(null);
-  const [offline, setOffline] = useState<OfflineScoreRecord | null>(null);
+  const [loadedOffline, setOffline] = useState<OfflineScoreRecord | null>(null);
   const [localLookupState, setLocalLookupState] = useState<{
     scopeKey: string;
     status: "pending" | "settled";
@@ -160,8 +160,14 @@ export default function ReaderPage() {
     source: ReaderPdfSource;
   } | null>(null);
   const [zoom, setZoom] = useState(1);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
+  const downloadScope = `${session.data?.user.id ?? "guest"}:${choirId}:${scoreId}`;
+  const [downloadState, setDownloadState] = useState<{ scope: string; downloading: boolean; message: string | null } | null>(null);
+  const downloading = downloadState?.scope === downloadScope && downloadState.downloading;
+  const downloadMessage = downloadState?.scope === downloadScope ? downloadState.message : null;
+  const setDownloading = (value: boolean) => setDownloadState((current) => ({ scope: downloadScope, downloading: value, message: current?.scope === downloadScope ? current.message : null }));
+  const setDownloadMessage = (message: string | null) => setDownloadState((current) => ({ scope: downloadScope, message, downloading: current?.scope === downloadScope ? current.downloading : false }));
+  const downloadInFlight = useRef<string | null>(null);
+  useEffect(() => () => { downloadInFlight.current = null; }, [downloadScope]);
   const [editing, setEditing] = useState(false);
   const [annotationInteraction, setAnnotationInteraction] =
     useState<AnnotationOverlayInteraction>("idle");
@@ -225,11 +231,21 @@ export default function ReaderPage() {
 
   const workspace =
     resolvedWorkspace &&
+    (!session.data?.user.id || resolvedWorkspace.ownerKey === `user:${session.data.user.id}`) &&
     workspaceIsActive &&
     resolvedWorkspace.choirId === choirId &&
     resolvedWorkspace.scoreId === scoreId
       ? resolvedWorkspace
       : null;
+  const offlineStatus = useOfflineScore(workspace);
+  const offline = offlineStatus && offlineStatus.scopeKey === workspace?.scopeKey
+    ? offlineStatus.record
+    : loadedOffline?.scopeKey === workspace?.scopeKey ? loadedOffline : null;
+  useEffect(() => {
+    if (document && workspace && documentScopeKey === workspace.scopeKey) {
+      recordScoreOpened(driveCacheOwnerKey(workspace.ownerKey.startsWith("user:") ? workspace.ownerKey.slice(5) : null, choirId), choirId, scoreId);
+    }
+  }, [document, documentScopeKey, workspace, choirId, scoreId, session.data?.user.id]);
   const workspaceScopeKey = workspace?.scopeKey ?? null;
   const layerQuery = useLiveQuery(
     async () => ({
@@ -368,11 +384,7 @@ export default function ReaderPage() {
       endAnnotationEditSession();
       setLoadState({ kind: "loading", scopeKey: workspace.scopeKey });
       setCloudState("checking");
-      const localPromise = findActiveOfflineScore(
-        workspace.ownerKey,
-        choirId,
-        scoreId,
-      ).catch(() => undefined);
+      const localPromise = findVerifiedOfflineScore(workspace).catch(() => undefined);
       const cloudLookupId = ++cloudLookupSequence.current.next;
       const lookupPromise = lookupScoreCloudState(choirId, scoreId);
       const localMatchesKnownCloudVersion = (local: OfflineScoreRecord) => {
@@ -562,6 +574,12 @@ export default function ReaderPage() {
         if (!layerResponse.ok) throw new Error("layers unavailable");
         layersReceived = true;
         const body = await parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema);
+        if (workspace.ownerKey.startsWith("user:") && workspace.ownerKey !== `user:${session.data?.user.id ?? ""}`) {
+          throw new Error("layer_refresh_requires_matching_identity");
+        }
+        if (!hasCompleteOfflineLayers(body.layers, workspace.ownerKey)) {
+          throw new Error("layer_refresh_incomplete");
+        }
         const previousLayers = await localDatabase.annotationLayers
           .where("scopeKey")
           .equals(workspace.scopeKey)
@@ -805,6 +823,7 @@ export default function ReaderPage() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         layout !== "page" ||
+        readerPanel !== null || moreOpen ||
         editing ||
         event.metaKey ||
         event.ctrlKey ||
@@ -826,71 +845,33 @@ export default function ReaderPage() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [editing, layout, requestPage]);
+  }, [editing, layout, moreOpen, readerPanel, requestPage]);
 
   const downloadOffline = async () => {
-    if (!score || !workspace) return;
+    if (!score || !workspace || downloadInFlight.current === workspace.scopeKey) return;
+    const target = workspace;
+    downloadInFlight.current = target.scopeKey;
     setDownloading(true);
     setDownloadMessage(null);
     try {
-      const response = await diagnosticFetch(
-        `/api/choirs/${choirId}/scores/${scoreId}/versions/${score.currentVersion.id}/pdf`,
-      );
-      if (!response.ok) throw new Error("Download failed");
-      const data = await response.arrayBuffer();
-      const actualHash = await sha256Hex(data);
-      if (actualHash !== score.currentVersion.sha256) {
-        throw new Error("Checksum mismatch");
-      }
-      await ensureOfflineAppShell();
-      const layerResponse = await diagnosticFetch(
-        `/api/choirs/${choirId}/scores/${scoreId}/layers`,
-      );
-      if (!layerResponse.ok) throw new Error("Layer download failed");
-      const layerBody = await parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema);
-      const currentLayers = await localDatabase.annotationLayers
-        .where("scopeKey")
-        .equals(workspace.scopeKey)
-        .toArray();
-      const currentById = new Map(currentLayers.map((layer) => [layer.id, layer]));
-      await cacheAnnotationLayers(
-        workspace,
-        session.data?.user.id
-          ? layerBody.layers
-          : layerBody.layers.map((layer) => ({
-              ...layer,
-              subscribed: currentById.get(layer.id)?.subscribed ?? layer.subscribed,
-            })),
-      );
-      await syncAnnotations(workspace, { pull: true });
-      const annotationSnapshot = await captureOfflineAnnotationSnapshot(workspace);
-      const record = {
-        key: localWorkspaceRecordKey(workspace, score.currentVersion.id),
-        ...workspace,
-        versionId: score.currentVersion.id,
-        fileName: score.fileName,
-        sha256: score.currentVersion.sha256,
-        pageCount: score.currentVersion.pageCount,
-        blob: new Blob([data], { type: "application/pdf" }),
-        annotationSnapshot,
-      };
-      await activateVerifiedOfflineScore(record);
-      const activeRecord = await findActiveOfflineScore(workspace.ownerKey, choirId, scoreId);
+      const { prepareOfflineScore } = await import("../offline/offline-score");
+      const activeRecord = await prepareOfflineScore(target, score);
+      if (downloadInFlight.current !== target.scopeKey || !(await isLocalWorkspaceActive(target))) return;
       setOffline(activeRecord ?? null);
       if (source?.kind === "offline" && activeRecord) {
         const offlineData = await activeRecord.blob.arrayBuffer();
         setSource((current) => replaceSourceForScope(current, {
-          scopeKey: workspace.scopeKey,
-          data: offlineData,
-          kind: "offline",
-          versionId: activeRecord.versionId,
+          scopeKey: target.scopeKey, data: offlineData, kind: "offline", versionId: activeRecord.versionId,
         }));
       }
       setDownloadMessage("离线副本已完整校验，可以离线打开。");
     } catch {
-      setDownloadMessage("离线下载未完成，现有离线版本没有切换。");
+      if (downloadInFlight.current === target.scopeKey) setDownloadMessage("离线下载未完成，现有离线版本没有切换。请重试。");
     } finally {
-      setDownloading(false);
+      if (downloadInFlight.current === target.scopeKey) {
+        downloadInFlight.current = null;
+        setDownloading(false);
+      }
     }
   };
 
@@ -1165,12 +1146,13 @@ export default function ReaderPage() {
           >
             <ArrowLeft aria-hidden="true" size={22} />
           </Link>
-          <strong className="reader-chrome__title">{readerTitle}</strong>
+          <strong className="reader-chrome__title">{readerTitle}{editing ? <span className="reader-editing-hint">编辑中 · 点铅笔完成</span> : null}</strong>
           <div className="reader-chrome__actions-stack">
             <div className="reader-chrome__actions">
               <Button
                 aria-describedby={editAvailability === "ready" ? undefined : "reader-edit-status"}
                 aria-label="编辑"
+                aria-description={editing ? "再次点按退出编辑，恢复阅读；编辑期间锁定当前页" : "进入当前页编辑"}
                 className="reader-icon-button"
                 data-state={editAvailability}
                 aria-pressed={editing}
@@ -1210,7 +1192,8 @@ export default function ReaderPage() {
               isDisabled={editing}
               onPress={() => openReaderPanel("pages")}
             >
-              {currentPage} / {document.numPages}
+              <span>{currentPage} / {document.numPages}</span>
+              {editing ? <span className="reader-edit-finish-hint">点铅笔完成</span> : null}
             </Button>
             {editAvailability !== "ready" ? (
               <p
@@ -1236,7 +1219,7 @@ export default function ReaderPage() {
                   aria-pressed={layout === "page"}
                   onPress={() => selectLayout("page")}
                 >
-                  <Maximize2 aria-hidden="true" size={18} />
+                  <BookOpen aria-hidden="true" size={18} />
                   <span>翻页</span>
                 </Button>
                 <Button
@@ -1266,12 +1249,15 @@ export default function ReaderPage() {
                   <Plus aria-hidden="true" size={18} />
                 </Button>
               </div>
+              <p className="reader-more-menu__status" role="status">
+                {offlineScoreLabel(offline, score.currentVersion.id, offlineStatus?.invalid)}
+              </p>
               <Button
                 isDisabled={downloading || cloudState === "trashed"}
                 onPress={() => void downloadOffline()}
               >
                 <Download aria-hidden="true" size={18} />
-                {downloading ? "正在校验…" : "下载离线副本"}
+                {downloading ? "正在下载并校验…" : downloadMessage?.includes("未完成") ? "重试下载离线副本" : hasNewOfflineVersion ? "下载新版离线副本" : "下载离线副本"}
               </Button>
               <Button isDisabled={syncing || cloudState === "trashed"} onPress={() => void manualSync()}>
                 <RefreshCw aria-hidden="true" size={18} />
@@ -1330,31 +1316,27 @@ export default function ReaderPage() {
         </aside>
       ) : null}
       {readerPanel === "layers" ? (
-        <div
-          className="reader-panel-backdrop"
-          role="presentation"
-          onClick={() => setReaderPanel(null)}
-        >
-          <aside
-            className="reader-panel"
-            aria-label="图层"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <header className="reader-panel__header">
-              <strong>图层</strong>
-              <Button aria-label="关闭页面与图层" onPress={() => setReaderPanel(null)}>
-                关闭
-              </Button>
-            </header>
-            <Suspense fallback={<p role="status">正在准备图层…</p>}>
-              <ReaderLayerPanel
-                workspace={workspace}
-                layers={layers}
-                signedIn={Boolean(session.data?.user.id)}
-              />
-            </Suspense>
-          </aside>
-        </div>
+        <ModalOverlay className="reader-panel-backdrop" isOpen isDismissable
+          onOpenChange={(open) => { if (!open) setReaderPanel(null); }}>
+          <Modal className="reader-panel reader-layers-dialog">
+            <Dialog aria-label="图层" className="reader-layers-content">
+              <header className="reader-panel__header">
+                <strong>图层</strong>
+                <Button aria-label="关闭页面与图层" onPress={() => setReaderPanel(null)}>
+                  关闭
+                </Button>
+              </header>
+              <Suspense fallback={<p role="status">正在准备图层…</p>}>
+                <ReaderLayerPanel
+                  key={workspace.scopeKey}
+                  workspace={workspace}
+                  layers={layers}
+                  signedIn={Boolean(session.data?.user.id)}
+                />
+              </Suspense>
+            </Dialog>
+          </Modal>
+        </ModalOverlay>
       ) : null}
 
       {conflicts.length > 0 ? (
@@ -1582,12 +1564,6 @@ function replaceSourceForScope(
   return next;
 }
 
-async function sha256Hex(data: ArrayBuffer) {
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
-}
 
 function clamp(value: number, minimum: number, maximum: number) {
   if (!Number.isFinite(value)) return minimum;

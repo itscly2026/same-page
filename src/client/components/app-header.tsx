@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import "../settings/settings-ux.css";
 
 export function AppHeader({ actions }: { actions?: ReactNode }) {
   return (

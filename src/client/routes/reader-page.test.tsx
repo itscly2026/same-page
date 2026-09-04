@@ -1,3 +1,4 @@
+import type { AnnotationLayerSummary } from "../../shared/annotations";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
   createMemoryRouter,
@@ -10,7 +11,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   activateVerifiedOfflineScore,
-  findActiveOfflineScore,
   localDatabase,
 } from "../platform/local-database";
 import {
@@ -27,8 +27,11 @@ import {
   rememberReaderScore,
 } from "../reader/reader-score-cache";
 import { readerPdfSourceIsCurrent } from "../reader/reader-source-identity";
+import { findVerifiedOfflineScore } from "../offline/offline-score-verification";
 import ReaderPage from "./reader-page";
 import { clearDiagnostics, exportDiagnostics } from "../diagnostics/diagnostics";
+
+const readerAuthState = vi.hoisted(() => ({ signedIn: true }));
 
 const virtualTestState = vi.hoisted(() => ({
   itemSize: 100,
@@ -57,6 +60,28 @@ const scoreSummary = {
   },
 };
 
+// API fixtures use the complete current layer model; each case overrides only
+// the subscriptions, identities and permissions relevant to its interaction.
+function completeReaderLayers(overrides: AnnotationLayerSummary[] = []): AnnotationLayerSummary[] {
+  const shared = (["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
+    id: `00000000-0000-4000-8000-00000000000${index}`,
+    kind: "shared", defaultSlot: slot,
+    name: ({ E: "Ensemble", S: "Soprano", A: "Alto", T: "Tenor", B: "Bass" })[slot],
+    sortOrder: index, subscribed: true, subscriptionSource: "product",
+    displayColor: "#a12652", colorSource: "product", adminDefaultColor: "#a12652",
+    driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: false,
+  }));
+  const personal: AnnotationLayerSummary = {
+    id: "00000000-0000-4000-8000-000000000006", kind: "personal", defaultSlot: null,
+    name: "Personal", sortOrder: 10000, subscribed: true, subscriptionSource: "personal",
+    displayColor: "#6750a4", colorSource: "product", adminDefaultColor: "#6750a4",
+    driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: false,
+  };
+  return [...shared, personal].map((layer) => overrides.find((override) =>
+    override.kind === layer.kind && override.defaultSlot === layer.defaultSlot,
+  ) ?? layer);
+}
+
 function activeBootstrapResponse() {
   return Response.json({
     state: "active",
@@ -83,7 +108,7 @@ vi.mock("@tanstack/react-virtual", () => ({
 
 vi.mock("../auth/auth-client", () => ({
   authClient: {
-    useSession: () => ({ data: null, isPending: false }),
+    useSession: () => ({ data: readerAuthState.signedIn ? { user: { id: "user-1" } } : null, isPending: false }),
   },
 }));
 
@@ -131,9 +156,20 @@ vi.mock("../platform/local-database", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../platform/local-database")>();
   return {
     ...actual,
-    findActiveOfflineScore: vi.fn().mockResolvedValue(null),
     activateVerifiedOfflineScore: vi.fn(),
   };
+});
+
+vi.mock("../offline/offline-score-verification", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../offline/offline-score-verification")>();
+  return { ...actual, findVerifiedOfflineScore: vi.fn().mockResolvedValue(null) };
+});
+
+// These reader cases provide verified copies through the lookup boundary above.
+// Reactive storage verification is exercised with its own real IndexedDB fixtures.
+vi.mock("../offline/use-offline-score", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../offline/use-offline-score")>();
+  return { ...actual, useOfflineScore: () => undefined };
 });
 
 vi.mock("../annotations/sync", () => ({
@@ -212,6 +248,7 @@ describe("ReaderPage", () => {
       ?.getAttribute("data-page-number");
 
   beforeEach(async () => {
+    readerAuthState.signedIn = true;
     clearDiagnostics();
     clearReaderDocumentCache();
     clearReaderScoreCache();
@@ -252,7 +289,7 @@ describe("ReaderPage", () => {
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
           input.includes("/layers")
-            ? Response.json({ layers: [], permissions: { canManageLayers: false } })
+            ? Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } })
             : input.includes("/versions/")
             ? new Response(new Uint8Array([1, 2, 3]), {
                 headers: { "content-type": "application/pdf" },
@@ -279,7 +316,7 @@ describe("ReaderPage", () => {
   });
 
   it("reuses the library summary while the document and bootstrap are pending", async () => {
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     vi.mocked(loadPdfDocument).mockReturnValueOnce({
       promise: new Promise(() => {}),
       destroy: vi.fn().mockResolvedValue(undefined),
@@ -305,7 +342,7 @@ describe("ReaderPage", () => {
   });
 
   it("starts the cloud PDF without waiting for the offline lookup", async () => {
-    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+    vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
       new Promise(() => {}) as never,
     );
 
@@ -326,8 +363,8 @@ describe("ReaderPage", () => {
   });
 
   it("prefers a verified offline copy only when its immutable version matches", async () => {
-    rememberReaderScore("guest", scoreSummary);
-    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+    rememberReaderScore("user-1", scoreSummary);
+    vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "offline-1",
       ...localWorkspace,
       versionId: "version-1",
@@ -369,8 +406,8 @@ describe("ReaderPage", () => {
   });
 
   it("keeps a ready matching offline document when bootstrap arrives later", async () => {
-    rememberReaderScore("guest", scoreSummary);
-    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+    rememberReaderScore("user-1", scoreSummary);
+    vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "offline-delayed-bootstrap",
       ...localWorkspace,
       versionId: "version-1",
@@ -392,7 +429,7 @@ describe("ReaderPage", () => {
         input.endsWith("/bootstrap")
           ? delayedBootstrap
           : Promise.resolve(
-              Response.json({ layers: [], permissions: { canManageLayers: false } }),
+              Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
             ),
       ),
     );
@@ -493,7 +530,7 @@ describe("ReaderPage", () => {
           );
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -549,8 +586,8 @@ describe("ReaderPage", () => {
         createdAt: 2,
       },
     };
-    let releaseLocal!: (record: Awaited<ReturnType<typeof findActiveOfflineScore>>) => void;
-    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+    let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
+    vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
       new Promise((resolve) => {
         releaseLocal = resolve;
       }) as never,
@@ -571,7 +608,7 @@ describe("ReaderPage", () => {
           );
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -637,9 +674,9 @@ describe("ReaderPage", () => {
   it("replaces a ready cloud document with delayed offline data after permission denial", async () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    rememberReaderScore("guest", scoreSummary);
-    let releaseLocal!: (record: Awaited<ReturnType<typeof findActiveOfflineScore>>) => void;
-    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+    rememberReaderScore("user-1", scoreSummary);
+    let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
+    vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
       new Promise((resolve) => {
         releaseLocal = resolve;
       }) as never,
@@ -655,7 +692,7 @@ describe("ReaderPage", () => {
             : Promise.resolve(new Response(null, { status: 403 }));
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -698,9 +735,9 @@ describe("ReaderPage", () => {
   it("switches a ready cloud document to settled offline data after trashing", async () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    rememberReaderScore("guest", scoreSummary);
-    let releaseLocal!: (record: Awaited<ReturnType<typeof findActiveOfflineScore>>) => void;
-    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+    rememberReaderScore("user-1", scoreSummary);
+    let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
+    vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
       new Promise((resolve) => {
         releaseLocal = resolve;
       }) as never,
@@ -718,7 +755,7 @@ describe("ReaderPage", () => {
           );
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -762,9 +799,9 @@ describe("ReaderPage", () => {
   it("reacquires the same cloud version after a stale denial invalidates it", async () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    rememberReaderScore("guest", scoreSummary);
-    let releaseLocal!: (record: Awaited<ReturnType<typeof findActiveOfflineScore>>) => void;
-    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+    rememberReaderScore("user-1", scoreSummary);
+    let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
+    vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
       new Promise((resolve) => {
         releaseLocal = resolve;
       }) as never,
@@ -790,7 +827,7 @@ describe("ReaderPage", () => {
           return Promise.resolve(activeBootstrapResponse());
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -843,7 +880,7 @@ describe("ReaderPage", () => {
   it("clears a stale denial while a same-version reacquire is pending", async () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     let bootstrapCalls = 0;
     vi.stubGlobal(
       "fetch",
@@ -856,7 +893,7 @@ describe("ReaderPage", () => {
           return Promise.resolve(activeBootstrapResponse());
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -887,7 +924,7 @@ describe("ReaderPage", () => {
     } as never);
     fireEvent(window, new Event("online"));
     await waitFor(() => expect(bootstrapCalls).toBe(3));
-    expect(screen.getByLabelText("正在加载乐谱")).toBeInTheDocument();
+    expect(await screen.findByLabelText("正在加载乐谱")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
     await act(async () => rejectReacquire(new Error("PDF parse failed")));
@@ -900,7 +937,7 @@ describe("ReaderPage", () => {
   it("ignores an old same-version failure while its replacement is pending", async () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     let rejectOldLoad!: (error: Error) => void;
     const oldLoad = new Promise<never>((_resolve, reject) => {
       rejectOldLoad = reject;
@@ -939,7 +976,7 @@ describe("ReaderPage", () => {
           return Promise.resolve(activeBootstrapResponse());
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -997,8 +1034,8 @@ describe("ReaderPage", () => {
         createdAt: 2,
       },
     };
-    let releaseLocal!: (record: Awaited<ReturnType<typeof findActiveOfflineScore>>) => void;
-    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+    let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
+    vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
       new Promise((resolve) => {
         releaseLocal = resolve;
       }) as never,
@@ -1009,7 +1046,7 @@ describe("ReaderPage", () => {
       vi.fn().mockImplementation((input: string) => {
         if (!input.endsWith("/bootstrap")) {
           return Promise.resolve(
-            Response.json({ layers: [], permissions: { canManageLayers: false } }),
+            Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
           );
         }
         bootstrapCalls += 1;
@@ -1081,9 +1118,9 @@ describe("ReaderPage", () => {
         createdAt: 2,
       },
     };
-    rememberReaderScore("guest", rememberedVersionTwo);
-    let releaseLocal!: (record: Awaited<ReturnType<typeof findActiveOfflineScore>>) => void;
-    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+    rememberReaderScore("user-1", rememberedVersionTwo);
+    let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
+    vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
       new Promise((resolve) => {
         releaseLocal = resolve;
       }) as never,
@@ -1094,7 +1131,7 @@ describe("ReaderPage", () => {
       vi.fn().mockImplementation((input: string) => {
         if (!input.endsWith("/bootstrap")) {
           return Promise.resolve(
-            Response.json({ layers: [], permissions: { canManageLayers: false } }),
+            Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
           );
         }
         bootstrapCalls += 1;
@@ -1148,9 +1185,9 @@ describe("ReaderPage", () => {
         createdAt: 2,
       },
     };
-    rememberReaderScore("guest", rememberedVersionTwo);
-    let releaseLocal!: (record: Awaited<ReturnType<typeof findActiveOfflineScore>>) => void;
-    vi.mocked(findActiveOfflineScore).mockReturnValueOnce(
+    rememberReaderScore("user-1", rememberedVersionTwo);
+    let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
+    vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
       new Promise((resolve) => {
         releaseLocal = resolve;
       }) as never,
@@ -1181,7 +1218,7 @@ describe("ReaderPage", () => {
       }),
     );
 
-    await waitFor(() => expect(findActiveOfflineScore).toHaveBeenCalled());
+    await waitFor(() => expect(findVerifiedOfflineScore).toHaveBeenCalled());
     expect(
       vi.mocked(loadPdfDocument).mock.calls.some(([source]) => source instanceof ArrayBuffer),
     ).toBe(false);
@@ -1189,8 +1226,8 @@ describe("ReaderPage", () => {
   });
 
   it("does not substitute an offline copy from a different version", async () => {
-    rememberReaderScore("guest", scoreSummary);
-    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+    rememberReaderScore("user-1", scoreSummary);
+    vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "offline-old",
       ...localWorkspace,
       versionId: "version-old",
@@ -1215,7 +1252,7 @@ describe("ReaderPage", () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() => expect(findActiveOfflineScore).toHaveBeenCalled());
+    await waitFor(() => expect(findVerifiedOfflineScore).toHaveBeenCalled());
     await waitFor(() =>
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         "/api/choirs/choir-1/scores/score-1/bootstrap",
@@ -1226,7 +1263,7 @@ describe("ReaderPage", () => {
   });
 
   it("does not apply an old route's deferred offline blob", async () => {
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     let releaseBlob!: (value: ArrayBuffer) => void;
     const deferredBlob = new Blob([new Uint8Array([1])], { type: "application/pdf" });
     vi.spyOn(deferredBlob, "arrayBuffer").mockReturnValue(
@@ -1234,7 +1271,7 @@ describe("ReaderPage", () => {
         releaseBlob = resolve;
       }),
     );
-    vi.mocked(findActiveOfflineScore)
+    vi.mocked(findVerifiedOfflineScore)
       .mockResolvedValueOnce({
         key: "old-route-offline",
         ...localWorkspace,
@@ -1247,7 +1284,7 @@ describe("ReaderPage", () => {
         verifiedAt: 1,
         annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 },
       })
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce(null);
     const router = createMemoryRouter(
       [
         {
@@ -1275,7 +1312,7 @@ describe("ReaderPage", () => {
   });
 
   it("reports a corrupt offline fallback instead of loading forever", async () => {
-    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+    vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "corrupt-offline",
       ...localWorkspace,
       versionId: "version-1",
@@ -1312,7 +1349,7 @@ describe("ReaderPage", () => {
   });
 
   it("stops after a persistent mismatch from the same versioned source", async () => {
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     vi.mocked(loadPdfDocument).mockImplementation(() => ({
       promise: Promise.resolve({
         document: {
@@ -1352,7 +1389,7 @@ describe("ReaderPage", () => {
           return delayedLookup;
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -1412,7 +1449,7 @@ describe("ReaderPage", () => {
         Promise.resolve(
           input.endsWith("/scores/score-1/bootstrap")
             ? Response.json({ error: "not_found" }, { status: 404 })
-            : Response.json({ layers: [], permissions: { canManageLayers: false } }),
+            : Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         ),
       ),
     );
@@ -1435,7 +1472,7 @@ describe("ReaderPage", () => {
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
           input.includes("/layers")
-            ? Response.json({ layers: [], permissions: { canManageLayers: false } })
+            ? Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } })
             : activeBootstrapResponse(),
         ),
       ),
@@ -1520,7 +1557,7 @@ describe("ReaderPage", () => {
     await finishPageTurn();
     expect(currentRenderedPage()).toBe("3");
     fireEvent.click(screen.getByRole("button", { name: "图层" }));
-    expect(screen.getByRole("complementary", { name: "图层" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "图层" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭页面与图层" }));
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.queryByText("尚未同步批注")).not.toBeInTheDocument();
@@ -1550,7 +1587,7 @@ describe("ReaderPage", () => {
           return Promise.resolve(new Response("unavailable", { status: 503 }));
         }
         return Promise.resolve(Response.json({
-          layers: [
+          layers: completeReaderLayers([
             {
               id: "11111111-1111-4111-8111-111111111111",
               kind: "personal",
@@ -1567,7 +1604,7 @@ describe("ReaderPage", () => {
               scoreSubscriptionOverride: null,
               canEdit: true,
             },
-          ],
+          ]),
           permissions: { canManageLayers: false },
         }));
       }
@@ -1644,7 +1681,7 @@ describe("ReaderPage", () => {
 
     await act(async () => {
       resolveLayers(Response.json({
-        layers: [],
+        layers: completeReaderLayers([]),
         permissions: { canManageLayers: false },
       }));
     });
@@ -1663,8 +1700,8 @@ describe("ReaderPage", () => {
       const url = String(input);
       if (url.includes("/layers")) {
         return Promise.resolve(Response.json({
-          layers: [
-            ...(["E", "S", "A", "T", "B"] as const).map((slot, index) => ({
+          layers: completeReaderLayers([
+            ...(["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
               id: `00000000-0000-4000-8000-00000000000${index}`,
               kind: "shared" as const,
               defaultSlot: slot,
@@ -1696,7 +1733,7 @@ describe("ReaderPage", () => {
               scoreSubscriptionOverride: null,
               canEdit: true,
             },
-          ],
+          ]),
           permissions: { canManageLayers: true },
         }));
       }
@@ -1713,7 +1750,7 @@ describe("ReaderPage", () => {
     await screen.findByLabelText("翻页阅读");
     toggleChrome();
     fireEvent.click(screen.getByRole("button", { name: "图层" }));
-    const panel = screen.getByRole("complementary", { name: "图层" });
+    const panel = screen.getByRole("dialog", { name: "图层" });
 
     await within(panel).findByText("Ensemble");
     expect(panel).toHaveTextContent("E·Ensemble");
@@ -1751,7 +1788,7 @@ describe("ReaderPage", () => {
       if (url.includes("/layers")) {
         return Promise.resolve(
           Response.json({
-            layers: [
+            layers: completeReaderLayers([
               {
                 id: "11111111-1111-4111-8111-111111111111",
                 kind: "shared",
@@ -1768,7 +1805,7 @@ describe("ReaderPage", () => {
                 scoreSubscriptionOverride: null,
                 canEdit: false,
               },
-            ],
+            ]),
             permissions: { canManageLayers: false },
           }),
         );
@@ -1828,7 +1865,7 @@ describe("ReaderPage", () => {
     openMoreMenu();
     fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
     expect(
-      await screen.findByText("离线下载未完成，现有离线版本没有切换。"),
+      await screen.findByText("离线下载未完成，现有离线版本没有切换。请重试。"),
     ).toHaveClass("reader-more-menu__status");
     expect(activateVerifiedOfflineScore).not.toHaveBeenCalled();
   });
@@ -2026,8 +2063,8 @@ describe("ReaderPage", () => {
       if (url.includes("/layers")) {
         return Promise.resolve(
           Response.json({
-            layers: [
-              ...(["E", "S", "A", "T", "B"] as const).map((slot, index) => ({
+            layers: completeReaderLayers([
+              ...(["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
                 id: `00000000-0000-4000-8000-00000000000${index}`,
                 kind: "shared" as const,
                 defaultSlot: slot,
@@ -2059,7 +2096,7 @@ describe("ReaderPage", () => {
                 scoreSubscriptionOverride: null,
                 canEdit: true,
               },
-            ],
+            ]),
             permissions: { canManageLayers: false },
           }),
         );
@@ -2157,6 +2194,7 @@ describe("ReaderPage", () => {
     expect(
       screen.getByRole("button", { name: "整条橡皮" }).querySelector("svg"),
     ).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /当前编辑层/ }));
     expect(screen.getByRole("button", { name: "P，Personal" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -2176,12 +2214,7 @@ describe("ReaderPage", () => {
     expect(screen.getByRole("dialog", { name: "仅可查看" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "知道了" }));
     fireEvent.click(screen.getByRole("button", { name: "E，Ensemble" }));
-    expect(
-      screen.getByRole("button", { name: "E，Ensemble" }),
-    ).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.getByRole("button", { name: /当前编辑层：E · Ensemble/ })).toBeInTheDocument();
     expect(
       await localDatabase.annotationLayers.get(
         localWorkspaceRecordKey(
@@ -2232,42 +2265,41 @@ describe("ReaderPage", () => {
       );
     });
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-    expect(
-      screen.getByRole("button", { name: "E，Ensemble" }),
-    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /当前编辑层：E · Ensemble/ })).toBeInTheDocument();
   });
 
   it("marks an offline copy only after app shell, layer and annotation snapshot verification", async () => {
+    vi.mocked(activateVerifiedOfflineScore).mockImplementationOnce(async (record) => {
+      vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({ ...record, active: 1, verifiedAt: 1 });
+    });
     vi.spyOn(crypto.subtle, "digest").mockResolvedValue(
       new Uint8Array(32).fill(0xaa).buffer,
     );
     Object.defineProperty(navigator, "serviceWorker", {
       configurable: true,
-      value: { ready: Promise.resolve({ active: {} }) },
+      value: { getRegistration: vi.fn().mockResolvedValue({ active: {} }) },
     });
     vi.mocked(fetch).mockImplementation((input: string | URL | Request) => {
       const url = String(input);
       if (url.includes("/layers")) {
         return Promise.resolve(
           Response.json({
-            layers: [
+            layers: completeReaderLayers([
+              ...(["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
+                id: `00000000-0000-4000-8000-00000000000${index}`,
+                kind: "shared", defaultSlot: slot,
+                name: ({ E: "Ensemble", S: "Soprano", A: "Alto", T: "Tenor", B: "Bass" })[slot],
+                sortOrder: index, subscribed: true, subscriptionSource: "product",
+                displayColor: "#a12652", colorSource: "product", adminDefaultColor: "#a12652",
+                driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: false,
+              })),
               {
-                id: "11111111-1111-4111-8111-111111111111",
-                kind: "shared",
-                defaultSlot: null,
-                name: "指挥",
-                sortOrder: 0,
-                subscribed: true,
-                subscriptionSource: "product",
-                displayColor: "#a12652",
-                colorSource: "product",
-                adminDefaultColor: "#a12652",
-                driveSubscribed: null,
-                driveColorOverride: null,
-                scoreSubscriptionOverride: null,
-                canEdit: false,
+                id: "11111111-1111-4111-8111-111111111111", kind: "personal", defaultSlot: null,
+                name: "Personal", sortOrder: 10000, subscribed: true, subscriptionSource: "personal",
+                displayColor: "#6750a4", colorSource: "product", adminDefaultColor: "#6750a4",
+                driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true,
               },
-            ],
+            ]),
             permissions: { canManageLayers: false },
           }),
         );
@@ -2279,7 +2311,10 @@ describe("ReaderPage", () => {
           }),
         );
       }
-      return Promise.resolve(activeBootstrapResponse());
+      return Promise.resolve(Response.json({
+        state: "active", score: { ...scoreSummary, currentVersion: { ...scoreSummary.currentVersion, sizeBytes: 3 } },
+        permissions: { canManage: false },
+      }));
     });
     render(
       <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
@@ -2299,7 +2334,7 @@ describe("ReaderPage", () => {
     expect(activateVerifiedOfflineScore).toHaveBeenCalledWith(
       expect.objectContaining({
         annotationSnapshot: expect.objectContaining({
-          layers: [expect.objectContaining({ name: "指挥" })],
+          layers: expect.arrayContaining([expect.objectContaining({ name: "Ensemble" }), expect.objectContaining({ name: "Personal" })]),
           annotations: [],
         }),
       }),
@@ -2307,7 +2342,8 @@ describe("ReaderPage", () => {
   });
 
   it("allows the last authenticated user to edit a verified local copy after session expiry", async () => {
-    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+    readerAuthState.signedIn = false;
+    vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "offline-1",
       ...localWorkspace,
       versionId: "version-1",
@@ -2367,7 +2403,7 @@ describe("ReaderPage", () => {
   });
 
   it("hides A's loaded reader state as soon as another tab activates B", async () => {
-    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+    vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "offline-a",
       ...localWorkspace,
       versionId: "version-a",
@@ -2399,7 +2435,7 @@ describe("ReaderPage", () => {
   });
 
   it("keeps a trashed score's offline copy and outbox without editing or syncing", async () => {
-    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+    vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "offline-1",
       ...localWorkspace,
       versionId: "version-1",
@@ -2495,7 +2531,7 @@ describe("ReaderPage", () => {
   });
 
   it("detects trash on reconnect before draining the offline outbox", async () => {
-    vi.mocked(findActiveOfflineScore).mockResolvedValueOnce({
+    vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "offline-1",
       ...localWorkspace,
       versionId: "version-1",

@@ -1,6 +1,9 @@
-export function createVisualReportManifest({ commit, generatedAt, captures }) {
+export function createVisualReportManifest({ commit, generatedAt, captures, workingTreeDirty = false }) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    workingTreeDirty,
+    sampleProvenance: "本仓库自行生成的虚构排版与批注，未复制私人或外部乐谱。",
+    deviceGates: ["真实 iPad Safari 与旋转", "Pencil 笔迹", "真实软键盘与触控", "安装后的离线与生产更新"],
     app: "Same Page",
     commit,
     generatedAt,
@@ -27,6 +30,9 @@ export function renderVisualReportHtml(manifest) {
           <dl>
             <div><dt>App viewport</dt><dd>${capture.viewport.width} × ${capture.viewport.height}</dd></div>
             <div><dt>PNG pixels</dt><dd>${capture.pixels.width} × ${capture.pixels.height}</dd></div>
+            <div><dt>Identity</dt><dd>${escapeHtml(capture.identity ?? "unspecified")}</dd></div>
+            <div><dt>Ready</dt><dd><code>${escapeHtml(JSON.stringify(capture.expectedReady ?? {}))}</code></dd></div>
+            <div><dt>Injected failures</dt><dd>${escapeHtml(JSON.stringify(capture.diagnostics?.intentionalFailures ?? []))}</dd></div>
             <div><dt>Route</dt><dd><code>${escapeHtml(capture.route)}</code></dd></div>
           </dl>
         </article>`,
@@ -59,6 +65,7 @@ export function renderVisualReportHtml(manifest) {
       .capture-card > a { display: block; border-block: 1px solid #e4dfd2; background: #1c2d30; }
       img { display: block; width: 100%; height: auto; }
       .capture-card dl { display: grid; gap: 6px; margin: 0; padding: 16px 22px 20px; font-size: 0.82rem; }
+      dd { overflow-wrap: anywhere; min-width: 0; }
       code { font-family: "SFMono-Regular", Consolas, monospace; }
     </style>
   </head>
@@ -69,8 +76,11 @@ export function renderVisualReportHtml(manifest) {
       <dl>
         <div><dt>Commit</dt><dd><code>${escapeHtml(manifest.commit)}</code></dd></div>
         <div><dt>Generated</dt><dd>${escapeHtml(manifest.generatedAt)}</dd></div>
+        <div><dt>Uncommitted changes</dt><dd>${manifest.workingTreeDirty ? "yes" : "no"}</dd></div>
         <div><dt>Scenes</dt><dd>${manifest.captures.length}</dd></div>
       </dl>
+      <p>${escapeHtml(manifest.sampleProvenance)}</p>
+      <p>浏览器自动化不能替代人工设备验收：${escapeHtml((manifest.deviceGates ?? []).join("、"))}（#9）。</p>
     </header>
     <main>${cards}</main>
   </body>

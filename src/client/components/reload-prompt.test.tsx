@@ -44,14 +44,14 @@ describe("ReloadPrompt", () => {
     expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
   });
 
-  it("recovers when the waiting service worker is no longer available", () => {
+  it("recovers when the waiting service worker is no longer available", async () => {
     setRegistrationWaiting(false);
 
     render(<ReloadPrompt />);
     fireEvent.click(screen.getByRole("button", { name: "更新" }));
 
     expect(updateServiceWorkerMock).not.toHaveBeenCalled();
-    expect(screen.getByText("更新尚未准备好，请重试")).toBeInTheDocument();
+    expect(await screen.findByText("更新尚未准备好，请重试")).toBeInTheDocument();
   });
 
   it("checks for an update after registration and when returning to the foreground", async () => {

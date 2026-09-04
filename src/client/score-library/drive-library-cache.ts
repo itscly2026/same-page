@@ -1,3 +1,4 @@
+import { readLibraryView, rememberLibraryView, type LibraryView } from "./library-view-state";
 import type { ChoirSummary } from "../../shared/choirs";
 import type { ScoreListResponse } from "../../shared/scores";
 import { onReaderIdentityChange } from "../reader/reader-cache-events";
@@ -103,9 +104,10 @@ export function rememberDriveSummary(
 export function rememberDriveView(
   ownerKey: DriveCacheOwnerKey,
   choirId: string,
-  view: Pick<DriveLibrarySnapshot, "search" | "scrollTop">,
+  view: Pick<DriveLibrarySnapshot, "search" | "scrollTop"> & Partial<Pick<LibraryView, "sort">>,
 ) {
   activateOwner(ownerKey);
+  rememberLibraryView(ownerKey, choirId, { ...readLibraryView(ownerKey, choirId), ...view });
   const previous = libraries.get(choirId);
   if (!previous) return;
   libraries.set(choirId, { ...previous, ...view });
