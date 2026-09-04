@@ -19,6 +19,7 @@ interface QueueState {
   refreshFailed: boolean;
 }
 const initialState = (): QueueState => ({ items: [], paused: null, refreshFailed: false });
+const UPLOAD_TIMEOUT_MS = 10 * 60_000;
 
 // The caller keys the dialog by user and drive. One pump owns all batches in
 // that lifetime, including while the dialog is hidden. No persisted tasks.
@@ -64,7 +65,7 @@ export function useUploadQueue({ choirId, onComplete, onQuotaChange }: {
           ? { ...entry, status: "uploading", message: "正在验证并上传…" } : entry) });
         const controller = new AbortController();
         current.controller = controller;
-        const timer = window.setTimeout(() => controller.abort(), 120_000);
+        const timer = window.setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
         let outcome: UploadOutcome;
         try {
           outcome = await uploadOne(choirId, item.file, controller.signal);
@@ -115,8 +116,8 @@ export function useUploadQueue({ choirId, onComplete, onQuotaChange }: {
     const current = runtime.current.state;
     const item = current.items.find((entry) => entry.id === id);
     if (!item || item.status !== "error" || !item.file) return;
-    publish({ ...current, paused: null, items: [...current.items.filter((entry) => entry.id !== id),
-      { ...item, status: "queued", message: "等待重试" }] });
+    publish({ ...current, items: [...current.items.filter((entry) => entry.id !== id),
+      { ...item, status: "queued", message: current.paused ? "已排队，处理暂停原因后请继续等待项。" : "等待重试" }] });
     void pump();
   }
 

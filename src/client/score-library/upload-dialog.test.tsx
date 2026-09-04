@@ -59,8 +59,8 @@ describe("serial PDF uploads", () => {
     expect(within(screen.getByRole("list", { name: "上传状态" })).getAllByText("上传完成")).toHaveLength(3);
   });
 
-  it("isolates invalid files and retries only the selected failed item", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ error: "invalid_pdf" }, { status: 422 }))
+  it.each(["invalid_pdf", "filename_conflict"])("isolates %s and retries only the selected failed item", async (error) => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ error }, { status: error === "invalid_pdf" ? 422 : 409 }))
       .mockResolvedValueOnce(success("good.pdf")).mockResolvedValueOnce(success("bad.pdf"));
     vi.stubGlobal("fetch", fetchMock);
     render(<Harness />);
@@ -89,7 +89,8 @@ describe("serial PDF uploads", () => {
 
   it("stops on quota exhaustion and signals a storage refresh", async () => {
     const quota = vi.fn(); const refresh = vi.fn();
-    const fetchMock = vi.fn().mockResolvedValue(Response.json({ error: "storage_quota_exceeded" }, { status: 409 }));
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ error: "storage_quota_exceeded" }, { status: 409 }))
+      .mockResolvedValueOnce(success("b.pdf")).mockResolvedValueOnce(success("c.pdf"));
     vi.stubGlobal("fetch", fetchMock);
     render(<Harness onQuotaChange={quota} onComplete={refresh} />);
     select(pdf("a.pdf"), pdf("b.pdf"), pdf("c.pdf"));
@@ -98,6 +99,9 @@ describe("serial PDF uploads", () => {
     expect(quota).toHaveBeenCalledTimes(1);
     expect(quota).toHaveBeenCalledWith(true);
     expect(refresh).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "继续等待项" }));
+    await waitFor(() => expect(row("c.pdf")).toHaveAttribute("data-status", "success"));
+    expect(quota).toHaveBeenLastCalledWith(false);
   });
 
   it.each(["network", "server", "malformed"])("never retries an uncertain %s outcome and offers library verification", async (kind) => {
@@ -174,10 +178,27 @@ describe("serial PDF uploads", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<Harness />);
     select(pdf("stalled.pdf"), pdf("waiting.pdf"));
-    await act(async () => { await vi.advanceTimersByTimeAsync(120_001); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600_001); });
     expect(row("stalled.pdf")).toHaveAttribute("data-status", "unknown");
     expect(row("waiting.pdf")).toHaveAttribute("data-status", "queued");
     expect(screen.queryByRole("button", { name: "重试 stalled.pdf" })).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([403, 409, 503])("retrying a previous error does not implicitly clear a later %s pause", async (status) => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ error: "invalid_pdf" }, { status: 422 }))
+      .mockResolvedValueOnce(Response.json({ error: status === 409 ? "storage_quota_exceeded" : "forbidden" }, { status }))
+      .mockResolvedValueOnce(success("c.pdf")).mockResolvedValueOnce(success("a.pdf"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<Harness />);
+    select(pdf("a.pdf"), pdf("b.pdf"), pdf("c.pdf"));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "重试 a.pdf" }));
+    expect(row("a.pdf")).toHaveAttribute("data-status", "queued");
+    expect(row("c.pdf")).toHaveAttribute("data-status", "queued");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "继续等待项" }));
+    await waitFor(() => expect(row("a.pdf")).toHaveAttribute("data-status", "success"));
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });

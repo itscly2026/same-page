@@ -5,7 +5,8 @@ import { startViteServer } from "../scripts/vite-server.mjs";
 import { resolveFixtureRequest, visualFixture } from "./fixtures.mjs";
 
 let server;
-before(async () => { server = await startViteServer({ script: "dev", port: 4197 }); });
+const deployedOrigin = process.env.SAME_PAGE_UPLOAD_TEST_ORIGIN;
+before(async () => { if (!deployedOrigin) server = await startViteServer({ script: "dev", port: 4197 }); });
 after(async () => { await server?.stop(); });
 
 for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {
@@ -28,8 +29,13 @@ for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {
           peak = Math.max(peak, ++active);
           pending.push(async (status = 201) => {
             const score = { ...visualFixture.score, id: name, fileName: name };
-            if (status === 201) stored.push(score);
+            // Both cases commit the file; failure only affects the response.
+            stored.push(score);
             active--;
+            if (status === 503 && engine === webkit) {
+              await route.abort("internetdisconnected");
+              return;
+            }
             await route.fulfill({ status, json: status === 201 ? { score } : { error: "internal_error" } });
           });
           return;
@@ -42,7 +48,7 @@ for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {
         }
         await route.fulfill(fixture);
       });
-      await page.goto(`${server.origin}/choirs/visual-choir`, { waitUntil: "domcontentloaded" });
+      await page.goto(`${deployedOrigin ?? server.origin}/choirs/visual-choir`, { waitUntil: "domcontentloaded" });
       await page.getByRole("button", { name: "上传 PDF", exact: true }).click();
       const input = page.getByLabel("选择 PDF 文件");
       const file = (name) => ({ name, mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.7 fixture") });
@@ -78,6 +84,7 @@ for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {
       await page.getByRole("searchbox", { name: "搜索文件名" }).waitFor();
       assert.equal(await page.getByRole("searchbox", { name: "搜索文件名" }).inputValue(), "b.pdf");
       await page.getByText(/请核对同名文件/).waitFor();
+      await page.getByRole("link", { name: /b\.pdf/ }).waitFor();
       assert.equal(files.length, 3);
     } finally { await context.close(); await browser.close(); }
   });
