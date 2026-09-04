@@ -219,12 +219,18 @@ describe("useReaderGestures", () => {
     expect(viewport.scrollLeft).toBeCloseTo(expectedScroll);
     expect(content.querySelector("[data-pdf-canvas-active]")).toBe(firstCanvas);
     await waitFor(() => expect(renderPage).toHaveBeenCalledTimes(2));
+    const settledWidth = content.querySelector<HTMLElement>(".pdf-page-canvas")?.style.width;
+    const settledScrollLeft = viewport.scrollLeft;
 
     finishRedraw?.();
     await waitFor(() =>
       expect(content.querySelector("[data-pdf-canvas-active]")).not.toBe(firstCanvas),
     );
     expect((firstCanvas as HTMLCanvasElement).width).toBe(1);
+    expect(content.querySelector<HTMLElement>(".pdf-page-canvas")?.style.width).toBe(
+      settledWidth,
+    );
+    expect(viewport.scrollLeft).toBeCloseTo(settledScrollLeft);
   });
 
   it.each([

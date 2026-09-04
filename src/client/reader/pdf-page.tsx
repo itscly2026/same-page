@@ -34,6 +34,14 @@ export function PdfPageCanvas({
     };
   }, [document, onRenderStart, pageNumber, width]);
 
+  useLayoutEffect(() => {
+    if (visibleCanvas === null) return;
+    const previous = canvasRefs.current[1 - visibleCanvas];
+    if (!previous) return;
+    previous.width = 1;
+    previous.height = 1;
+  }, [visibleCanvas]);
+
   useEffect(() => {
     const sourceChanged =
       source.current.document !== document || source.current.pageNumber !== pageNumber;
@@ -72,11 +80,6 @@ export function PdfPageCanvas({
         if (!active) return;
         frontCanvas.current = nextFront;
         setVisibleCanvas(nextFront);
-        const previous = canvasRefs.current[previousFront];
-        if (previous) {
-          previous.width = 1;
-          previous.height = 1;
-        }
         setError(false);
         lease?.ready();
         window.requestAnimationFrame(() => {
