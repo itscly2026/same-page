@@ -116,22 +116,22 @@ describe("AppRoutes", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "每份乐谱都包含 E、S、A、T、B 五个默认共享层，其中 E · Ensemble 用于所有人都关注的内容。获授权的人，可以在对应共享层留下批注。",
+        "排练要求按声部分层共享，获授权的人可以留下批注，大家在同一份谱上查看。",
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "你可以只显示与自己有关的共享层。你也拥有一个只有自己可见、可编辑的个人层。",
+        "选择需要查看的声部批注，也能在个人层记下自己的提醒，只有你能看到。",
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "打开乐谱即可获取最新的共享批注。提前下载离线副本后，断网时阅读和批注仍可继续；恢复联网后，本机内容会继续同步。",
+        "提前下载离线副本，断网也能继续看谱、做批注；恢复联网后，批注会继续同步。",
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "无论使用 iPad、iPhone、Android 设备还是 Windows、macOS 电脑，都能打开同一份乐谱和批注。",
+        "在平板、手机或电脑上，都能打开同一份乐谱和批注。",
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "登录" })).toBeInTheDocument();

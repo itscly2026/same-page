@@ -544,6 +544,7 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
                     <span className="file-row__name" title={score.fileName}>{score.fileName}</span>
                     <span className="file-row__size">{formatBytes(score.currentVersion.sizeBytes)}</span>
                   </Link>
+                  <div className="file-row__offline"><OfflineScoreControl score={score} authenticatedUserId={userId ?? null} disabled={session.isPending} /></div>
                   {result.permissions.canManage ? (
                     <MenuTrigger>
                       <Button className="file-menu-button" aria-label={`${score.fileName} 更多操作`}>
@@ -562,7 +563,6 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
                       </Popover>
                     </MenuTrigger>
                   ) : null}
-                  <div className="file-row__offline"><OfflineScoreControl score={score} authenticatedUserId={userId ?? null} disabled={session.isPending} /></div>
                 </article>
               ))}
             </section>

@@ -535,15 +535,7 @@ h1 {
   background: var(--brand);
 }
 
-.header-help-button {
-  display: inline-grid;
-  place-items: center;
-  flex: 0 0 2.75rem;
-  width: 2.75rem;
-  min-height: 2.75rem;
-  padding: 0;
-  color: var(--muted);
-}
+
 
 .marketing-page {
   background:
@@ -557,9 +549,8 @@ h1 {
   align-items: flex-start;
   justify-content: center;
   width: min(76rem, calc(100% - 2.5rem));
-  min-height: calc(100dvh - 5rem);
   margin: 0 auto;
-  padding: clamp(5rem, 12vw, 9rem) 0 clamp(8rem, 16vw, 13rem);
+  padding: clamp(3rem, 6vw, 5rem) 0 clamp(4rem, 8vw, 7rem);
 }
 
 .marketing-features {
@@ -611,6 +602,7 @@ h1 {
   width: 100%;
   height: auto;
   mix-blend-mode: multiply;
+  filter: contrast(1.18);
 }
 
 .marketing-feature h2 {
@@ -633,7 +625,7 @@ h1 {
   text-wrap: pretty;
 }
 
-.marketing-footer {
+.app-footer {
   display: flex;
   align-items: center;
   width: min(76rem, calc(100% - 2.5rem));
@@ -644,7 +636,7 @@ h1 {
   font-size: 0.84rem;
 }
 
-.marketing-footer a {
+.app-footer a {
   display: inline-flex;
   align-items: center;
   min-height: 2.75rem;
@@ -652,8 +644,8 @@ h1 {
   text-underline-offset: 0.2em;
 }
 
-.marketing-footer a:hover,
-.marketing-footer a:focus-visible {
+.app-footer a:hover,
+.app-footer a:focus-visible {
   color: var(--brand);
 }
 
@@ -751,7 +743,7 @@ h1 {
 
 .marketing-hero h1 {
   max-width: 14ch;
-  font-size: clamp(3.3rem, 8.5vw, 7.4rem);
+  font-size: clamp(3rem, 6.5vw, 5.5rem);
   line-height: 0.95;
   letter-spacing: -0.045em;
 }
@@ -759,7 +751,7 @@ h1 {
 .hero-zh {
   margin: 1.6rem 0 0;
   color: var(--brand);
-  font-size: clamp(1.35rem, 2.4vw, 2rem);
+  font-size: clamp(1.5rem, 2.8vw, 2.2rem);
   font-weight: 650;
   letter-spacing: 0.08em;
   white-space: nowrap;
@@ -1094,7 +1086,6 @@ h1 {
 .auth-layout {
   display: grid;
   place-items: start center;
-  min-height: calc(100dvh - 5rem);
   padding: clamp(3rem, 8vw, 7rem) 1rem;
 }
 
@@ -3065,12 +3056,11 @@ h1 {
 
   .marketing-hero {
     width: calc(100% - 2rem);
-    min-height: calc(100dvh - 4.5rem);
-    padding: 4.5rem 0 8rem;
+      padding: 2.75rem 0 3.5rem;
   }
 
   .marketing-features,
-  .marketing-footer,
+  .app-footer,
   .privacy-document {
     width: calc(100% - 2rem);
   }
@@ -3092,11 +3082,11 @@ h1 {
 
   .marketing-hero h1 {
     max-width: 11ch;
-    font-size: clamp(3.15rem, 16vw, 5rem);
+    font-size: clamp(2.65rem, 12vw, 3.5rem);
   }
 
   .hero-zh {
-    font-size: 1.25rem;
+    font-size: 1.5rem;
   }
 
   .hero-description {
@@ -3238,3 +3228,7 @@ h1 {
 .lifecycle-page > section > a { margin-right: 0.75rem; margin-block: 0.5rem; }
 
 .lifecycle-page button[data-disabled], .pdf-version-dialog button[data-disabled] { opacity: 0.45; cursor: default; }
+
+.page-with-footer { min-height: 100dvh; display: flex; flex-direction: column; }
+.page-with-footer > :first-child { flex: 1; min-height: 0; }
+.app-footer nav { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; }

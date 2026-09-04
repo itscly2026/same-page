@@ -18,9 +18,10 @@
 .library-results-summary { padding: 0 1rem; color: var(--muted); font-size: .9rem; }
 .library-retry { display: inline-flex; margin-left: .7rem; }
 .file-library .file-row__name { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; line-height: 1.5; }
-.file-library .file-row__open { padding-right: 2.5rem; }
-.file-library .file-row { flex-wrap: wrap; }
-.file-row__offline { flex: 0 0 100%; padding: 0 2.5rem .65rem 3.15rem; }
+.file-library .file-row__open { padding-right: .5rem; }
+.file-library .file-row { flex-wrap: nowrap; gap: .25rem; }
+.file-library .file-menu-button { position: static; flex: 0 0 44px; width: 44px; height: 44px; }
+.file-row__offline { flex: 0 0 44px; }
 .library-empty-state { padding: 2.5rem 1rem; text-align: center; }
 .library-empty-state p { overflow-wrap: anywhere; }
 @media (max-width: 600px) {

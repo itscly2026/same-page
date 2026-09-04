@@ -1,4 +1,17 @@
-.offline-score-control { display: flex; align-items: center; flex-wrap: wrap; gap: .25rem .65rem; font-size: .75rem; color: var(--muted, #666); }
-.offline-score-control button { min-height: 44px; padding: .4rem .65rem; border: 1px solid #ddd; border-radius: .5rem; background: transparent; color: inherit; }
-.offline-score-control button[data-focus-visible] { outline: 2px solid currentColor; outline-offset: 2px; }
-.offline-score-control button[data-disabled] { opacity: .55; }
+.offline-score-control { flex: 0 0 44px; color: var(--muted); }
+.offline-score-button { position: relative; display: grid; place-items: center; width: 44px; min-width: 44px; height: 44px; padding: 0; border: 0; border-radius: .6rem; background: transparent; color: inherit; }
+.offline-score-button:hover, .offline-score-button[data-hovered] { background: var(--brand-soft); }
+.offline-score-button[data-focus-visible] { outline: 2px solid var(--brand); outline-offset: 2px; }
+.offline-score-button[data-disabled] { opacity: .55; }
+.offline-score-control[data-state="ready"] { color: var(--brand); }
+.offline-score-control[data-state="error"], .offline-score-control[data-state="stale"] { color: #9a5612; }
+.offline-score-check { position: absolute; right: 6px; top: 5px; border-radius: 50%; background: var(--surface, white); stroke-width: 3; }
+.offline-score-control[data-state="downloading"] .offline-score-button > svg { animation: offline-score-spin 1s linear infinite; }
+.offline-score-tooltip { max-width: min(18rem, calc(100vw - 2rem)); padding: .45rem .65rem; border-radius: .4rem; background: var(--ink); color: white; font-size: .8rem; }
+.offline-score-popover { max-width: min(20rem, calc(100vw - 2rem)); background: var(--surface, white); border: 1px solid var(--line); border-radius: .8rem; box-shadow: 0 8px 30px #0002; }
+.offline-score-details { padding: 1rem; outline: none; }
+.offline-score-details h2 { display: flex; align-items: center; gap: .5rem; margin: 0; font-size: 1rem; }
+.offline-score-details p { color: var(--muted); line-height: 1.6; font-size: .9rem; }
+.offline-score-details > button { min-height: 44px; }
+@keyframes offline-score-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .offline-score-control[data-state="downloading"] .offline-score-button > svg { animation: none; } }

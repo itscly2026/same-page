@@ -1,6 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { useEffect, useRef, useState } from "react";
-import { Button } from "react-aria-components";
+import { useEffect, useId, useRef, useState } from "react";
+import { Button, Dialog, Heading, Popover, Tooltip, TooltipTrigger } from "react-aria-components";
+import { CircleAlert, Download, HardDriveDownload, LoaderCircle, RefreshCw, HardDrive, Check } from "lucide-react";
 import type { ScoreSummary } from "../../shared/scores";
 import { ACTIVE_LOCAL_OWNER_KEY, guestOwnerSystemKey, localDatabase } from "../platform/local-database";
 import { authenticatedLocalOwnerKey, createLocalWorkspace, resolveLocalWorkspace, type LocalWorkspaceOwnerKey } from "../platform/local-workspace";
@@ -10,6 +11,9 @@ import "./offline-score-control.css";
 export function OfflineScoreControl({ score, authenticatedUserId, disabled = false }: {
   score: ScoreSummary; authenticatedUserId: string | null; disabled?: boolean;
 }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const detailsId = useId();
   const identity = `${authenticatedUserId ?? "guest"}:${score.choirId}:${score.id}:${score.currentVersion.id}`;
   const currentIdentity = useRef(identity);
   useEffect(() => { currentIdentity.current = identity; return () => { currentIdentity.current = ""; }; }, [identity]);
@@ -50,12 +54,44 @@ export function OfflineScoreControl({ score, authenticatedUserId, disabled = fal
       running.current = false;
     }
   };
-  return <div className="offline-score-control">
-    <span role="status">{phase === "downloading" ? "正在下载并校验…" : phase === "failed" ? `${attempt?.message ?? "下载未完成"} · ${label}` : label}</span>
-    {(!record || record.versionId !== score.currentVersion.id || phase === "failed") && <Button
-      aria-label={`${phase === "failed" ? "重试下载" : "下载离线副本"}：${score.fileName}`}
-      isDisabled={disabled || phase === "downloading"} onPress={() => void prepare()}>
-      {phase === "failed" ? "重试" : phase === "downloading" ? "下载中…" : "下载"}
-    </Button>}
+  const downloading = phase === "downloading";
+  const failed = phase === "failed";
+  const stale = Boolean(record && record.versionId !== score.currentVersion.id);
+  const needsDownload = !record || stale || failed;
+  const state = downloading ? "downloading" : failed || invalid ? "error" : stale ? "stale" : record ? "ready" : "missing";
+  const description = downloading ? "正在下载并校验…" : failed ? `${attempt?.message ?? "下载未完成，请重试。"} ${label}` : label;
+  const actionLabel = failed ? "重试下载" : stale ? "下载新版离线副本" : "下载离线副本";
+  const Icon = state === "downloading" ? LoaderCircle : state === "error" ? CircleAlert : state === "stale" ? RefreshCw : state === "ready" ? HardDrive : Download;
+
+  return <div className="offline-score-control" data-state={state}>
+    <TooltipTrigger delay={400}>
+      <Button
+        ref={triggerRef}
+        className="offline-score-button"
+        aria-label={`${needsDownload && !downloading ? actionLabel : "离线副本"}：${score.fileName} · ${description}`}
+        aria-haspopup="dialog"
+        aria-expanded={detailsOpen}
+        aria-controls={detailsOpen ? detailsId : undefined}
+        isDisabled={disabled}
+        onPress={() => {
+          setDetailsOpen(true);
+          if (needsDownload && !downloading) void prepare();
+        }}
+      >
+        <Icon aria-hidden="true" size={20} />
+        {state === "ready" && <Check className="offline-score-check" aria-hidden="true" size={12} />}
+      </Button>
+      <Tooltip className="offline-score-tooltip">{description}</Tooltip>
+    </TooltipTrigger>
+    {!detailsOpen && <span className="visually-hidden" role="status">{description}</span>}
+    <Popover triggerRef={triggerRef} isOpen={detailsOpen} onOpenChange={setDetailsOpen} placement="bottom end" className="offline-score-popover">
+      <Dialog id={detailsId} className="offline-score-details">
+        <Heading slot="title"><HardDriveDownload aria-hidden="true" size={18} />离线副本</Heading>
+        <p role="status">{description}</p>
+        {state === "ready" && <p>已保存在这台设备上，断网也能打开。</p>}
+        {needsDownload && <Button className="secondary-button" isDisabled={disabled || downloading} onPress={() => void prepare()}>{downloading ? "正在下载…" : actionLabel}</Button>}
+        <Button className="text-button" onPress={() => setDetailsOpen(false)}>关闭</Button>
+      </Dialog>
+    </Popover>
   </div>;
 }

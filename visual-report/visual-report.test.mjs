@@ -36,7 +36,7 @@ test("visual report scenarios have stable unique ids and cover iPad plus narrow 
     "reader-edit-unsubscribed-exit",
     "reader-controls-narrow",
     "library-toolbar-landscape",
-    "home-help-menu",
+    "home-help-footer",
     "reader-text-compose-multiline",
     "reader-tools-mobile",
     "reader-dense-portrait",
