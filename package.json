@@ -15,7 +15,7 @@
     "test": "vitest run --config vitest.client.config.ts",
     "test:watch": "vitest --config vitest.client.config.ts",
     "test:worker": "vitest run --config vitest.worker.config.ts",
-    "test:visual-report": "node --test visual-report/*.test.mjs",
+    "test:visual-report": "node --test --test-concurrency=1 visual-report/*.test.mjs",
     "test:pwa-update": "node scripts/verify-pwa-update.mjs",
     "test:loading-performance": "npm run build && node scripts/measure-loading-performance.mjs",
     "measure:production-loading": "node scripts/measure-production-loading.mjs",
