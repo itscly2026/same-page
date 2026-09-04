@@ -62,6 +62,98 @@ beforeEach(async () => {
 afterEach(() => network.resetHandlers());
 
 describe("annotation layers and object synchronization", () => {
+  it("lets signed-in preview users sync only their own personal layer without joining", async () => {
+    const fixture = await createFixture();
+    await env.DB.prepare("UPDATE choirs SET guest_admission_mode = 'open', is_preview_entry = 1, join_code_hash = NULL, join_code_ciphertext = NULL WHERE id = ?")
+      .bind(fixture.choirId).run();
+    const first = await signIn("preview-first@example.test");
+    const second = await signIn("preview-second@example.test");
+    const base = `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}`;
+    const read = (path: string, cookie: string) => callWorker(path, { headers: { cookie } });
+    const bootstrap = await read(`/api/choirs/${fixture.choirId}/bootstrap`, first.cookie);
+    expect(bootstrap.status).toBe(200);
+    expect(await bootstrap.json()).toMatchObject({
+      scores: [{ id: fixture.scoreId }], permissions: { canManage: false, access: "preview" },
+    });
+    const layers = await read(`${base}/layers`, first.cookie);
+    expect(layers.status).toBe(200);
+    const body = await layers.json() as { layers: Array<{ id: string; kind: string; canEdit: boolean }> };
+    const personal = body.layers.find((layer) => layer.kind === "personal")!;
+    expect(personal.canEdit).toBe(true);
+    expect(body.layers.filter((layer) => layer.kind === "shared").every((layer) => !layer.canEdit)).toBe(true);
+    const author = { ...fixture, adminCookie: first.cookie, adminUserId: first.userId };
+    const op = operation(crypto.randomUUID(), personal.id, 0, "只属于我");
+    expect(await (await push(author, [op])).json()).toMatchObject({ results: [{ status: "accepted" }] });
+    // Reloading the layers and pulling from a fresh request retains the same private content.
+    expect(await (await read(`${base}/layers`, first.cookie)).json()).toMatchObject({
+      layers: expect.arrayContaining([expect.objectContaining({ id: personal.id })]),
+    });
+    expect(await (await read(`${base}/annotations`, first.cookie)).json()).toMatchObject({
+      objects: [expect.objectContaining({ id: op.annotationId, payload: expect.objectContaining({ text: "只属于我" }) })],
+    });
+    for (const other of [second, { cookie: fixture.adminCookie, userId: fixture.adminUserId }]) {
+      expect(await (await read(`${base}/layers`, other.cookie)).json()).not.toMatchObject({
+        layers: expect.arrayContaining([expect.objectContaining({ id: personal.id })]),
+      });
+      expect(await (await read(`${base}/annotations`, other.cookie)).json()).toMatchObject({ objects: [] });
+      expect((await push({ ...fixture, adminCookie: other.cookie, adminUserId: other.userId }, [
+        operation(op.annotationId, personal.id, 1, "不能改别人的"),
+      ])).status).toBe(404);
+    }
+    expect((await push(author, [operation(crypto.randomUUID(), fixture.layerId, 0, "不能改共享层")])).status).toBe(403);
+    expect((await callWorker(`/api/choirs/${fixture.choirId}/scores`, uploadRequest(first.cookie, "禁止上传.pdf"))).status).toBe(403);
+    const guestResponse = await callWorker("/api/guest/session", jsonRequest("", { admission: "open", choirId: fixture.choirId }));
+    const guestCookie = cookieFrom(guestResponse);
+    const guestLayers = await (await read(`${base}/layers`, guestCookie)).json() as typeof body;
+    expect(guestLayers.layers.every((layer) => layer.kind === "shared" && !layer.canEdit)).toBe(true);
+    expect((await push({ ...fixture, adminCookie: guestCookie }, [op])).status).toBe(401);
+    expect(await (await read(`${base}/annotations`, guestCookie)).json()).toMatchObject({ objects: [] });
+    const updated = operation(op.annotationId, personal.id, 1, "修改后");
+    expect(await (await push(author, [updated])).json()).toMatchObject({ results: [{ status: "accepted", object: { version: 2 } }] });
+    expect(await (await push(author, [{ ...updated, opId: crypto.randomUUID(), baseVersion: 2, type: "delete", payload: null }])).json())
+      .toMatchObject({ results: [{ status: "accepted", object: { deleted: true } }] });
+    const memberCount = await env.DB.prepare("SELECT COUNT(*) AS total FROM memberships WHERE choir_id = ?").bind(fixture.choirId).first<{ total: number }>();
+    expect(memberCount?.total).toBe(1);
+    // An ordinary open drive still requires membership for private editing.
+    await env.DB.prepare("UPDATE choirs SET is_preview_entry = 0 WHERE id = ?").bind(fixture.choirId).run();
+    expect((await read(`${base}/layers`, first.cookie)).status).toBe(403);
+  });
+
+  it("lets only administrators retrieve, restore and rotate the current invite code", async () => {
+    const fixture = await createFixture();
+    const outsider = await signIn("invite-outsider@example.test");
+    const endpoint = `/api/choirs/${fixture.choirId}/join-code`;
+    const read = (cookie: string) => callWorker(endpoint, { headers: { cookie } });
+    const current = await read(fixture.adminCookie);
+    expect(current.status).toBe(200);
+    expect(current.headers.get("cache-control")).toBe("no-store");
+    expect(await current.json()).toEqual({ joinCode: fixture.joinCode });
+    expect((await read(outsider.cookie)).status).toBe(403);
+    expect((await read("")).status).toBe(403);
+    const before = await env.DB.prepare("SELECT join_code_ciphertext AS ciphertext, guest_session_version AS version FROM choirs WHERE id = ?")
+      .bind(fixture.choirId).first<{ ciphertext: string; version: number }>();
+    expect(before?.ciphertext).not.toContain(fixture.joinCode);
+    await env.DB.prepare("UPDATE choirs SET join_code_ciphertext = NULL WHERE id = ?").bind(fixture.choirId).run();
+    expect(await (await read(fixture.adminCookie)).json()).toEqual({ joinCode: null });
+    const restore = (cookie: string, code: string) => callWorker(endpoint, { ...jsonRequest(cookie, { joinCode: code }), method: "PUT" });
+    expect((await restore(outsider.cookie, fixture.joinCode!)).status).toBe(403);
+    const wrongCode = fixture.joinCode === "ABCDEFGH" ? "HGFEDCBA" : "ABCDEFGH";
+    expect((await restore(fixture.adminCookie, wrongCode)).status).toBe(409);
+    expect((await restore(fixture.adminCookie, fixture.joinCode!)).status).toBe(204);
+    expect(await (await read(fixture.adminCookie)).json()).toEqual({ joinCode: fixture.joinCode });
+    const restored = await env.DB.prepare("SELECT guest_session_version AS version FROM choirs WHERE id = ?").bind(fixture.choirId).first<{ version: number }>();
+    expect(restored?.version).toBe(before?.version);
+    const rotated = await callWorker(`${endpoint}/rotate`, { method: "POST", headers: { cookie: fixture.adminCookie } });
+    expect(rotated.status).toBe(200);
+    const newCode = await rotated.json() as { joinCode: string };
+    expect(await (await read(fixture.adminCookie)).json()).toEqual(newCode);
+    expect((await restore(fixture.adminCookie, fixture.joinCode!)).status).toBe(409);
+    const oldAdmission = await callWorker("/api/guest/session", jsonRequest("", { admission: "invite", joinCode: fixture.joinCode }));
+    expect(oldAdmission.status).toBe(401);
+    const newAdmission = await callWorker("/api/guest/session", jsonRequest("", { admission: "invite", joinCode: newCode.joinCode }));
+    expect(newAdmission.status).toBe(200);
+  });
+
   it("merges independent objects, conflicts only the stale object, and retries opId idempotently", async () => {
     const fixture = await createFixture();
     const firstId = crypto.randomUUID();

@@ -56,6 +56,14 @@ try {
     targetArgs,
   });
 
+  const inviteState = query("SELECT id, join_code_hash, guest_session_version FROM choirs ORDER BY id");
+  executeD1({
+    file: join(repositoryRoot, "migrations", "0011_retrievable_join_codes.sql"),
+    targetArgs,
+  });
+  assert.deepEqual(query("SELECT id, join_code_hash, guest_session_version FROM choirs ORDER BY id"), inviteState);
+  assert(query("SELECT join_code_ciphertext FROM choirs").every((row) => row.join_code_ciphertext === null));
+
   verifySchema();
   verifyDriveNames();
   verifyContentReset();
