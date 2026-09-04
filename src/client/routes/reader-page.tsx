@@ -572,6 +572,9 @@ export default function ReaderPage() {
         const body = annotationLayerListResponseSchema.parse(
           await layerResponse.json(),
         );
+        if (workspace.ownerKey.startsWith("user:") && workspace.ownerKey !== `user:${session.data?.user.id ?? ""}`) {
+          throw new Error("layer_refresh_requires_matching_identity");
+        }
         const previousLayers = await localDatabase.annotationLayers
           .where("scopeKey")
           .equals(workspace.scopeKey)

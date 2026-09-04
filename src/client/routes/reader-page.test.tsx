@@ -82,7 +82,7 @@ vi.mock("@tanstack/react-virtual", () => ({
 
 vi.mock("../auth/auth-client", () => ({
   authClient: {
-    useSession: () => ({ data: null, isPending: false }),
+    useSession: () => ({ data: { user: { id: "user-1" } }, isPending: false }),
   },
 }));
 
@@ -288,7 +288,7 @@ describe("ReaderPage", () => {
   });
 
   it("reuses the library summary while the document and bootstrap are pending", async () => {
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     vi.mocked(loadPdfDocument).mockReturnValueOnce({
       promise: new Promise(() => {}),
       destroy: vi.fn().mockResolvedValue(undefined),
@@ -335,7 +335,7 @@ describe("ReaderPage", () => {
   });
 
   it("prefers a verified offline copy only when its immutable version matches", async () => {
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "offline-1",
       ...localWorkspace,
@@ -378,7 +378,7 @@ describe("ReaderPage", () => {
   });
 
   it("keeps a ready matching offline document when bootstrap arrives later", async () => {
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "offline-delayed-bootstrap",
       ...localWorkspace,
@@ -646,7 +646,7 @@ describe("ReaderPage", () => {
   it("replaces a ready cloud document with delayed offline data after permission denial", async () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
     vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
       new Promise((resolve) => {
@@ -707,7 +707,7 @@ describe("ReaderPage", () => {
   it("switches a ready cloud document to settled offline data after trashing", async () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
     vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
       new Promise((resolve) => {
@@ -771,7 +771,7 @@ describe("ReaderPage", () => {
   it("reacquires the same cloud version after a stale denial invalidates it", async () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
     vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
       new Promise((resolve) => {
@@ -852,7 +852,7 @@ describe("ReaderPage", () => {
   it("clears a stale denial while a same-version reacquire is pending", async () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     let bootstrapCalls = 0;
     vi.stubGlobal(
       "fetch",
@@ -908,7 +908,7 @@ describe("ReaderPage", () => {
   it("ignores an old same-version failure while its replacement is pending", async () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     let rejectOldLoad!: (error: Error) => void;
     const oldLoad = new Promise<never>((_resolve, reject) => {
       rejectOldLoad = reject;
@@ -1089,7 +1089,7 @@ describe("ReaderPage", () => {
         createdAt: 2,
       },
     };
-    rememberReaderScore("guest", rememberedVersionTwo);
+    rememberReaderScore("user-1", rememberedVersionTwo);
     let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
     vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
       new Promise((resolve) => {
@@ -1156,7 +1156,7 @@ describe("ReaderPage", () => {
         createdAt: 2,
       },
     };
-    rememberReaderScore("guest", rememberedVersionTwo);
+    rememberReaderScore("user-1", rememberedVersionTwo);
     let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
     vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
       new Promise((resolve) => {
@@ -1197,7 +1197,7 @@ describe("ReaderPage", () => {
   });
 
   it("does not substitute an offline copy from a different version", async () => {
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "offline-old",
       ...localWorkspace,
@@ -1234,7 +1234,7 @@ describe("ReaderPage", () => {
   });
 
   it("does not apply an old route's deferred offline blob", async () => {
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     let releaseBlob!: (value: ArrayBuffer) => void;
     const deferredBlob = new Blob([new Uint8Array([1])], { type: "application/pdf" });
     vi.spyOn(deferredBlob, "arrayBuffer").mockReturnValue(
@@ -1320,7 +1320,7 @@ describe("ReaderPage", () => {
   });
 
   it("stops after a persistent mismatch from the same versioned source", async () => {
-    rememberReaderScore("guest", scoreSummary);
+    rememberReaderScore("user-1", scoreSummary);
     vi.mocked(loadPdfDocument).mockImplementation(() => ({
       promise: Promise.resolve({
         document: {
