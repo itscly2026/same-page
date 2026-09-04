@@ -206,6 +206,7 @@ describe("AuthPage", () => {
         method: "DELETE",
       });
     });
+    expect(await screen.findByLabelText("current route")).toHaveTextContent("/choirs/preview-choir");
   });
 
   it("continues an invitation to display-name collection after social authentication", async () => {
@@ -480,6 +481,7 @@ describe("AuthPage", () => {
       expect.anything(),
     );
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
+    expect(await screen.findByLabelText("current route")).toHaveTextContent("/choirs/preview-choir");
   });
 
   it("shows forgot password only after an existing email is identified", async () => {

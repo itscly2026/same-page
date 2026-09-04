@@ -325,7 +325,7 @@ export default function AuthPage() {
     }
     if (guest.data.entryKind === "preview") {
       await clearGuestSession();
-      await navigate("/");
+      await navigate(`/choirs/${guest.data.choir.id}`);
       return;
     }
 

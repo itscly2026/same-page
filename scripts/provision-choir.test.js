@@ -3,11 +3,21 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  encryptJoinCode,
   formatSuccessMessage,
   parseArguments,
 } from "./provision-choir.mjs";
 
 describe("choir provisioning output", () => {
+  it("stores a code the Worker can decrypt, bound to its drive and secret", async () => {
+    const { decryptJoinCode } = await import("../worker/security/join-code-storage");
+    const secret = "test-invite-secret-with-at-least-32-characters";
+    const ciphertext = encryptJoinCode("ABCDEFGH", "drive-one", secret);
+    expect(ciphertext).not.toContain("ABCDEFGH");
+    await expect(decryptJoinCode(ciphertext, "drive-one", secret)).resolves.toBe("ABCDEFGH");
+    await expect(decryptJoinCode(ciphertext, "drive-two", secret)).rejects.toThrow();
+    await expect(decryptJoinCode(ciphertext, "drive-one", "wrong-secret")).rejects.toThrow();
+  });
   const baseArguments = [
     "--admin-email",
     "admin@example.test",

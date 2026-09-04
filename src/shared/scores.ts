@@ -61,7 +61,7 @@ export const driveBootstrapResponseSchema = scoreListResponseSchema.extend({
   choir: choirSummarySchema,
   permissions: z.object({
     canManage: z.boolean(),
-    access: z.enum(["membership", "guest"]),
+    access: z.enum(["membership", "preview", "guest"]),
   }),
 });
 

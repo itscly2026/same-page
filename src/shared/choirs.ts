@@ -38,6 +38,10 @@ export const rotateJoinCodeResponseSchema = z.object({
   joinCode: joinCodeSchema,
 });
 
+export const currentJoinCodeResponseSchema = z.object({
+  joinCode: joinCodeSchema.nullable(),
+});
+
 export const choirSummarySchema = z.object({
   id: z.string(),
   name: z.string(),

@@ -975,90 +975,45 @@ describe("AppRoutes", () => {
     });
   });
 
-  it("opens the preview read-only for a signed-in non-member without joining", async () => {
+  it("opens signed-in preview access without guest admission or joining", async () => {
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "user-1", email: "member@example.test" } },
       isPending: false,
     } as ReturnType<typeof authClient.useSession>);
-    let admitted = false;
-    const fetchMock = vi.fn().mockImplementation(
-      (input: string, init?: RequestInit) => {
-        if (
-          input === "/api/guest/preview-choir" ||
-          input === "/api/guest/choirs/preview-choir"
-        ) {
-          return Promise.resolve(
-            Response.json({
-              choir: {
-                id: "preview-choir",
-                name: "公开体验云盘",
-                guestAdmissionMode: "open",
-              },
-              entryKind: "preview",
-            }),
-          );
-        }
-        if (input === "/api/choirs") {
-          return Promise.resolve(Response.json({ memberships: [] }));
-        }
-        if (input === "/api/guest/session" && init?.method === "POST") {
-          admitted = true;
-          return Promise.resolve(
-            Response.json({
-              choir: {
-                id: "preview-choir",
-                name: "公开体验云盘",
-                guestAdmissionMode: "open",
-              },
-              entryKind: "preview",
-            }),
-          );
-        }
-        if (input === "/api/choirs/preview-choir/bootstrap" && admitted) {
-          return Promise.resolve(
-            Response.json(driveBootstrapBody({
-              choir: {
-                id: "preview-choir",
-                name: "公开体验云盘",
-                guestAdmissionMode: "open",
-              },
-            })),
-          );
-        }
-        return Promise.resolve(Response.json({}, { status: 403 }));
-      },
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    render(
-      <MemoryRouter initialEntries={["/choirs/preview-choir"]}>
-        <AppRoutes />
-      </MemoryRouter>,
-    );
-
-    expect(
-      await screen.findByRole("heading", { name: "公开体验云盘" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
-    expect(screen.getByText("这个云盘还没有乐谱。")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ admission: "open", choirId: "preview-choir" }),
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input === "/api/choirs/preview-choir/bootstrap") {
+        return Promise.resolve(Response.json(driveBootstrapBody({
+          choir: { id: "preview-choir", name: "公开体验云盘", guestAdmissionMode: "open" },
+          access: "preview",
+        })));
+      }
+      return Promise.resolve(new Response(null, { status: 204 }));
     });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MemoryRouter initialEntries={["/choirs/preview-choir"]}><AppRoutes /></MemoryRouter>);
+    expect(await screen.findByRole("heading", { name: "公开体验云盘" })).toBeInTheDocument();
+    expect(screen.getByText("这个云盘还没有乐谱。")).toBeInTheDocument();
+    expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "管理" })).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith("/api/choirs/join", expect.anything());
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/guest/session", expect.objectContaining({ method: "POST" }));
   });
 
-  it("lets an administrator rotate and then hide a one-time join code", async () => {
+  it("lets an administrator read the current code and reopen it after rotation", async () => {
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "admin-1", email: "admin@example.test" } },
       isPending: false,
     } as ReturnType<typeof authClient.useSession>);
+    let currentCode = "HGFEDCBA";
     const fetchMock = vi.fn().mockImplementation(
       (input: string, init?: RequestInit) => {
+        if (input.endsWith("/join-code")) {
+          return Promise.resolve(Response.json({ joinCode: currentCode }));
+        }
         if (input.endsWith("/join-code/rotate") && init?.method === "POST") {
+          currentCode = "ABCDEFGH";
           return Promise.resolve(
-            Response.json({ joinCode: "ABCDEFGH" }),
+            Response.json({ joinCode: currentCode }),
           );
         }
         if (input.includes("/bootstrap")) {
@@ -1093,12 +1048,13 @@ describe("AppRoutes", () => {
     );
     fireEvent.click(await screen.findByRole("menuitem", { name: "邀请码" }));
     expect(await screen.findByRole("dialog", { name: "邀请码" })).toBeInTheDocument();
+    expect(await screen.findByLabelText("当前有效邀请码")).toHaveTextContent("HGFEDCBA");
     fireEvent.click(screen.getByRole("button", { name: "轮换邀请码" }));
 
     expect(
-      await screen.findByText("邀请码已轮换。请现在复制并通过私密渠道发送。"),
+      await screen.findByText("邀请码已轮换，可随时在这里查看。"),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("新的八位邀请码")).toHaveTextContent(
+    expect(screen.getByLabelText("当前有效邀请码")).toHaveTextContent(
       "ABCDEFGH",
     );
     expect(fetchMock).toHaveBeenCalledWith(
@@ -1106,8 +1062,11 @@ describe("AppRoutes", () => {
       { method: "POST" },
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "已复制，隐藏邀请码" }));
-    expect(screen.queryByLabelText("新的八位邀请码")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(screen.queryByLabelText("当前有效邀请码")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "管理" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "邀请码" }));
+    expect(await screen.findByLabelText("当前有效邀请码")).toHaveTextContent("ABCDEFGH");
   });
 
   it("links signed-in members to drive-scoped My Preferences", async () => {
@@ -1640,7 +1599,7 @@ function driveBootstrapBody(options: {
   scores?: ReturnType<typeof scoreListBody>["scores"];
   usedBytes?: number;
   canManage?: boolean;
-  access?: "membership" | "guest";
+  access?: "membership" | "preview" | "guest";
 } = {}) {
   return {
     choir: options.choir ?? {
