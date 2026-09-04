@@ -48,7 +48,7 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
     context.env.DB.prepare(
       `SELECT choirs.id AS drive_id, choirs.name AS drive_name,
               choirs.guest_admission_mode, choirs.storage_used_bytes,
-              choirs.storage_limit_bytes,
+              choirs.storage_limit_bytes, choirs.is_preview_entry,
               memberships.id AS membership_id,
               memberships.role AS membership_role,
               CASE WHEN choirs.id = ? AND choirs.guest_session_version = ?
@@ -66,6 +66,7 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
        LEFT JOIN scores
          ON scores.choir_id = choirs.id AND scores.trashed_at IS NULL
         AND (memberships.id IS NOT NULL OR
+             (? <> '' AND choirs.is_preview_entry = 1 AND choirs.guest_admission_mode = 'open') OR
              (choirs.id = ? AND choirs.guest_session_version = ?))
         AND (? = '' OR scores.file_name_key LIKE ? ESCAPE '\\')
        LEFT JOIN score_versions AS versions
@@ -75,6 +76,7 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
       .bind(
         guestChoirId,
         guestSessionVersion,
+        userId,
         userId,
         guestChoirId,
         guestSessionVersion,
@@ -91,6 +93,9 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
         kind: "membership" as const,
         canManage: drive.membership_role === "admin",
       };
+    }
+    if (userId && drive.is_preview_entry === 1 && drive.guest_admission_mode === "open") {
+      return { kind: "preview" as const, canManage: false };
     }
     if (drive.guest_access === 1) {
       return { kind: "guest" as const, canManage: false };
@@ -638,6 +643,7 @@ interface PdfRow {
 }
 
 interface DriveBootstrapRow {
+  is_preview_entry: 0 | 1;
   drive_id: string;
   drive_name: string;
   guest_admission_mode: "invite" | "open";

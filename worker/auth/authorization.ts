@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import type { Database } from "../db/database";
-import { memberships, sharedLayerEditGrants } from "../db/schema";
+import { choirs, memberships, sharedLayerEditGrants } from "../db/schema";
 import type { Principal } from "./principal";
 
 export class AuthorizationError extends Error {
@@ -34,7 +34,12 @@ export async function requireChoirRead(
     principal.userId,
   );
   if (!membership) {
-    throw new AuthorizationError();
+    const preview = await database.query.choirs.findFirst({
+      where: and(eq(choirs.id, choirId), eq(choirs.isPreviewEntry, true), eq(choirs.guestAdmissionMode, "open")),
+      columns: { id: true },
+    });
+    if (!preview) throw new AuthorizationError();
+    return { kind: "preview" as const };
   }
   return { kind: "membership" as const, membership };
 }
@@ -108,15 +113,7 @@ export async function requirePersonalLayerOwner(
     throw new AuthorizationError();
   }
 
-  const membership = await findActiveMembership(
-    database,
-    choirId,
-    principal.userId,
-  );
-  if (!membership) {
-    throw new AuthorizationError();
-  }
-  return membership;
+  return requireChoirRead(database, principal, choirId);
 }
 
 async function findActiveMembership(

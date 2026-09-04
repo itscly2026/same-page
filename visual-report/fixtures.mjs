@@ -151,6 +151,20 @@ export function resolveFixtureRequest({
     });
   }
 
+  if (method === "GET" && pathname === `/api/choirs/${choir.id}/join-code`) {
+    return identity === "admin" ? json({ joinCode: scenarioId === "library-invite-restore" ? null : "ABCDEFGH" }) : json({ error: "forbidden" }, 403);
+  }
+
+  if (pathname.startsWith(`/api/choirs/${previewChoir.id}/scores/${score.id}`) && identity !== "guest") {
+    const response = resolveFixtureRequest({
+      pathname: pathname.replace(previewChoir.id, choir.id), method, identity: "member", scenarioId, cookie,
+    });
+    if (response.contentType.startsWith("application/json")) {
+      return { ...response, body: response.body.replaceAll(choir.id, previewChoir.id) };
+    }
+    return response;
+  }
+
   if (method === "GET" && pathname === `/api/choirs/${choir.id}/scores`) {
     return json({
       scores: [score, ...otherScores],
@@ -174,13 +188,13 @@ export function resolveFixtureRequest({
   if (
     method === "GET" &&
     pathname === `/api/choirs/${previewChoir.id}/bootstrap` &&
-    cookie.includes("same_page_guest=visual-preview")
+    (identity !== "guest" || cookie.includes("same_page_guest=visual-preview"))
   ) {
     return json({
       choir: previewChoir,
       scores: [{ ...score, choirId: previewChoir.id }],
       storage: { usedBytes: score.currentVersion.sizeBytes, limitBytes: 1_073_741_824 },
-      permissions: { canManage: false, access: "guest" },
+      permissions: { canManage: false, access: identity === "guest" ? "guest" : "preview" },
     });
   }
 
@@ -198,7 +212,7 @@ export function resolveFixtureRequest({
   if (
     method === "GET" &&
     pathname === `/api/choirs/${previewChoir.id}/scores` &&
-    cookie.includes("same_page_guest=visual-preview")
+    (identity !== "guest" || cookie.includes("same_page_guest=visual-preview"))
   ) {
     return json({
       scores: [{ ...score, choirId: previewChoir.id }],

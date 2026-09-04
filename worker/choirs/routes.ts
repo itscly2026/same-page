@@ -4,6 +4,7 @@ import { deleteCookie, setCookie } from "hono/cookie";
 
 import {
   guestSessionRequestSchema,
+  joinCodeSchema,
   joinChoirRequestSchema,
   joinCurrentGuestRequestSchema,
 } from "../../src/shared/choirs";
@@ -30,6 +31,7 @@ import {
   hashRateLimitIdentity,
 } from "../security/rate-limit";
 import { findAdmissibleChoir } from "./admission";
+import { decryptJoinCode, encryptJoinCode } from "../security/join-code-storage";
 
 export const choirRoutes = new Hono<AppEnvironment>();
 
@@ -344,6 +346,39 @@ choirRoutes.post("/choirs/join-current-guest", async (context) => {
   );
 });
 
+choirRoutes.get("/choirs/:choirId/join-code", async (context) => {
+  const database = createDatabase(context.env.DB);
+  const choirId = context.req.param("choirId");
+  await requireChoirAdmin(database, await resolveContextPrincipal(context), choirId);
+  const choir = await database.query.choirs.findFirst({ where: eq(choirs.id, choirId) });
+  if (!choir || choir.guestAdmissionMode !== "invite") {
+    return context.json({ error: "join_code_not_available" }, 409);
+  }
+  context.header("Cache-Control", "no-store");
+  const joinCode = choir.joinCodeCiphertext
+    ? await decryptJoinCode(choir.joinCodeCiphertext, choirId, context.env.INVITE_SECRET)
+    : null;
+  return context.json({ joinCode });
+});
+
+// Preserve an existing code whose original storage only retained its hash.
+choirRoutes.put("/choirs/:choirId/join-code", async (context) => {
+  const database = createDatabase(context.env.DB);
+  const choirId = context.req.param("choirId");
+  await requireChoirAdmin(database, await resolveContextPrincipal(context), choirId);
+  const body = await context.req.json().catch(() => null);
+  const parsed = joinCodeSchema.safeParse(body?.joinCode);
+  if (!parsed.success) return context.json({ error: "invalid_join_code" }, 400);
+  const hash = await hashJoinCode(parsed.data, context.env.INVITE_SECRET);
+  const ciphertext = await encryptJoinCode(parsed.data, choirId, context.env.INVITE_SECRET);
+  const [updated] = await database.update(choirs).set({ joinCodeCiphertext: ciphertext })
+    .where(and(eq(choirs.id, choirId), eq(choirs.guestAdmissionMode, "invite"), eq(choirs.joinCodeHash, hash)))
+    .returning({ id: choirs.id });
+  if (!updated) return context.json({ error: "join_code_mismatch" }, 409);
+  context.header("Cache-Control", "no-store");
+  return context.body(null, 204);
+});
+
 choirRoutes.post("/choirs/:choirId/join-code/rotate", async (context) => {
   const database = createDatabase(context.env.DB);
   const principal = await resolveContextPrincipal(context);
@@ -369,6 +404,7 @@ choirRoutes.post("/choirs/:choirId/join-code/rotate", async (context) => {
     .update(choirs)
     .set({
       joinCodeHash,
+      joinCodeCiphertext: await encryptJoinCode(joinCode, choirId, context.env.INVITE_SECRET),
       guestSessionVersion: sql`${choirs.guestSessionVersion} + 1`,
     })
     .where(eq(choirs.id, choirId))
@@ -378,6 +414,7 @@ choirRoutes.post("/choirs/:choirId/join-code/rotate", async (context) => {
     return context.json({ error: "not_found" }, 404);
   }
 
+  context.header("Cache-Control", "no-store");
   return context.json({ joinCode });
 });
 

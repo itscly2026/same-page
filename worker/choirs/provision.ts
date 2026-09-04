@@ -1,4 +1,5 @@
 import { hashJoinCode, generateJoinCode } from "../security/join-code";
+import { encryptJoinCode } from "../security/join-code-storage";
 import { defaultSharedLayers } from "../../src/shared/annotations";
 
 export const DEFAULT_CHOIR_NAME = "小红花云盘";
@@ -28,13 +29,16 @@ export async function provisionChoir(options: {
     : null;
 
   const membershipId = crypto.randomUUID();
+  const joinCodeCiphertext = joinCode
+    ? await encryptJoinCode(joinCode, choirId, options.inviteSecret)
+    : null;
   await options.binding.batch([
     options.binding
       .prepare(
         `INSERT INTO choirs
           (id, name, guest_admission_mode, guest_session_version,
-           is_preview_entry, join_code_hash, storage_limit_bytes)
-         VALUES (?, ?, ?, 1, ?, ?, ?)`,
+           is_preview_entry, join_code_hash, join_code_ciphertext, storage_limit_bytes)
+         VALUES (?, ?, ?, 1, ?, ?, ?, ?)`,
       )
       .bind(
         choirId,
@@ -42,6 +46,7 @@ export async function provisionChoir(options: {
         guestAdmissionMode,
         options.isPreviewEntry ? 1 : 0,
         joinCodeHash,
+        joinCodeCiphertext,
         CHOIR_STORAGE_LIMIT_BYTES,
       ),
     options.binding

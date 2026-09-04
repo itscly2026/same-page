@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { createCipheriv, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +21,15 @@ export function hashJoinCode(code, secret) {
     .digest("base64url");
 }
 
+export function encryptJoinCode(code, choirId, secret) {
+  const key = createHmac("sha256", secret).update("join-code-encryption:v1").digest();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(Buffer.from(choirId));
+  const encrypted = Buffer.concat([cipher.update(code, "utf8"), cipher.final(), cipher.getAuthTag()]);
+  return `v1.${iv.toString("base64url")}.${encrypted.toString("base64url")}`;
+}
+
 export function provisionChoirFromCli(argv = process.argv.slice(2)) {
   const options = parseArguments(argv);
   const inviteSecret = process.env.INVITE_SECRET;
@@ -37,8 +46,9 @@ export function provisionChoirFromCli(argv = process.argv.slice(2)) {
   const membershipId = randomUUID();
   const joinCode = options.guestAdmission === "invite" ? generateJoinCode() : null;
   const joinCodeHash = joinCode ? hashJoinCode(joinCode, inviteSecret) : null;
+  const joinCodeCiphertext = joinCode ? encryptJoinCode(joinCode, choirId, inviteSecret) : null;
   const sql = [
-    `INSERT INTO choirs (id, name, guest_admission_mode, guest_session_version, is_preview_entry, join_code_hash, storage_limit_bytes) VALUES (${quote(choirId)}, ${quote(options.choirName)}, ${quote(options.guestAdmission)}, 1, ${options.previewEntry ? 1 : 0}, ${quoteNullable(joinCodeHash)}, 1073741824);`,
+    `INSERT INTO choirs (id, name, guest_admission_mode, guest_session_version, is_preview_entry, join_code_hash, join_code_ciphertext, storage_limit_bytes) VALUES (${quote(choirId)}, ${quote(options.choirName)}, ${quote(options.guestAdmission)}, 1, ${options.previewEntry ? 1 : 0}, ${quoteNullable(joinCodeHash)}, ${quoteNullable(joinCodeCiphertext)}, 1073741824);`,
     `INSERT INTO memberships (id, choir_id, user_id, display_name, role, status) VALUES (${quote(membershipId)}, ${quote(choirId)}, ${quote(user.id)}, ${quote(options.adminDisplayName)}, 'admin', 'active');`,
     ...[
       ["E", "#a12652"],
@@ -168,7 +178,7 @@ export function formatSuccessMessage(joinCode, showJoinCode, guestAdmission) {
   }
   return (
     "Choir created. The initial invite code was not displayed. " +
-    "Sign in as the administrator and rotate it before sharing.\n"
+    "Sign in as the administrator and view it in drive management.\n"
   );
 }
 

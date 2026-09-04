@@ -25,6 +25,7 @@ export const choirs = sqliteTable(
       .notNull()
       .default(false),
     joinCodeHash: text("join_code_hash"),
+    joinCodeCiphertext: text("join_code_ciphertext"),
     storageLimitBytes: integer("storage_limit_bytes")
       .notNull()
       .default(1_073_741_824),
