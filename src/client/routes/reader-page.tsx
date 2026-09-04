@@ -749,7 +749,9 @@ export default function ReaderPage() {
           };
           setPdfFailure(null);
           if (workspaceScopeKey) {
-            setLoadState({ kind: "ready", scopeKey: workspaceScopeKey });
+              setLoadState((current) => current.kind === "error" && current.scopeKey === workspaceScopeKey
+                ? current
+                : { kind: "ready", scopeKey: workspaceScopeKey });
           }
           setCurrentPage((page) => Math.min(page, nextDocument.numPages));
         }

@@ -75,6 +75,11 @@ export function pdfFailureCategory(error: unknown): DiagnosticCategory {
       return error.status === 0 ? "network" : categoryForStatus(error.status);
     }
     if ("name" in error && ["InvalidPDFException", "PasswordException"].includes(String(error.name))) return "validation";
+    // PDF.js wraps the browser's fetch TypeError across its worker channel.
+    // Match only known transport details; an arbitrary UnknownErrorException
+    // can also be a decoder fault and must stay internal. Never export details.
+    if ("name" in error && error.name === "UnknownErrorException" && "details" in error &&
+      ["TypeError: Failed to fetch", "TypeError: Load failed", "TypeError: NetworkError when attempting to fetch resource."].includes(String(error.details))) return "network";
   }
   return error instanceof TypeError ? "network" : "internal";
 }
