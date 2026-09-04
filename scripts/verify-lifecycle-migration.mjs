@@ -3,16 +3,18 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { executeD1 } from "./backfill-score-file-names.mjs";
 
-const aggregateSql = `SELECT 'users' AS metric, COUNT(*) AS value FROM user
-  UNION ALL SELECT 'memberships', COUNT(*) FROM memberships
-  UNION ALL SELECT 'annotations', COUNT(*) FROM annotation_objects
-  UNION ALL SELECT 'sync_operations', COUNT(*) FROM annotation_sync_operations
-  UNION ALL SELECT 'sync_high_water', COALESCE(MAX(seq), 0) FROM sqlite_sequence WHERE name = 'annotation_sync_operations'
-  UNION ALL SELECT 'scores', COUNT(*) FROM scores
-  UNION ALL SELECT 'current_pdf_pointers', COUNT(current_version_id) FROM scores
-  UNION ALL SELECT 'pdf_versions', COUNT(*) FROM score_versions
-  UNION ALL SELECT 'logical_storage_bytes', COALESCE(SUM(storage_used_bytes), 0) FROM choirs
-  UNION ALL SELECT 'object_deletion_queue', COUNT(*) FROM score_object_deletions`;
+// A single result row avoids D1's compound-SELECT limit.
+export const lifecycleSnapshotSql = `SELECT
+  (SELECT COUNT(*) FROM user) AS users,
+  (SELECT COUNT(*) FROM memberships) AS memberships,
+  (SELECT COUNT(*) FROM annotation_objects) AS annotations,
+  (SELECT COUNT(*) FROM annotation_sync_operations) AS sync_operations,
+  (SELECT COALESCE(MAX(seq), 0) FROM sqlite_sequence WHERE name = 'annotation_sync_operations') AS sync_high_water,
+  (SELECT COUNT(*) FROM scores) AS scores,
+  (SELECT COUNT(current_version_id) FROM scores) AS current_pdf_pointers,
+  (SELECT COUNT(*) FROM score_versions) AS pdf_versions,
+  (SELECT COALESCE(SUM(storage_used_bytes), 0) FROM choirs) AS logical_storage_bytes,
+  (SELECT COUNT(*) FROM score_object_deletions) AS object_deletion_queue`;
 
 export function assertLifecycleMigration({ before, foreignKeys, violations, sequence }) {
   assert.equal(violations.length, 0, "Production migration has foreign-key violations");
@@ -29,8 +31,7 @@ function query(command) {
 function main(mode, snapshotPath) {
   assert(snapshotPath && (mode === "before" || mode === "after"), "Usage: verify-lifecycle-migration.mjs before|after snapshot-path");
   if (mode === "before") {
-    const rows = query(aggregateSql)[0].results;
-    const snapshot = Object.fromEntries(rows.map(({ metric, value }) => [metric, value]));
+    const snapshot = query(lifecycleSnapshotSql)[0].results[0];
     assert(Number.isSafeInteger(snapshot.sync_high_water), "Missing pre-migration cursor");
     writeFileSync(snapshotPath, JSON.stringify(snapshot), { mode: 0o600 });
     console.log(JSON.stringify(snapshot));
