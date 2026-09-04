@@ -454,6 +454,7 @@ h1 {
 }
 
 .diagnostics-actions button {
+  white-space: nowrap;
   min-height: 44px;
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--line);
