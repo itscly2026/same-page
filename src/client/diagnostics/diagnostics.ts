@@ -74,11 +74,12 @@ function prune(now: number) {
 
 // Same fetch contract: no retries, response consumption, request mutation, or
 // global monkey patch. Callers retain their existing recovery/authorization flow.
-export const diagnosticFetch: typeof fetch = async (input, init) => {
+export const diagnosticFetch: typeof fetch = async (...args) => {
+  const [input] = args;
   const startedGeneration = generation;
   const operation = operationForUrl(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
   try {
-    const response = await globalThis.fetch(input, init);
+    const response = await globalThis.fetch(...args);
     if (!response.ok && startedGeneration === generation) {
       recordFailure({ operation, category: categoryForStatus(response.status),
         requestId: response.headers.get("X-Same-Page-Request-Id"),
