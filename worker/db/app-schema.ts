@@ -255,11 +255,15 @@ export const userScoreLayerPreferences = sqliteTable(
   (table) => [uniqueIndex("user_score_layer_preferences_uidx").on(table.userId, table.scoreId, table.slot)],
 );
 
-export const rateLimits = sqliteTable("rate_limits", {
-  key: text("key").primaryKey(),
-  count: integer("count").notNull(),
-  windowExpiresAt: integer("window_expires_at").notNull(),
-});
+export const rateLimits = sqliteTable(
+  "rate_limits",
+  {
+    key: text("key").primaryKey(),
+    count: integer("count").notNull(),
+    windowExpiresAt: integer("window_expires_at").notNull(),
+  },
+  (table) => [index("rate_limits_expiry_key_idx").on(table.windowExpiresAt, table.key)],
+);
 
 export const scoreObjectDeletions = sqliteTable("score_object_deletions", {
   id: text("id").primaryKey(),
