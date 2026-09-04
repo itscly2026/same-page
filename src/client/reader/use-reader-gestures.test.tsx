@@ -190,15 +190,17 @@ describe("useReaderGestures", () => {
     vi.spyOn(viewport, "getBoundingClientRect").mockImplementation(() =>
       rect(0, 0, 1000, 800),
     );
-    vi.spyOn(content, "getBoundingClientRect").mockImplementation(() => {
-      const page = content.querySelector<HTMLElement>(".pdf-page-canvas");
-      return rect(
-        -viewport.scrollLeft,
-        -viewport.scrollTop,
-        Number.parseFloat(page?.style.width ?? "0"),
-        Number.parseFloat(page?.style.height ?? "0"),
-      );
-    });
+    const measureContent = vi
+      .spyOn(content, "getBoundingClientRect")
+      .mockImplementation(() => {
+        const page = content.querySelector<HTMLElement>(".pdf-page-canvas");
+        return rect(
+          -viewport.scrollLeft,
+          -viewport.scrollTop,
+          Number.parseFloat(page?.style.width ?? "0"),
+          Number.parseFloat(page?.style.height ?? "0"),
+        );
+      });
     await waitFor(() => expect(renderPage).toHaveBeenCalledTimes(1));
     await waitFor(() =>
       expect(content.querySelector("[data-pdf-canvas-active]")).not.toBeNull(),
@@ -219,12 +221,29 @@ describe("useReaderGestures", () => {
     expect(viewport.scrollLeft).toBeCloseTo(expectedScroll);
     expect(content.querySelector("[data-pdf-canvas-active]")).toBe(firstCanvas);
     await waitFor(() => expect(renderPage).toHaveBeenCalledTimes(2));
+    const settledWidth = content.querySelector<HTMLElement>(".pdf-page-canvas")?.style.width;
+    const settledScrollLeft = viewport.scrollLeft;
+    const settledScrollTop = viewport.scrollTop;
+    const settledBounds = content.getBoundingClientRect();
+    const settledMeasurementCount = measureContent.mock.calls.length;
 
     finishRedraw?.();
     await waitFor(() =>
       expect(content.querySelector("[data-pdf-canvas-active]")).not.toBe(firstCanvas),
     );
     expect((firstCanvas as HTMLCanvasElement).width).toBe(1);
+    expect(content.querySelector<HTMLElement>(".pdf-page-canvas")?.style.width).toBe(
+      settledWidth,
+    );
+    expect(viewport.scrollLeft).toBeCloseTo(settledScrollLeft);
+    expect(viewport.scrollTop).toBeCloseTo(settledScrollTop);
+    expect(measureContent).toHaveBeenCalledTimes(settledMeasurementCount);
+    expect(content.getBoundingClientRect()).toMatchObject({
+      left: settledBounds.left,
+      top: settledBounds.top,
+      width: settledBounds.width,
+      height: settledBounds.height,
+    });
   });
 
   it.each([
