@@ -345,9 +345,11 @@ export function HomePage() {
         </section>
       </main>}
 
-      <footer className="marketing-footer">
-        <Link to="/privacy">隐私政策</Link>
-      </footer>
+      {!userId && !session.isPending ? (
+        <footer className="marketing-footer">
+          <Link to="/privacy">隐私政策</Link>
+        </footer>
+      ) : null}
 
       <ModalOverlay
         className="modal-overlay"

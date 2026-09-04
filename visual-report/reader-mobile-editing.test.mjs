@@ -9,22 +9,27 @@ import { startViteServer } from "../scripts/vite-server.mjs";
 import { resolveFixtureRequest } from "./fixtures.mjs";
 
 const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const port = 4187;
+const port = Number(process.env.READER_MOBILE_TEST_PORT ?? 4187);
 let appServer;
+let appOrigin = process.env.LAYOUT_TEST_ORIGIN;
 
 before(async () => {
-  appServer = await startViteServer({ script: "dev", port, cwd: repositoryRoot });
+  if (!appOrigin) {
+    appServer = await startViteServer({ script: "dev", port, cwd: repositoryRoot });
+    appOrigin = appServer.origin;
+  }
 });
 
 after(async () => {
   await appServer?.stop();
 });
 
-test("keeps edit, layers and more above a separate page hint at every supported phone width", async (context) => {
-  const browser = await chromium.launch({ headless: true });
+for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
+test(`${engineName}: keeps the capsule at the right edge above its page hint in reading and editing`, async (context) => {
+  const browser = await engine.launch({ headless: true });
   context.after(() => browser.close());
 
-  for (const width of [320, 360, 393, 412]) {
+  for (const width of [320, 360, 390, 412, 768, 834, 1024, 1194]) {
     const page = await openMemberReader(browser, { width, height: 800 });
     await showReaderChrome(page);
 
@@ -56,14 +61,26 @@ test("keeps edit, layers and more above a separate page hint at every supported 
     assert.equal(result.states[0], "ready");
     assert.ok(result.sizes.every(({ width: buttonWidth, height }) => buttonWidth >= 44 && height >= 44));
     assert.ok(result.actionLeft >= 0 && result.actionRight <= width);
+    assert.ok(Math.abs(width - result.actionRight - 12) < 1, `${width}: capsule must stay at the right edge (actual right: ${result.actionRight})`);
+    const back = await page.locator(".reader-chrome__back").boundingBox();
+    assert.ok(Math.abs(back.x - 12) < 1 && back.x + back.width < result.actionLeft);
     assert.equal(result.pageBelowActions, true);
     assert.ok(result.centerDelta < 0.5);
+
+    await page.getByRole("button", { name: "编辑", exact: true }).click();
+    await page.locator(".annotation-controls").waitFor();
+    const editingActions = await page.locator(".reader-chrome__actions").boundingBox();
+    assert.ok(Math.abs(editingActions.x + editingActions.width - result.actionRight) < 1);
+    const editingPage = await page.locator(".reader-page-indicator").boundingBox();
+    assert.ok(editingPage.y >= editingActions.y + editingActions.height);
+    await page.getByRole("button", { name: "编辑", exact: true }).click();
 
     await page.getByRole("button", { name: "页面位置", exact: true }).click();
     await page.locator(".page-preview-strip").waitFor({ state: "visible" });
     await page.context().close();
   }
 });
+}
 
 test("grows and caps the real text composer inside an iPad WebKit visual viewport", async (context) => {
   const browser = await webkit.launch({ headless: true });
@@ -158,7 +175,7 @@ async function openMemberReader(browser, viewport) {
     localStorage.setItem("reader-gesture-hint-seen", "true");
   });
   const page = await browserContext.newPage();
-  await page.goto(`${appServer.origin}/choirs/visual-choir/scores/visual-score`, {
+  await page.goto(`${appOrigin}/choirs/visual-choir/scores/visual-score`, {
     waitUntil: "domcontentloaded",
   });
   await waitForRenderedPdf(page);
