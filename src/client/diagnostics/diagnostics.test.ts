@@ -1,10 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearDiagnostics, diagnosticFetch, exportDiagnostics, recordFailure } from "./diagnostics";
+import { clearDiagnostics, diagnosticFetch, diagnosticScope, exportDiagnostics, parseDiagnosticResponse, pdfFailureCategory, recordFailure } from "./diagnostics";
+import { driveBootstrapResponseSchema } from "../../shared/scores";
 
 beforeEach(() => clearDiagnostics());
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("private diagnostics", () => {
+  it.each(["not JSON", '{"secret":"private annotation"}'])("records malformed successful responses at decode without retaining content", async (body) => {
+    const requestId = crypto.randomUUID();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { headers: { "X-Same-Page-Request-Id": requestId } })));
+    const response = await diagnosticFetch("/api/choirs/private/bootstrap");
+    await expect(parseDiagnosticResponse(response, driveBootstrapResponseSchema)).rejects.toThrow("invalid_server_response");
+    expect(exportDiagnostics()).toContain(requestId);
+    expect(exportDiagnostics()).toContain('"stage": "decode"');
+    expect(exportDiagnostics()).not.toContain("private");
+  });
+
+  it("ignores old async scopes and response decoding after identity reset", async () => {
+    const report = diagnosticScope();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("invalid")));
+    const response = await diagnosticFetch("/api/choirs/private/bootstrap");
+    clearDiagnostics();
+    report({ operation: "sync", category: "internal" });
+    await expect(parseDiagnosticResponse(response, driveBootstrapResponseSchema)).rejects.toThrow();
+    expect(JSON.parse(exportDiagnostics()).records).toHaveLength(0);
+  });
+
+  it.each([[{ name: "ResponseException", status: 403 }, "permission"], [{ name: "ResponseException", status: 404 }, "not-found"], [{ name: "ResponseException", status: 0 }, "network"], [{ name: "InvalidPDFException" }, "validation"], [new TypeError("secret"), "network"], [new Error("secret"), "internal"]])("classifies PDF.js failures without retaining errors", (error, category) => {
+    expect(pdfFailureCategory(error)).toBe(category);
+  });
   it("correlates HTTP failures without consuming responses or retaining sensitive input", async () => {
     const requestId = crypto.randomUUID();
     const response = Response.json({ error: "secret-response-body" }, { status: 503, headers: {

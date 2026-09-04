@@ -29,8 +29,8 @@ export function logFailure(operation: DiagnosticOperation, stage: DiagnosticStag
 export const diagnosticMiddleware: MiddlewareHandler<AppEnvironment> = async (context, next) => {
   // Do not trust caller-provided correlation headers.
   const requestId = crypto.randomUUID();
+  await next();
   context.header("X-Same-Page-Request-Id", requestId);
   context.header("X-Same-Page-Build", buildId);
-  await next();
   if (context.res.status >= 400) logFailure(operationForUrl(context.req.url), "request", context.res.status, requestId);
 };

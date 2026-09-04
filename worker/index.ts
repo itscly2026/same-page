@@ -47,6 +47,7 @@ export default {
   scheduled(_controller, env, context) {
     context.waitUntil(cleanupScoreStorage(env).catch(() => {
       logFailure("storage", "cleanup", 500, crypto.randomUUID());
+      throw new Error("score_storage_cleanup_failed");
     }));
   },
 } satisfies ExportedHandler<Cloudflare.Env>;

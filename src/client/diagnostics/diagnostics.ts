@@ -25,12 +25,58 @@ interface DiagnosticRecord {
 }
 
 const records: DiagnosticRecord[] = [];
+const resetListeners = new Set<() => void>();
+const responses = new WeakMap<Response, { operation: DiagnosticOperation; generation: number }>();
 const retentionMs = 30 * 60_000;
 let generation = 0;
 
 export function clearDiagnostics() {
   generation += 1;
   records.length = 0;
+  for (const listener of resetListeners) {
+    try { listener(); } catch { /* Subscribers cannot block identity changes. */ }
+  }
+}
+
+export function subscribeDiagnosticReset(listener: () => void) {
+  resetListeners.add(listener);
+  return () => { resetListeners.delete(listener); };
+}
+
+export function diagnosticScope() {
+  const startedGeneration = generation;
+  return (failure: Failure) => {
+    if (generation === startedGeneration) recordFailure(failure);
+  };
+}
+
+export class DiagnosticResponseError extends Error {
+  constructor() { super("invalid_server_response"); }
+}
+
+export async function parseDiagnosticResponse<T>(response: Response, schema: { parse(value: unknown): T }): Promise<T> {
+  try {
+    return schema.parse(await response.json());
+  } catch {
+    const context = responses.get(response);
+    if (context && context.generation === generation) {
+      recordFailure({ operation: context.operation, stage: "decode", category: "internal",
+        requestId: response.headers.get("X-Same-Page-Request-Id"),
+        serverBuild: response.headers.get("X-Same-Page-Build"),
+      });
+    }
+    throw new DiagnosticResponseError();
+  }
+}
+
+export function pdfFailureCategory(error: unknown): DiagnosticCategory {
+  if (typeof error === "object" && error !== null) {
+    if ("status" in error && typeof error.status === "number") {
+      return error.status === 0 ? "network" : categoryForStatus(error.status);
+    }
+    if ("name" in error && ["InvalidPDFException", "PasswordException"].includes(String(error.name))) return "validation";
+  }
+  return error instanceof TypeError ? "network" : "internal";
 }
 
 export function recordFailure(failure: Failure) {
@@ -80,6 +126,7 @@ export const diagnosticFetch: typeof fetch = async (...args) => {
   const operation = operationForUrl(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
   try {
     const response = await globalThis.fetch(...args);
+    responses.set(response, { operation, generation: startedGeneration });
     if (!response.ok && startedGeneration === generation) {
       recordFailure({ operation, category: categoryForStatus(response.status),
         requestId: response.headers.get("X-Same-Page-Request-Id"),

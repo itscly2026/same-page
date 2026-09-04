@@ -1,7 +1,7 @@
-import { diagnosticFetch, recordFailure } from "../diagnostics/diagnostics";
+import { parseDiagnosticResponse, diagnosticFetch, recordFailure } from "../diagnostics/diagnostics";
 import {
   annotationPullResponseSchema,
-  type AnnotationObjectRecord,
+  annotationPushResponseSchema,
 } from "../../shared/annotations";
 import {
   annotationRecordKey,
@@ -33,7 +33,7 @@ export async function syncAnnotations(
         `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/annotations?cursor=${cursor}`,
       );
       if (!response.ok) throw new Error("annotation_pull_failed");
-      const body = annotationPullResponseSchema.parse(await response.json());
+      const body = await parseDiagnosticResponse(response, annotationPullResponseSchema);
       await assertLocalWorkspaceActive(workspace);
       await applyPulledAnnotations(workspace, body.cursor, body.objects);
       pulled = body.objects.length;
@@ -183,13 +183,7 @@ async function drainAnnotationOutbox(
       },
     );
     if (!response.ok) throw new AnnotationPushError(response.status);
-    const body = (await response.json()) as {
-      results: Array<{
-        opId: string;
-        status: "accepted" | "conflict" | "op_id_reused";
-        object?: AnnotationObjectRecord | null;
-      }>;
-    };
+    const body = await parseDiagnosticResponse(response, annotationPushResponseSchema);
     await assertLocalWorkspaceActive(workspace);
     if (body.results.some((result) => result.status === "conflict")) {
       recordFailure({ operation: "sync", category: "conflict", stage: "push" });
