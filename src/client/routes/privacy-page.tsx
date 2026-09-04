@@ -10,11 +10,11 @@ export default function PrivacyPage() {
       <AppHeader />
       <main className="privacy-document" aria-labelledby="privacy-title">
         <header className="privacy-document__header">
-          <p className="eyebrow">Same Page</p>
+          <p className="eyebrow">合谱 · Same Page</p>
           <h1 id="privacy-title">隐私政策</h1>
           <p className="privacy-document__updated">最后更新：2026 年 9 月 4 日</p>
           <p className="privacy-document__lead">
-            Same Page 是为合唱排练设计的乐谱云盘。本政策说明我们在你使用服务时处理哪些信息、为什么处理，以及你可以如何联系我们。
+            合谱（Same Page）是为合唱排练设计的乐谱云盘。本政策说明我们在你使用服务时处理哪些信息、为什么处理，以及你可以如何联系我们。
           </p>
         </header>
 
@@ -152,7 +152,7 @@ export default function PrivacyPage() {
         </section>
 
         <Link className="privacy-document__home" to="/">
-          返回 Same Page 首页
+          返回合谱首页
         </Link>
       </main>
     </div>

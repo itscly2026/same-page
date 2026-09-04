@@ -44,8 +44,8 @@ export default defineConfig({
         "icon-maskable-512.png",
       ],
       manifest: {
-        name: "Same Page",
-        short_name: "Same Page",
+        name: "合谱 · Same Page",
+        short_name: "合谱",
         description: "合唱乐谱与排练批注",
         theme_color: "#014653",
         background_color: "#ffffff",

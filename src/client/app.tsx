@@ -1,6 +1,7 @@
 import { lazy, Suspense, useLayoutEffect } from "react";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
 
+import { AppFooter } from "./components/app-footer";
 import { ReloadPrompt } from "./components/reload-prompt";
 import { markRouteTransitionMilestones } from "./performance/loading-performance";
 import { LocalIdentityObserver } from "./platform/local-identity-observer";
@@ -29,25 +30,27 @@ export function AppRoutes() {
       <RouteScrollReset />
       <Suspense fallback={<p className="route-loading">正在打开乐谱…</p>}>
         <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/user" element={<UserLifecyclePage />} />
-          <Route path="/choirs/:choirId/memberships" element={<MembershipManagementPage />} />
-          <Route path="/login" element={<AuthPage />} />
-          <Route path="/privacy" element={<PrivacyPage />} />
-          <Route path="/diagnostics" element={<DiagnosticsPage />} />
-          <Route path="/choirs/:choirId" element={<ChoirPage />} />
-          <Route
-            path="/choirs/:choirId/preferences"
-            element={<DriveLayerPreferencesPage />}
-          />
-          <Route
-            path="/choirs/:choirId/shared-layers"
-            element={<SharedLayerManagementPage />}
-          />
-          <Route
-            path="/choirs/:choirId/shared-layers/:slot"
-            element={<SharedLayerGrantsPage />}
-          />
+          <Route element={<PageWithFooter />}>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/user" element={<UserLifecyclePage />} />
+            <Route path="/choirs/:choirId/memberships" element={<MembershipManagementPage />} />
+            <Route path="/login" element={<AuthPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/diagnostics" element={<DiagnosticsPage />} />
+            <Route path="/choirs/:choirId" element={<ChoirPage />} />
+            <Route
+              path="/choirs/:choirId/preferences"
+              element={<DriveLayerPreferencesPage />}
+            />
+            <Route
+              path="/choirs/:choirId/shared-layers"
+              element={<SharedLayerManagementPage />}
+            />
+            <Route
+              path="/choirs/:choirId/shared-layers/:slot"
+              element={<SharedLayerGrantsPage />}
+            />
+          </Route>
           <Route
             path="/choirs/:choirId/scores/:scoreId"
             element={<ReaderPage />}
@@ -56,6 +59,10 @@ export function AppRoutes() {
       </Suspense>
     </>
   );
+}
+
+function PageWithFooter() {
+  return <div className="page-with-footer"><Outlet /><AppFooter /></div>;
 }
 
 function RouteScrollReset() {

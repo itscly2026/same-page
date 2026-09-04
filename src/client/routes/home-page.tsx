@@ -56,7 +56,7 @@ const productFeatures = [
     illustration: sharedLayersIllustration,
     illustrationAlt: "不同颜色的共享批注层从同一份乐谱展开，每层保留多处标记。",
     description:
-      "每份乐谱都包含 E、S、A、T、B 五个默认共享层，其中 E · Ensemble 用于所有人都关注的内容。获授权的人，可以在对应共享层留下批注。",
+      "排练要求按声部分层共享，获授权的人可以留下批注，大家在同一份谱上查看。",
   },
   {
     title: "只看需要的，也保留自己的",
@@ -64,7 +64,7 @@ const productFeatures = [
     illustrationAlt:
       "显示紫色 Tenor 男高音共享层与仅自己可见的绿色个人层，其余共享层呈灰色虚线隐藏状态。",
     description:
-      "你可以只显示与自己有关的共享层。你也拥有一个只有自己可见、可编辑的个人层。",
+      "选择需要查看的声部批注，也能在个人层记下自己的提醒，只有你能看到。",
   },
   {
     title: "有网就同步，没网不耽误",
@@ -72,14 +72,14 @@ const productFeatures = [
     illustrationAlt:
       "左侧断网时仍能用笔在谱上画出虚线连音线；右侧联网时显示实线批注和云同步图标。",
     description:
-      "打开乐谱即可获取最新的共享批注。提前下载离线副本后，断网时阅读和批注仍可继续；恢复联网后，本机内容会继续同步。",
+      "提前下载离线副本，断网也能继续看谱、做批注；恢复联网后，批注会继续同步。",
   },
   {
     title: "一份乐谱，适配每台设备",
     illustration: everyDeviceIllustration,
     illustrationAlt: "电脑、平板和手机上显示同一份乐谱与相同的彩色批注。",
     description:
-      "无论使用 iPad、iPhone、Android 设备还是 Windows、macOS 电脑，都能打开同一份乐谱和批注。",
+      "在平板、手机或电脑上，都能打开同一份乐谱和批注。",
   },
 ] as const;
 
@@ -300,7 +300,7 @@ export function HomePage() {
         </main>
       ) : session.isPending ? <main className="page-shell"><p role="status">正在加载…</p></main> : <main className="marketing-content">
         <section className="marketing-hero" aria-labelledby="page-title">
-          <p className="hero-mark">Same Page</p>
+          <p className="hero-mark">合谱 · Same Page</p>
           <h1 id="page-title" lang="en">
             Harmony begins on the Same Page
           </h1>
@@ -366,11 +366,6 @@ export function HomePage() {
         </section>
       </main>}
 
-      {!userId && !session.isPending ? (
-        <footer className="marketing-footer">
-          <Link to="/privacy">隐私政策</Link>
-        </footer>
-      ) : null}
 
       <ModalOverlay
         className="modal-overlay"
@@ -387,7 +382,7 @@ export function HomePage() {
               <>
                 <div className="dialog-heading">
                   <div>
-                    <p className="dialog-eyebrow">Same Page</p>
+                    <p className="dialog-eyebrow">合谱 · Same Page</p>
                     <Heading slot="title">
                       {joinStep.kind === "invite"
                         ? (userId ? "加入新云盘" : "进入云盘")

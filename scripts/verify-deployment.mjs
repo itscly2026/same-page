@@ -62,7 +62,7 @@ async function verifyAppShell(expectedBuildId) {
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.equal(response.headers.get("referrer-policy"), "no-referrer");
   const html = await response.text();
-  assert.match(html, /<title>Same Page<\/title>/);
+  assert.match(html, /<title>合谱 · Same Page<\/title>/);
   const scriptPaths = shellJavaScriptAssets(html);
   assert.ok(scriptPaths.length > 0, "application shell must load hashed scripts");
   const scripts = await Promise.all(scriptPaths.map(async (scriptPath) => {
@@ -114,7 +114,8 @@ async function verifyManifest() {
     /no-cache|max-age=0/,
     "manifest must be revalidated",
   );
-  assert.equal(manifest.name, "Same Page");
+  assert.equal(manifest.name, "合谱 · Same Page");
+  assert.equal(manifest.short_name, "合谱");
   assert.equal(manifest.display, "fullscreen");
 }
 

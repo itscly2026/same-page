@@ -449,7 +449,7 @@ export default function AuthPage() {
       case "sign-in":
         return {
           title: "登录",
-          description: "使用密码登录 Same Page。",
+          description: "使用密码登录合谱。",
           form: (
             <Form className="entry-form" onSubmit={signIn}>
               <EmailSummary email={email} />
@@ -640,7 +640,7 @@ export default function AuthPage() {
       />
       <main className="auth-layout">
         <section className="auth-card" aria-labelledby="auth-title">
-          <p className="dialog-eyebrow">Same Page</p>
+          <p className="dialog-eyebrow">合谱 · Same Page</p>
           <h1 id="auth-title" ref={titleRef} tabIndex={-1}>
             {viewPanel.title}
           </h1>
