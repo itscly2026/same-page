@@ -1,3 +1,4 @@
+import { diagnosticFetch, recordFailure } from "../diagnostics/diagnostics";
 import { scoreCloudStateSchema } from "../../shared/scores";
 import { localDatabase } from "../platform/local-database";
 import {
@@ -138,6 +139,7 @@ export async function recoverAnnotationOutbox(
       results,
     });
   } catch {
+    recordFailure({ operation: "sync", category: "internal", stage: "prepare" });
     return complete(run, {
       ownerKey,
       trigger,
@@ -165,7 +167,7 @@ async function recoverScope(
 
   try {
     await assertLocalWorkspaceActive(workspace);
-    const response = await fetch(
+    const response = await diagnosticFetch(
       `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/status`,
     );
     await assertLocalWorkspaceActive(workspace);

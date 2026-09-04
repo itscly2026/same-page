@@ -1,3 +1,4 @@
+import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -17,7 +18,7 @@ export default function SharedLayerManagementPage() {
 
   useEffect(() => {
     let active = true;
-    void fetch(`/api/choirs/${choirId}/shared-layers`)
+    void diagnosticFetch(`/api/choirs/${choirId}/shared-layers`)
       .then(async (response) => {
         if (!response.ok) throw new Error("shared_layers_unavailable");
         return sharedLayerManagementResponseSchema.parse(await response.json());
@@ -44,7 +45,7 @@ export default function SharedLayerManagementPage() {
     setLayers((current) => current.map((entry) =>
       entry.slot === layer.slot ? { ...entry, defaultColor } : entry));
     try {
-      const response = await fetch(`/api/choirs/${choirId}/shared-layers/${layer.slot}/settings`, {
+      const response = await diagnosticFetch(`/api/choirs/${choirId}/shared-layers/${layer.slot}/settings`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ defaultColor }),

@@ -1,3 +1,4 @@
+import { diagnosticFetch, recordFailure } from "../diagnostics/diagnostics";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   ArrowLeft, Download, Ellipsis, Layers, Maximize2, Minus, Pencil, Plus,
@@ -553,11 +554,13 @@ export default function ReaderPage() {
     let active = true;
     void (async () => {
       let preparedLayers: AnnotationLayerSummary[];
+      let layersReceived = false;
       try {
-        const layerResponse = await fetch(
+        const layerResponse = await diagnosticFetch(
           `/api/choirs/${choirId}/scores/${scoreId}/layers`,
         );
         if (!layerResponse.ok) throw new Error("layers unavailable");
+        layersReceived = true;
         const body = annotationLayerListResponseSchema.parse(
           await layerResponse.json(),
         );
@@ -583,6 +586,7 @@ export default function ReaderPage() {
       } catch {
         if (active) {
           setLayerPreparation({ scopeKey: workspace.scopeKey, status: "failed" });
+          if (layersReceived) recordFailure({ operation: "layers", category: "internal", stage: "prepare" });
           setSyncOutcome("none");
         }
         return;
@@ -591,7 +595,9 @@ export default function ReaderPage() {
         await syncAnnotations(workspace, { pull: true });
         if (active) setSyncOutcome("synced");
       } catch {
-        if (active) setSyncOutcome("none");
+        if (active) {
+          setSyncOutcome("failed");
+        }
       }
     })();
     return () => {
@@ -752,6 +758,7 @@ export default function ReaderPage() {
       })
       .catch((error) => {
         if (!active || !workspaceScopeKey) return;
+        recordFailure({ operation: "pdf", category: "internal", stage: "decode" });
         if (
           error instanceof ReaderDocumentVersionMismatchError &&
           source.kind === "cloud"
@@ -826,7 +833,7 @@ export default function ReaderPage() {
     setDownloading(true);
     setDownloadMessage(null);
     try {
-      const response = await fetch(
+      const response = await diagnosticFetch(
         `/api/choirs/${choirId}/scores/${scoreId}/versions/${score.currentVersion.id}/pdf`,
       );
       if (!response.ok) throw new Error("Download failed");
@@ -836,7 +843,7 @@ export default function ReaderPage() {
         throw new Error("Checksum mismatch");
       }
       await ensureOfflineAppShell();
-      const layerResponse = await fetch(
+      const layerResponse = await diagnosticFetch(
         `/api/choirs/${choirId}/scores/${scoreId}/layers`,
       );
       if (!layerResponse.ok) throw new Error("Layer download failed");
@@ -1068,6 +1075,7 @@ export default function ReaderPage() {
         >
           返回云盘
         </Link>
+        <Link to="/diagnostics">故障诊断</Link>
       </main>
     );
   }
@@ -1280,6 +1288,7 @@ export default function ReaderPage() {
                   {downloadMessage ?? syncStatus.message}
                 </p>
               ) : null}
+              <Link to="/diagnostics">故障诊断</Link>
             </aside>
           ) : null}
         </header>
@@ -1493,7 +1502,7 @@ async function lookupScoreCloudState(
   scoreId: string,
 ): Promise<ScoreCloudLookup> {
   try {
-    const response = await fetch(
+    const response = await diagnosticFetch(
       `/api/choirs/${choirId}/scores/${scoreId}/bootstrap`,
     );
     if (response.status === 401 || response.status === 403) {

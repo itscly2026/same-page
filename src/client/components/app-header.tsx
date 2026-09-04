@@ -8,7 +8,7 @@ export function AppHeader({ actions }: { actions?: ReactNode }) {
         <img src="/icon-192.png" alt="" width="44" height="44" />
         <span>Same Page</span>
       </Link>
-      {actions ? <nav className="app-header__actions">{actions}</nav> : null}
+      <nav className="app-header__actions">{actions}<Link to="/diagnostics">故障诊断</Link></nav>
     </header>
   );
 }

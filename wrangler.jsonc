@@ -34,7 +34,9 @@
     "run_worker_first": ["/api/*"]
   },
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "logs": { "enabled": true, "invocation_logs": false },
+    "traces": { "enabled": false }
   },
   "triggers": {
     "crons": ["0 * * * *"]

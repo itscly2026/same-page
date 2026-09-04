@@ -1,3 +1,4 @@
+import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -17,7 +18,7 @@ export default function DriveLayerPreferencesPage() {
 
   useEffect(() => {
     let active = true;
-    void fetch(`/api/choirs/${choirId}/shared-layer-preferences`)
+    void diagnosticFetch(`/api/choirs/${choirId}/shared-layer-preferences`)
       .then(async (response) => {
         if (!response.ok) throw new Error("preferences_unavailable");
         return driveLayerPreferencesResponseSchema.parse(await response.json());
@@ -58,7 +59,7 @@ export default function DriveLayerPreferencesPage() {
       };
     }));
     try {
-      const response = await fetch(
+      const response = await diagnosticFetch(
         `/api/choirs/${choirId}/shared-layers/${layer.slot}/preference`,
         {
           method: "PUT",

@@ -1,3 +1,4 @@
+import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { Button } from "react-aria-components";
 
 import type { AnnotationLayerSummary } from "../../shared/annotations";
@@ -25,7 +26,7 @@ export function ReaderLayerPanel({
   ) => {
     if (!layer.defaultSlot) return;
     if (signedIn) {
-      const response = await fetch(
+      const response = await diagnosticFetch(
         `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/shared-layers/${layer.defaultSlot}/preference`,
         {
           method: "PUT",
