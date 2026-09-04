@@ -10,7 +10,7 @@ export function LibraryDialogHeading({
   return (
     <div className="dialog-heading">
       <div>
-        <p className="dialog-eyebrow">Same Page</p>
+        <p className="dialog-eyebrow">合谱 · Same Page</p>
         <Heading slot="title">{title}</Heading>
       </div>
       <Button className="icon-button" aria-label="关闭" onPress={close}>

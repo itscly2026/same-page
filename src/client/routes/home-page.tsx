@@ -300,7 +300,7 @@ export function HomePage() {
         </main>
       ) : session.isPending ? <main className="page-shell"><p role="status">正在加载…</p></main> : <main className="marketing-content">
         <section className="marketing-hero" aria-labelledby="page-title">
-          <p className="hero-mark">Same Page</p>
+          <p className="hero-mark">合谱 · Same Page</p>
           <h1 id="page-title" lang="en">
             Harmony begins on the Same Page
           </h1>
@@ -387,7 +387,7 @@ export function HomePage() {
               <>
                 <div className="dialog-heading">
                   <div>
-                    <p className="dialog-eyebrow">Same Page</p>
+                    <p className="dialog-eyebrow">合谱 · Same Page</p>
                     <Heading slot="title">
                       {joinStep.kind === "invite"
                         ? (userId ? "加入新云盘" : "进入云盘")

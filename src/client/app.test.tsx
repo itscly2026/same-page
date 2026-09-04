@@ -175,7 +175,7 @@ describe("AppRoutes", () => {
       "href",
       "mailto:admin@clyapps.com",
     );
-    expect(screen.getByRole("link", { name: "返回 Same Page 首页" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "返回合谱首页" })).toHaveAttribute(
       "href",
       "/",
     );

@@ -9,9 +9,10 @@ export function AppHeader({ actions }: { actions?: ReactNode }) {
 
   return (
     <header className="app-header">
-      <Link className="brand-link" to="/" aria-label="Same Page 首页">
+      <Link className="brand-link" to="/" aria-label="合谱 Same Page 首页">
         <img src="/icon-192.png" alt="" width="44" height="44" />
-        <span>Same Page</span>
+        <span className="brand-name-zh" lang="zh-CN">合谱</span>
+        <span className="brand-name-en" lang="en">Same Page</span>
       </Link>
       <nav className="app-header__actions">
         {actions}
