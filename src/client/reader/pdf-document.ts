@@ -1,3 +1,4 @@
+import { diagnosticFetch } from "../diagnostics/diagnostics";
 import {
   getDocument,
   GlobalWorkerOptions,
@@ -35,7 +36,7 @@ export function loadPdfDocument(
     let resolvedSource = source;
     let actualVersionId = expectedVersionId ?? null;
     if (typeof source === "string" && !expectedVersionId) {
-      const response = await fetch(source, {
+      const response = await diagnosticFetch(source, {
         method: "HEAD",
         credentials: "include",
         signal: abortController.signal,

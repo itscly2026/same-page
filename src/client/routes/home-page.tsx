@@ -1,3 +1,4 @@
+import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { type FormEvent, useEffect, useState } from "react";
 import {
   Button,
@@ -141,7 +142,7 @@ export function HomePage() {
     let createdGuestSession = false;
 
     try {
-      const response = await fetch("/api/guest/session", {
+      const response = await diagnosticFetch("/api/guest/session", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ admission: "invite", joinCode }),
@@ -164,7 +165,7 @@ export function HomePage() {
         return;
       }
 
-      const joinStateResponse = await fetch("/api/choirs/current-guest/join-state");
+      const joinStateResponse = await diagnosticFetch("/api/choirs/current-guest/join-state");
       if (!joinStateResponse.ok) {
         await clearActiveGuestSession();
         createdGuestSession = false;
@@ -201,7 +202,7 @@ export function HomePage() {
     setJoinMessage(null);
 
     try {
-      const response = await fetch("/api/choirs/join-current-guest", {
+      const response = await diagnosticFetch("/api/choirs/join-current-guest", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ displayName }),
@@ -501,7 +502,7 @@ export function HomePage() {
 
 async function loadPreviewChoir(): Promise<ChoirSummary | null> {
   try {
-    const response = await fetch("/api/guest/preview-choir");
+    const response = await diagnosticFetch("/api/guest/preview-choir");
     if (!response.ok) return null;
     return previewChoirResponseSchema.parse(await response.json()).choir;
   } catch {

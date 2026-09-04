@@ -6,6 +6,7 @@ import {
   choirMembershipsResponseSchema,
   type MembershipSummary,
 } from "../../shared/choirs";
+import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
 import { startLoadingJourney } from "../performance/loading-performance";
 import { driveCacheOwnerKey, rememberDriveSummary } from "./drive-library-cache";
 import "./library-ux.css";
@@ -31,9 +32,9 @@ export function MembershipList({
     async function load() {
       setState({ userId, kind: "loading" });
       try {
-        const response = await fetch("/api/choirs", { signal: controller.signal });
+        const response = await diagnosticFetch("/api/choirs", { signal: controller.signal });
         if (!response.ok) throw new Error("memberships_failed");
-        const { memberships } = choirMembershipsResponseSchema.parse(await response.json());
+        const { memberships } = await parseDiagnosticResponse(response, choirMembershipsResponseSchema);
         if (controller.signal.aborted) return;
         memberships.forEach(({ choir }) =>
           rememberDriveSummary(driveCacheOwnerKey(userId, choir.id), choir),

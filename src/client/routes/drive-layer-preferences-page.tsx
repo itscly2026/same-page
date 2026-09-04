@@ -1,3 +1,4 @@
+import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -35,7 +36,7 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
 
   useEffect(() => {
     let active = true;
-    void fetch(`/api/choirs/${choirId}/shared-layer-preferences`)
+    void diagnosticFetch(`/api/choirs/${choirId}/shared-layer-preferences`)
       .then(async (response) => {
         return driveLayerPreferencesResponseSchema.parse(await settingsResponse(response));
       })
@@ -77,7 +78,7 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
       };
     }));
     try {
-      const response = await fetch(
+      const response = await diagnosticFetch(
         `/api/choirs/${choirId}/shared-layers/${layer.slot}/preference`,
         {
           method: "PUT",

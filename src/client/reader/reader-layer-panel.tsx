@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { Button } from "react-aria-components";
 
 import type { AnnotationLayerSummary } from "../../shared/annotations";
@@ -35,7 +36,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
     const results = await Promise.allSettled(changes.map(async ({ layer, subscribed }) => {
       if (!layer.defaultSlot) return;
       if (signedIn) {
-        const response = await fetch(
+        const response = await diagnosticFetch(
           `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/shared-layers/${layer.defaultSlot}/preference`,
           {
             method: "PUT",

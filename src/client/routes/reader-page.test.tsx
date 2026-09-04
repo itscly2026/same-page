@@ -29,6 +29,7 @@ import {
 import { readerPdfSourceIsCurrent } from "../reader/reader-source-identity";
 import { findVerifiedOfflineScore } from "../offline/offline-score-verification";
 import ReaderPage from "./reader-page";
+import { clearDiagnostics, exportDiagnostics } from "../diagnostics/diagnostics";
 
 const readerAuthState = vi.hoisted(() => ({ signedIn: true }));
 
@@ -248,6 +249,7 @@ describe("ReaderPage", () => {
 
   beforeEach(async () => {
     readerAuthState.signedIn = true;
+    clearDiagnostics();
     clearReaderDocumentCache();
     clearReaderScoreCache();
     virtualTestState.itemSize = 100;
@@ -909,6 +911,7 @@ describe("ReaderPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "当前账号没有访问这份乐谱的权限",
     );
+    expect(exportDiagnostics()).toContain('"category": "permission"');
 
     let rejectReacquire!: (error: Error) => void;
     const pendingReacquire = new Promise<never>((_resolve, reject) => {
@@ -1437,6 +1440,7 @@ describe("ReaderPage", () => {
       </MemoryRouter>,
     );
     expect(await screen.findByRole("alert")).toHaveTextContent("网络暂时不可用");
+    expect(exportDiagnostics()).toContain('"category": "network"');
     networkView.unmount();
 
     vi.stubGlobal(
@@ -1619,6 +1623,7 @@ describe("ReaderPage", () => {
     toggleChrome();
     const editButton = await screen.findByRole("button", { name: "编辑" });
     expect(editButton).toHaveAttribute("data-state", "failed");
+    expect(exportDiagnostics()).toContain('"operation": "layers"');
     expect(editButton.querySelector("svg")).not.toBeNull();
     expect(screen.getByText("编辑准备失败，点按铅笔重试")).toHaveAttribute(
       "role",

@@ -1,3 +1,4 @@
+import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { type DragEvent, useState } from "react";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 
@@ -42,7 +43,7 @@ export function UploadDialog({
         const form = new FormData();
         form.set("file", item.file);
         try {
-          const response = await fetch(`/api/choirs/${choirId}/scores`, {
+          const response = await diagnosticFetch(`/api/choirs/${choirId}/scores`, {
             method: "POST",
             body: form,
           });

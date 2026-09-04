@@ -1,3 +1,4 @@
+import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
 import { annotationLayerListResponseSchema } from "../../shared/annotations";
 import type { ScoreSummary } from "../../shared/scores";
 import { cacheAnnotationLayers } from "../annotations/local-annotations";
@@ -14,15 +15,15 @@ export async function prepareOfflineScore(workspace: LocalWorkspace, score: Scor
   await assertLocalWorkspaceActive(workspace);
   if (workspace.choirId !== score.choirId || workspace.scoreId !== score.id) throw new Error("offline_score_scope_mismatch");
   const base = `/api/choirs/${encodeURIComponent(score.choirId)}/scores/${encodeURIComponent(score.id)}`;
-  const response = await fetch(`${base}/versions/${encodeURIComponent(score.currentVersion.id)}/pdf`);
+  const response = await diagnosticFetch(`${base}/versions/${encodeURIComponent(score.currentVersion.id)}/pdf`);
   if (!response.ok) throw new Error("offline_pdf_download_failed");
   const data = await response.arrayBuffer();
   if (data.byteLength !== score.currentVersion.sizeBytes || await sha256Hex(data) !== score.currentVersion.sha256) throw new Error("offline_pdf_checksum_mismatch");
   await ensureOfflineAppShell();
   await assertLocalWorkspaceActive(workspace);
-  const layerResponse = await fetch(`${base}/layers`);
+  const layerResponse = await diagnosticFetch(`${base}/layers`);
   if (!layerResponse.ok) throw new Error("offline_layer_download_failed");
-  const { layers } = annotationLayerListResponseSchema.parse(await layerResponse.json());
+  const { layers } = await parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema);
   // An expired user can keep their local copy, but a guest API response must
   // never replace that user's private layer metadata while preparing a download.
   if (!hasCompleteOfflineLayers(layers, workspace.ownerKey)) throw new Error("offline_download_requires_matching_identity");

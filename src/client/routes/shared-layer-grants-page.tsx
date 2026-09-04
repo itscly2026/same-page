@@ -1,3 +1,4 @@
+import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -43,10 +44,10 @@ function SharedLayerGrants({ choirId, slotParam }: { choirId: string; slotParam:
     if (!slot) return;
     let active = true;
     void Promise.all([
-      fetch(`/api/choirs/${choirId}/shared-layers`).then(async (response) => {
+      diagnosticFetch(`/api/choirs/${choirId}/shared-layers`).then(async (response) => {
         return sharedLayerManagementResponseSchema.parse(await settingsResponse(response));
       }),
-      fetch(`/api/choirs/${choirId}/shared-layers/${slot}/grants`).then(async (response) => {
+      diagnosticFetch(`/api/choirs/${choirId}/shared-layers/${slot}/grants`).then(async (response) => {
         return sharedLayerGrantListResponseSchema.parse(await settingsResponse(response));
       }),
     ]).then(([management, grants]) => {
@@ -73,7 +74,7 @@ function SharedLayerGrants({ choirId, slotParam }: { choirId: string; slotParam:
     setMembers((current) => current.map((entry) =>
       entry.id === member.id ? { ...entry, granted } : entry));
     try {
-      const response = await fetch(
+      const response = await diagnosticFetch(
         `/api/choirs/${choirId}/shared-layers/${slot}/grants/${member.id}`,
         {
           method: "PUT",

@@ -19,6 +19,7 @@ const SharedLayerGrantsPage = lazy(
   () => import("./routes/shared-layer-grants-page"),
 );
 const PrivacyPage = lazy(() => import("./routes/privacy-page"));
+const DiagnosticsPage = lazy(() => import("./diagnostics/diagnostics-page"));
 
 export function AppRoutes() {
   return (
@@ -29,6 +30,7 @@ export function AppRoutes() {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<AuthPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/diagnostics" element={<DiagnosticsPage />} />
           <Route path="/choirs/:choirId" element={<ChoirPage />} />
           <Route
             path="/choirs/:choirId/preferences"
