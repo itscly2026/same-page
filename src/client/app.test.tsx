@@ -179,8 +179,8 @@ describe("AppRoutes", () => {
       "href",
       "/",
     );
-    expect(screen.getByText(/成员退出、移除及其个人层恢复与自动清理流程仍在开发/)).toBeInTheDocument();
-    expect(screen.getByText(/用户删除与恢复的自助流程仍在开发/)).toBeInTheDocument();
+    expect(screen.getByText(/该成员关系授予的云端访问与同步立即撤销/)).toBeInTheDocument();
+    expect(screen.getByText(/重新验证原登录方式并确认删除/)).toBeInTheDocument();
   });
 
   it("edits drive-scoped defaults from My Preferences", async () => {
