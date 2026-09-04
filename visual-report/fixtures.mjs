@@ -92,7 +92,15 @@ export function resolveFixtureRequest({
   identity = "guest",
   scenarioId = "",
   cookie = "",
+  pdf = samplePdf,
+  selectedScore = score,
 }) {
+  const score = selectedScore;
+  const samplePdf = pdf;
+  if (method === "DELETE" && pathname === "/api/guest/session") {
+    return { status: 204, body: "", contentType: "text/plain", headers: { "set-cookie": "same_page_guest=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax" } };
+  }
+
   if (method === "GET" && pathname === "/api/auth/social-providers") {
     return json({ providers: ["google", "wechat"] });
   }
@@ -157,7 +165,7 @@ export function resolveFixtureRequest({
 
   if (pathname.startsWith(`/api/choirs/${previewChoir.id}/scores/${score.id}`) && identity !== "guest") {
     const response = resolveFixtureRequest({
-      pathname: pathname.replace(previewChoir.id, choir.id), method, identity: "member", scenarioId, cookie,
+      pathname: pathname.replace(previewChoir.id, choir.id), method, identity: "member", scenarioId, cookie, pdf, selectedScore,
     });
     if (response.contentType.startsWith("application/json")) {
       return { ...response, body: response.body.replaceAll(choir.id, previewChoir.id) };
@@ -184,6 +192,8 @@ export function resolveFixtureRequest({
       },
     });
   }
+
+  if (method === "GET" && pathname === `/api/choirs/${previewChoir.id}/bootstrap` && identity === "guest" && !cookie.includes("same_page_guest=visual-preview")) return json({ error: "forbidden" }, 403);
 
   if (
     method === "GET" &&
@@ -461,4 +471,149 @@ function pdfEllipse(x, y, radiusX, radiusY) {
     `${x + radiusX} ${y - controlY} ${x + controlX} ${y - radiusY} ${x} ${y - radiusY} c`,
     `${x - controlX} ${y - radiusY} ${x - radiusX} ${y - controlY} ${x - radiusX} ${y} c`,
   ].join("\n");
+}
+
+// Original synthetic SATB notation and neutral syllables, authored for this
+// repository's UI fixtures. No score, lyric, identity or private data is copied.
+export const denseFixtureProvenance = {
+  kind: "original-generated",
+  source: "visual-report/fixtures.mjs",
+  description: "自行生成的 SATB 排版样本，使用原创音符排列与 la / lu / ah 音节；仅用于界面检验，不作为可演唱乐谱。",
+  pageSizes: [[612, 792], [595, 842], [842, 595], [612, 792], [595, 842], [612, 792], [842, 595], [612, 792]],
+};
+
+export function createVisualFixtureSession(scenario = {}) {
+  const requests = [];
+  const intentionalFailures = [];
+  const unmatchedRequests = [];
+  const preferences = new Map();
+  const scorePreferences = new Map();
+  const colors = new Map();
+  const grants = new Map();
+  let loadFailures = 0;
+  let uploadCount = 0;
+  let failuresArmed = false;
+  const pdf = scenario.dense ? createDenseScorePdf() : samplePdf;
+  const selectedScore = scenario.dense ? {
+    ...score,
+    fileName: "原创 SATB 排版样本 · 八页混合尺寸.pdf",
+    currentVersion: { ...score.currentVersion, pageCount: 8, sizeBytes: pdf.byteLength, sha256: createHash("sha256").update(pdf).digest("hex") },
+  } : score;
+  let scores = scenario.id === "library-empty" ? [] : [selectedScore, ...otherScores];
+  if (scenario.id === "library-long-list") scores = Array.from({ length: 30 }, (_, index) => ({
+    ...selectedScore,
+    id: index ? `long-score-${index}` : selectedScore.id,
+    fileName: `${String(index + 1).padStart(2, "0")} · 秋日合唱排练与正式演出 · 全声部附歌词 · 修订版_${index + 1}_最终校对.pdf`,
+  }));
+  return {
+    pdf,
+    armFailures() { failuresArmed = true; },
+    diagnostics: { requests, intentionalFailures, unmatchedRequests },
+    resolve(request) {
+      const { pathname, method = "GET", body } = request;
+      requests.push({ method, pathname });
+      const failure = (status, reason) => {
+        intentionalFailures.push({ method, pathname, status, reason });
+        return json({ error: reason }, status);
+      };
+      if (scenario.id === "preferences-load-retry" && pathname.endsWith("/shared-layer-preferences") && loadFailures++ === 0) return failure(503, "injected_preferences_unavailable");
+      if (scenario.id === "preferences-load-failure" && pathname.endsWith("/shared-layer-preferences")) return failure(503, "injected_preferences_unavailable");
+      if (scenario.id === "settings-permission-denied" && pathname.includes("/shared-layers")) return failure(403, "forbidden");
+      if (scenario.id === "reader-layer-save-failure" && method === "PUT" && pathname.includes("/shared-layers/")) return failure(503, "injected_preference_save_failure");
+      if (scenario.id === "reader-offline-failure" && failuresArmed && pathname.includes("/versions/") && pathname.endsWith("/pdf")) return failure(503, "injected_pdf_download_failure");
+      const slot = pathname.match(/\/shared-layers\/([ESATB])\//)?.[1];
+      if (method === "PUT" && slot) {
+        if (pathname.endsWith("/preference")) {
+          const map = pathname.includes("/scores/") ? scorePreferences : preferences;
+          const previous = map.get(slot) ?? (map === preferences ? { subscribed: slot !== "B", colorOverride: slot === "E" ? "#7c3aed" : null } : {});
+          map.set(slot, { ...previous, ...body });
+          return json({ preference: map.get(slot) });
+        }
+        if (pathname.endsWith("/settings")) {
+          if (request.identity !== "admin") return failure(403, "forbidden");
+          colors.set(slot, body.defaultColor);
+          return json({ setting: { slot, defaultColor: body.defaultColor } });
+        }
+        if (pathname.includes("/grants/")) {
+          if (request.identity !== "admin") return failure(403, "forbidden");
+          const membershipId = pathname.split("/").at(-1);
+          grants.set(`${slot}:${membershipId}`, body.granted);
+          return json({ grant: { membershipId, granted: body.granted } });
+        }
+      }
+      if (method === "POST" && pathname === `/api/choirs/${choir.id}/scores`) {
+        uploadCount += 1;
+        if (scenario.id === "library-upload-partial" && uploadCount === 2) return failure(413, "pdf_too_large");
+        const uploaded = { ...selectedScore, id: `uploaded-${uploadCount}`, fileName: `已上传示例${uploadCount}.pdf` };
+        scores.push(uploaded);
+        return json({ score: uploaded }, 201);
+      }
+      const response = resolveFixtureRequest({ ...request, scenarioId: scenario.id ?? request.scenarioId, pdf, selectedScore });
+      if (!response.contentType.startsWith("application/json")) return response;
+      const payload = JSON.parse(response.body);
+      if (!payload) return response;
+      if (payload.error === "visual_fixture_not_found") unmatchedRequests.push({ method, pathname });
+      if (payload.scores && !pathname.includes("visual-preview-choir")) payload.scores = scores;
+      if (pathname.endsWith("/shared-layer-preferences") && payload.layers) payload.layers = payload.layers.map((entry) => {
+        const preference = preferences.get(entry.slot) ?? entry;
+        const adminDefaultColor = colors.get(entry.slot) ?? entry.adminDefaultColor;
+        return { ...entry, ...preference, adminDefaultColor, displayColor: preference.colorOverride ?? adminDefaultColor, colorSource: preference.colorOverride ? "drive" : "admin" };
+      });
+      if (pathname.endsWith("/shared-layers") && payload.layers) payload.layers = payload.layers.map((entry) => ({ ...entry, defaultColor: colors.get(entry.slot) ?? entry.defaultColor }));
+      if (pathname.endsWith("/grants") && payload.members) payload.members = payload.members.map((member) => ({ ...member, granted: grants.get(`${slot}:${member.id}`) ?? member.granted }));
+      if (pathname.endsWith("/layers") && payload.layers) payload.layers = payload.layers.map((entry) => {
+        const preference = scorePreferences.get(entry.defaultSlot);
+        if (!preference) return entry;
+        return { ...entry, subscribed: preference.subscribed ?? entry.driveSubscribed ?? true, scoreSubscriptionOverride: preference.subscribed, subscriptionSource: preference.subscribed === null ? "drive" : "score" };
+      });
+      return { ...response, body: JSON.stringify(payload) };
+    },
+  };
+}
+
+function createDenseScorePdf() {
+  const pages = denseFixtureProvenance.pageSizes;
+  const fontId = 3 + pages.length * 2;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    `<< /Type /Pages /Kids [${pages.map((_, i) => `${3 + i} 0 R`).join(" ")}] /Count ${pages.length} >>`,
+    ...pages.map(([width, height], i) => `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${3 + pages.length + i} 0 R >>`),
+    ...pages.map(([width, height], i) => {
+      const content = densePageContent(width, height, i + 1);
+      return `<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`;
+    }),
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let document = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, i) => { offsets.push(Buffer.byteLength(document)); document += `${i + 1} 0 obj\n${object}\nendobj\n`; });
+  const xref = Buffer.byteLength(document);
+  document += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  document += offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
+  document += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(document, "ascii");
+}
+
+function densePageContent(width, height, pageNumber) {
+  const content = ["0 0 0 rg 0 0 0 RG .45 w", `BT /F1 19 Tf 44 ${height - 42} Td (SATB - ORIGINAL LAYOUT STUDY) Tj ET`, `BT /F1 8 Tf 44 ${height - 59} Td (Synthetic notes and neutral syllables / page ${pageNumber} of 8) Tj ET`];
+  const systems = height > 700 ? 3 : 2;
+  for (let system = 0; system < systems; system++) {
+    const top = height - 98 - system * ((height - 140) / systems);
+    for (let voice = 0; voice < 4; voice++) {
+      const y = top - voice * 48;
+      content.push(`BT /F1 9 Tf 28 ${y - 9} Td (${"SATB"[voice]}) Tj ET`);
+      for (let line = 0; line < 5; line++) content.push(`48 ${y - line * 4} m ${width - 32} ${y - line * 4} l S`);
+      for (let bar = 0; bar <= 4; bar++) {
+        const x = 48 + (width - 80) * bar / 4;
+        content.push(`${x} ${y} m ${x} ${y - 16} l S`);
+      }
+      for (let note = 0; note < 16; note++) {
+        const x = 58 + (width - 96) * note / 16;
+        const noteY = y - ((note * 3 + voice + pageNumber) % 9) * 2;
+        content.push(`${pdfEllipse(x, noteY, 3, 2)} f`, `${x + 2.6} ${noteY} m ${x + 2.6} ${noteY + 16} l S`, `BT /F1 7 Tf ${x - 3} ${y - 31} Td (${["la", "lu", "ah"][note % 3]}) Tj ET`);
+      }
+    }
+  }
+  content.push(`BT /F1 9 Tf ${width / 2} 22 Td (${pageNumber}) Tj ET`);
+  return content.join("\n");
 }

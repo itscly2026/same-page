@@ -36,6 +36,17 @@ test("visual report scenarios have stable unique ids and cover iPad plus narrow 
     "reader-edit-unsubscribed-exit",
     "reader-controls-narrow",
     "reader-text-compose-multiline",
+    "reader-tools-mobile",
+    "reader-dense-portrait",
+    "reader-dense-continuous",
+    "reader-dense-landscape-page",
+    "library-upload-partial",
+    "reader-layer-save-failure",
+    "reader-offline-ready",
+    "reader-offline-failure",
+    "pwa-registration-success",
+    "pwa-registration-failure",
+    "pwa-registration-retry",
   ]) {
     assert.ok(
       visualReportScenarios.some((scenario) => scenario.id === requiredId),
@@ -88,9 +99,14 @@ test("fixture resolver isolates guest and member sessions", () => {
   const signedInPreview = resolveFixtureRequest({
     pathname: "/api/choirs/visual-preview-choir/scores",
     identity: "member",
-    cookie: "same_page_guest=visual-preview",
+    cookie: "",
   });
   assert.equal(JSON.parse(signedInPreview.body).permissions.canManage, false);
+  const signedInBootstrap = resolveFixtureRequest({
+    pathname: "/api/choirs/visual-preview-choir/bootstrap", identity: "member", cookie: "",
+  });
+  assert.equal(signedInBootstrap.status, 200);
+  assert.equal(JSON.parse(signedInBootstrap.body).permissions.access, "preview");
 });
 
 test("fixture resolver returns current score shapes and a generated PDF without secrets", () => {

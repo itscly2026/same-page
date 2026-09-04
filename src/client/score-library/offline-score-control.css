@@ -1,0 +1,4 @@
+.offline-score-control { display: flex; align-items: center; flex-wrap: wrap; gap: .25rem .65rem; font-size: .75rem; color: var(--muted, #666); }
+.offline-score-control button { min-height: 44px; padding: .4rem .65rem; border: 1px solid #ddd; border-radius: .5rem; background: transparent; color: inherit; }
+.offline-score-control button[data-focus-visible] { outline: 2px solid currentColor; outline-offset: 2px; }
+.offline-score-control button[data-disabled] { opacity: .55; }

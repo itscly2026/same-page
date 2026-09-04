@@ -56,7 +56,6 @@ try {
     /\/assets\/pdf\.worker-.*\.mjs$/.test(new URL(response.url()).pathname),
   );
   await page.goto(origin, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "进入云盘", exact: true }).click();
   await page.getByRole("link", { name: /示例云盘/ }).click();
   await page.locator(".file-list").waitFor({ state: "visible" });
   const enterRequests = [...requestOrder];
@@ -72,7 +71,7 @@ try {
   );
   await page.locator("html[data-reader-runtime='ready']").waitFor();
   await pdfWorkerPrepared;
-  await page.locator(".file-row__open").first().click();
+  await page.locator('.file-row__open[href="/choirs/visual-choir/scores/visual-score"]').click();
   await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({
     state: "visible",
   });
@@ -84,7 +83,7 @@ try {
     window.__SAME_PAGE_DIAGNOSTICS__?.loadingPerformance().records.some(
       (record) => record.name === "exit-score:duration",
     ));
-  await page.locator(".file-row__open").first().click();
+  await page.locator('.file-row__open[href="/choirs/visual-choir/scores/visual-score"]').click();
   await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({
     state: "visible",
   });

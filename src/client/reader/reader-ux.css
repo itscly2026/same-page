@@ -1,0 +1,68 @@
+/* Reader overlays never participate in the score's layout or zoom geometry. */
+.reader-shell .reader-page-indicator {
+  display: grid;
+  place-content: center;
+  min-height: 44px !important;
+  min-width: 64px;
+  padding: 0.4rem 0.75rem !important;
+  border: 1px solid rgb(0 0 0 / 22%) !important;
+  color: #111 !important;
+  background: rgb(255 255 255 / 96%) !important;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 22%) !important;
+  font-variant-numeric: tabular-nums;
+}
+.reader-editing-hint { display: block; margin-top: 0.2rem; font-size: 0.72rem; font-weight: 400; }
+.reader-shell .annotation-controls { gap: 0.25rem; padding: 0.35rem; overflow: visible; touch-action: auto; }
+.reader-shell .annotation-control-group { padding: 0; }
+.reader-shell .annotation-control-group + .annotation-control-group { margin-left: 0; }
+.reader-shell .annotation-history-controls { gap: 0; }
+.reader-shell .annotation-controls .segmented-control { gap: 0; }
+.reader-edit-layer-trigger { display: flex; align-items: center; justify-content: center; gap: 0.25rem; min-height: 44px; padding: 0.25rem 0.45rem; font-weight: 600; }
+.reader-edit-layer-popover { z-index: 70; width: min(340px, calc(100vw - 24px)); padding: 1rem; border: 1px solid #ddd; border-radius: 1rem; color: #111; background: #fff; box-shadow: 0 8px 32px #0003; }
+.reader-edit-layer-popover h2 { margin: 0 0 0.5rem; font-size: 1rem; }
+.reader-edit-layer-popover p { color: #555; font-size: 0.8rem; line-height: 1.5; }
+.reader-edit-layer-popover .annotation-layer-switcher { justify-content: space-between; gap: 0.2rem; }
+.reader-edit-layer-popover .annotation-layer-slot { position: relative; min-width: 44px; min-height: 44px; padding: 0; }
+.reader-edit-layer-popover .annotation-layer-slot__lock { position: absolute; right: 2px; top: 2px; }
+.reader-layer-help { margin: 0 0 0.75rem; color: #5d5d5d; font-size: 0.78rem; line-height: 1.5; }
+.reader-layer-panel .reader-layer-row { display: flex; gap: 0.4rem; }
+.reader-layer-toggle { display: flex; flex: 1; align-items: center; gap: 0.5rem; min-width: 0; min-height: 44px; cursor: pointer; }
+.reader-layer-toggle .layer-card__identity { flex: 1; }
+.reader-layer-toggle input { flex: 0 0 auto; }
+.reader-layer-toggle:focus-within { outline: 2px solid #111; outline-offset: 3px; border-radius: 0.3rem; }
+.reader-layer-panel .layer-card__restore,
+.reader-layer-panel .layer-section__restore { min-height: 44px; min-width: 44px; }
+.reader-layer-panel .layer-card__main { padding-top: 0.35rem; padding-bottom: 0.35rem; }
+.reader-layer-feedback { margin: 0 0 0.75rem; color: #444; font-size: 0.8rem; line-height: 1.5; }
+.reader-layer-feedback p { margin: 0 0 0.4rem; }
+.reader-layer-feedback[data-error] { color: #8b3020; }
+.reader-layer-feedback button { min-height: 44px; }
+.reader-layers-dialog button:focus-visible,
+.reader-edit-layer-popover button:focus-visible,
+.reader-shell button:focus-visible { outline: 2px solid #333; outline-offset: 2px; }
+@media (orientation: portrait) and (max-width: 1100px) {
+  .reader-panel-backdrop { align-items: flex-end; }
+  .reader-panel.reader-layers-dialog { width: 100%; height: auto; max-height: 48dvh; padding-top: 0; padding-bottom: env(safe-area-inset-bottom); border-radius: 1rem 1rem 0 0; }
+  .reader-layers-dialog .reader-layer-panel { padding-bottom: 1rem; }
+}
+@media (max-width: 360px) {
+  .reader-edit-layer-trigger { gap: 0.1rem; padding-inline: 0.2rem; }
+  .reader-edit-layer-trigger > span:nth-child(2) { display: none; }
+}
+
+.reader-layers-content { display: contents; }
+
+.reader-layer-panel .layer-section--personal .layer-card__main { grid-template-columns: auto minmax(0, 1fr) auto; }
+.reader-layer-panel .layer-section--personal .reader-layer-help { margin: 0; }
+.reader-layer-toggle input { width: 18px; height: 18px; accent-color: #171717; }
+
+.layer-permission-popover { z-index: 80; }
+
+.reader-edit-finish-hint { display: none; font-size: 0.65rem; line-height: 1.25; }
+
+.reader-edit-layer-popover .annotation-layer-slot { border: 1px solid #ddd; border-radius: 0.65rem; color: #111; background: #f6f6f4; font-weight: 600; }
+@media (max-width: 360px) {
+  .reader-edit-layer-popover .annotation-layer-switcher { display: grid; grid-template-columns: repeat(3, minmax(44px, 1fr)); gap: 0.5rem; }
+}
+
+@media (max-width: 36rem) { .reader-edit-finish-hint { display: block; } }

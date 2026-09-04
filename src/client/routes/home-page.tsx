@@ -11,16 +11,14 @@ import {
   ModalOverlay,
   TextField,
 } from "react-aria-components";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { isInternalAuthEmail } from "../../shared/auth";
 import {
-  choirMembershipsResponseSchema,
   guestJoinStateResponseSchema,
   guestSessionResponseSchema,
   previewChoirResponseSchema,
   type ChoirSummary,
-  type MembershipSummary,
 } from "../../shared/choirs";
 import { authClient } from "../auth/auth-client";
 import {
@@ -40,6 +38,9 @@ import {
   driveCacheOwnerKey,
   rememberDriveSummary,
 } from "../score-library/drive-library-cache";
+
+import { clearLibraryDeviceState } from "../score-library/library-view-state";
+import { MembershipList } from "../score-library/membership-list";
 
 type JoinStep =
   | { kind: "invite" }
@@ -71,11 +72,11 @@ const productFeatures = [
 export function HomePage() {
   const navigate = useNavigate();
   const session = authClient.useSession();
-  const [joinOpen, setJoinOpen] = useState(false);
+  const [searchParams] = useSearchParams();
+  const [joinOpen, setJoinOpen] = useState(searchParams.get("join") === "1");
   const [joinStep, setJoinStep] = useState<JoinStep>({ kind: "invite" });
   const [joinCode, setJoinCode] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [memberships, setMemberships] = useState<MembershipSummary[]>([]);
   const [previewChoir, setPreviewChoir] = useState<ChoirSummary | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [clearingGuestSession, setClearingGuestSession] = useState(false);
@@ -85,27 +86,6 @@ export function HomePage() {
     useState<LogoutLocalSummary | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
   const userId = session.data?.user.id;
-  const visibleMemberships = userId ? memberships : [];
-
-  useEffect(() => {
-    if (!userId) return;
-
-    let active = true;
-    void loadMemberships().then((nextMemberships) => {
-      if (!active) return;
-      setMemberships(nextMemberships);
-      for (const membership of nextMemberships) {
-        rememberDriveSummary(
-          driveCacheOwnerKey(userId, membership.choir.id),
-          membership.choir,
-        );
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, [userId]);
-
   useEffect(() => {
     if (session.isPending) return;
     let active = true;
@@ -262,7 +242,7 @@ export function HomePage() {
       if (result.error) throw new Error("sign_out_failed");
       await clearPreviewGuestSession();
       await clearPrivateLocalDataAfterLogout();
-      setMemberships([]);
+      clearLibraryDeviceState();
       setLogoutSummary(null);
     } catch {
       setPageMessage("退出未完成，本机数据没有清除。请重试。");
@@ -296,7 +276,14 @@ export function HomePage() {
         }
       />
 
-      <main className="marketing-content">
+      {userId ? (
+        <main className="page-shell my-drives-page">
+          <div className="my-drives-heading"><div><h1>我已加入的云盘</h1><p>选择云盘，继续排练。</p></div><Button className="primary-button" onPress={() => setJoinOpen(true)}>加入新云盘</Button></div>
+          <MembershipList userId={userId} />
+          {previewChoir ? <Link className="hero-preview-link" to={`/choirs/${previewChoir.id}`}>访问公开体验云盘</Link> : null}
+          {pageMessage ? <p role="alert">{pageMessage}</p> : null}
+        </main>
+      ) : session.isPending ? <main className="page-shell"><p role="status">正在加载…</p></main> : <main className="marketing-content">
         <section className="marketing-hero" aria-labelledby="page-title">
           <p className="hero-mark">Same Page</p>
           <h1 id="page-title" lang="en">
@@ -356,7 +343,7 @@ export function HomePage() {
             </article>
           ))}
         </section>
-      </main>
+      </main>}
 
       <footer className="marketing-footer">
         <Link to="/privacy">隐私政策</Link>
@@ -380,7 +367,7 @@ export function HomePage() {
                     <p className="dialog-eyebrow">Same Page</p>
                     <Heading slot="title">
                       {joinStep.kind === "invite"
-                        ? "进入云盘"
+                        ? (userId ? "加入新云盘" : "进入云盘")
                         : `加入「${joinStep.choir.name}」`}
                     </Heading>
                   </div>
@@ -391,45 +378,7 @@ export function HomePage() {
 
                 {joinStep.kind === "invite" ? (
                   <>
-                    <section
-                      className="membership-picker"
-                      aria-labelledby="membership-title"
-                    >
-                      <h3 id="membership-title">我已加入的云盘</h3>
-                      {userId ? (
-                        visibleMemberships.length > 0 ? (
-                          <div className="membership-list">
-                            {visibleMemberships.map((membership) => (
-                              <Link
-                                className="membership-row"
-                                key={membership.id}
-                                to={`/choirs/${membership.choir.id}`}
-                                onClick={() => {
-                                  startLoadingJourney("enter-drive", "warm");
-                                  finishJoinDialog();
-                                }}
-                              >
-                                <span>
-                                  <strong>{membership.choir.name}</strong>
-                                  <small>{membership.displayName}</small>
-                                </span>
-                                <span aria-hidden="true">→</span>
-                              </Link>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="membership-empty">还没有已加入的云盘。</p>
-                        )
-                      ) : (
-                        <Link
-                          className="membership-login"
-                          to="/login"
-                          onClick={finishJoinDialog}
-                        >
-                          登录后查看
-                        </Link>
-                      )}
-                    </section>
+                    {!userId ? <section className="membership-picker" aria-labelledby="membership-title"><h3 id="membership-title">我已加入的云盘</h3><Link className="membership-login" to="/login" onClick={finishJoinDialog}>登录后查看</Link></section> : null}
 
                     <section
                       className="invite-section"
@@ -549,16 +498,6 @@ export function HomePage() {
       </ModalOverlay>
     </div>
   );
-}
-
-async function loadMemberships(): Promise<MembershipSummary[]> {
-  try {
-    const response = await diagnosticFetch("/api/choirs");
-    if (!response.ok) return [];
-    return choirMembershipsResponseSchema.parse(await response.json()).memberships;
-  } catch {
-    return [];
-  }
 }
 
 async function loadPreviewChoir(): Promise<ChoirSummary | null> {
