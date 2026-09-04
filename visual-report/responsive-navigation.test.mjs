@@ -52,7 +52,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     }
   });
 
-  test(`${engineName}: low-frequency help stays discoverable without primary links`, async (t) => {
+  test(`${engineName}: footer help supports keyboard navigation without header controls`, async (t) => {
     const browser = await engine.launch({ headless: true });
     t.after(() => browser.close());
     for (const identity of ["guest", "member"]) {
@@ -60,35 +60,23 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
       await page.setViewportSize({ width: 320, height: 800 });
       await page.goto(`${origin}/`, { waitUntil: "domcontentloaded" });
       await page.getByRole("heading", { name: identity === "guest" ? "Harmony begins on the Same Page" : "我已加入的云盘", exact: true }).waitFor();
-      assert.equal(await page.getByRole("link", { name: "故障诊断", exact: true }).count(), 0);
-      assert.equal(await page.locator(".marketing-footer").count(), identity === "guest" ? 1 : 0);
-      if (identity === "guest") assert.equal(await page.getByRole("link", { name: "隐私政策", exact: true }).getAttribute("href"), "/privacy");
-      else assert.equal(await page.getByRole("link", { name: "隐私政策", exact: true }).count(), 0);
-      const help = page.getByRole("button", { name: "帮助与关于", exact: true });
-      await help.focus();
-      await page.keyboard.press("Enter");
-      const menu = page.getByRole("menu", { name: "帮助与关于", exact: true });
-      await menu.waitFor();
+      assert.equal(await page.getByRole("button", { name: "帮助与关于", exact: true }).count(), 0);
+      assert.equal(await page.getByRole("banner").getByRole("link", { name: "故障诊断", exact: true }).count(), 0);
+      const footer = page.getByRole("contentinfo");
       for (const name of ["故障诊断", "隐私政策"]) {
-        const item = menu.getByRole("menuitem", { name, exact: true });
+        const item = footer.getByRole("link", { name, exact: true });
         const box = await item.boundingBox();
         assert.ok(box.height >= 44 && box.width >= 44);
       }
+      const privacy = footer.getByRole("link", { name: "隐私政策", exact: true });
+      await privacy.focus();
       await capture(page, `${engineName}-help-${identity}-320`);
-      await page.keyboard.press("Escape");
-      await menu.waitFor({ state: "hidden" });
-      await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "帮助与关于", undefined, { timeout: 5000 });
-      assert.equal(await help.evaluate(el => el === document.activeElement), true);
       await page.evaluate(() => { window.__layoutDocumentMarker = "same-document"; });
-      await help.press("Enter");
-      await page.getByRole("menuitem", { name: "隐私政策", exact: true }).click();
+      await privacy.press("Enter");
       await page.getByRole("heading", { name: "隐私政策", exact: true }).waitFor();
       assert.equal(new URL(page.url()).pathname, "/privacy");
       assert.equal(await page.evaluate(() => window.__layoutDocumentMarker), "same-document");
-      await page.goto(`${origin}/`, { waitUntil: "domcontentloaded" });
-      await page.getByRole("button", { name: "帮助与关于", exact: true }).click();
-      await page.evaluate(() => { window.__layoutDocumentMarker = "same-document"; });
-      await page.getByRole("menuitem", { name: "故障诊断", exact: true }).click();
+      await footer.getByRole("link", { name: "故障诊断", exact: true }).press("Enter");
       await page.getByRole("textbox", { name: "可发送给支持人员的诊断内容" }).waitFor();
       assert.equal(new URL(page.url()).pathname, "/diagnostics");
       assert.equal(await page.evaluate(() => window.__layoutDocumentMarker), "same-document");
