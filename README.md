@@ -202,10 +202,10 @@ npm run test         # React/Vitest 单元测试
 npm run test:worker  # workerd 内的 Worker 测试
 npm run build        # 类型检查与生产构建
 npm run check        # 常规集合，已包含视觉浏览器测试，详见下方
-npm run check:full   # 与 CI verify 相同的检查集合（非部署）
+npm run check:full   # 与 CI 完整 verify 相同的检查集合（非部署）
 ```
 
-`check` 包含 lint、类型检查、客户端、Worker、视觉浏览器测试、迁移测试与生产构建；它不是纯单元测试的快速入口。`check:full` 在此基础上增加真实 PWA 更新交接与加载性能检查。CI 保持逐步骤执行同一完整集合，便于定位失败；两者执行顺序不必相同。单独的 `npm run test` 可用于较快的客户端反馈。
+`check` 包含 CI 范围回归测试、lint、类型检查、客户端、Worker、视觉浏览器测试、迁移测试与生产构建；它不是纯单元测试的快速入口。`check:full` 在此基础上增加真实 PWA 更新交接与加载性能检查。代码变更的 CI 保持逐步骤执行同一完整集合，便于定位失败；两者执行顺序不必相同。纯文档改动执行轻量 `verify`，具体白名单、取消策略与用量说明见 [CI 用量与检查范围](docs/operations/ci.md)。单独的 `npm run test` 可用于较快的客户端反馈。
 
 视觉浏览器测试文件串行执行，避免各自启动的 Vite/workerd 争用调试端口及同一工作目录下的本地 SQLite；没有跳过测试用例。
 

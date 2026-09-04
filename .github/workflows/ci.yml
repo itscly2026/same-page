@@ -8,55 +8,86 @@ on:
 permissions:
   contents: read
 
+# Superseded PRs can stop immediately. Every main run has a distinct group so
+# its migration/deployment is never interrupted by a later push.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: CI scope regression tests
+        run: node --test scripts/ci-scope.test.mjs
+
+      - name: Determine verification scope
+        id: scope
+        run: node scripts/ci-scope.mjs
 
       - name: Use Node.js 24
+        if: steps.scope.outputs.full == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        if: steps.scope.outputs.full == 'true'
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       - name: Lint
+        if: steps.scope.outputs.full == 'true'
         run: npm run lint
 
       - name: Type check
+        if: steps.scope.outputs.full == 'true'
         run: npm run typecheck
 
       - name: Client tests
+        if: steps.scope.outputs.full == 'true'
         run: npm run test
 
       - name: Worker tests
+        if: steps.scope.outputs.full == 'true'
         run: npm run test:worker
 
       - name: Install Playwright Chromium and WebKit
+        if: steps.scope.outputs.full == 'true'
         run: npx playwright install --with-deps chromium webkit
 
       - name: PWA update handover
+        if: steps.scope.outputs.full == 'true'
         run: npm run test:pwa-update
 
+      # PWA handover builds two synthetic versions; overwrite them with the
+      # current commit before measuring production assets.
+      - name: Production build
+        if: steps.scope.outputs.full == 'true'
+        run: npm run build
+
       - name: Loading performance feedback loop
-        run: npm run test:loading-performance
+        if: steps.scope.outputs.full == 'true'
+        run: node scripts/measure-loading-performance.mjs
 
       - name: Visual report tests
+        if: steps.scope.outputs.full == 'true'
         run: npm run test:visual-report
 
       - name: Migration tests
+        if: steps.scope.outputs.full == 'true'
         run: npm run test:migrations
 
-      - name: Production build
-        run: npm run build
-
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify.outputs.full == 'true'
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -75,7 +106,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       - name: Build production assets
         run: npm run build
