@@ -1,3 +1,4 @@
+import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { type FormEvent, useState } from "react";
 import {
   Button,
@@ -121,7 +122,7 @@ function runScoreAction(
 ) {
   const scorePath = `/api/choirs/${choirId}/scores/${selection.score.id}`;
   if (selection.action === "rename") {
-    return fetch(scorePath, {
+    return diagnosticFetch(scorePath, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ fileName: renameValue }),
@@ -131,9 +132,9 @@ function runScoreAction(
     if (!replacementFile) throw new Error("replacement_file_required");
     const form = new FormData();
     form.set("file", replacementFile);
-    return fetch(`${scorePath}/versions`, { method: "POST", body: form });
+    return diagnosticFetch(`${scorePath}/versions`, { method: "POST", body: form });
   }
-  return fetch(scorePath, { method: "DELETE" });
+  return diagnosticFetch(scorePath, { method: "DELETE" });
 }
 
 function actionTitle(action: ScoreAction) {

@@ -1,3 +1,4 @@
+import { DiagnosticResponseError, parseDiagnosticResponse, diagnosticFetch, pdfFailureCategory, recordFailure } from "../diagnostics/diagnostics";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   ArrowLeft, Download, Ellipsis, Layers, Maximize2, Minus, Pencil, Plus,
@@ -442,7 +443,7 @@ export default function ReaderPage() {
 
       const [local, lookup] = await Promise.all([localPromise, lookupPromise]);
       if (!isCurrent() || cloudLookupId < cloudLookupSequence.current.applied) return;
-      if (lookup.state !== "network-unavailable") {
+      if (!cloudLookupUnavailable(lookup)) {
         cloudLookupSequence.current.applied = cloudLookupId;
       }
       cloudOutcome.current = cloudOutcomeForLookup(
@@ -507,7 +508,7 @@ export default function ReaderPage() {
       }
 
       if (!cloudResponseIsCurrent()) return;
-      if (lookup.state !== "network-unavailable") {
+      if (!cloudLookupUnavailable(lookup)) {
         forgetReaderScore(identity, choirId, scoreId);
         invalidateReaderDocument({
           ownerKey: workspace.ownerKey,
@@ -534,7 +535,7 @@ export default function ReaderPage() {
         }));
         return;
       }
-      if (lookup.state === "network-unavailable" && rememberedScore) return;
+      if (cloudLookupUnavailable(lookup) && rememberedScore) return;
       setLoadState({
         kind: "error",
         scopeKey: workspace.scopeKey,
@@ -553,14 +554,14 @@ export default function ReaderPage() {
     let active = true;
     void (async () => {
       let preparedLayers: AnnotationLayerSummary[];
+      let layersReceived = false;
       try {
-        const layerResponse = await fetch(
+        const layerResponse = await diagnosticFetch(
           `/api/choirs/${choirId}/scores/${scoreId}/layers`,
         );
         if (!layerResponse.ok) throw new Error("layers unavailable");
-        const body = annotationLayerListResponseSchema.parse(
-          await layerResponse.json(),
-        );
+        layersReceived = true;
+        const body = await parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema);
         const previousLayers = await localDatabase.annotationLayers
           .where("scopeKey")
           .equals(workspace.scopeKey)
@@ -583,6 +584,7 @@ export default function ReaderPage() {
       } catch {
         if (active) {
           setLayerPreparation({ scopeKey: workspace.scopeKey, status: "failed" });
+          if (layersReceived) recordFailure({ operation: "layers", category: "internal", stage: "prepare" });
           setSyncOutcome("none");
         }
         return;
@@ -591,7 +593,9 @@ export default function ReaderPage() {
         await syncAnnotations(workspace, { pull: true });
         if (active) setSyncOutcome("synced");
       } catch {
-        if (active) setSyncOutcome("none");
+        if (active) {
+          setSyncOutcome("failed");
+        }
       }
     })();
     return () => {
@@ -615,7 +619,7 @@ export default function ReaderPage() {
       void lookupScoreCloudState(choirId, scoreId)
         .then(async (lookup) => {
           if (!active || cloudLookupId < cloudLookupSequence.current.applied) return;
-          if (lookup.state !== "network-unavailable") {
+          if (!cloudLookupUnavailable(lookup)) {
             cloudLookupSequence.current.applied = cloudLookupId;
           }
           cloudOutcome.current = cloudOutcomeForLookup(
@@ -626,7 +630,7 @@ export default function ReaderPage() {
           const cloudResponseIsCurrent = () =>
             active && cloudLookupId >= cloudLookupSequence.current.applied;
           if (lookup.state !== "active") {
-            if (lookup.state === "network-unavailable") return;
+            if (cloudLookupUnavailable(lookup)) return;
             forgetReaderScore(session.data?.user.id ?? "guest", choirId, scoreId);
             invalidateReaderDocument({
               ownerKey: workspace.ownerKey,
@@ -745,13 +749,16 @@ export default function ReaderPage() {
           };
           setPdfFailure(null);
           if (workspaceScopeKey) {
-            setLoadState({ kind: "ready", scopeKey: workspaceScopeKey });
+              setLoadState((current) => current.kind === "error" && current.scopeKey === workspaceScopeKey
+                ? current
+                : { kind: "ready", scopeKey: workspaceScopeKey });
           }
           setCurrentPage((page) => Math.min(page, nextDocument.numPages));
         }
       })
       .catch((error) => {
         if (!active || !workspaceScopeKey) return;
+        recordFailure({ operation: "pdf", category: pdfFailureCategory(error), stage: "decode" });
         if (
           error instanceof ReaderDocumentVersionMismatchError &&
           source.kind === "cloud"
@@ -826,7 +833,7 @@ export default function ReaderPage() {
     setDownloading(true);
     setDownloadMessage(null);
     try {
-      const response = await fetch(
+      const response = await diagnosticFetch(
         `/api/choirs/${choirId}/scores/${scoreId}/versions/${score.currentVersion.id}/pdf`,
       );
       if (!response.ok) throw new Error("Download failed");
@@ -836,13 +843,11 @@ export default function ReaderPage() {
         throw new Error("Checksum mismatch");
       }
       await ensureOfflineAppShell();
-      const layerResponse = await fetch(
+      const layerResponse = await diagnosticFetch(
         `/api/choirs/${choirId}/scores/${scoreId}/layers`,
       );
       if (!layerResponse.ok) throw new Error("Layer download failed");
-      const layerBody = annotationLayerListResponseSchema.parse(
-        await layerResponse.json(),
-      );
+      const layerBody = await parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema);
       const currentLayers = await localDatabase.annotationLayers
         .where("scopeKey")
         .equals(workspace.scopeKey)
@@ -1068,6 +1073,7 @@ export default function ReaderPage() {
         >
           返回云盘
         </Link>
+        <Link to="/diagnostics">故障诊断</Link>
       </main>
     );
   }
@@ -1280,6 +1286,7 @@ export default function ReaderPage() {
                   {downloadMessage ?? syncStatus.message}
                 </p>
               ) : null}
+              <Link to="/diagnostics">故障诊断</Link>
             </aside>
           ) : null}
         </header>
@@ -1464,7 +1471,12 @@ type ScoreCloudLookup =
   | { state: "trashed" }
   | { state: "missing" }
   | { state: "permission-denied" }
+  | { state: "service-unavailable" }
   | { state: "network-unavailable" };
+
+function cloudLookupUnavailable(lookup: ScoreCloudLookup) {
+  return lookup.state === "network-unavailable" || lookup.state === "service-unavailable";
+}
 
 function cloudOutcomeForLookup(
   current: ReaderCloudOutcome | null,
@@ -1479,7 +1491,7 @@ function cloudOutcomeForLookup(
     };
   }
   if (
-    lookup.state === "network-unavailable" &&
+    cloudLookupUnavailable(lookup) &&
     current?.scopeKey === scopeKey &&
     current.state === "active"
   ) {
@@ -1493,20 +1505,21 @@ async function lookupScoreCloudState(
   scoreId: string,
 ): Promise<ScoreCloudLookup> {
   try {
-    const response = await fetch(
+    const response = await diagnosticFetch(
       `/api/choirs/${choirId}/scores/${scoreId}/bootstrap`,
     );
     if (response.status === 401 || response.status === 403) {
       return { state: "permission-denied" };
     }
     if (!response.ok) return response.status >= 500
-      ? { state: "network-unavailable" }
+      ? { state: "service-unavailable" }
       : { state: "missing" };
-    const bootstrap = readerScoreBootstrapSchema.parse(await response.json());
+    const bootstrap = await parseDiagnosticResponse(response, readerScoreBootstrapSchema);
     return bootstrap.state === "active"
       ? { state: "active", score: bootstrap.score }
       : { state: "trashed" };
-  } catch {
+  } catch (error) {
+    if (error instanceof DiagnosticResponseError) return { state: "service-unavailable" };
     return { state: "network-unavailable" };
   }
 }
@@ -1519,6 +1532,8 @@ function readerLoadFailureMessage(state: Exclude<ScoreCloudLookup["state"], "act
       return "当前账号没有访问这份乐谱的权限。请返回云盘确认成员关系。";
     case "network-unavailable":
       return "网络暂时不可用，且当前设备没有这份乐谱的离线副本。";
+    case "service-unavailable":
+      return "服务暂时不可用或返回内容异常，请稍后重试；本机内容仍然保留。";
     case "missing":
       return "这份乐谱不存在或已经被永久移除。";
   }

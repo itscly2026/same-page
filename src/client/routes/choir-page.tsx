@@ -1,3 +1,4 @@
+import { parseDiagnosticResponse, diagnosticFetch } from "../diagnostics/diagnostics";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
@@ -240,7 +241,7 @@ export default function ChoirPage() {
     setBusy(true);
     setMessage(null);
     try {
-      const response = await fetch("/api/choirs/join", {
+      const response = await diagnosticFetch("/api/choirs/join", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -287,11 +288,11 @@ export default function ChoirPage() {
     setRotatedJoinCode(null);
     setRotationMessage(null);
     try {
-      const response = await fetch(`/api/choirs/${choirId}/join-code/rotate`, {
+      const response = await diagnosticFetch(`/api/choirs/${choirId}/join-code/rotate`, {
         method: "POST",
       });
       if (!response.ok) throw new Error("rotation_failed");
-      setRotatedJoinCode(rotateJoinCodeResponseSchema.parse(await response.json()).joinCode);
+      setRotatedJoinCode((await parseDiagnosticResponse(response, rotateJoinCodeResponseSchema)).joinCode);
       setRotationMessage("邀请码已轮换。请现在复制并通过私密渠道发送。");
     } catch {
       setRotationMessage("邀请码轮换失败，当前邀请码没有改变。");
@@ -650,7 +651,7 @@ async function openChoir(
     return { kind: "join-required", choir: openAdmission.value.choir };
   }
   try {
-    const admission = await fetch("/api/guest/session", {
+    const admission = await diagnosticFetch("/api/guest/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ admission: "open", choirId }),
@@ -674,12 +675,12 @@ type ChoirAccessState =
 
 async function loadOpenAdmissionChoir(choirId: string) {
   try {
-    const response = await fetch(`/api/guest/choirs/${choirId}`);
+    const response = await diagnosticFetch(`/api/guest/choirs/${choirId}`);
     if (response.status === 404) return { kind: "not-found" as const };
     if (!response.ok) return { kind: "failed" as const };
     return {
       kind: "loaded" as const,
-      value: guestSessionResponseSchema.parse(await response.json()),
+      value: await parseDiagnosticResponse(response, guestSessionResponseSchema),
     };
   } catch {
     return { kind: "failed" as const };
@@ -699,13 +700,13 @@ async function requestDriveBootstrap(
   query: string,
 ): Promise<DriveBootstrapRequest> {
   try {
-    const response = await fetch(
+    const response = await diagnosticFetch(
       `/api/choirs/${choirId}/bootstrap${query ? `?q=${encodeURIComponent(query)}` : ""}`,
     );
     if ([401, 403].includes(response.status)) return { kind: "denied" };
     if (response.status === 404) return { kind: "not-found" };
     if (!response.ok) return { kind: "failed" };
-    const payload = driveBootstrapResponseSchema.parse(await response.json());
+    const payload = await parseDiagnosticResponse(response, driveBootstrapResponseSchema);
     return {
       kind: "loaded",
       access: payload.permissions.access,
@@ -734,14 +735,14 @@ async function requestScoreList(
   query: string,
 ): Promise<ScoreListRequest> {
   try {
-    const response = await fetch(
+    const response = await diagnosticFetch(
       `/api/choirs/${choirId}/scores${query ? `?q=${encodeURIComponent(query)}` : ""}`,
     );
     if ([401, 403, 404].includes(response.status)) return { kind: "denied" };
     if (!response.ok) return { kind: "failed" };
     return {
       kind: "loaded",
-      result: scoreListResponseSchema.parse(await response.json()),
+      result: await parseDiagnosticResponse(response, scoreListResponseSchema),
     };
   } catch {
     return { kind: "failed" };

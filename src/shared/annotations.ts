@@ -200,6 +200,14 @@ export const annotationPullResponseSchema = z.object({
   objects: z.array(annotationObjectRecordSchema),
 });
 
+export const annotationPushResponseSchema = z.object({
+  results: z.array(z.object({
+    opId: z.string(),
+    status: z.enum(["accepted", "conflict", "op_id_reused"]),
+    object: annotationObjectRecordSchema.nullable().optional(),
+  })),
+});
+
 export const annotationLayerListResponseSchema = z.object({
   layers: z.array(annotationLayerSummarySchema),
   permissions: z.object({ canManageLayers: z.boolean() }),

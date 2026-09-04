@@ -1,3 +1,4 @@
+import { diagnosticFetch } from "../diagnostics/diagnostics";
 import {
   type FormEvent,
   useCallback,
@@ -109,7 +110,7 @@ export default function AuthPage() {
 
   useEffect(() => {
     let active = true;
-    void fetch("/api/auth/social-providers", { cache: "no-store" })
+    void diagnosticFetch("/api/auth/social-providers", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) return null;
         const parsed = socialAuthProvidersResponseSchema.safeParse(
@@ -310,7 +311,7 @@ export default function AuthPage() {
   };
 
   const finishAuthentication = useCallback(async () => {
-    const guestResponse = await fetch("/api/guest/session").catch(() => null);
+    const guestResponse = await diagnosticFetch("/api/guest/session").catch(() => null);
     if (!guestResponse?.ok) {
       await navigate("/");
       return;
@@ -328,7 +329,7 @@ export default function AuthPage() {
       return;
     }
 
-    const joinStateResponse = await fetch(
+    const joinStateResponse = await diagnosticFetch(
       "/api/choirs/current-guest/join-state",
     ).catch(() => null);
     if (!joinStateResponse?.ok) {
@@ -766,7 +767,7 @@ function clearSocialEmailDraft() {
 }
 
 async function confirmAuthenticatedSession() {
-  const response = await fetch("/api/auth/get-session", {
+  const response = await diagnosticFetch("/api/auth/get-session", {
     cache: "no-store",
   }).catch(() => null);
   if (!response?.ok) return false;
@@ -865,7 +866,7 @@ function resendButtonLabel(retrySeconds: number) {
 
 async function postJson(path: string, body: unknown) {
   try {
-    return await fetch(path, {
+    return await diagnosticFetch(path, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),

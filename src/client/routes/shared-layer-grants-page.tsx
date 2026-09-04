@@ -1,3 +1,4 @@
+import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -25,11 +26,11 @@ export default function SharedLayerGrantsPage() {
     if (!slot) return;
     let active = true;
     void Promise.all([
-      fetch(`/api/choirs/${choirId}/shared-layers`).then(async (response) => {
+      diagnosticFetch(`/api/choirs/${choirId}/shared-layers`).then(async (response) => {
         if (!response.ok) throw new Error("shared_layers_unavailable");
         return sharedLayerManagementResponseSchema.parse(await response.json());
       }),
-      fetch(`/api/choirs/${choirId}/shared-layers/${slot}/grants`).then(async (response) => {
+      diagnosticFetch(`/api/choirs/${choirId}/shared-layers/${slot}/grants`).then(async (response) => {
         if (!response.ok) throw new Error("layer_grants_unavailable");
         return sharedLayerGrantListResponseSchema.parse(await response.json());
       }),
@@ -55,7 +56,7 @@ export default function SharedLayerGrantsPage() {
     setMembers((current) => current.map((entry) =>
       entry.id === member.id ? { ...entry, granted } : entry));
     try {
-      const response = await fetch(
+      const response = await diagnosticFetch(
         `/api/choirs/${choirId}/shared-layers/${slot}/grants/${member.id}`,
         {
           method: "PUT",

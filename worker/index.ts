@@ -7,13 +7,14 @@ import { AuthorizationError } from "./auth/authorization";
 import { handleAuthRequest } from "./auth/handler";
 import { choirRoutes } from "./choirs/routes";
 import type { AppEnvironment } from "./env";
+import { diagnosticMiddleware, logFailure } from "./diagnostics";
 import { serverTimingMiddleware } from "./performance/server-timing";
 import { cleanupScoreStorage } from "./scores/cleanup";
 import { scoreRoutes } from "./scores/routes";
 
 const app = new Hono<AppEnvironment>();
 
-app.use("/api/*", serverTimingMiddleware);
+app.use("/api/*", diagnosticMiddleware, serverTimingMiddleware);
 
 app.get("/api/health", (context) => {
   return context.json(
@@ -44,6 +45,9 @@ app.onError((error, context) => {
 export default {
   fetch: app.fetch,
   scheduled(_controller, env, context) {
-    context.waitUntil(cleanupScoreStorage(env));
+    context.waitUntil(cleanupScoreStorage(env).catch(() => {
+      logFailure("storage", "cleanup", 500, crypto.randomUUID());
+      throw new Error("score_storage_cleanup_failed");
+    }));
   },
 } satisfies ExportedHandler<Cloudflare.Env>;

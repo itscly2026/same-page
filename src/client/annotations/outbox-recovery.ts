@@ -1,3 +1,4 @@
+import { parseDiagnosticResponse, diagnosticFetch, diagnosticScope } from "../diagnostics/diagnostics";
 import { scoreCloudStateSchema } from "../../shared/scores";
 import { localDatabase } from "../platform/local-database";
 import {
@@ -71,6 +72,7 @@ export async function recoverAnnotationOutbox(
   trigger: OutboxRecoveryTrigger,
 ): Promise<OutboxRecoverySummary> {
   const run = ++latestRun;
+  const reportFailure = diagnosticScope();
   const startedAt = Date.now();
   publish(run, {
     ownerKey,
@@ -138,6 +140,7 @@ export async function recoverAnnotationOutbox(
       results,
     });
   } catch {
+    reportFailure({ operation: "sync", category: "internal", stage: "prepare" });
     return complete(run, {
       ownerKey,
       trigger,
@@ -165,14 +168,14 @@ async function recoverScope(
 
   try {
     await assertLocalWorkspaceActive(workspace);
-    const response = await fetch(
+    const response = await diagnosticFetch(
       `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/status`,
     );
     await assertLocalWorkspaceActive(workspace);
     if (response.status === 401) return result("session-invalid");
     if (response.status === 403) return result("permission-revoked");
     if (!response.ok) return result("unavailable");
-    const cloudState = scoreCloudStateSchema.parse(await response.json());
+    const cloudState = await parseDiagnosticResponse(response, scoreCloudStateSchema);
     if (cloudState.state === "trashed") return result("trashed");
     await assertLocalWorkspaceActive(workspace);
     const pushed = await pushPendingAnnotations(workspace, {

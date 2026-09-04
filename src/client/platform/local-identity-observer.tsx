@@ -7,6 +7,7 @@ import {
   type LocalWorkspaceOwnerKey,
 } from "./local-workspace";
 import { notifyReaderIdentityChange } from "../reader/reader-cache-events";
+import { clearDiagnostics } from "../diagnostics/diagnostics";
 
 export function LocalIdentityObserver() {
   const session = authClient.useSession();
@@ -39,6 +40,7 @@ export function LocalIdentityObserver() {
   useEffect(() => {
     if (readerIdentity.current === userId) return;
     readerIdentity.current = userId;
+    clearDiagnostics();
     notifyReaderIdentityChange();
   }, [userId]);
 

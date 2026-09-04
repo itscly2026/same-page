@@ -1,3 +1,4 @@
+import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { type FormEvent, useEffect, useState } from "react";
 import {
   Button,
@@ -34,7 +35,7 @@ export function TrashDialog({
 
   useEffect(() => {
     let active = true;
-    void fetch(`/api/choirs/${choirId}/scores/trash`)
+    void diagnosticFetch(`/api/choirs/${choirId}/scores/trash`)
       .then(async (response) => {
         if (!response.ok) throw new Error("trash_unavailable");
         const scores = scoreTrashResponseSchema.parse(await response.json()).scores;
@@ -53,7 +54,7 @@ export function TrashDialog({
     setMessage(null);
     try {
       if (nextName) {
-        const rename = await fetch(`/api/choirs/${choirId}/scores/${score.id}`, {
+        const rename = await diagnosticFetch(`/api/choirs/${choirId}/scores/${score.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ fileName: nextName }),
@@ -63,7 +64,7 @@ export function TrashDialog({
           return;
         }
       }
-      const response = await fetch(`/api/choirs/${choirId}/scores/${score.id}/restore`, {
+      const response = await diagnosticFetch(`/api/choirs/${choirId}/scores/${score.id}/restore`, {
         method: "POST",
       });
       if (response.status === 409) {

@@ -12,7 +12,7 @@ export default function PrivacyPage() {
         <header className="privacy-document__header">
           <p className="eyebrow">Same Page</p>
           <h1 id="privacy-title">隐私政策</h1>
-          <p className="privacy-document__updated">最后更新：2026 年 9 月 2 日</p>
+          <p className="privacy-document__updated">最后更新：2026 年 9 月 4 日</p>
           <p className="privacy-document__lead">
             Same Page 是为合唱排练设计的乐谱云盘。本政策说明我们在你使用服务时处理哪些信息、为什么处理，以及你可以如何联系我们。
           </p>
@@ -128,6 +128,12 @@ export default function PrivacyPage() {
           <p>
             我们使用传输加密、服务端权限检查、登录限流和凭据保护等措施。OAuth 访问令牌和刷新令牌会加密保存，完成 Google 身份验证后不持久化 Google ID token。任何网络服务都无法保证绝对安全；如你发现安全问题，请尽快联系我们。
           </p>
+        </section>
+
+        <section aria-labelledby="privacy-diagnostics">
+          <h2 id="privacy-diagnostics">故障诊断</h2>
+          <p>客户端只在当前页面会话内保留最近 30 分钟、最多 50 条诊断，刷新或切换身份即清空；不会自动上传。你可以在<Link to="/diagnostics">故障诊断</Link>页面查看、复制或清空，再自行决定是否发送给支持人员。</p>
+          <p>应用诊断只包含错误编号、版本、操作类别、阶段及可重试性，不记录乐谱或批注正文、文件名、邮箱、IP、凭据或完整 URL。服务端诊断由获授权的运维人员通过 Cloudflare 查看，按现有套餐保留 3 或 7 天；云盘管理员不能因此访问这些日志。基础设施提供方自身的数据处理另受其政策约束。</p>
         </section>
 
         <section aria-labelledby="privacy-rights">
