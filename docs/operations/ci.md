@@ -35,3 +35,5 @@ CI 使用 `npm ci --prefer-offline --no-audit --no-fund`：优先复用已有 np
 基线调查：9 月 1–4 日取样时 77 次运行中 73 次结束，job 实际执行合计约 398 分钟，逐 job 向上取整后约 456 分钟。它只描述该仓库当时的运行记录，不包含其他仓库或未结束运行，也不是账单余额。
 
 参考：[GitHub Actions 计费](https://docs.github.com/en/billing/concepts/product-billing/github-actions)、[并发规则](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)、[npm ci 参数](https://docs.npmjs.com/cli/v11/commands/npm-ci/)。
+
+临时验证：此提交仅用于确认纯文档 PR 的轻量 CI 路径，不合并。
