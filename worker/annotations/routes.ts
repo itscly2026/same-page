@@ -298,7 +298,7 @@ annotationRoutes.put("/choirs/:choirId/shared-layers/:slot/grants/:membershipId"
 annotationRoutes.post("/choirs/:choirId/scores/:scoreId/annotations/push", async (context) => {
   const access = await resolveScoreAccess(context);
   if (access instanceof Response) return access;
-  if (access.principal.kind !== "user" || !access.membership) {
+  if (access.principal.kind !== "user") {
     return context.json({ error: "authentication_required" }, 401);
   }
   if (
@@ -335,7 +335,7 @@ annotationRoutes.post("/choirs/:choirId/scores/:scoreId/annotations/push", async
   const results: PushResult[] = [];
   for (const operation of parsed.data.operations) {
     results.push(
-      await applyOperation(context, access, operation, access.membership.displayName),
+      await applyOperation(context, access, operation, access.membership?.displayName ?? ""),
     );
   }
   return context.json({ results });

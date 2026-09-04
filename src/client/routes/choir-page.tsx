@@ -2,16 +2,12 @@ import { parseDiagnosticResponse, diagnosticFetch } from "../diagnostics/diagnos
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
-  Dialog,
   Form,
-  Heading,
   Input,
   Label,
   Menu,
   MenuItem,
   MenuTrigger,
-  Modal,
-  ModalOverlay,
   Popover,
   TextField,
 } from "react-aria-components";
@@ -20,7 +16,6 @@ import { Link, useParams } from "react-router-dom";
 import { isInternalAuthEmail } from "../../shared/auth";
 import {
   guestSessionResponseSchema,
-  rotateJoinCodeResponseSchema,
   type ChoirSummary,
 } from "../../shared/choirs";
 import {
@@ -58,6 +53,7 @@ import {
   type ScoreActionSelection,
 } from "../score-library/score-action-dialog";
 import { formatBytes } from "../score-library/library-format";
+import { InviteCodeDialog } from "../score-library/invite-code-dialog";
 import { TrashDialog } from "../score-library/trash-dialog";
 import { UploadDialog } from "../score-library/upload-dialog";
 
@@ -72,8 +68,6 @@ export default function ChoirPage() {
   const [searchMessage, setSearchMessage] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [rotatedJoinCode, setRotatedJoinCode] = useState<string | null>(null);
-  const [rotationMessage, setRotationMessage] = useState<string | null>(null);
   const [inviteManagementOpen, setInviteManagementOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [quotaBlocked, setQuotaBlocked] = useState(false);
@@ -280,25 +274,6 @@ export default function ChoirPage() {
   const refreshAfterMutation = async () => {
     if (cacheOwner) invalidateDriveLibrary(cacheOwner, choirId);
     await refresh();
-  };
-
-  const rotateJoinCode = async () => {
-    if (!window.confirm("轮换后当前邀请码会立即失效。确认继续吗？")) return;
-    setBusy(true);
-    setRotatedJoinCode(null);
-    setRotationMessage(null);
-    try {
-      const response = await diagnosticFetch(`/api/choirs/${choirId}/join-code/rotate`, {
-        method: "POST",
-      });
-      if (!response.ok) throw new Error("rotation_failed");
-      setRotatedJoinCode((await parseDiagnosticResponse(response, rotateJoinCodeResponseSchema)).joinCode);
-      setRotationMessage("邀请码已轮换。请现在复制并通过私密渠道发送。");
-    } catch {
-      setRotationMessage("邀请码轮换失败，当前邀请码没有改变。");
-    } finally {
-      setBusy(false);
-    }
   };
 
   const headerActions = (
@@ -551,54 +526,13 @@ export default function ChoirPage() {
         </section>
       </main>
 
-      <ModalOverlay
-        className="modal-overlay"
-        isOpen={inviteManagementOpen}
-        onOpenChange={(open) => {
-          setInviteManagementOpen(open);
-          if (!open) {
-            setRotatedJoinCode(null);
-            setRotationMessage(null);
-          }
-        }}
-        isDismissable
-      >
-        <Modal className="app-modal app-modal--compact">
-          <Dialog className="app-dialog drive-management-dialog">
-            {({ close }) => (
-              <>
-                <div className="dialog-heading">
-                  <div>
-                    <p className="dialog-eyebrow">管理</p>
-                    <Heading slot="title">邀请码</Heading>
-                  </div>
-                  <Button className="icon-button" aria-label="关闭" onPress={close}>×</Button>
-                </div>
-                <p className="drive-management-copy">
-                  轮换会立即停用旧邀请码；新邀请码只在本次操作后显示。
-                </p>
-                <Button
-                  className="secondary-button"
-                  isDisabled={busy}
-                  onPress={() => void rotateJoinCode()}
-                >
-                  {busy ? "正在轮换…" : "轮换邀请码"}
-                </Button>
-                {rotationMessage ? (
-                  <p className="library-message" role="status">{rotationMessage}</p>
-                ) : null}
-                {rotatedJoinCode ? (
-                  <div className="join-code-result" role="status">
-                    <p>新的八位邀请码</p>
-                    <output aria-label="新的八位邀请码">{rotatedJoinCode}</output>
-                    <Button onPress={() => setRotatedJoinCode(null)}>已复制，隐藏邀请码</Button>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </Dialog>
-        </Modal>
-      </ModalOverlay>
+      {inviteManagementOpen && result.permissions.canManage ? (
+        <InviteCodeDialog
+          key={`${choirId}:${userId}`}
+          choirId={choirId}
+          onClose={() => setInviteManagementOpen(false)}
+        />
+      ) : null}
 
       <UploadDialog
         choirId={choirId}
@@ -640,7 +574,7 @@ async function openChoir(
 > {
   const bootstrap = await requestDriveBootstrap(choirId, query);
   if (bootstrap.kind === "loaded") {
-    if (signedIn && bootstrap.access === "membership") void clearGuestSession();
+    if (signedIn && bootstrap.access !== "guest") void clearGuestSession();
     return bootstrap.opened;
   }
   if (bootstrap.kind === "failed") return { kind: "failed" };
@@ -690,7 +624,7 @@ async function loadOpenAdmissionChoir(choirId: string) {
 type DriveBootstrapRequest =
   | {
       kind: "loaded";
-      access: "membership" | "guest";
+      access: "membership" | "preview" | "guest";
       opened: Extract<ChoirAccessState, { kind: "opened" }>;
     }
   | { kind: "denied" | "not-found" | "failed" };
