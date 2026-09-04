@@ -924,7 +924,7 @@ describe("ReaderPage", () => {
     } as never);
     fireEvent(window, new Event("online"));
     await waitFor(() => expect(bootstrapCalls).toBe(3));
-    expect(screen.getByLabelText("正在加载乐谱")).toBeInTheDocument();
+    expect(await screen.findByLabelText("正在加载乐谱")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
     await act(async () => rejectReacquire(new Error("PDF parse failed")));
