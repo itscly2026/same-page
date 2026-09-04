@@ -11,6 +11,7 @@ import { diagnosticMiddleware, logFailure } from "./diagnostics";
 import { serverTimingMiddleware } from "./performance/server-timing";
 import { cleanupScoreStorage } from "./scores/cleanup";
 import { scoreRoutes } from "./scores/routes";
+import { cleanupRateLimits } from "./security/rate-limit";
 
 const app = new Hono<AppEnvironment>();
 
@@ -48,6 +49,10 @@ export default {
     context.waitUntil(cleanupScoreStorage(env).catch(() => {
       logFailure("storage", "cleanup", 500, crypto.randomUUID());
       throw new Error("score_storage_cleanup_failed");
+    }));
+    context.waitUntil(cleanupRateLimits(env.DB).catch(() => {
+      logFailure("auth", "cleanup", 500, crypto.randomUUID());
+      throw new Error("rate_limit_cleanup_failed");
     }));
   },
 } satisfies ExportedHandler<Cloudflare.Env>;

@@ -64,6 +64,20 @@ try {
   assert.deepEqual(query("SELECT id, join_code_hash, guest_session_version FROM choirs ORDER BY id"), inviteState);
   assert(query("SELECT join_code_ciphertext FROM choirs").every((row) => row.join_code_ciphertext === null));
 
+  executeD1({ command: "INSERT INTO rate_limits VALUES ('expired-fixture', 3, 0), ('live-fixture', 4, 9999999999999)", targetArgs });
+  executeD1({
+    file: join(repositoryRoot, "migrations", "0012_rate_limit_expiry_index.sql"),
+    targetArgs,
+  });
+  assert.deepEqual(query("SELECT * FROM rate_limits ORDER BY key"), [
+    { key: "expired-fixture", count: 3, window_expires_at: 0 },
+    { key: "live-fixture", count: 4, window_expires_at: 9999999999999 },
+  ]);
+  assert.deepEqual(query("PRAGMA index_info(rate_limits_expiry_key_idx)").map((row) => row.name), ["window_expires_at", "key"]);
+  const expiryPlan = query("EXPLAIN QUERY PLAN SELECT key FROM rate_limits WHERE window_expires_at <= 100 ORDER BY window_expires_at, key LIMIT 500");
+  assert(expiryPlan.some((row) => /COVERING INDEX rate_limits_expiry_key_idx/.test(row.detail)));
+  assert(!expiryPlan.some((row) => /SCAN rate_limits|TEMP B-TREE/.test(row.detail)));
+
   verifySchema();
   verifyDriveNames();
   verifyContentReset();
