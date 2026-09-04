@@ -1,4 +1,5 @@
-import { Eraser, Lock, Pencil, Redo2, Type, Undo2 } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, Eraser, Lock, Pencil, Redo2, Type, Undo2 } from "lucide-react";
 import { Button, Dialog, DialogTrigger, Popover } from "react-aria-components";
 
 import {
@@ -9,6 +10,7 @@ import {
 import type { AnnotationTool } from "../annotations/annotation-overlay";
 import { redoAnnotationEdit, undoAnnotationEdit } from "../annotations/edit-history";
 import type { LocalWorkspace } from "../platform/local-workspace";
+import "./reader-ux.css";
 
 export function ReaderEditingControls({
   workspace,
@@ -25,6 +27,12 @@ export function ReaderEditingControls({
   onToolChange(tool: AnnotationTool): void;
   onLayerChange(layerId: string): void;
 }) {
+  const [choosingLayer, setChoosingLayer] = useState(false);
+  const selectedLayer = layers.find((layer) => layer.id === activeLayerId);
+  const chooseLayer = (layerId: string) => {
+    onLayerChange(layerId);
+    setChoosingLayer(false);
+  };
   const defaultLayers = new Map(
     layers.filter((layer) => layer.defaultSlot !== null).map((layer) => [layer.defaultSlot, layer]),
   );
@@ -32,25 +40,40 @@ export function ReaderEditingControls({
 
   return (
     <section className="annotation-controls" aria-label="批注工具">
-      <div className="annotation-control-group" aria-label="编辑层">
-        <div className="annotation-layer-switcher">
-          {defaultSharedLayerSlots.map((slot) => (
-            <LayerSlotButton
-              key={slot}
-              slot={slot}
-              layer={defaultLayers.get(slot)}
-              activeLayerId={activeLayerId}
-              onLayerChange={onLayerChange}
-            />
-          ))}
-          <LayerSlotButton
-            slot="P"
-            layer={personalLayer}
-            activeLayerId={activeLayerId}
-            onLayerChange={onLayerChange}
-          />
-        </div>
-      </div>
+      <DialogTrigger isOpen={choosingLayer} onOpenChange={setChoosingLayer}>
+        <Button
+          className="reader-edit-layer-trigger"
+          aria-label={`当前编辑层：${selectedLayer?.kind === "personal" ? "P · 个人层" : `${selectedLayer?.defaultSlot} · ${selectedLayer?.name}`}，选择编辑层`}
+        >
+          <span>{selectedLayer?.defaultSlot ?? "P"}</span>
+          <span>{selectedLayer?.kind === "personal" ? "个人" : "共享"}</span>
+          <ChevronDown aria-hidden="true" size={14} />
+        </Button>
+        <Popover className="reader-edit-layer-popover" placement="top" offset={12}>
+          <Dialog aria-label="选择编辑层">
+            <h2>选择编辑层</h2>
+            <p>编辑时只显示选中层。锁定的共享层可查看权限说明。</p>
+            <div className="annotation-layer-switcher" aria-label="编辑层">
+              {defaultSharedLayerSlots.map((slot) => (
+                <LayerSlotButton
+                  key={slot}
+                  slot={slot}
+                  layer={defaultLayers.get(slot)}
+                  activeLayerId={activeLayerId}
+                  onLayerChange={chooseLayer}
+                />
+              ))}
+              <LayerSlotButton
+                slot="P"
+                layer={personalLayer}
+                activeLayerId={activeLayerId}
+                onLayerChange={chooseLayer}
+              />
+            </div>
+            <p>P · 个人层仅自己可见；E/S/A/T/B 为共享层。</p>
+          </Dialog>
+        </Popover>
+      </DialogTrigger>
       <div className="annotation-control-group" aria-label="工具">
         <div className="segmented-control" aria-label="批注工具">
           {(["text", "ink", "eraser"] as const).map((entry) => (

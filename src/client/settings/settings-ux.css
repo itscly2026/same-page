@@ -1,0 +1,48 @@
+.settings-ux .settings-heading { margin-bottom: .5rem; }
+.settings-ux .settings-feedback { display: flex; align-items: center; gap: 1rem; margin: .5rem 0 1rem; color: var(--muted); font-size: .9rem; }
+.settings-ux .settings-feedback p { flex: 1; margin: 0; }
+.settings-ux .settings-feedback--status { min-height: 1.4rem; }
+.settings-ux .settings-card:empty { display: none; }
+.settings-ux .settings-layer-row { position: relative; grid-template-columns: minmax(11rem, 1fr) auto auto minmax(8rem, auto); gap: .35rem 1rem; padding: .65rem 1rem; }
+.settings-ux .settings-layer-row--management { grid-template-columns: minmax(0, 1fr) auto; }
+.settings-ux .settings-layer-identity { min-width: 0; gap: .15rem .55rem; }
+.settings-ux .settings-layer-identity strong { overflow-wrap: anywhere; }
+.settings-ux .settings-layer-description { display: inline-block; color: var(--muted); font-size: .8rem; font-weight: 400; }
+.settings-ux .settings-toggle { min-height: 44px; color: var(--ink); cursor: pointer; font-size: .9rem; font-weight: 600; }
+.settings-ux .settings-color-control { min-height: 44px; gap: .4rem; }
+.settings-ux .settings-color-control input { width: 44px; height: 44px; border-radius: .5rem; cursor: pointer; }
+.settings-ux .settings-color-control input::-webkit-color-swatch-wrapper { padding: .3rem; }
+.settings-ux .settings-color-control input::-webkit-color-swatch { border: 0; border-radius: .2rem; }
+.settings-ux .settings-color-options { min-width: 0; }
+.settings-ux .settings-color-options button { min-height: 44px; font-size: .8rem; }
+.settings-ux .settings-color-options button:disabled { color: var(--muted); cursor: default; text-decoration: none; opacity: .75; }
+.settings-ux .settings-layer-link { min-height: 44px; grid-template-columns: auto minmax(0, 1fr) auto; gap: .2rem .6rem; }
+.settings-ux .settings-layer-link .settings-layer-swatch { grid-row: 1 / 3; }
+.settings-ux .settings-layer-link small { grid-column: 2; }
+.settings-ux .settings-layer-link > span:last-child { grid-column: 3; grid-row: 1 / 3; }
+.settings-ux .settings-member-row { min-height: 4.25rem; cursor: pointer; }
+.settings-ux .settings-member-row strong { overflow-wrap: anywhere; }
+.settings-ux .settings-member-row input { flex-shrink: 0; }
+.settings-ux .settings-saving { grid-column: 1 / -1; color: var(--muted); font-size: .75rem; }
+.settings-ux :is(button, input, a):focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+.settings-ux :is(input, button):disabled { cursor: default; }
+.settings-ux .settings-toggle:has(input:disabled) { cursor: default; opacity: .7; }
+.file-menu-popover [role="menu"] [role="menuitem"] { display: flex; align-items: center; min-height: 44px; box-sizing: border-box; color: var(--ink); text-decoration: none; }
+.file-menu-popover [role="menu"] [role="menuitem"]:is(:hover, [data-focused]):not([data-disabled]) { color: var(--brand); background: var(--brand-soft); }
+.file-menu-popover [role="menu"] [role="menuitem"][data-focus-visible] { outline: 2px solid var(--brand); outline-offset: -2px; }
+.file-menu-popover [role="menu"] [role="menuitem"][data-disabled] { color: var(--muted); cursor: default; font-size: .8rem; }
+.file-menu-popover [role="menu"] { outline: none; }
+.app-header .account-menu-button { display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--line); }
+.app-header .account-menu-button .account-menu-label { overflow: hidden; text-overflow: ellipsis; }
+.app-header .account-menu-button svg { flex: 0 0 auto; }
+.app-header .account-menu-button[data-focus-visible], .app-header__actions a:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+@media (max-width: 48rem) {
+  .settings-ux { padding-top: 1.5rem; }
+  .settings-ux .settings-layer-row { grid-template-columns: minmax(0, 1fr) auto; gap: 0 .75rem; padding: .65rem .8rem; }
+  .settings-ux .settings-color-control { justify-self: start; }
+  .settings-ux .settings-color-options { justify-self: end; }
+  .settings-ux .settings-layer-row--management { grid-template-columns: minmax(0, 1fr) auto; gap: .75rem; }
+  .settings-ux .settings-layer-row--management .settings-color-control { flex-direction: column; gap: .1rem; font-size: .7rem; }
+  .settings-ux .settings-feedback { flex-wrap: wrap; }
+  .settings-ux .settings-feedback p { flex-basis: 100%; }
+}

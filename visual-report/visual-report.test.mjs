@@ -36,6 +36,17 @@ test("visual report scenarios have stable unique ids and cover iPad plus narrow 
     "reader-edit-unsubscribed-exit",
     "reader-controls-narrow",
     "reader-text-compose-multiline",
+    "reader-tools-mobile",
+    "reader-dense-portrait",
+    "reader-dense-continuous",
+    "reader-dense-landscape-page",
+    "library-upload-partial",
+    "reader-layer-save-failure",
+    "reader-offline-ready",
+    "reader-offline-failure",
+    "pwa-registration-success",
+    "pwa-registration-failure",
+    "pwa-registration-retry",
   ]) {
     assert.ok(
       visualReportScenarios.some((scenario) => scenario.id === requiredId),

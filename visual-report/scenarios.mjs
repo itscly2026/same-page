@@ -1,3 +1,5 @@
+import { extraVisualReportScenarios } from "./extra-scenarios.mjs";
+
 export const visualReportScenarios = [
   {
     id: "home-guest",
@@ -16,7 +18,7 @@ export const visualReportScenarios = [
   {
     id: "home-entry-dialog",
     title: "首页 · 进入云盘",
-    description: "匿名用户查看已加入云盘与邀请码入口的弹窗。",
+    description: "匿名用户通过邀请码进入云盘的弹窗。",
     device: "portrait",
     identity: "guest",
     route: "/",
@@ -27,12 +29,12 @@ export const visualReportScenarios = [
   },
   {
     id: "home-member-preview-entry",
-    title: "首页 · 登录后的公开体验入口",
-    description: "登录用户仍能从独立入口访问公开体验云盘。",
+    title: "首页 · 我的云盘",
+    description: "登录用户直接看到自己加入的云盘，加入新云盘为独立动作。",
     device: "portrait",
     identity: "member",
     route: "/",
-    ready: { type: "role", role: "link", name: "访问公开体验云盘" },
+    ready: { type: "role", role: "heading", name: "我已加入的云盘" },
     actions: [],
   },
   {
@@ -156,7 +158,7 @@ export const visualReportScenarios = [
     device: "narrow",
     identity: "admin",
     route: "/choirs/visual-choir/shared-layers/E",
-    ready: { type: "role", role: "heading", name: "E · Ensemble 编辑权限" },
+    ready: { type: "role", role: "checkbox", name: "周宁" },
     actions: [],
   },
   {
@@ -311,7 +313,7 @@ export const visualReportScenarios = [
     device: "landscape",
     identity: "member",
     route: "/choirs/visual-choir/scores/visual-score",
-    ready: { type: "selector", selector: ".reader-panel" },
+    ready: { type: "selector", selector: ".layer-section--personal .layer-card" },
     actions: [
       { type: "clickCenter", selector: ".page-reader__viewport" },
       { type: "clickRole", role: "button", name: "图层" },
@@ -321,11 +323,11 @@ export const visualReportScenarios = [
   {
     id: "reader-layers-portrait",
     title: "阅读器 · 竖屏图层",
-    description: "竖屏中以底部面板管理本谱订阅，谱面保持清晰可见。",
+    description: "竖屏 iPad 使用底部覆盖面板管理本谱显示，不改变谱面布局。",
     device: "portrait",
     identity: "member",
     route: "/choirs/visual-choir/scores/visual-score",
-    ready: { type: "selector", selector: ".reader-panel" },
+    ready: { type: "selector", selector: ".layer-section--personal .layer-card" },
     actions: [
       { type: "clickCenter", selector: ".page-reader__viewport" },
       { type: "clickRole", role: "button", name: "图层" },
@@ -343,6 +345,7 @@ export const visualReportScenarios = [
     actions: [
       { type: "clickCenter", selector: ".page-reader__viewport" },
       { type: "clickRole", role: "button", name: "编辑" },
+      { type: "clickRole", role: "button", name: "当前编辑层：P · 个人层，选择编辑层" },
       { type: "clickRole", role: "button", name: "E，Ensemble，只读，查看权限说明" },
     ],
     waitsForPdf: true,
@@ -354,7 +357,7 @@ export const visualReportScenarios = [
     device: "landscape",
     identity: "member",
     route: "/choirs/visual-choir/scores/visual-score",
-    ready: { type: "text", text: "轻点任意位置添加文字" },
+    ready: { type: "role", role: "button", name: "重做" },
     actions: [
       { type: "clickCenter", selector: ".page-reader__viewport" },
       { type: "clickRole", role: "button", name: "编辑" },
@@ -368,10 +371,11 @@ export const visualReportScenarios = [
     device: "landscape",
     identity: "admin",
     route: "/choirs/visual-choir/scores/visual-score",
-    ready: { type: "selector", selector: ".annotation-layer-slot[aria-label=\"E，Ensemble\"][aria-pressed=\"true\"]" },
+    ready: { type: "selector", selector: ".reader-edit-layer-trigger[aria-label=\"当前编辑层：E · Ensemble，选择编辑层\"]" },
     actions: [
       { type: "clickCenter", selector: ".page-reader__viewport" },
       { type: "clickRole", role: "button", name: "编辑" },
+      { type: "clickRole", role: "button", name: "当前编辑层：P · 个人层，选择编辑层" },
       { type: "clickRole", role: "button", name: "E，Ensemble" },
     ],
     waitsForPdf: true,
@@ -383,10 +387,11 @@ export const visualReportScenarios = [
     device: "landscape",
     identity: "admin",
     route: "/choirs/visual-choir/scores/visual-score",
-    ready: { type: "selector", selector: ".annotation-layer-slot[aria-label=\"E，Ensemble\"][aria-pressed=\"true\"]" },
+    ready: { type: "selector", selector: ".reader-edit-layer-trigger[aria-label=\"当前编辑层：E · Ensemble，选择编辑层\"]" },
     actions: [
       { type: "clickCenter", selector: ".page-reader__viewport" },
       { type: "clickRole", role: "button", name: "编辑" },
+      { type: "clickRole", role: "button", name: "当前编辑层：P · 个人层，选择编辑层" },
       { type: "clickRole", role: "button", name: "E，Ensemble" },
     ],
     waitsForPdf: true,
@@ -402,6 +407,7 @@ export const visualReportScenarios = [
     actions: [
       { type: "clickCenter", selector: ".page-reader__viewport" },
       { type: "clickRole", role: "button", name: "编辑" },
+      { type: "clickRole", role: "button", name: "当前编辑层：P · 个人层，选择编辑层" },
       { type: "clickRole", role: "button", name: "E，Ensemble" },
       { type: "clickRole", role: "button", name: "编辑" },
     ],
@@ -461,6 +467,7 @@ export const visualReportScenarios = [
     ],
     waitsForPdf: true,
   },
+  ...extraVisualReportScenarios,
 ];
 
 export function validateVisualReportScenarios(scenarios = visualReportScenarios) {

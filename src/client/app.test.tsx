@@ -41,6 +41,7 @@ describe("AppRoutes", () => {
   beforeEach(async () => {
     clearReaderScoreCache();
     clearDriveLibraryCache();
+    window.sessionStorage.clear();
     await localDatabase.open();
     await activateAuthenticatedLocalOwner("user-1");
     vi.mocked(authClient.useSession).mockReturnValue({
@@ -217,7 +218,7 @@ describe("AppRoutes", () => {
 
     expect(await screen.findByRole("heading", { name: "我的图层偏好" })).toBeInTheDocument();
     expect(await screen.findByText("适用于：小红花云盘")).toBeInTheDocument();
-    const subscribed = await screen.findByRole("checkbox", { name: "E · Ensemble 默认订阅" });
+    const subscribed = await screen.findByRole("checkbox", { name: "E · Ensemble 默认显示" });
     expect(subscribed).toBeChecked();
     fireEvent.click(subscribed);
     await waitFor(() => {
@@ -267,14 +268,14 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(await screen.findByRole("checkbox", { name: "E · Ensemble 默认订阅" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "S · Soprano 默认订阅" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "E · Ensemble 默认显示" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "S · Soprano 默认显示" }));
     releaseSoprano(Response.json({ preference: { subscribed: false } }));
     releaseEnsemble(new Response(null, { status: 500 }));
 
     await waitFor(() => {
-      expect(screen.getByRole("checkbox", { name: "E · Ensemble 默认订阅" })).toBeChecked();
-      expect(screen.getByRole("checkbox", { name: "S · Soprano 默认订阅" })).not.toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "E · Ensemble 默认显示" })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "S · Soprano 默认显示" })).not.toBeChecked();
     });
   });
 
@@ -569,7 +570,6 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "进入云盘" }));
     expect(await screen.findByRole("link", { name: /小红花云盘.*小花/ })).toHaveAttribute(
       "href",
       "/choirs/choir-1",
@@ -597,8 +597,8 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "进入云盘" }));
-    expect(await screen.findByText("还没有已加入的云盘。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "加入新云盘" }));
+    expect(await screen.findByText(/还没有已加入的云盘。/)).toBeInTheDocument();
     expect(screen.getByLabelText("邀请码")).toBeInTheDocument();
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
   });
@@ -641,7 +641,7 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "进入云盘" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入新云盘" }));
     fireEvent.change(screen.getByLabelText("邀请码"), {
       target: { value: "ABCDEFGH" },
     });
@@ -707,7 +707,7 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "进入云盘" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入新云盘" }));
     fireEvent.change(screen.getByLabelText("邀请码"), {
       target: { value: "ABCDEFGH" },
     });
@@ -720,7 +720,7 @@ describe("AppRoutes", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: "进入云盘" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入新云盘" }));
     fireEvent.change(screen.getByLabelText("邀请码"), {
       target: { value: "ABCDEFGH" },
     });
@@ -783,7 +783,7 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "进入云盘" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入新云盘" }));
     fireEvent.change(screen.getByLabelText("邀请码"), {
       target: { value: "ABCDEFGH" },
     });
@@ -861,7 +861,7 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("这里还没有 PDF 文件。")).toBeInTheDocument();
+    expect(await screen.findByText("这个云盘还没有乐谱。")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -963,7 +963,7 @@ describe("AppRoutes", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "加入并进入" }));
 
-    expect(await screen.findByText("这里还没有 PDF 文件。")).toBeInTheDocument();
+    expect(await screen.findByText("这个云盘还没有乐谱。")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/choirs/join", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1040,7 +1040,7 @@ describe("AppRoutes", () => {
       await screen.findByRole("heading", { name: "公开体验云盘" }),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
-    expect(screen.getByText("这里还没有 PDF 文件。")).toBeInTheDocument();
+    expect(screen.getByText("这个云盘还没有乐谱。")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1255,22 +1255,18 @@ describe("AppRoutes", () => {
     fireEvent.change(screen.getByRole("searchbox", { name: "搜索文件名" }), {
       target: { value: "排练" },
     });
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/choirs/choir-1/scores?q=%E6%8E%92%E7%BB%83",
-      );
-    });
+    expect(screen.getByText("找到 1 份，共 1 份乐谱")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("?q="))).toBe(false);
 
     fetchMock.mockImplementationOnce(() =>
       Promise.resolve(Response.json({ error: "temporary" }, { status: 503 })),
     );
-    fireEvent.change(screen.getByRole("searchbox", { name: "搜索文件名" }), {
-      target: { value: "暂时失败" },
-    });
+    fireEvent.submit(screen.getByRole("search"));
     expect(
       await screen.findByText("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。"),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /排练 10\.pdf.*2\.0 MB/ })).toBeInTheDocument();
+
   });
 
   it("restores a cached drive library while background refresh is delayed", async () => {
@@ -1443,57 +1439,31 @@ describe("AppRoutes", () => {
     ]);
 
     finishBootstrap(Response.json(driveBootstrapBody({ access: "membership" })));
-    expect(await screen.findByText("这里还没有 PDF 文件。")).toBeInTheDocument();
+    expect(await screen.findByText("这个云盘还没有乐谱。")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", { method: "DELETE" });
   });
 
-  it("keeps only the newest immediate-search response", async () => {
-    let releaseSlow!: (response: Response) => void;
-    const slowResponse = new Promise<Response>((resolve) => {
-      releaseSlow = resolve;
-    });
-    const fetchMock = vi.fn().mockImplementation((input: string) => {
-      if (input.endsWith("?q=%E6%85%A2")) return slowResponse;
-      if (input.endsWith("?q=%E6%96%B0")) {
-        return Promise.resolve(scoreListResponse("新结果.pdf"));
-      }
-      if (input.includes("/bootstrap")) {
-        return Promise.resolve(Response.json(driveBootstrapBody({
-          scores: scoreListBody("初始结果.pdf").scores,
-        })));
-      }
-      return Promise.resolve(
-        Response.json({
-          choir: {
-            id: "choir-1",
-            name: "小红花云盘",
-            guestAdmissionMode: "invite",
-          },
-        }),
-      );
-    });
+  it("keeps immediate search on the latest query without racing network responses", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json(driveBootstrapBody({
+      scores: [
+        { ...scoreListBody("初始结果.pdf").scores[0], id: "initial" },
+        { ...scoreListBody("新结果.pdf").scores[0], id: "new" },
+      ],
+    }))));
     vi.stubGlobal("fetch", fetchMock);
-
-    render(
-      <MemoryRouter initialEntries={["/choirs/choir-1"]}>
-        <AppRoutes />
-      </MemoryRouter>,
-    );
-
+    render(<MemoryRouter initialEntries={["/choirs/choir-1"]}><AppRoutes /></MemoryRouter>);
     await screen.findByRole("link", { name: /初始结果\.pdf/ });
     const searchbox = screen.getByRole("searchbox", { name: "搜索文件名" });
     fireEvent.change(searchbox, { target: { value: "慢" } });
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/choirs/choir-1/scores?q=%E6%85%A2");
-    });
+    expect(screen.getByText("找到 0 份，共 2 份乐谱")).toBeInTheDocument();
+    expect(searchbox).toHaveValue("慢");
     fireEvent.change(searchbox, { target: { value: "新" } });
-    expect(await screen.findByRole("link", { name: /新结果\.pdf/ })).toBeInTheDocument();
-
-    releaseSlow(scoreListResponse("过期结果.pdf"));
-    await waitFor(() => {
-      expect(screen.queryByRole("link", { name: /过期结果\.pdf/ })).not.toBeInTheDocument();
-      expect(screen.getByRole("link", { name: /新结果\.pdf/ })).toBeInTheDocument();
-    });
+    expect(screen.getByRole("link", { name: /新结果\.pdf/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /初始结果\.pdf/ })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("?q="))).toBe(false);
+    fireEvent.change(searchbox, { target: { value: "不存在" } });
+    fireEvent.click(screen.getByRole("button", { name: "清除搜索" }));
+    expect(screen.getByRole("link", { name: /初始结果\.pdf/ })).toBeInTheDocument();
   });
 
   it("uploads files independently and reports invalid and duplicate files in place", async () => {
@@ -1663,10 +1633,6 @@ function scoreListBody(fileName: string) {
     storage: { usedBytes: 2048, limitBytes: 1_073_741_824 },
     permissions: { canManage: false },
   };
-}
-
-function scoreListResponse(fileName: string) {
-  return Response.json(scoreListBody(fileName));
 }
 
 function driveBootstrapBody(options: {

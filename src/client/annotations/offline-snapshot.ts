@@ -95,6 +95,7 @@ export async function ensureOfflineAppShell() {
   if (!("serviceWorker" in navigator)) {
     throw new Error("service_worker_unavailable");
   }
-  const registration = await navigator.serviceWorker.ready;
+  const registration = await navigator.serviceWorker.getRegistration();
+  if (!registration) throw new Error("service_worker_not_registered");
   if (!registration.active) throw new Error("service_worker_not_active");
 }

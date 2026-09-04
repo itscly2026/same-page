@@ -1,3 +1,4 @@
+import { ChevronDown, UserRound } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
@@ -60,14 +61,28 @@ import { formatBytes } from "../score-library/library-format";
 import { TrashDialog } from "../score-library/trash-dialog";
 import { UploadDialog } from "../score-library/upload-dialog";
 
+import { MembershipList } from "../score-library/membership-list";
+import { readLibraryView, rememberLibraryView, selectLibraryScores, type LibrarySort, type LibraryView } from "../score-library/library-view-state";
+import { OfflineScoreControl } from "../score-library/offline-score-control";
+
 export default function ChoirPage() {
   const { choirId = "" } = useParams();
   const session = authClient.useSession();
+  const cacheOwner = session.isPending
+    ? readReturningDriveCacheOwner(choirId) ?? driveCacheOwnerKey(null, choirId)
+    : driveCacheOwnerKey(session.data?.user.id ?? null, choirId);
+  return <ChoirLibrary key={`${choirId}:${cacheOwner}`} choirId={choirId} session={session} cacheOwner={cacheOwner} />;
+}
+
+function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; session: ReturnType<typeof authClient.useSession>; cacheOwner: DriveCacheOwnerKey }) {
   const userId = session.data?.user.id;
+  const [initialView] = useState(() => readLibraryView(cacheOwner, choirId));
   const [access, setAccess] = useState<ChoirAccessState>({ kind: "loading" });
   const [reloadSequence, setReloadSequence] = useState(0);
   const [openAdmissionDisplayName, setOpenAdmissionDisplayName] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialView.search);
+  const [sort, setSort] = useState<LibrarySort>(initialView.sort);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [searchMessage, setSearchMessage] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -78,13 +93,9 @@ export default function ChoirPage() {
   const [quotaBlocked, setQuotaBlocked] = useState(false);
   const [scoreAction, setScoreAction] = useState<ScoreActionSelection | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
-  const searchTimer = useRef<number | null>(null);
   const scoreListRequest = useRef(0);
-  const viewState = useRef({ search: "", scrollTop: 0 });
+  const viewState = useRef<LibraryView>(initialView);
   const pendingScrollRestore = useRef<number | null>(null);
-  const cacheOwner: DriveCacheOwnerKey | null = session.isPending
-    ? readReturningDriveCacheOwner(choirId) ?? driveCacheOwnerKey(null, choirId)
-    : driveCacheOwnerKey(userId ?? null, choirId);
   const currentChoir =
     access.kind === "opened" || access.kind === "join-required"
       ? access.choir
@@ -126,11 +137,12 @@ export default function ChoirPage() {
   }, [access.kind]);
 
   const refresh = useCallback(
-    async (query = search) => {
+    async () => {
       const request = ++scoreListRequest.current;
-      const next = await requestScoreList(choirId, query);
+      const next = await requestScoreList(choirId, "");
       if (request !== scoreListRequest.current) return;
       if (next.kind === "denied") {
+        if (cacheOwner) invalidateDriveLibrary(cacheOwner, choirId);
         setAccess({ kind: "denied" });
         return;
       }
@@ -143,27 +155,30 @@ export default function ChoirPage() {
         setAccess({ kind: "failed" });
         return;
       }
-      const opened = { kind: "opened" as const, choir: currentChoir, result: next.result };
+      const opened = { kind: "opened" as const, choir: currentChoir, result: next.result, isMember: access.kind === "opened" && access.isMember };
       setAccess(opened);
       if (cacheOwner) {
         rememberDriveLibrary(cacheOwner, choirId, opened);
         rememberDriveView(cacheOwner, choirId, {
-          search: query,
+          search: viewState.current.search,
           scrollTop: viewState.current.scrollTop,
         });
       }
     },
-    [cacheOwner, choirId, currentChoir, search],
+    [cacheOwner, choirId, currentChoir, access],
   );
 
   useEffect(() => {
     if (!cacheOwner) return;
     let active = true;
+    const invalidatePendingList = () => { scoreListRequest.current++; };
+    const bootstrapRequest = ++scoreListRequest.current;
     let networkSettled = false;
     let cacheRestored = false;
     const cached = readDriveLibrary(cacheOwner, choirId);
     const cachedSummary = cached?.choir ?? readDriveSummary(cacheOwner, choirId);
-    const query = cached?.search ?? "";
+    const savedView = viewState.current;
+    pendingScrollRestore.current = savedView.scrollTop;
     const restoreCache = () => {
       if (!active || cacheRestored) return;
       cacheRestored = true;
@@ -171,33 +186,27 @@ export default function ChoirPage() {
         setAccess({ kind: "loading", choir: cachedSummary ?? undefined });
         return;
       }
-      viewState.current = { search: cached.search, scrollTop: cached.scrollTop };
-      setSearch(cached.search);
-      pendingScrollRestore.current = cached.scrollTop;
-      setAccess({ kind: "opened", choir: cached.choir, result: cached.result });
+      pendingScrollRestore.current = savedView.scrollTop;
+      setAccess({ kind: "opened", choir: cached.choir, result: { ...cached.result, permissions: { canManage: false } }, isMember: false });
     };
     const restoreFrame = window.requestAnimationFrame(() => {
       if (networkSettled) return;
       restoreCache();
     });
-    void openChoir(choirId, Boolean(userId), query).then((opened) => {
+    void openChoir(choirId, Boolean(userId), "").then((opened) => {
       networkSettled = true;
-      if (!active) return;
+      if (!active || bootstrapRequest !== scoreListRequest.current) return;
       if (opened.kind === "failed" && cached) {
         restoreCache();
         setSearchMessage("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。");
         return;
       }
       if (opened.kind === "opened") {
-        if (cached) {
-          viewState.current = { search: cached.search, scrollTop: cached.scrollTop };
-          setSearch(cached.search);
-          pendingScrollRestore.current = cached.scrollTop;
-        }
+        pendingScrollRestore.current = savedView.scrollTop;
         rememberDriveLibrary(cacheOwner, choirId, opened);
         rememberDriveView(cacheOwner, choirId, {
-          search: query,
-          scrollTop: cached?.scrollTop ?? 0,
+          search: viewState.current.search,
+          scrollTop: savedView.scrollTop,
         });
       } else if (opened.kind === "denied" || opened.kind === "not-found") {
         invalidateDriveLibrary(cacheOwner, choirId);
@@ -206,33 +215,44 @@ export default function ChoirPage() {
     });
     return () => {
       active = false;
+      invalidatePendingList();
       window.cancelAnimationFrame(restoreFrame);
     };
   }, [cacheOwner, choirId, reloadSequence, userId]);
 
-  useEffect(() => () => {
+  useEffect(() => {
     if (!cacheOwner) return;
-    rememberDriveView(cacheOwner, choirId, {
-      search: viewState.current.search,
-      scrollTop: window.scrollY,
-    });
+    const save = () => {
+      viewState.current.scrollTop = window.scrollY;
+      rememberLibraryView(cacheOwner, choirId, viewState.current);
+      rememberDriveView(cacheOwner, choirId, viewState.current);
+    };
+    window.addEventListener("scroll", save, { passive: true });
+    window.addEventListener("pagehide", save);
+    return () => {
+      window.removeEventListener("scroll", save);
+      window.removeEventListener("pagehide", save);
+    };
   }, [cacheOwner, choirId]);
 
-  useEffect(
-    () => () => {
-      if (searchTimer.current !== null) window.clearTimeout(searchTimer.current);
-    },
-    [],
-  );
+  useEffect(() => {
+    if (access.kind !== "opened") return;
+    const refreshVisible = () => { if (document.visibilityState === "visible") void refresh(); };
+    window.addEventListener("online", refreshVisible);
+    window.addEventListener("focus", refreshVisible);
+    return () => { window.removeEventListener("online", refreshVisible); window.removeEventListener("focus", refreshVisible); };
+  }, [access.kind, refresh]);
 
   const updateSearch = (value: string) => {
     setSearch(value);
     viewState.current.search = value;
-    if (searchTimer.current !== null) window.clearTimeout(searchTimer.current);
-    searchTimer.current = window.setTimeout(() => {
-      searchTimer.current = null;
-      void refresh(value);
-    }, 180);
+    viewState.current.scrollTop = 0;
+    if (cacheOwner) rememberLibraryView(cacheOwner, choirId, viewState.current);
+  };
+  const updateSort = (value: LibrarySort) => {
+    setSort(value);
+    viewState.current.sort = value;
+    if (cacheOwner) rememberLibraryView(cacheOwner, choirId, viewState.current);
   };
 
   const joinOpenChoir = async (event: FormEvent<HTMLFormElement>) => {
@@ -302,12 +322,14 @@ export default function ChoirPage() {
 
   const headerActions = (
     <>
-      <Link className="header-action" to="/">
-        其他云盘
-      </Link>
+      <Button className="header-action" onPress={() => setPickerOpen(true)}>切换云盘</Button>
+      <ModalOverlay className="modal-overlay" isOpen={pickerOpen} onOpenChange={setPickerOpen} isDismissable>
+        <Modal className="app-modal"><Dialog className="app-dialog drive-picker-dialog">{({ close }) => <><div className="dialog-heading"><Heading slot="title">切换云盘</Heading><Button className="icon-button" aria-label="关闭" onPress={close}>×</Button></div>{userId ? <MembershipList userId={userId} currentChoirId={choirId} onSelect={close} /> : <p><Link to="/login">登录后查看已加入的云盘</Link></p>}<Link className="drive-picker-join" to="/?join=1" onClick={close}>{userId ? "加入新云盘" : "使用邀请码进入云盘"}</Link></>}</Dialog></Modal>
+      </ModalOverlay>
       {session.data?.user ? (
         <MenuTrigger>
           <Button className="account-menu-button" aria-label="用户菜单">
+            <UserRound size={17} aria-hidden="true" />
             <span className="account-menu-label">
               {isInternalAuthEmail(session.data.user.email)
                 ? "我的"
@@ -316,6 +338,7 @@ export default function ChoirPage() {
             <span className="account-menu-label account-menu-label--compact">
               我的
             </span>
+            <ChevronDown size={15} aria-hidden="true" />
           </Button>
           <Popover className="file-menu-popover account-menu-popover">
             <Menu aria-label="用户菜单">
@@ -424,6 +447,7 @@ export default function ChoirPage() {
 
   const { choir, result } = access;
   const storageRatio = result.storage.usedBytes / result.storage.limitBytes;
+  const visibleScores = selectLibraryScores(result.scores, search, sort, cacheOwner ?? driveCacheOwnerKey(null, choirId), choirId);
 
   return (
     <div className="app-page">
@@ -469,21 +493,20 @@ export default function ChoirPage() {
         <section className="library-workspace" aria-labelledby="library-content-title">
           <div className="library-toolbar">
             <h2 id="library-content-title">乐谱</h2>
-            <Form
+            <div className="library-controls"><Form
               className="library-search"
               role="search"
               onSubmit={(event) => {
                 event.preventDefault();
-                if (searchTimer.current !== null) window.clearTimeout(searchTimer.current);
-                searchTimer.current = null;
-                void refresh(search);
+                void refresh();
               }}
             >
               <TextField value={search} onChange={updateSearch} aria-label="搜索文件名">
                 <Input type="search" placeholder="搜索乐谱" />
               </TextField>
-            </Form>
+            </Form><label className="library-sort-label">排序<select aria-label="乐谱排序" value={sort} onChange={(event) => updateSort(event.target.value as LibrarySort)}><option value="name">名称</option><option value="updated">最近更新</option><option value="opened">本机最近打开</option></select></label></div>
           </div>
+          {search.trim() ? <p className="library-results-summary" role="status">找到 {visibleScores.length} 份，共 {result.scores.length} 份乐谱</p> : null}
 
           {result.permissions.canManage && (storageRatio >= 0.8 || quotaBlocked) ? (
             <p className="storage-warning" role="status">
@@ -492,13 +515,13 @@ export default function ChoirPage() {
             </p>
           ) : null}
           {searchMessage ? (
-            <p className="library-message" role="status">{searchMessage}</p>
+            <p className="library-message" role="status">{searchMessage}<Button className="text-button library-retry" onPress={() => void refresh()}>重试</Button></p>
           ) : null}
           {message ? <p className="library-message" role="status">{message}</p> : null}
 
-          {result.scores.length > 0 ? (
+          {visibleScores.length > 0 ? (
             <section className="file-list" aria-label="PDF 文件">
-              {result.scores.map((score) => (
+              {visibleScores.map((score) => (
                 <article className="file-row" key={score.id}>
                   <Link
                     className="file-row__open"
@@ -510,10 +533,9 @@ export default function ChoirPage() {
                           classifyReaderOpen(userId ?? "guest", choirId, score.id),
                         );
                         if (cacheOwner) {
-                          rememberDriveView(cacheOwner, choirId, {
-                            search,
-                            scrollTop: window.scrollY,
-                          });
+                          const view = { search, sort, scrollTop: window.scrollY };
+                          rememberDriveView(cacheOwner, choirId, view);
+                          rememberLibraryView(cacheOwner, choirId, view);
                           prepareDriveLibraryReturn(cacheOwner, choirId);
                         }
                         rememberReaderScore(userId ?? "guest", score);
@@ -521,7 +543,7 @@ export default function ChoirPage() {
                     }
                   >
                     <span className="pdf-file-icon" aria-hidden="true">PDF</span>
-                    <span className="file-row__name">{score.fileName}</span>
+                    <span className="file-row__name" title={score.fileName}>{score.fileName}</span>
                     <span className="file-row__size">{formatBytes(score.currentVersion.sizeBytes)}</span>
                   </Link>
                   {result.permissions.canManage ? (
@@ -541,11 +563,12 @@ export default function ChoirPage() {
                       </Popover>
                     </MenuTrigger>
                   ) : null}
+                  <div className="file-row__offline"><OfflineScoreControl score={score} authenticatedUserId={userId ?? null} disabled={session.isPending} /></div>
                 </article>
               ))}
             </section>
           ) : (
-            <p className="empty-library">这里还没有 PDF 文件。</p>
+            <div className="library-empty-state">{search.trim() ? <><p>没有找到包含「{search}」的乐谱。</p><Button className="secondary-button" onPress={() => updateSearch("")}>清除搜索</Button></> : <><p>这个云盘还没有乐谱。</p><p>{result.permissions.canManage ? "上传第一份 PDF，开始准备排练。" : access.isMember ? "管理员上传乐谱后，会显示在这里。" : "暂时没有可浏览的乐谱，请稍后再来。"}</p>{result.permissions.canManage ? <Button className="secondary-button" onPress={() => setUploadOpen(true)}>上传第一份 PDF</Button> : null}</>}</div>
           )}
         </section>
       </main>
@@ -666,7 +689,7 @@ async function openChoir(
 
 type ChoirAccessState =
   | { kind: "loading"; choir?: ChoirSummary }
-  | { kind: "opened"; choir: ChoirSummary; result: ScoreListResponse }
+  | { kind: "opened"; choir: ChoirSummary; result: ScoreListResponse; isMember: boolean }
   | { kind: "join-required"; choir: ChoirSummary }
   | { kind: "denied" }
   | { kind: "not-found" }
@@ -711,6 +734,7 @@ async function requestDriveBootstrap(
       access: payload.permissions.access,
       opened: {
         kind: "opened",
+        isMember: payload.permissions.access === "membership",
         choir: payload.choir,
         result: {
           scores: payload.scores,

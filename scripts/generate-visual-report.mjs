@@ -5,7 +5,7 @@ import process from "node:process";
 
 import { chromium, devices } from "@playwright/test";
 
-import { resolveFixtureRequest } from "../visual-report/fixtures.mjs";
+import { createVisualFixtureSession, denseFixtureProvenance } from "../visual-report/fixtures.mjs";
 import {
   createVisualReportManifest,
   renderVisualReportHtml,
@@ -25,10 +25,13 @@ const baseUrl = `http://127.0.0.1:${port}`;
 ensureSafeOutputPath(outputRoot);
 validateVisualReportScenarios();
 const requestedScenario = process.env.VISUAL_REPORT_SCENARIO;
-const scenarios = requestedScenario
-  ? visualReportScenarios.filter((scenario) => scenario.id === requestedScenario)
-  : visualReportScenarios;
-if (requestedScenario && scenarios.length !== 1) {
+const requestedIds = requestedScenario?.split(",");
+const fromIndex = process.env.VISUAL_REPORT_FROM ? visualReportScenarios.findIndex((scenario) => scenario.id === process.env.VISUAL_REPORT_FROM) : 0;
+if (fromIndex < 0) throw new Error("Unknown VISUAL_REPORT_FROM");
+const scenarios = requestedIds
+  ? visualReportScenarios.filter((scenario) => requestedIds.includes(scenario.id))
+  : visualReportScenarios.slice(fromIndex);
+if (requestedIds && scenarios.length !== requestedIds.length) {
   throw new Error(`Unknown visual report scenario: ${requestedScenario}`);
 }
 
@@ -58,17 +61,19 @@ try {
       colorScheme: "light",
       locale: "zh-CN",
       reducedMotion: "reduce",
-      serviceWorkers: "block",
+      serviceWorkers: "allow",
       timezoneId: "Asia/Shanghai",
     });
+    const fixture = createVisualFixtureSession(scenario);
     await context.route("**/api/**", async (route) => {
       const request = route.request();
-      const response = resolveFixtureRequest({
+      const response = fixture.resolve({
         pathname: new URL(request.url()).pathname,
         method: request.method(),
         identity: scenario.identity,
         scenarioId: scenario.id,
         cookie: request.headers()["cookie"] ?? "",
+        body: request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() : null,
       });
       await route.fulfill(response);
     });
@@ -76,8 +81,24 @@ try {
       localStorage.setItem("reader-gesture-hint-seen", "true");
     });
 
+    if (scenario.pwa === "failure" || scenario.pwa === "retry") {
+      await context.addInitScript(() => {
+        const original = navigator.serviceWorker.register.bind(navigator.serviceWorker);
+        let calls = 0;
+        navigator.serviceWorker.register = (...args) => {
+          calls += 1;
+          window.visualRegistrationAttempts = calls;
+          return calls === 1 ? Promise.reject(new Error("visual_injected_registration_failure")) : original(...args);
+        };
+      });
+    }
     const page = await context.newPage();
     const pageErrors = [];
+    const assetFailures = [];
+    page.on("response", (response) => {
+      const pathname = new URL(response.url()).pathname;
+      if (!pathname.startsWith("/api/") && response.status() >= 400) assetFailures.push({ pathname, status: response.status() });
+    });
     page.on("pageerror", (error) => pageErrors.push(error));
 
     await page.goto(`${baseUrl}${scenario.route}`, { waitUntil: "domcontentloaded" });
@@ -88,16 +109,24 @@ try {
     if (scenario.waitsForPdf) {
       try {
         await waitForRenderedPdf(page);
+        await page.getByText("换气", { exact: true }).first().waitFor({ state: "visible" });
       } catch (error) {
         if (pageErrors.length > 0) throw pageErrors[0];
         throw error;
       }
     }
-    await runActions(page, scenario.actions);
+    await runActions(page, scenario.actions, fixture);
     await waitForReady(page, scenario.ready);
     await waitForPageToSettle(page);
     if (scenario.waitsForPdf) await waitForRenderedPdf(page);
+    await assertScenarioContent(page, scenario);
+    if (scenario.pwa !== "failure") {
+      await page.waitForFunction(async () => Boolean((await navigator.serviceWorker.getRegistration())?.active));
+      await page.locator(".reload-prompt").waitFor({ state: "hidden" });
+    }
     if (pageErrors.length > 0) throw pageErrors[0];
+    if (assetFailures.length) throw new Error(`Unexpected asset failures: ${JSON.stringify(assetFailures)}`);
+    if (fixture.diagnostics.unmatchedRequests.length) throw new Error(JSON.stringify(fixture.diagnostics.unmatchedRequests));
 
     const screenshotName = `${String(captures.length + 1).padStart(2, "0")}-${scenario.id}.png`;
     const screenshotPath = path.join(screenshotsRoot, screenshotName);
@@ -118,6 +147,10 @@ try {
       viewport,
       pixels: readPngDimensions(screenshot),
       screenshot: `screenshots/${screenshotName}`,
+      expectedReady: scenario.ready,
+      fixture: scenario.dense ? denseFixtureProvenance : { kind: "original-generated", source: "visual-report/fixtures.mjs" },
+      pwa: scenario.pwa ?? "normal-real-registration",
+      diagnostics: { ...fixture.diagnostics, assetFailures, pageErrors: [], registrationAttempts: await page.evaluate(() => window.visualRegistrationAttempts ?? null) },
     });
     await context.close();
     process.stdout.write(`Captured ${scenario.id}\n`);
@@ -127,6 +160,7 @@ try {
     commit: gitCommit(),
     generatedAt: new Date().toISOString(),
     captures,
+    workingTreeDirty: Boolean(execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { encoding: "utf8" }).trim()),
   });
   await writeFile(
     path.join(outputRoot, "manifest.json"),
@@ -156,8 +190,18 @@ function ensureSafeOutputPath(target) {
   }
 }
 
-async function runActions(page, actions) {
+async function runActions(page, actions, fixture) {
   for (const action of actions) {
+    if (action.type === "reload") { await page.reload({ waitUntil: "domcontentloaded" }); continue; }
+    if (action.type === "waitText") { await page.getByText(action.text, { exact: true }).waitFor({ state: "visible" }); continue; }
+    if (action.type === "scrollIntoView") { await page.locator(action.selector).scrollIntoViewIfNeeded(); continue; }
+    if (action.type === "uploadSamples") {
+      await page.locator('input[type="file"]').setInputFiles([
+        { name: "示例成功.pdf", mimeType: "application/pdf", buffer: fixture.pdf },
+        { name: "示例失败.pdf", mimeType: "application/pdf", buffer: fixture.pdf },
+      ]);
+      continue;
+    }
     if (action.type === "clickRole") {
       await page.getByRole(action.role, { name: action.name, exact: true }).click();
       continue;
@@ -330,4 +374,28 @@ function gitCommit() {
     cwd: repositoryRoot,
     encoding: "utf8",
   }).trim();
+}
+
+async function assertScenarioContent(page, scenario) {
+  if (!scenario.waitsForPdf) return;
+  if (scenario.id.includes("layers") || scenario.id === "reader-layer-save-failure") {
+    await page.locator(".reader-layer-panel .layer-card").first().waitFor({ state: "attached" });
+    if (await page.locator(".reader-layer-panel .layer-card").count() !== 6) throw new Error("Expected ESATB and Personal layer rows");
+  }
+  const editing = await page.locator('.reader-icon-button[aria-label="编辑"][aria-pressed="true"]').count() > 0;
+  const deleteDrag = scenario.id === "reader-text-delete";
+  if (editing && !deleteDrag) {
+    for (const name of ["文本", "画笔", "整条橡皮", "撤销", "重做"]) {
+      const button = page.locator(`button[aria-label="${name}"]`);
+      await button.waitFor({ state: "visible" });
+      const box = await button.boundingBox();
+      const viewport = page.viewportSize();
+      if (!box || box.x < 0 || box.x + box.width > viewport.width + 1) throw new Error("Editing tool clipped: " + name);
+    }
+  }
+  if (scenario.expectedAnnotation !== false && !scenario.id.includes("compose") && !deleteDrag && !scenario.id.includes("dense-pages")) {
+    const sharedOnly = scenario.id === "reader-edit-shared-layer" || scenario.id === "reader-edit-unsubscribed-layer";
+    const expected = sharedOnly ? "第一排男高音这里请统一提前吸气并保持轻声进入" : "换气";
+    await page.getByText(expected, { exact: true }).first().waitFor({ state: "visible" });
+  }
 }
