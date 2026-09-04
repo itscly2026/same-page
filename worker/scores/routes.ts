@@ -18,13 +18,14 @@ import { createDatabase } from "../db/database";
 import { scores } from "../db/schema";
 import type { AppEnvironment } from "../env";
 import { measureServerTiming } from "../performance/server-timing";
+import { versionRoutes } from "./version-routes";
 import { PdfValidationError, inspectPdf } from "./pdf-validation";
 import {
   ConcurrentReplacementError,
   createScoreVersion,
   FilenameConflictError,
   isFilenameConflictError,
-  replaceScoreVersion,
+  stageScoreVersion,
   StorageQuotaError,
 } from "./storage";
 
@@ -35,6 +36,7 @@ const fileNameCollator = new Intl.Collator("zh-CN", {
 });
 
 export const scoreRoutes = new Hono<AppEnvironment>();
+scoreRoutes.route("/", versionRoutes);
 
 scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
   const choirId = context.req.param("choirId");
@@ -51,6 +53,7 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
               choirs.storage_limit_bytes, choirs.is_preview_entry,
               memberships.id AS membership_id,
               memberships.role AS membership_role,
+              memberships.status AS membership_status,
               CASE WHEN choirs.id = ? AND choirs.guest_session_version = ?
                 THEN 1 ELSE 0 END AS guest_access,
               scores.id AS score_id, scores.choir_id, scores.file_name,
@@ -62,10 +65,9 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
        LEFT JOIN memberships
          ON memberships.choir_id = choirs.id
         AND memberships.user_id = ?
-        AND memberships.status = 'active'
        LEFT JOIN scores
          ON scores.choir_id = choirs.id AND scores.trashed_at IS NULL
-        AND (memberships.id IS NOT NULL OR
+        AND (memberships.status = 'active' OR
              (? <> '' AND choirs.is_preview_entry = 1 AND choirs.guest_admission_mode = 'open') OR
              (choirs.id = ? AND choirs.guest_session_version = ?))
         AND (? = '' OR scores.file_name_key LIKE ? ESCAPE '\\')
@@ -88,7 +90,7 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
   const drive = rows.results[0];
   if (!drive) return context.json({ error: "not_found" }, 404);
   const access = await measureServerTiming(context, "access", async () => {
-    if (drive.membership_id) {
+    if (drive.membership_id && drive.membership_status === "active") {
       return {
         kind: "membership" as const,
         canManage: drive.membership_role === "admin",
@@ -97,6 +99,7 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
     if (userId && drive.is_preview_entry === 1 && drive.guest_admission_mode === "open") {
       return { kind: "preview" as const, canManage: false };
     }
+    if (drive.membership_status === "removed") return null;
     if (drive.guest_access === 1) {
       return { kind: "guest" as const, canManage: false };
     }
@@ -287,6 +290,8 @@ scoreRoutes.post("/choirs/:choirId/scores/:scoreId/versions", async (context) =>
   const parsed = await parsePdfUpload(context);
   if (parsed instanceof Response) return parsed;
 
+  if (parsed.expectedRevision === undefined) return context.json({ error: "revision_required" }, 400);
+
   const database = createDatabase(context.env.DB);
   const score = await database.query.scores.findFirst({
     where: and(
@@ -301,11 +306,12 @@ scoreRoutes.post("/choirs/:choirId/scores/:scoreId/versions", async (context) =>
 
   try {
     const inspected = await inspectPdf(parsed.data);
-    const version = await replaceScoreVersion({
+    const version = await stageScoreVersion({
       env: context.env,
       choirId,
       scoreId,
       currentVersionId: score.currentVersionId,
+      expectedRevision: parsed.expectedRevision,
       membershipId: membership.id,
       pdf: {
         data: parsed.data,
@@ -416,7 +422,7 @@ async function serveScorePdf(
 ) {
   const choirId = context.req.param("choirId") ?? "";
   const scoreId = context.req.param("scoreId") ?? "";
-  await resolveChoirAccess(context, choirId);
+  const access = await resolveChoirAccess(context, choirId);
   const row = await measureServerTiming(context, "d1", () => context.env.DB.prepare(
     `SELECT scores.current_version_id, versions.id AS version_id,
             versions.object_key, versions.size_bytes, versions.etag,
@@ -426,9 +432,11 @@ async function serveScorePdf(
        ON versions.score_id = scores.id AND versions.state = 'ready'
      WHERE scores.id = ? AND scores.choir_id = ? AND scores.trashed_at IS NULL
        AND versions.id = COALESCE(?, scores.current_version_id)
+       AND (versions.candidate_expires_at IS NULL OR (? = 1 AND versions.candidate_expires_at > ?))
+       AND (versions.retention_expires_at IS NULL OR versions.retention_expires_at > ?)
      LIMIT 1`,
   )
-    .bind(scoreId, choirId, requestedVersionId ?? null)
+    .bind(scoreId, choirId, requestedVersionId ?? null, access.canManage ? 1 : 0, Date.now(), Date.now())
     .first<PdfRow>());
   if (!row || !row.etag) {
     return context.json({ error: "score_not_found" }, 404);
@@ -516,7 +524,7 @@ async function loadStorage(context: Context<AppEnvironment>, choirId: string) {
 
 async function parsePdfUpload(
   context: Context<AppEnvironment>,
-): Promise<Response | { data: ArrayBuffer; fileName: string }> {
+): Promise<Response | { data: ArrayBuffer; fileName: string; expectedRevision?: number }> {
   const contentLength = Number(context.req.header("Content-Length") ?? 0);
   if (contentLength > MAX_PDF_BYTES + 1024 * 1024) {
     return context.json({ error: "pdf_too_large" }, 413);
@@ -537,7 +545,12 @@ async function parsePdfUpload(
   if (!fileName.success) {
     return context.json({ error: "invalid_file_name" }, 400);
   }
-  return { data: await file.arrayBuffer(), fileName: fileName.data };
+  const revision = form.get("expectedRevision");
+  const expectedRevision = revision === null ? undefined : Number(revision);
+  if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)) {
+    return context.json({ error: "invalid_revision" }, 400);
+  }
+  return { data: await file.arrayBuffer(), fileName: fileName.data, expectedRevision };
 }
 
 function uploadError(context: Context<AppEnvironment>, error: unknown) {
@@ -651,6 +664,7 @@ interface DriveBootstrapRow {
   storage_limit_bytes: number;
   membership_id: string | null;
   membership_role: "admin" | "member" | null;
+  membership_status: "active" | "removed" | null;
   guest_access: 0 | 1;
   score_id: string | null;
   choir_id: string | null;

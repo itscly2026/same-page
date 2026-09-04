@@ -23,6 +23,9 @@ export async function resolveContextChoirReadAccess(
           requireChoirRead(database, userOrGuest, choirId)),
       };
     } catch (error) {
+      if (userOrGuest.kind === "user" && await context.env.DB.prepare(
+        "SELECT id FROM memberships WHERE choir_id = ? AND user_id = ? AND status = 'removed'",
+      ).bind(choirId, userOrGuest.userId).first()) throw error;
       if (!(error instanceof AuthorizationError) || userOrGuest.kind !== "user") {
         throw error;
       }

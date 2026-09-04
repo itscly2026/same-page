@@ -111,6 +111,14 @@ jobs:
       - name: Build production assets
         run: npm run build
 
+      - name: Record production recovery point and aggregate state
+        run: |
+          npx wrangler d1 time-travel info same-page-production --json
+          npx wrangler d1 execute same-page-production --remote --command "SELECT 'users' AS metric, COUNT(*) AS value FROM user UNION ALL SELECT 'memberships', COUNT(*) FROM memberships UNION ALL SELECT 'annotations', COUNT(*) FROM annotation_objects UNION ALL SELECT 'sync_operations', COUNT(*) FROM annotation_sync_operations UNION ALL SELECT 'sync_high_water', COALESCE(MAX(seq), 0) FROM sqlite_sequence WHERE name = 'annotation_sync_operations' UNION ALL SELECT 'scores', COUNT(*) FROM scores UNION ALL SELECT 'current_pdf_pointers', COUNT(current_version_id) FROM scores UNION ALL SELECT 'pdf_versions', COUNT(*) FROM score_versions UNION ALL SELECT 'logical_storage_bytes', COALESCE(SUM(storage_used_bytes), 0) FROM choirs UNION ALL SELECT 'object_deletion_queue', COUNT(*) FROM score_object_deletions"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Apply production database migrations
         run: npx wrangler d1 migrations apply same-page-production --remote
         env:
@@ -128,9 +136,25 @@ jobs:
           npx wrangler d1 execute same-page-production --remote
           --command "SELECT scores.file_name, scores.file_name_key,
           scores.trashed_at, scores.trash_expires_at,
+          scores.version_revision, scores.last_version_number,
           annotation_layers.default_slot
           FROM scores LEFT JOIN annotation_layers ON annotation_layers.score_id = scores.id
           LIMIT 0"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Verify production lifecycle schema
+        run: >-
+          npx wrangler d1 execute same-page-production --remote
+          --command "SELECT candidate_expires_at, base_revision FROM score_versions LIMIT 0;
+          SELECT lifecycle_revision, last_lifecycle_action, removed_for_deletion_id FROM memberships LIMIT 0;
+          SELECT user_id, deletion_id, expires_at FROM user_lifecycle LIMIT 0;
+          SELECT user_id, allowed_methods FROM lifecycle_reauthentication LIMIT 0;
+          SELECT session_id, method FROM session_auth_methods LIMIT 0;
+          PRAGMA foreign_key_list(annotation_sync_operations);
+          SELECT seq FROM sqlite_sequence WHERE name = 'annotation_sync_operations';
+          PRAGMA foreign_key_check"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { choirSummarySchema } from "./choirs";
 import { canonicalScoreFileNameKey } from "./score-file-name-key.mjs";
 
+export const MAX_PDF_PAGES = 500;
 export const MAX_PDF_BYTES = 20 * 1024 * 1024;
 export const SCORE_TRASH_RETENTION_DAYS = 30;
 
@@ -92,3 +93,15 @@ export type TrashedScoreSummary = z.infer<typeof trashedScoreSummarySchema>;
 export type ScoreListResponse = z.infer<typeof scoreListResponseSchema>;
 export type DriveBootstrapResponse = z.infer<typeof driveBootstrapResponseSchema>;
 export type ReaderScoreBootstrap = z.infer<typeof readerScoreBootstrapSchema>;
+
+export const versionPublicationRequestSchema = z.object({
+  expectedRevision: z.number().int().positive(),
+});
+export const scoreVersionHistorySchema = z.object({
+  currentVersionId: z.string(),
+  revision: z.number().int().positive(),
+  versions: z.array(scoreVersionSummarySchema.extend({
+    retentionExpiresAt: z.number().nullable(),
+  })),
+});
+export type ScoreVersionHistory = z.infer<typeof scoreVersionHistorySchema>;

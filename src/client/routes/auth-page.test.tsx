@@ -62,6 +62,17 @@ describe("AuthPage", () => {
     sessionStorage.clear();
   });
 
+  it.each(["google", "wechat"])("routes a restricted %s recovery session to explicit restoration", async (provider) => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string) => {
+      if (input === "/api/user/lifecycle") return Response.json({ deletion: { authMethod: provider, deletionId: "deletion", expiresAt: Date.now() + 10000 } });
+      if (input === "/api/auth/get-session") return Response.json(null);
+      if (input === "/api/auth/social-providers") return Response.json({ providers: ["google", "wechat"] });
+      return new Response(null, { status: 404 });
+    }));
+    renderAuthPage("/login?oauth=complete");
+    expect(await screen.findByLabelText("current route")).toHaveTextContent("/user");
+  });
+
   it("keeps email primary and routes an existing user to password sign-in", async () => {
     renderAuthPage();
 

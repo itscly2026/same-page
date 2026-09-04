@@ -214,6 +214,7 @@ describe("PDF file library and delivery", () => {
       version: { id: string; versionNumber: number };
     };
     expect(replacementPayload.version.versionNumber).toBe(2);
+    expect((await publishVersion(choirId, tenUpload.id, replacementPayload.version.id, adminCookie, 1)).status).toBe(204);
     const oldVersion = await callWorker(
       `/api/choirs/${choirId}/scores/${tenUpload.id}/versions/${tenUpload.versionId}/pdf`,
       { headers: { cookie: guestCookie } },
@@ -232,12 +233,84 @@ describe("PDF file library and delivery", () => {
       .run();
     const quota = await callWorker(
       `/api/choirs/${choirId}/scores/${tenUpload.id}/versions`,
-      uploadRequest(createMinimalPdf(250, 250), adminCookie, "replacement.pdf"),
+      uploadRequest(createMinimalPdf(250, 250), adminCookie, "replacement.pdf", 2),
     );
     expect(quota.status).toBe(409);
     expect(await quota.json()).toEqual({ error: "storage_quota_exceeded" });
 
     expect(twoUpload.id).not.toBe(tenUpload.id);
+  });
+
+  it("stages, cancels, publishes and rolls back with revision and retention guards", async () => {
+    const { adminCookie, choirId, joinCode } = await createAdminChoir();
+    const guestCookie = await createGuestCookie(joinCode!);
+    const original = await upload(choirId, adminCookie, "原版.pdf", createMinimalPdf(400, 400));
+    const path = `/api/choirs/${choirId}/scores/${original.id}`;
+    const headers = { cookie: adminCookie };
+    const history = async () => (await callWorker(`${path}/versions`, { headers })).json();
+    const current = async () => (await callWorker(`${path}/pdf`, { headers })).headers.get("X-Score-Version");
+    const stage = async (revision: number) => {
+      const response = await callWorker(`${path}/versions`, uploadRequest(createMinimalPdf(500, 600), adminCookie, "候选.pdf", revision));
+      expect(response.status).toBe(201);
+      return (await response.json() as { version: { id: string; versionNumber: number } }).version;
+    };
+    const first = await stage(1);
+    expect(await current()).toBe(original.versionId);
+    expect(await history()).toMatchObject({ revision: 1, versions: [{ id: original.versionId }] });
+    expect((await callWorker(`${path}/versions/${first.id}/pdf`, { headers: { cookie: guestCookie } })).status).toBe(404);
+    expect((await callWorker(`${path}/versions/${first.id}/pdf`, { headers })).status).toBe(200);
+    expect((await publishVersion(choirId, original.id, first.id, guestCookie, 1)).status).toBe(403);
+    expect((await callWorker(`${path}/versions/${first.id}`, { method: "DELETE", headers })).status).toBe(204);
+    expect((await callWorker(`${path}/versions/${first.id}`, { method: "DELETE", headers })).status).toBe(204);
+    expect((await publishVersion(choirId, original.id, first.id, adminCookie, 1)).status).toBe(409);
+    expect(await current()).toBe(original.versionId);
+    const second = await stage(1);
+    const competing = await stage(1);
+    expect(second.versionNumber).toBe(3);
+    const race = await Promise.all([
+      publishVersion(choirId, original.id, second.id, adminCookie, 1),
+      publishVersion(choirId, original.id, competing.id, adminCookie, 1),
+    ]);
+    expect(race.map((response) => response.status).sort()).toEqual([204, 409]);
+    const winner = race[0].status === 204 ? second : competing;
+    expect((await publishVersion(choirId, original.id, winner.id, adminCookie, 1)).status).toBe(204);
+    expect(await history()).toMatchObject({ revision: 2, currentVersionId: winner.id });
+    expect((await publishVersion(choirId, original.id, original.versionId, adminCookie, 2)).status).toBe(204);
+    expect(await history()).toMatchObject({ revision: 3, currentVersionId: original.versionId });
+    // ABA: returning to the original PDF cannot make an old publication valid again.
+    expect((await publishVersion(choirId, original.id, competing.id, adminCookie, 1)).status).toBe(409);
+    expect((await callWorker(`${path}/versions`, uploadRequest(createMinimalPdf(10, 10), adminCookie, "旧窗口.pdf", 1))).status).toBe(409);
+    const expiring = await stage(3);
+    await env.DB.prepare("UPDATE score_versions SET candidate_expires_at = ? WHERE id = ?").bind(Date.now() - 1, expiring.id).run();
+    expect((await publishVersion(choirId, original.id, expiring.id, adminCookie, 3)).status).toBe(409);
+    expect((await callWorker(`${path}/versions/${expiring.id}/pdf`, { headers })).status).toBe(404);
+    await env.DB.prepare("UPDATE score_versions SET retention_expires_at = ? WHERE id = ?").bind(Date.now() - 1, winner.id).run();
+    expect((await publishVersion(choirId, original.id, winner.id, adminCookie, 3)).status).toBe(409);
+    const failingBucket = new Proxy(env.SCORES_BUCKET, { get(target, property) {
+      if (property === "delete") return async () => { throw new Error("simulated_storage_failure"); };
+      const value = Reflect.get(target, property); return typeof value === "function" ? value.bind(target) : value;
+    } });
+    await expect(cleanupScoreStorage({ ...env, SCORES_BUCKET: failingBucket })).rejects.toThrow("simulated_storage_failure");
+    await cleanupScoreStorage(env);
+    await cleanupScoreStorage(env);
+    expect(await current()).toBe(original.versionId);
+    expect(await history()).toMatchObject({ versions: [{ id: original.versionId }] });
+    expect((await callWorker(`${path}/versions/${winner.id}/pdf`, { headers })).status).toBe(404);
+  });
+
+  it("rejects a broken middle page before reserving storage", async () => {
+    const { adminCookie, choirId } = await createAdminChoir();
+    const broken = new TextEncoder().encode(`%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R 99 0 R 4 0 R] /Count 3 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >> endobj
+4 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >> endobj
+trailer << /Root 1 0 R >>
+%%EOF`);
+    const response = await callWorker(`/api/choirs/${choirId}/scores`, uploadRequest(broken, adminCookie, "中间页损坏.pdf"));
+    expect(response.status).toBe(422);
+    const list = await callWorker(`/api/choirs/${choirId}/scores`, { headers: { cookie: adminCookie } });
+    expect(await list.json()).toMatchObject({ scores: [], storage: { usedBytes: 0 } });
   });
 
   it("keeps member priority while enforcing guest and membership revocation", async () => {
@@ -307,9 +380,12 @@ describe("PDF file library and delivery", () => {
     ).toBe(403);
 
     const currentGuestCookie = await createGuestCookie(rotated.joinCode);
-    await env.DB.prepare(
-      "UPDATE memberships SET status = 'removed' WHERE choir_id = ? AND role = 'admin'",
-    ).bind(choirId).run();
+    const successor = await env.DB.prepare("SELECT id FROM user WHERE email = 'score-nonmember@example.test'").first<{ id: string }>();
+    // Keep an administrator while testing revocation of the original member.
+    await env.DB.prepare("INSERT INTO memberships (id, choir_id, user_id, display_name, role) VALUES (?, ?, ?, '接任管理员', 'admin')")
+      .bind(crypto.randomUUID(), choirId, successor!.id).run();
+    await env.DB.prepare("UPDATE memberships SET status = 'removed' WHERE choir_id = ? AND user_id <> ?")
+      .bind(choirId, successor!.id).run();
     expect(
       (await callWorker(`/api/choirs/${choirId}/bootstrap`, {
         headers: { cookie: adminCookie },
@@ -319,9 +395,7 @@ describe("PDF file library and delivery", () => {
       `/api/choirs/${choirId}/bootstrap`,
       { headers: { cookie: `${adminCookie}; ${currentGuestCookie}` } },
     );
-    expect(await removedMemberGuestFallback.json()).toMatchObject({
-      permissions: { canManage: false, access: "guest" },
-    });
+    expect(removedMemberGuestFallback.status).toBe(403);
   });
 
   it("moves files to trash, resolves restore conflicts, and automatically purges expired data", async () => {
@@ -351,14 +425,13 @@ describe("PDF file library and delivery", () => {
       ),
     ]);
     const historicalPdf = createMinimalPdf(595, 842);
-    expect(
-      (
-        await callWorker(
-          `/api/choirs/${choirId}/scores/${original.id}/versions`,
-          uploadRequest(historicalPdf, adminCookie, "replacement.pdf"),
-        )
-      ).status,
-    ).toBe(201);
+    const historicalUpload = await callWorker(
+      `/api/choirs/${choirId}/scores/${original.id}/versions`,
+      uploadRequest(historicalPdf, adminCookie, "replacement.pdf"),
+    );
+    expect(historicalUpload.status).toBe(201);
+    const historical = await historicalUpload.json() as { version: { id: string } };
+    expect((await publishVersion(choirId, original.id, historical.version.id, adminCookie, 1)).status).toBe(204);
     await env.DB.prepare(
       "UPDATE score_versions SET retention_expires_at = ? WHERE id = ?",
     )
@@ -545,8 +618,9 @@ async function createGuestCookie(joinCode: string) {
   return cookieFrom(response);
 }
 
-function uploadRequest(data: Uint8Array, cookie: string, fileName: string): RequestInit {
+function uploadRequest(data: Uint8Array, cookie: string, fileName: string, revision = 1): RequestInit {
   const form = new FormData();
+  form.set("expectedRevision", String(revision));
   form.set("file", new File([data], fileName, { type: "application/pdf" }));
   return { method: "POST", headers: { cookie }, body: form };
 }
@@ -593,4 +667,11 @@ async function callWorker(
   );
   await waitOnExecutionContext(context);
   return response;
+}
+
+function publishVersion(choirId: string, scoreId: string, versionId: string, cookie: string, expectedRevision: number) {
+  return callWorker(`/api/choirs/${choirId}/scores/${scoreId}/versions/${versionId}/publish`, {
+    method: "POST", headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ expectedRevision }),
+  });
 }

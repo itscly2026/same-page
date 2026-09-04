@@ -7,6 +7,8 @@ export function formatBytes(bytes: number) {
 export function uploadMessage(status: number, payload: unknown) {
   const error = (payload as { error?: string } | null)?.error;
   if (status === 413 || error === "pdf_too_large") return "PDF 超过 20 MB。";
+  if (error === "pdf_resource_limit") return "PDF 超过解析资源限制（最多 500 页），请拆分后上传。";
+  if (error === "version_conflict") return "当前版本已变化或所选版本已到期，请关闭后重新预览。";
   if (error === "encrypted_pdf") return "加密 PDF 不能上传。";
   if (error === "invalid_pdf") return "PDF 已损坏或无法解析。";
   if (error === "filename_conflict") {

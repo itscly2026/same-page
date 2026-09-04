@@ -69,6 +69,15 @@ export async function handleAuthRequest(context: Context<AppEnvironment>) {
   ) {
     return context.json({ error: "not_found" }, 404);
   }
+  // A newly verified deleted identity holds only a recovery session. Product
+  // authorization also rejects it, including guest fallback from a stale cookie.
+  const session = await auth.api.getSession({ headers: context.req.raw.headers });
+  if (session && await context.env.DB.prepare("SELECT user_id FROM user_lifecycle WHERE user_id = ?").bind(session.user.id).first()) {
+    if (path === "/api/auth/get-session") return context.json(null);
+    if (path !== "/api/auth/sign-out" && !path.startsWith("/api/auth/sign-in/") && !path.startsWith("/api/auth/callback/")) {
+      return context.json({ error: "user_pending_deletion" }, 403);
+    }
+  }
   return auth.handler(context.req.raw);
 }
 

@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getSessionCookie } from "better-auth/cookies";
 
+import { AuthorizationError } from "./authorization";
 import { createAuth } from "./create-auth";
 import { createDatabase } from "../db/database";
 import { choirs } from "../db/schema";
@@ -52,6 +53,9 @@ export async function resolvePrincipalCandidates(options: {
     ? verifyGuestSessionToken(options.guestToken, options.env.INVITE_SECRET)
     : Promise.resolve(null);
   const [session, guestClaims] = await Promise.all([authentication, guest]);
+  if (session?.user.id && await options.env.DB.prepare("SELECT user_id FROM user_lifecycle WHERE user_id = ?").bind(session.user.id).first()) {
+    throw new AuthorizationError();
+  }
   return {
     user: session?.user.id
       ? { kind: "user" as const, userId: session.user.id }

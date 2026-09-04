@@ -78,10 +78,25 @@ try {
   assert(expiryPlan.some((row) => /COVERING INDEX rate_limits_expiry_key_idx/.test(row.detail)));
   assert(!expiryPlan.some((row) => /SCAN rate_limits|TEMP B-TREE/.test(row.detail)));
 
+  executeD1({ file: join(repositoryRoot, "migrations", "0013_safe_pdf_replacement.sql"), targetArgs });
+  assert(query("SELECT version_revision, last_version_number FROM scores")
+    .every((row) => row.version_revision === 1 && row.last_version_number >= 1));
   verifySchema();
   verifyDriveNames();
   verifyContentReset();
   verifyRelatedRecords();
+  executeD1({ command: `
+    INSERT INTO sqlite_sequence (name, seq)
+      SELECT 'annotation_sync_operations', 1000
+      WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'annotation_sync_operations');
+    UPDATE sqlite_sequence SET seq = 1000 WHERE name = 'annotation_sync_operations';
+  `, targetArgs });
+  assert.deepEqual(query("SELECT seq FROM sqlite_sequence WHERE name = 'annotation_sync_operations'"), [{ seq: 1000 }]);
+  executeD1({ file: join(repositoryRoot, "migrations", "0014_user_and_membership_lifecycle.sql"), targetArgs });
+  assert.deepEqual(query("SELECT seq FROM sqlite_sequence WHERE name = 'annotation_sync_operations'"), [{ seq: 1000 }]);
+  assert.equal(query("SELECT * FROM user_lifecycle").length, 0);
+  assert(query("PRAGMA foreign_key_list(annotation_sync_operations)")
+    .some((row) => row.from === "actor_user_id" && row.on_delete === "SET NULL"));
   process.stdout.write("Verified legacy score schema migration.\n");
 } finally {
   rmSync(persistencePath, { recursive: true, force: true });
@@ -101,6 +116,8 @@ function verifySchema() {
     "file_name_key",
     "trashed_at",
     "trash_expires_at",
+    "version_revision",
+    "last_version_number",
   ]);
   const indexes = query("PRAGMA index_list(scores)").map((row) => row.name);
   assert(indexes.includes("scores_active_filename_uidx"));

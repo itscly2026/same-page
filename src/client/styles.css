@@ -3206,3 +3206,22 @@ h1 {
     transition-duration: 0.01ms !important;
   }
 }
+
+.pdf-version-preview {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  margin-inline: auto;
+  container-type: inline-size;
+}
+.pdf-version-preview .pdf-page-canvas { width: 100% !important; height: 100% !important; }
+.pdf-version-preview__pages { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-block: 1rem; }
+.lifecycle-member { padding-block: 1rem; border-bottom: 1px solid var(--border-color, #ddd); }
+.lifecycle-member button, .lifecycle-member a { margin-right: 1rem; margin-block: 0.25rem; }
+.confirmation-checkbox { display: flex; align-items: center; gap: 0.75rem; min-height: 44px; margin-block: 1rem; cursor: pointer; }
+.confirmation-checkbox > input { flex: none; width: 1.25rem; height: 1.25rem; margin: 0; }
+
+.lifecycle-page > button, .lifecycle-page > a { margin-top: 1.5rem; margin-right: 0.75rem; }
+.lifecycle-page > section > a { margin-right: 0.75rem; margin-block: 0.5rem; }
+
+.lifecycle-page button[data-disabled], .pdf-version-dialog button[data-disabled] { opacity: 0.45; cursor: default; }

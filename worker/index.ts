@@ -1,3 +1,5 @@
+import { cleanupLifecycles } from "./lifecycle/cleanup";
+import { lifecycleRoutes } from "./lifecycle/routes";
 import { Hono } from "hono";
 
 import { buildId } from "../src/shared/build";
@@ -16,6 +18,13 @@ import { cleanupRateLimits } from "./security/rate-limit";
 const app = new Hono<AppEnvironment>();
 
 app.use("/api/*", diagnosticMiddleware, serverTimingMiddleware);
+app.use("/api/*", async (context, next) => {
+  const origin = context.req.header("Origin");
+  if (!context.req.path.startsWith("/api/auth/") && !["GET", "HEAD", "OPTIONS"].includes(context.req.method) && origin && origin !== new URL(context.env.BETTER_AUTH_URL).origin) {
+    return context.json({ error: "forbidden" }, 403);
+  }
+  await next();
+});
 
 app.get("/api/health", (context) => {
   return context.json(
@@ -30,6 +39,7 @@ app.get("/api/health", (context) => {
 
 app.on(["GET", "POST"], "/api/auth/*", handleAuthRequest);
 
+app.route("/api", lifecycleRoutes);
 app.route("/api", choirRoutes);
 app.route("/api", scoreRoutes);
 app.route("/api", annotationRoutes);
@@ -37,6 +47,10 @@ app.route("/api", annotationRoutes);
 app.notFound((context) => context.json({ error: "not_found" }, 404));
 
 app.onError((error, context) => {
+  if (error instanceof Error && error.message.includes("last_admin_requires_handoff")) {
+    return context.json({ error: "last_admin_requires_handoff" }, 409);
+  }
+  if (error instanceof Error && /annotation_permission_revoked|upload_permission_revoked/.test(error.message)) return context.json({ error: "forbidden" }, 403);
   if (error instanceof AuthorizationError) {
     return context.json({ error: "forbidden" }, 403);
   }
@@ -49,6 +63,10 @@ export default {
     context.waitUntil(cleanupScoreStorage(env).catch(() => {
       logFailure("storage", "cleanup", 500, crypto.randomUUID());
       throw new Error("score_storage_cleanup_failed");
+    }));
+    context.waitUntil(cleanupLifecycles(env).catch(() => {
+      logFailure("auth", "cleanup", 500, crypto.randomUUID());
+      throw new Error("user_lifecycle_cleanup_failed");
     }));
     context.waitUntil(cleanupRateLimits(env.DB).catch(() => {
       logFailure("auth", "cleanup", 500, crypto.randomUUID());

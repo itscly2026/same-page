@@ -37,6 +37,8 @@ export async function cleanupScoreStorage(
      INNER JOIN scores ON scores.id = versions.score_id
      WHERE versions.id <> COALESCE(scores.current_version_id, '')
        AND (
+         (versions.candidate_expires_at IS NOT NULL AND versions.candidate_expires_at <= ?)
+         OR
          (versions.state = 'ready' AND versions.retention_expires_at IS NOT NULL
           AND versions.retention_expires_at <= ?
           AND (scores.trashed_at IS NULL OR scores.trash_expires_at <= ?))
@@ -45,7 +47,7 @@ export async function cleanupScoreStorage(
        )
      LIMIT 100`,
   )
-    .bind(now, now, now - ABANDONED_UPLOAD_MS)
+    .bind(now, now, now, now - ABANDONED_UPLOAD_MS)
     .all<CleanupCandidate>();
 
   let removed = 0;
@@ -56,9 +58,16 @@ export async function cleanupScoreStorage(
          AND id <> COALESCE(
            (SELECT current_version_id FROM scores WHERE id = ?),
            ''
+         )
+         AND (
+           (candidate_expires_at IS NOT NULL AND candidate_expires_at <= ?)
+           OR (state = 'pending' AND created_at <= ?)
+           OR (state = 'ready' AND retention_expires_at <= ? AND EXISTS (
+             SELECT 1 FROM scores WHERE id = score_versions.score_id
+               AND (trashed_at IS NULL OR trash_expires_at <= ?)))
          )`,
     )
-      .bind(candidate.id, candidate.score_id)
+      .bind(candidate.id, candidate.score_id, now, now - ABANDONED_UPLOAD_MS, now, now)
       .run();
     if (deletion.meta.changes > 0) {
       removed += 1;
