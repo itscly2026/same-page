@@ -9,11 +9,12 @@
 .membership-row[aria-current="page"] { background: var(--brand-soft); }
 .drive-picker-dialog .membership-list { max-height: 55vh; overflow: auto; }
 .drive-picker-join { margin-top: 1.5rem; display: inline-flex; min-height: 44px; align-items: center; }
-.library-toolbar { flex-wrap: wrap; }
-.library-controls { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
-.library-controls .library-search { width: min(18rem, 100%); flex: 1 1 12rem; }
-.library-controls select { min-height: 44px; max-width: 100%; border: 1px solid var(--line); border-radius: .65rem; background: var(--surface); padding: .5rem; color: var(--ink); font: inherit; }
-.library-sort-label { display: flex; align-items: center; gap: .4rem; font-size: .85rem; }
+.library-controls { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
+.library-controls .library-search { width: 100%; max-width: 18rem; flex: 0 1 18rem; }
+.library-controls select { appearance: none; min-height: 44px; max-width: 100%; border: 1px solid var(--line); border-radius: .65rem; background: var(--surface); padding: .5rem 2rem .5rem .65rem; color: var(--ink); font: inherit; }
+.library-sort-label { display: flex; flex: 0 0 auto; align-items: center; gap: .4rem; margin-left: auto; font-size: .85rem; }
+.library-sort-control { position: relative; display: inline-flex; }
+.library-sort-control svg { position: absolute; right: .5rem; top: 50%; transform: translateY(-50%); pointer-events: none; }
 .library-results-summary { padding: 0 1rem; color: var(--muted); font-size: .9rem; }
 .library-retry { display: inline-flex; margin-left: .7rem; }
 .file-library .file-row__name { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; line-height: 1.5; }
@@ -24,7 +25,7 @@
 .library-empty-state p { overflow-wrap: anywhere; }
 @media (max-width: 600px) {
   .my-drives-heading { align-items: flex-start; flex-direction: column; }
-  .library-controls { width: 100%; }
-  .library-sort-label { width: 100%; justify-content: space-between; }
+  .library-controls { flex-wrap: wrap; }
+  .library-controls .library-search { flex: 1 1 10rem; max-width: 100%; }
   .file-library .file-row__open { gap: .65rem; }
 }

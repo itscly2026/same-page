@@ -472,19 +472,36 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
 
         <section className="library-workspace" aria-labelledby="library-content-title">
           <div className="library-toolbar">
-            <h2 id="library-content-title">乐谱</h2>
-            <div className="library-controls"><Form
-              className="library-search"
-              role="search"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void refresh();
-              }}
-            >
-              <TextField value={search} onChange={updateSearch} aria-label="搜索文件名">
-                <Input type="search" placeholder="搜索乐谱" />
-              </TextField>
-            </Form><label className="library-sort-label">排序<select aria-label="乐谱排序" value={sort} onChange={(event) => updateSort(event.target.value as LibrarySort)}><option value="name">名称</option><option value="updated">最近更新</option><option value="opened">本机最近打开</option></select></label></div>
+            <h2 id="library-content-title" className="visually-hidden">乐谱</h2>
+            <div className="library-controls">
+              <Form
+                className="library-search"
+                role="search"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void refresh();
+                }}
+              >
+                <TextField value={search} onChange={updateSearch} aria-label="搜索文件名">
+                  <Input type="search" placeholder="搜索乐谱" />
+                </TextField>
+              </Form>
+              <label className="library-sort-label">
+                排序
+                <span className="library-sort-control">
+                  <select
+                    aria-label="乐谱排序"
+                    value={sort}
+                    onChange={(event) => updateSort(event.target.value as LibrarySort)}
+                  >
+                    <option value="name">名称</option>
+                    <option value="updated">最近更新</option>
+                    <option value="opened">本机最近打开</option>
+                  </select>
+                  <ChevronDown aria-hidden="true" size={16} />
+                </span>
+              </label>
+            </div>
           </div>
           {search.trim() ? <p className="library-results-summary" role="status">找到 {visibleScores.length} 份，共 {result.scores.length} 份乐谱</p> : null}
 

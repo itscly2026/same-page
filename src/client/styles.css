@@ -522,6 +522,16 @@ h1 {
   background: var(--brand);
 }
 
+.header-help-button {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 2.75rem;
+  width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+  color: var(--muted);
+}
+
 .marketing-page {
   background:
     radial-gradient(circle at 76% 12rem, rgb(115 140 108 / 10%), transparent 24rem),
@@ -1419,7 +1429,7 @@ h1 {
 }
 
 .library-search {
-  width: min(18rem, 52%);
+  min-width: 0;
   margin: 0;
 }
 
@@ -1429,7 +1439,7 @@ h1 {
 
 .library-search input {
   width: 100%;
-  min-height: 2.35rem;
+  min-height: 2.75rem;
   border: 1px solid var(--line);
   border-radius: 0.65rem;
   padding: 0.45rem 0.75rem;
@@ -1719,10 +1729,6 @@ h1 {
     flex-direction: column;
   }
 
-  .library-search {
-    width: 100%;
-  }
-
   .file-row__open {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
@@ -1937,6 +1943,8 @@ h1 {
 
 .reader-chrome__actions-stack {
   position: relative;
+  /* The title leaves the grid on phones; controls still belong in its last column. */
+  grid-column: 3;
   display: grid;
   justify-items: center;
   justify-self: end;
