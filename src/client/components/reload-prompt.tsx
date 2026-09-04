@@ -21,6 +21,7 @@ function RegisteredReloadPrompt({ retryRegistration }: { retryRegistration: () =
   const checkingUpdate = useRef(false);
   const applyingUpdate = useRef(false);
   const dismissedError = useRef(false);
+  const actionEpoch = useRef(0);
   const clearUpdateTimeout = useCallback(() => {
     if (updateTimeout.current === null) return;
     window.clearTimeout(updateTimeout.current);
@@ -68,15 +69,17 @@ function RegisteredReloadPrompt({ retryRegistration }: { retryRegistration: () =
     ) {
       return;
     }
+    const epoch = actionEpoch.current;
     checkingUpdate.current = true;
     if (explicit) { dismissedError.current = false; setUpdateState({ phase: "checking" }); }
     try {
       await registration.update();
+      if (epoch !== actionEpoch.current) return;
       setUpdateState((current) =>
         explicit && (current.phase === "error" || current.phase === "checking") ? { phase: "idle" } : current,
       );
     } catch {
-      if (explicit || !dismissedError.current) setUpdateState({
+      if (epoch === actionEpoch.current && (explicit || !dismissedError.current)) setUpdateState({
         phase: "error",
         message: "更新检查失败，请稍后重试",
       });
@@ -108,6 +111,7 @@ function RegisteredReloadPrompt({ retryRegistration }: { retryRegistration: () =
   }
 
   const close = () => {
+    actionEpoch.current += 1;
     clearUpdateTimeout();
     setUpdateState({ phase: "idle" });
     setNeedRefresh(false);
@@ -117,6 +121,7 @@ function RegisteredReloadPrompt({ retryRegistration }: { retryRegistration: () =
 
   const applyUpdate = async () => {
     if (applyingUpdate.current) return;
+    const epoch = actionEpoch.current;
     if (!navigator.onLine) {
       setUpdateState({
         phase: "error",
@@ -126,6 +131,7 @@ function RegisteredReloadPrompt({ retryRegistration }: { retryRegistration: () =
     }
     if (!registration?.waiting) {
       await checkForUpdate(true);
+      if (epoch !== actionEpoch.current) return;
       if (registration?.waiting) return applyUpdate();
       setUpdateState({
         phase: "error",
@@ -148,6 +154,7 @@ function RegisteredReloadPrompt({ retryRegistration }: { retryRegistration: () =
     try {
       await updateServiceWorker(true);
     } catch {
+      if (epoch !== actionEpoch.current) return;
       applyingUpdate.current = false;
       clearUpdateTimeout();
       setUpdateState({

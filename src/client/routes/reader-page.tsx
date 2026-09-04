@@ -241,7 +241,7 @@ export default function ReaderPage() {
     : loadedOffline?.scopeKey === workspace?.scopeKey ? loadedOffline : null;
   useEffect(() => {
     if (document && workspace && documentScopeKey === workspace.scopeKey) {
-      recordScoreOpened(driveCacheOwnerKey(session.data?.user.id ?? null, choirId), choirId, scoreId);
+      recordScoreOpened(driveCacheOwnerKey(workspace.ownerKey.startsWith("user:") ? workspace.ownerKey.slice(5) : null, choirId), choirId, scoreId);
     }
   }, [document, documentScopeKey, workspace, choirId, scoreId, session.data?.user.id]);
   const workspaceScopeKey = workspace?.scopeKey ?? null;

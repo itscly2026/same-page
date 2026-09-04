@@ -179,6 +179,8 @@ export function resolveFixtureRequest({
     });
   }
 
+  if (method === "GET" && pathname === `/api/choirs/${previewChoir.id}/bootstrap` && !cookie.includes("same_page_guest=visual-preview")) return json({ error: "forbidden" }, 403);
+
   if (
     method === "GET" &&
     pathname === `/api/choirs/${previewChoir.id}/bootstrap` &&
@@ -476,6 +478,7 @@ export function createVisualFixtureSession(scenario = {}) {
   const grants = new Map();
   let loadFailures = 0;
   let uploadCount = 0;
+  let failuresArmed = false;
   const pdf = scenario.dense ? createDenseScorePdf() : samplePdf;
   const selectedScore = scenario.dense ? {
     ...score,
@@ -490,6 +493,7 @@ export function createVisualFixtureSession(scenario = {}) {
   }));
   return {
     pdf,
+    armFailures() { failuresArmed = true; },
     diagnostics: { requests, intentionalFailures, unmatchedRequests },
     resolve(request) {
       const { pathname, method = "GET", body } = request;
@@ -502,7 +506,7 @@ export function createVisualFixtureSession(scenario = {}) {
       if (scenario.id === "preferences-load-failure" && pathname.endsWith("/shared-layer-preferences")) return failure(503, "injected_preferences_unavailable");
       if (scenario.id === "settings-permission-denied" && pathname.includes("/shared-layers")) return failure(403, "forbidden");
       if (scenario.id === "reader-layer-save-failure" && method === "PUT" && pathname.includes("/shared-layers/")) return failure(503, "injected_preference_save_failure");
-      if (scenario.id === "reader-offline-failure" && pathname.includes("/versions/") && pathname.endsWith("/pdf")) return failure(503, "injected_pdf_download_failure");
+      if (scenario.id === "reader-offline-failure" && failuresArmed && pathname.includes("/versions/") && pathname.endsWith("/pdf")) return failure(503, "injected_pdf_download_failure");
       const slot = pathname.match(/\/shared-layers\/([ESATB])\//)?.[1];
       if (method === "PUT" && slot) {
         if (pathname.endsWith("/preference")) {

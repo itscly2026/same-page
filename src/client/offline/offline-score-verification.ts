@@ -1,4 +1,4 @@
-import { annotationLayerSummarySchema, annotationPayloadSchema } from "../../shared/annotations";
+import { annotationLayerSummarySchema, annotationPayloadSchema, type AnnotationLayerSummary } from "../../shared/annotations";
 import { findActiveOfflineScore, type OfflineScoreRecord } from "../platform/local-database";
 import { assertLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
 
@@ -7,10 +7,7 @@ export async function verifyOfflineScore(record: OfflineScoreRecord) {
     if (!record.blob.size || !record.verifiedAt || !record.annotationSnapshot?.verifiedAt) return false;
     if (await sha256Hex(await record.blob.arrayBuffer()) !== record.sha256) return false;
     const layers = record.annotationSnapshot.layers;
-    const sharedSlots = layers.filter((layer) => layer.kind === "shared").map((layer) => layer.defaultSlot).sort().join(",");
-    if (sharedSlots !== "A,B,E,S,T") return false;
-    const personalCount = layers.filter((layer) => layer.kind === "personal").length;
-    if (personalCount !== (record.ownerKey.startsWith("user:") ? 1 : 0)) return false;
+    if (!hasCompleteOfflineLayers(layers, record.ownerKey)) return false;
     const layerIds = new Set(layers.map((layer) => layer.id));
     for (const layer of record.annotationSnapshot.layers) {
       annotationLayerSummarySchema.parse(layer);
@@ -24,6 +21,12 @@ export async function verifyOfflineScore(record: OfflineScoreRecord) {
   } catch {
     return false;
   }
+}
+
+export function hasCompleteOfflineLayers(layers: AnnotationLayerSummary[], ownerKey: string) {
+  const sharedSlots = layers.filter((layer) => layer.kind === "shared").map((layer) => layer.defaultSlot).sort().join(",");
+  const personalCount = layers.filter((layer) => layer.kind === "personal").length;
+  return sharedSlots === "A,B,E,S,T" && personalCount === (ownerKey.startsWith("user:") ? 1 : 0);
 }
 
 export async function findVerifiedOfflineScore(workspace: LocalWorkspace) {

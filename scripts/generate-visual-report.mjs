@@ -41,6 +41,7 @@ await mkdir(screenshotsRoot, { recursive: true });
 const preview = await startViteServer({ script: "preview", port, cwd: repositoryRoot });
 
 let browser;
+let activeCapture;
 try {
   browser = await chromium.launch({ headless: true });
   const captures = [];
@@ -93,6 +94,7 @@ try {
       });
     }
     const page = await context.newPage();
+    activeCapture = { scenario, page, fixture };
     const pageErrors = [];
     const assetFailures = [];
     page.on("response", (response) => {
@@ -110,6 +112,7 @@ try {
       try {
         await waitForRenderedPdf(page);
         await page.getByText("换气", { exact: true }).first().waitFor({ state: "visible" });
+        if (!scenario.id.startsWith("reader-edit-unsubscribed")) await page.getByText("第一排男高音这里请统一提前吸气并保持轻声进入", { exact: true }).first().waitFor({ state: "visible" });
       } catch (error) {
         if (pageErrors.length > 0) throw pageErrors[0];
         throw error;
@@ -121,8 +124,8 @@ try {
     if (scenario.waitsForPdf) await waitForRenderedPdf(page);
     await assertScenarioContent(page, scenario);
     if (scenario.pwa !== "failure") {
-      await page.waitForFunction(async () => Boolean((await navigator.serviceWorker.getRegistration())?.active));
-      await page.locator(".reload-prompt").waitFor({ state: "hidden" });
+      await page.waitForFunction(async () => (await navigator.serviceWorker.getRegistration())?.active?.state === "activated");
+      await page.locator(".update-prompt").waitFor({ state: "hidden" });
     }
     if (pageErrors.length > 0) throw pageErrors[0];
     if (assetFailures.length) throw new Error(`Unexpected asset failures: ${JSON.stringify(assetFailures)}`);
@@ -174,6 +177,11 @@ try {
   );
   process.stdout.write(`Visual report: ${path.join(outputRoot, "index.html")}\n`);
 } catch (error) {
+  if (activeCapture) {
+    const { page, scenario, fixture } = activeCapture;
+    await page.screenshot({ path: path.join(outputRoot, `failed-${scenario.id}.png`) }).catch(() => {});
+    await writeFile(path.join(outputRoot, "failure.json"), JSON.stringify({ scenario: scenario.id, error: String(error), diagnostics: fixture.diagnostics }, null, 2));
+  }
   if (preview.logs.length > 0) {
     process.stderr.write(`Preview server output:\n${preview.logs.join("")}\n`);
   }
@@ -192,6 +200,7 @@ function ensureSafeOutputPath(target) {
 
 async function runActions(page, actions, fixture) {
   for (const action of actions) {
+    if (action.type === "armFailures") { fixture.armFailures(); continue; }
     if (action.type === "reload") { await page.reload({ waitUntil: "domcontentloaded" }); continue; }
     if (action.type === "waitText") { await page.getByText(action.text, { exact: true }).waitFor({ state: "visible" }); continue; }
     if (action.type === "scrollIntoView") { await page.locator(action.selector).scrollIntoViewIfNeeded(); continue; }
@@ -384,7 +393,9 @@ async function assertScenarioContent(page, scenario) {
   }
   const editing = await page.locator('.reader-icon-button[aria-label="编辑"][aria-pressed="true"]').count() > 0;
   const deleteDrag = scenario.id === "reader-text-delete";
+  if (scenario.id === "reader-layer-save-failure" && !await page.getByRole("checkbox", { name: "订阅 E · Ensemble", exact: true }).isChecked()) throw new Error("Failed layer save did not preserve its prior checked value");
   if (editing && !deleteDrag) {
+    await page.locator(".reader-edit-layer-trigger").waitFor({ state: "visible" });
     for (const name of ["文本", "画笔", "整条橡皮", "撤销", "重做"]) {
       const button = page.locator(`button[aria-label="${name}"]`);
       await button.waitFor({ state: "visible" });
