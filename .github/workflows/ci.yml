@@ -37,8 +37,8 @@ jobs:
       - name: Worker tests
         run: npm run test:worker
 
-      - name: Install Playwright WebKit
-        run: npx playwright install --with-deps webkit
+      - name: Install Playwright Chromium and WebKit
+        run: npx playwright install --with-deps chromium webkit
 
       - name: PWA update handover
         run: npm run test:pwa-update
