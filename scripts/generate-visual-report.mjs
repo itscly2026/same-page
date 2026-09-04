@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -14,6 +14,7 @@ import {
   validateVisualReportScenarios,
   visualReportScenarios,
 } from "../visual-report/scenarios.mjs";
+import { startViteServer } from "./vite-server.mjs";
 
 const repositoryRoot = process.cwd();
 const outputRoot = path.resolve(repositoryRoot, "artifacts/visual-report");
@@ -34,14 +35,10 @@ if (requestedScenario && scenarios.length !== 1) {
 await rm(outputRoot, { recursive: true, force: true });
 await mkdir(screenshotsRoot, { recursive: true });
 
-const preview = startPreviewServer(port);
-const serverLogs = [];
-preview.stdout.on("data", (chunk) => rememberLog(serverLogs, chunk));
-preview.stderr.on("data", (chunk) => rememberLog(serverLogs, chunk));
+const preview = await startViteServer({ script: "preview", port, cwd: repositoryRoot });
 
 let browser;
 try {
-  await waitForServer(baseUrl);
   browser = await chromium.launch({ headless: true });
   const captures = [];
 
@@ -143,13 +140,13 @@ try {
   );
   process.stdout.write(`Visual report: ${path.join(outputRoot, "index.html")}\n`);
 } catch (error) {
-  if (serverLogs.length > 0) {
-    process.stderr.write(`Preview server output:\n${serverLogs.join("")}\n`);
+  if (preview.logs.length > 0) {
+    process.stderr.write(`Preview server output:\n${preview.logs.join("")}\n`);
   }
   throw error;
 } finally {
   await browser?.close();
-  preview.kill("SIGTERM");
+  await preview.stop();
 }
 
 function ensureSafeOutputPath(target) {
@@ -157,31 +154,6 @@ function ensureSafeOutputPath(target) {
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error(`Refusing unsafe visual report output path: ${target}`);
   }
-}
-
-function startPreviewServer(previewPort) {
-  const executable = process.platform === "win32" ? "npm.cmd" : "npm";
-  return spawn(
-    executable,
-    ["run", "preview", "--", "--host", "127.0.0.1", "--port", String(previewPort), "--strictPort"],
-    { cwd: repositoryRoot, env: process.env, stdio: ["ignore", "pipe", "pipe"] },
-  );
-}
-
-async function waitForServer(url) {
-  const deadline = Date.now() + 30_000;
-  let lastError;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-      lastError = new Error(`Preview responded with ${response.status}`);
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-  throw new Error(`Preview server did not start at ${url}`, { cause: lastError });
 }
 
 async function runActions(page, actions) {
@@ -358,9 +330,4 @@ function gitCommit() {
     cwd: repositoryRoot,
     encoding: "utf8",
   }).trim();
-}
-
-function rememberLog(logs, chunk) {
-  logs.push(String(chunk));
-  if (logs.length > 40) logs.shift();
 }

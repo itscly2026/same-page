@@ -1,6 +1,7 @@
 import {
   type PointerEvent as ReactPointerEvent,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -20,6 +21,7 @@ import {
   saveDraftWithHistory,
   updateLatestHistoryDraft,
 } from "./edit-history";
+import { calculateTextEditorLayout } from "./text-editor-layout";
 
 export type AnnotationTool = "text" | "ink" | "eraser";
 export type AnnotationOverlayInteraction =
@@ -101,6 +103,7 @@ export function AnnotationOverlay({
   const [editorFontScale, setEditorFontScale] = useState(DEFAULT_TEXT_FONT_SCALE);
   const [fontScaleAdjusting, setFontScaleAdjusting] = useState(false);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
+  const textComposerHeaderRef = useRef<HTMLElement>(null);
   const pendingTextPlacement = useRef<PendingTextPlacement | null>(null);
   const textSelection = useRef<TextSelection | null>(null);
   const currentStrokeId = useRef<string | null>(null);
@@ -138,6 +141,34 @@ export function AnnotationOverlay({
       annotation.payload?.pageNumber === pageNumber &&
       visibleLayerIds.has(annotation.layerId),
   );
+
+  useLayoutEffect(() => {
+    const input = textInputRef.current;
+    if (!input || !textEditor) return;
+    const headerBottom =
+      textComposerHeaderRef.current?.getBoundingClientRect().bottom ?? 0;
+    input.style.height = "auto";
+    const contentHeight = input.scrollHeight;
+    const layout = calculateTextEditorLayout({
+      fontSize: editorFontSize,
+      contentHeight,
+      viewportHeight: visualViewport.height,
+      viewportTop: visualViewport.top,
+      headerBottom,
+    });
+    input.style.height = `${layout.height}px`;
+    input.style.overflowY = layout.overflowY;
+    if (layout.overflowY === "auto" && input.selectionEnd === input.value.length) {
+      input.scrollTop = contentHeight;
+    }
+  }, [
+    editorFontSize,
+    editorText,
+    textEditor,
+    visualViewport.height,
+    visualViewport.top,
+    visualViewport.width,
+  ]);
 
   const updateInteraction = (interaction: AnnotationOverlayInteraction) => {
     if (interactionRef.current === interaction) return;
@@ -672,8 +703,11 @@ export function AnnotationOverlay({
           event.preventDefault();
           void finishTextEditor();
         }}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) void finishTextEditor();
+        }}
       >
-        <header>
+        <header ref={textComposerHeaderRef}>
           <button
             tabIndex={textEditor ? 0 : -1}
             type="button"
@@ -691,7 +725,7 @@ export function AnnotationOverlay({
             ref={textInputRef}
             inputMode="text"
             maxLength={1000}
-            rows={1}
+            rows={2}
             style={{
               color: activeLayerColor,
               fontSize: editorFontSize,

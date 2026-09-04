@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import process from "node:process";
 
 import { webkit } from "@playwright/test";
 import { classifyPerformanceRequest } from "./loading-performance-report.mjs";
-import {
-  detachedProcessGroup,
-  stopChildProcessTree,
-} from "./process-lifecycle.mjs";
+import { startViteServer } from "./vite-server.mjs";
 
 import { evaluateLoadingBudget } from "./loading-performance-budget.mjs";
 import { resolveFixtureRequest } from "../visual-report/fixtures.mjs";
@@ -29,14 +25,10 @@ const maxDurationMs = Number.parseInt(
 const expectedJourneys = ["enter-drive", "open-score", "exit-score"];
 const requestOrder = [];
 let returningToDrive = false;
-const preview = startPreviewServer(port);
-const serverLogs = [];
-preview.stdout.on("data", (chunk) => rememberLog(serverLogs, chunk));
-preview.stderr.on("data", (chunk) => rememberLog(serverLogs, chunk));
+const preview = await startViteServer({ script: "preview", port });
 
 let browser;
 try {
-  await waitForServer();
   browser = await webkit.launch({ headless: true });
   const context = await browser.newContext({
     locale: "zh-CN",
@@ -154,50 +146,15 @@ try {
   }, null, 2)}\n`);
   await context.close();
 } catch (error) {
-  if (serverLogs.length > 0) {
-    process.stderr.write(`Preview server output:\n${serverLogs.join("")}\n`);
+  if (preview.logs.length > 0) {
+    process.stderr.write(`Preview server output:\n${preview.logs.join("")}\n`);
   }
   throw error;
 } finally {
   await browser?.close();
-  await stopChildProcessTree(preview);
-}
-
-function startPreviewServer(previewPort) {
-  const executable = process.platform === "win32" ? "npm.cmd" : "npm";
-  return spawn(
-    executable,
-    ["run", "preview", "--", "--host", "127.0.0.1", "--port", String(previewPort), "--strictPort"],
-    {
-      cwd: process.cwd(),
-      detached: detachedProcessGroup(),
-      env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-}
-
-async function waitForServer() {
-  const deadline = Date.now() + 30_000;
-  let lastError;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(origin);
-      if (response.ok) return;
-      lastError = new Error(`Preview responded with ${response.status}`);
-    } catch (error) {
-      lastError = error;
-    }
-    await delay(150);
-  }
-  throw new Error("Preview server did not start", { cause: lastError });
+  await preview.stop();
 }
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function rememberLog(logs, chunk) {
-  logs.push(String(chunk));
-  if (logs.length > 40) logs.shift();
 }
