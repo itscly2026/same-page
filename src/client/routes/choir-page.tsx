@@ -561,13 +561,19 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
         />
       ) : null}
 
-      <UploadDialog
+      {userId && result.permissions.canManage ? <UploadDialog
+        key={`upload:${choirId}:${userId}`}
         choirId={choirId}
         isOpen={uploadOpen}
         onOpenChange={setUploadOpen}
         onComplete={refreshAfterMutation}
-        onQuotaBlocked={() => setQuotaBlocked(true)}
-      />
+        onQuotaChange={setQuotaBlocked}
+        onInspect={(fileName) => {
+          updateSearch(fileName.trim());
+          setMessage("请核对同名文件；若刚中断上传，服务端可能仍在处理，可稍后再次刷新。不要在结果不明时重传。");
+          void refreshAfterMutation();
+        }}
+      /> : null}
       {scoreAction ? (
         <ScoreActionDialog
           key={`${scoreAction.score.id}:${scoreAction.action}`}

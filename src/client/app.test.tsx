@@ -1441,7 +1441,7 @@ describe("AppRoutes", () => {
         return Promise.resolve(
           file.name === "重复.pdf"
             ? Response.json({ error: "filename_conflict" }, { status: 409 })
-            : Response.json({}, { status: 201 }),
+            : Response.json({ score: scoreListBody(file.name).scores[0] }, { status: 201 }),
         );
       }
       if (input.includes("/bootstrap")) {
