@@ -178,6 +178,8 @@ describe("AppRoutes", () => {
       "href",
       "/",
     );
+    expect(screen.getByText(/成员退出、移除及其个人层恢复与自动清理流程仍在开发/)).toBeInTheDocument();
+    expect(screen.getByText(/用户删除与恢复的自助流程仍在开发/)).toBeInTheDocument();
   });
 
   it("edits drive-scoped defaults from My Preferences", async () => {
