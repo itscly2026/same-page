@@ -85,7 +85,7 @@ authorization code、token、完整 profile 或 Secret。
 | 提供方确认后回到登录页并提示失败 | 先确认 `/api/health` 和邮箱登录正常，再按时间查 Worker 的非敏感状态日志；不要在日志或 Issue 中粘贴 callback URL。state 失效或重复回调应安全返回登录页，不能绕过重试。 |
 | 中国大陆网络下 Google 超时 | 记录网络、设备和时间，将 Google 判为该场景不可用；确认邮箱入口始终可见可用。不要通过放宽 OAuth 校验或增加代理回调规避。 |
 
-后续 `main` 发布必须先通过 CI 的 lint、typecheck、客户端测试、Worker 测试和生产构建。
+后续 `main` 发布必须先通过 CI 的 lint、typecheck、客户端测试、Worker 测试、PWA 更新交接、加载性能、视觉浏览器测试、迁移测试和生产构建。本地对应 `npm run check:full`；先运行 `npm ci` 和 `npx playwright install chromium webkit`（Linux/CI 使用 `--with-deps`）。`npm run check` 不包含 PWA 更新交接及加载性能，不能称为与 CI 相同的完整集合。
 deploy job 随后执行 D1 migrations、Wrangler deploy 与线上机器验证；迁移或验证失败时
 workflow 失败，不能记为发布成功。
 
@@ -95,7 +95,7 @@ workflow 失败，不能记为发布成功。
 
 | 门槛 | 可接受证据 |
 | --- | --- |
-| 代码 | commit、PR、完整 `npm run check` 结果 |
+| 代码 | commit、PR、`npm run check:full` 结果（与 CI verify 相同集合，不代表部署或实机验收） |
 | CI | verify 与 deploy job 的 workflow URL 和结论 |
 | Cloudflare | Worker deployment ID、D1 migration 状态、R2 绑定 |
 | 生产 URL | HTTPS、应用壳、manifest、Service Worker、`/api/health`、未登录 401 |
