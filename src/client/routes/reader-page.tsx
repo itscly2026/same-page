@@ -61,7 +61,7 @@ import {
   resolveLocalWorkspace,
   type LocalWorkspace,
 } from "../platform/local-workspace";
-import { findVerifiedOfflineScore } from "../offline/offline-score-verification";
+import { findVerifiedOfflineScore, hasCompleteOfflineLayers } from "../offline/offline-score-verification";
 import { offlineScoreLabel, useOfflineScore } from "../offline/use-offline-score";
 import { driveCacheOwnerKey } from "../score-library/drive-library-cache";
 import { recordScoreOpened } from "../score-library/library-view-state";
@@ -230,6 +230,7 @@ export default function ReaderPage() {
 
   const workspace =
     resolvedWorkspace &&
+    (!session.data?.user.id || resolvedWorkspace.ownerKey === `user:${session.data.user.id}`) &&
     workspaceIsActive &&
     resolvedWorkspace.choirId === choirId &&
     resolvedWorkspace.scoreId === scoreId
@@ -574,6 +575,9 @@ export default function ReaderPage() {
         );
         if (workspace.ownerKey.startsWith("user:") && workspace.ownerKey !== `user:${session.data?.user.id ?? ""}`) {
           throw new Error("layer_refresh_requires_matching_identity");
+        }
+        if (!hasCompleteOfflineLayers(body.layers, workspace.ownerKey)) {
+          throw new Error("layer_refresh_incomplete");
         }
         const previousLayers = await localDatabase.annotationLayers
           .where("scopeKey")

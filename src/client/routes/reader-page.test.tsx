@@ -1,3 +1,4 @@
+import type { AnnotationLayerSummary } from "../../shared/annotations";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
   createMemoryRouter,
@@ -29,6 +30,8 @@ import { readerPdfSourceIsCurrent } from "../reader/reader-source-identity";
 import { findVerifiedOfflineScore } from "../offline/offline-score-verification";
 import ReaderPage from "./reader-page";
 
+const readerAuthState = vi.hoisted(() => ({ signedIn: true }));
+
 const virtualTestState = vi.hoisted(() => ({
   itemSize: 100,
   scrollToIndex: vi.fn(),
@@ -56,6 +59,28 @@ const scoreSummary = {
   },
 };
 
+// API fixtures use the complete current layer model; each case overrides only
+// the subscriptions, identities and permissions relevant to its interaction.
+function completeReaderLayers(overrides: AnnotationLayerSummary[] = []): AnnotationLayerSummary[] {
+  const shared = (["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
+    id: `00000000-0000-4000-8000-00000000000${index}`,
+    kind: "shared", defaultSlot: slot,
+    name: ({ E: "Ensemble", S: "Soprano", A: "Alto", T: "Tenor", B: "Bass" })[slot],
+    sortOrder: index, subscribed: true, subscriptionSource: "product",
+    displayColor: "#a12652", colorSource: "product", adminDefaultColor: "#a12652",
+    driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: false,
+  }));
+  const personal: AnnotationLayerSummary = {
+    id: "00000000-0000-4000-8000-000000000006", kind: "personal", defaultSlot: null,
+    name: "Personal", sortOrder: 10000, subscribed: true, subscriptionSource: "personal",
+    displayColor: "#6750a4", colorSource: "product", adminDefaultColor: "#6750a4",
+    driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: false,
+  };
+  return [...shared, personal].map((layer) => overrides.find((override) =>
+    override.kind === layer.kind && override.defaultSlot === layer.defaultSlot,
+  ) ?? layer);
+}
+
 function activeBootstrapResponse() {
   return Response.json({
     state: "active",
@@ -82,7 +107,7 @@ vi.mock("@tanstack/react-virtual", () => ({
 
 vi.mock("../auth/auth-client", () => ({
   authClient: {
-    useSession: () => ({ data: { user: { id: "user-1" } }, isPending: false }),
+    useSession: () => ({ data: readerAuthState.signedIn ? { user: { id: "user-1" } } : null, isPending: false }),
   },
 }));
 
@@ -222,6 +247,7 @@ describe("ReaderPage", () => {
       ?.getAttribute("data-page-number");
 
   beforeEach(async () => {
+    readerAuthState.signedIn = true;
     clearReaderDocumentCache();
     clearReaderScoreCache();
     virtualTestState.itemSize = 100;
@@ -261,7 +287,7 @@ describe("ReaderPage", () => {
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
           input.includes("/layers")
-            ? Response.json({ layers: [], permissions: { canManageLayers: false } })
+            ? Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } })
             : input.includes("/versions/")
             ? new Response(new Uint8Array([1, 2, 3]), {
                 headers: { "content-type": "application/pdf" },
@@ -401,7 +427,7 @@ describe("ReaderPage", () => {
         input.endsWith("/bootstrap")
           ? delayedBootstrap
           : Promise.resolve(
-              Response.json({ layers: [], permissions: { canManageLayers: false } }),
+              Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
             ),
       ),
     );
@@ -502,7 +528,7 @@ describe("ReaderPage", () => {
           );
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -580,7 +606,7 @@ describe("ReaderPage", () => {
           );
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -664,7 +690,7 @@ describe("ReaderPage", () => {
             : Promise.resolve(new Response(null, { status: 403 }));
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -727,7 +753,7 @@ describe("ReaderPage", () => {
           );
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -799,7 +825,7 @@ describe("ReaderPage", () => {
           return Promise.resolve(activeBootstrapResponse());
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -865,7 +891,7 @@ describe("ReaderPage", () => {
           return Promise.resolve(activeBootstrapResponse());
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -947,7 +973,7 @@ describe("ReaderPage", () => {
           return Promise.resolve(activeBootstrapResponse());
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -1017,7 +1043,7 @@ describe("ReaderPage", () => {
       vi.fn().mockImplementation((input: string) => {
         if (!input.endsWith("/bootstrap")) {
           return Promise.resolve(
-            Response.json({ layers: [], permissions: { canManageLayers: false } }),
+            Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
           );
         }
         bootstrapCalls += 1;
@@ -1102,7 +1128,7 @@ describe("ReaderPage", () => {
       vi.fn().mockImplementation((input: string) => {
         if (!input.endsWith("/bootstrap")) {
           return Promise.resolve(
-            Response.json({ layers: [], permissions: { canManageLayers: false } }),
+            Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
           );
         }
         bootstrapCalls += 1;
@@ -1360,7 +1386,7 @@ describe("ReaderPage", () => {
           return delayedLookup;
         }
         return Promise.resolve(
-          Response.json({ layers: [], permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -1419,7 +1445,7 @@ describe("ReaderPage", () => {
         Promise.resolve(
           input.endsWith("/scores/score-1/bootstrap")
             ? Response.json({ error: "not_found" }, { status: 404 })
-            : Response.json({ layers: [], permissions: { canManageLayers: false } }),
+            : Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
         ),
       ),
     );
@@ -1442,7 +1468,7 @@ describe("ReaderPage", () => {
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
           input.includes("/layers")
-            ? Response.json({ layers: [], permissions: { canManageLayers: false } })
+            ? Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } })
             : activeBootstrapResponse(),
         ),
       ),
@@ -1557,7 +1583,7 @@ describe("ReaderPage", () => {
           return Promise.resolve(new Response("unavailable", { status: 503 }));
         }
         return Promise.resolve(Response.json({
-          layers: [
+          layers: completeReaderLayers([
             {
               id: "11111111-1111-4111-8111-111111111111",
               kind: "personal",
@@ -1574,7 +1600,7 @@ describe("ReaderPage", () => {
               scoreSubscriptionOverride: null,
               canEdit: true,
             },
-          ],
+          ]),
           permissions: { canManageLayers: false },
         }));
       }
@@ -1650,7 +1676,7 @@ describe("ReaderPage", () => {
 
     await act(async () => {
       resolveLayers(Response.json({
-        layers: [],
+        layers: completeReaderLayers([]),
         permissions: { canManageLayers: false },
       }));
     });
@@ -1669,8 +1695,8 @@ describe("ReaderPage", () => {
       const url = String(input);
       if (url.includes("/layers")) {
         return Promise.resolve(Response.json({
-          layers: [
-            ...(["E", "S", "A", "T", "B"] as const).map((slot, index) => ({
+          layers: completeReaderLayers([
+            ...(["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
               id: `00000000-0000-4000-8000-00000000000${index}`,
               kind: "shared" as const,
               defaultSlot: slot,
@@ -1702,7 +1728,7 @@ describe("ReaderPage", () => {
               scoreSubscriptionOverride: null,
               canEdit: true,
             },
-          ],
+          ]),
           permissions: { canManageLayers: true },
         }));
       }
@@ -1757,7 +1783,7 @@ describe("ReaderPage", () => {
       if (url.includes("/layers")) {
         return Promise.resolve(
           Response.json({
-            layers: [
+            layers: completeReaderLayers([
               {
                 id: "11111111-1111-4111-8111-111111111111",
                 kind: "shared",
@@ -1774,7 +1800,7 @@ describe("ReaderPage", () => {
                 scoreSubscriptionOverride: null,
                 canEdit: false,
               },
-            ],
+            ]),
             permissions: { canManageLayers: false },
           }),
         );
@@ -2032,8 +2058,8 @@ describe("ReaderPage", () => {
       if (url.includes("/layers")) {
         return Promise.resolve(
           Response.json({
-            layers: [
-              ...(["E", "S", "A", "T", "B"] as const).map((slot, index) => ({
+            layers: completeReaderLayers([
+              ...(["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
                 id: `00000000-0000-4000-8000-00000000000${index}`,
                 kind: "shared" as const,
                 defaultSlot: slot,
@@ -2065,7 +2091,7 @@ describe("ReaderPage", () => {
                 scoreSubscriptionOverride: null,
                 canEdit: true,
               },
-            ],
+            ]),
             permissions: { canManageLayers: false },
           }),
         );
@@ -2253,8 +2279,8 @@ describe("ReaderPage", () => {
       if (url.includes("/layers")) {
         return Promise.resolve(
           Response.json({
-            layers: [
-              ...(["E", "S", "A", "T", "B"] as const).map((slot, index) => ({
+            layers: completeReaderLayers([
+              ...(["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
                 id: `00000000-0000-4000-8000-00000000000${index}`,
                 kind: "shared", defaultSlot: slot,
                 name: ({ E: "Ensemble", S: "Soprano", A: "Alto", T: "Tenor", B: "Bass" })[slot],
@@ -2268,7 +2294,7 @@ describe("ReaderPage", () => {
                 displayColor: "#6750a4", colorSource: "product", adminDefaultColor: "#6750a4",
                 driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true,
               },
-            ],
+            ]),
             permissions: { canManageLayers: false },
           }),
         );
@@ -2311,6 +2337,7 @@ describe("ReaderPage", () => {
   });
 
   it("allows the last authenticated user to edit a verified local copy after session expiry", async () => {
+    readerAuthState.signedIn = false;
     vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "offline-1",
       ...localWorkspace,
