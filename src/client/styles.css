@@ -1642,6 +1642,24 @@ h1 {
   white-space: nowrap;
 }
 
+.upload-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.upload-help summary {
+  min-height: 44px;
+  padding: 10px 0;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.upload-list li > button {
+  min-height: 44px;
+  flex-shrink: 0;
+}
+
 .upload-list strong {
   color: var(--muted);
   font-weight: 650;
