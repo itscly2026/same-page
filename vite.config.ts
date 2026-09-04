@@ -79,7 +79,7 @@ export default defineConfig({
         // callbacks carry one-time codes that the application shell cannot
         // process and must never cache or render.
         navigateFallbackDenylist: navigationFallbackDenylist,
-        globPatterns: ["**/*.{js,mjs,css,html,ico,png,woff2}"],
+        globPatterns: ["**/*.{js,mjs,css,html,ico,png,webp,woff2}"],
         // PDF.js' worker is slightly larger than Workbox's 2 MiB default.
         // It is required to open a verified offline PDF, so keep it in the
         // application-shell precache rather than making offline claims depend

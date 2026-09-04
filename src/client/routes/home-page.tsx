@@ -21,6 +21,10 @@ import {
   type ChoirSummary,
 } from "../../shared/choirs";
 import { authClient } from "../auth/auth-client";
+import sharedLayersIllustration from "../assets/home/shared-layers.webp";
+import personalLayerIllustration from "../assets/home/personal-layer.webp";
+import offlineSyncIllustration from "../assets/home/offline-sync.webp";
+import everyDeviceIllustration from "../assets/home/every-device.webp";
 import {
   clearGuestSession,
   clearPreviewGuestSession,
@@ -49,21 +53,31 @@ type JoinStep =
 const productFeatures = [
   {
     title: "不同声部，分层共享",
+    illustration: sharedLayersIllustration,
+    illustrationAlt: "不同颜色的共享批注层从同一份乐谱展开，每层保留多处标记。",
     description:
       "每份乐谱都包含 E、S、A、T、B 五个默认共享层，其中 E · Ensemble 用于所有人都关注的内容。获授权的人，可以在对应共享层留下批注。",
   },
   {
     title: "只看需要的，也保留自己的",
+    illustration: personalLayerIllustration,
+    illustrationAlt:
+      "显示紫色 Tenor 男高音共享层与仅自己可见的绿色个人层，其余共享层呈灰色虚线隐藏状态。",
     description:
       "你可以只显示与自己有关的共享层。你也拥有一个只有自己可见、可编辑的个人层。",
   },
   {
     title: "有网就同步，没网不耽误",
+    illustration: offlineSyncIllustration,
+    illustrationAlt:
+      "左侧断网时仍能用笔在谱上画出虚线连音线；右侧联网时显示实线批注和云同步图标。",
     description:
       "打开乐谱即可获取最新的共享批注。提前下载离线副本后，断网时阅读和批注仍可继续；恢复联网后，本机内容会继续同步。",
   },
   {
     title: "一份乐谱，适配每台设备",
+    illustration: everyDeviceIllustration,
+    illustrationAlt: "电脑、平板和手机上显示同一份乐谱与相同的彩色批注。",
     description:
       "无论使用 iPad、iPhone、Android 设备还是 Windows、macOS 电脑，都能打开同一份乐谱和批注。",
   },
@@ -323,7 +337,7 @@ export function HomePage() {
           ) : null}
         </section>
 
-        <section className="marketing-features" aria-label="产品特点">
+        <section id="features" className="marketing-features" aria-label="产品特点">
           {productFeatures.map((feature, index) => (
             <article
               className={`marketing-feature marketing-feature--${
@@ -332,14 +346,20 @@ export function HomePage() {
               key={feature.title}
             >
               <div className="marketing-feature__copy">
-                <p className="marketing-feature__number" aria-hidden="true">
-                  {String(index + 1).padStart(2, "0")}
-                </p>
                 <h2>{feature.title}</h2>
                 <p className="marketing-feature__description">
                   {feature.description}
                 </p>
               </div>
+              <img
+                className="marketing-feature__illustration"
+                src={feature.illustration}
+                alt={feature.illustrationAlt}
+                width={1536}
+                height={1024}
+                loading="lazy"
+                decoding="async"
+              />
             </article>
           ))}
         </section>

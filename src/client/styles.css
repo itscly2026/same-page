@@ -559,8 +559,8 @@ h1 {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   align-items: center;
-  min-height: clamp(23rem, 38vw, 31rem);
-  padding: clamp(4.5rem, 9vw, 7.5rem) 0;
+  column-gap: clamp(1rem, 2vw, 1.5rem);
+  padding: clamp(3.5rem, 6vw, 5.5rem) 0;
 }
 
 .marketing-feature + .marketing-feature {
@@ -575,44 +575,47 @@ h1 {
   grid-column: 8 / span 5;
 }
 
+.marketing-feature--left .marketing-feature__illustration {
+  grid-column: 6 / span 7;
+}
+
+.marketing-feature--right .marketing-feature__illustration {
+  grid-column: 1 / span 7;
+}
+
+.marketing-feature__copy,
+.marketing-feature__illustration {
+  grid-row: 1;
+  min-width: 0;
+}
+
 .marketing-feature__copy {
-  max-width: 33rem;
+  max-width: 30rem;
 }
 
-.marketing-feature__number {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  margin: 0 0 1.5rem;
-  color: var(--sage);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-}
-
-.marketing-feature__number::after {
-  width: 2.75rem;
-  height: 1px;
-  background: currentColor;
-  content: "";
-  opacity: 0.55;
+.marketing-feature__illustration {
+  display: block;
+  width: 100%;
+  height: auto;
+  mix-blend-mode: multiply;
 }
 
 .marketing-feature h2 {
   margin: 0;
   color: var(--ink);
-  font-size: clamp(2.15rem, 4.4vw, 3.9rem);
+  font-size: clamp(1.9rem, 3vw, 2.65rem);
   font-weight: 680;
-  line-height: 1.08;
-  letter-spacing: -0.052em;
+  line-height: 1.25;
+  letter-spacing: -0.035em;
+  word-break: keep-all;
   text-wrap: balance;
 }
 
 .marketing-feature__description {
   max-width: 30rem;
-  margin: 1.5rem 0 0;
+  margin: 1.35rem 0 0;
   color: var(--muted);
-  font-size: clamp(1rem, 1.5vw, 1.12rem);
+  font-size: clamp(1rem, 1.25vw, 1.08rem);
   line-height: 1.85;
   text-wrap: pretty;
 }
@@ -3001,6 +3004,27 @@ h1 {
   padding: 0 0 0.5rem;
 }
 
+@media (max-width: 56rem) {
+  .marketing-feature {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1.5rem;
+    padding-block: 4rem;
+  }
+
+  .marketing-feature__copy {
+    width: 100%;
+    max-width: 36rem;
+    margin-inline: auto;
+  }
+
+  .marketing-feature__illustration {
+    max-width: 44rem;
+    margin-inline: auto;
+  }
+}
+
 @media (max-width: 36rem) {
   .app-header {
     width: min(100% - 1.25rem, 76rem);
@@ -3039,18 +3063,12 @@ h1 {
   }
 
   .marketing-feature {
-    display: block;
-    min-height: 0;
-    padding: 5.5rem 0 6rem;
-  }
-
-  .marketing-feature__copy {
-    max-width: 31rem;
+    gap: 1.25rem;
+    padding-block: 3.5rem;
   }
 
   .marketing-feature h2 {
-    max-width: 10ch;
-    font-size: clamp(2.35rem, 11vw, 3.35rem);
+    font-size: clamp(1.75rem, 7vw, 2.25rem);
   }
 
   .marketing-feature__description {
