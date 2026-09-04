@@ -275,6 +275,7 @@ export function HomePage() {
               {!isInternalAuthEmail(session.data.user.email) ? (
                 <span className="account-email">{session.data.user.email}</span>
               ) : null}
+              <Link className="header-action" to="/user">用户设置</Link>
               <Button
                 className="header-action"
                 onPress={() => void getLogoutLocalSummary().then(setLogoutSummary)}

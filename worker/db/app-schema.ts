@@ -8,7 +8,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
-import { user } from "./auth-schema.generated";
+import { session, user } from "./auth-schema.generated";
 
 export const choirs = sqliteTable(
   "choirs",
@@ -67,6 +67,8 @@ export const scores = sqliteTable(
     fileName: text("file_name").notNull(),
     fileNameKey: text("file_name_key").notNull(),
     currentVersionId: text("current_version_id"),
+    versionRevision: integer("version_revision").notNull().default(1),
+    lastVersionNumber: integer("last_version_number").notNull().default(1),
     replacementLockId: text("replacement_lock_id"),
     replacementLockExpiresAt: integer("replacement_lock_expires_at", {
       mode: "timestamp_ms",
@@ -126,6 +128,8 @@ export const scoreVersions = sqliteTable(
       .notNull()
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
     readyAt: integer("ready_at", { mode: "timestamp_ms" }),
+    candidateExpiresAt: integer("candidate_expires_at", { mode: "timestamp_ms" }),
+    baseRevision: integer("base_revision"),
     retentionExpiresAt: integer("retention_expires_at", {
       mode: "timestamp_ms",
     }),
@@ -173,6 +177,9 @@ export const memberships = sqliteTable(
       .notNull()
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
     removedAt: integer("removed_at", { mode: "timestamp_ms" }),
+    lifecycleRevision: integer("lifecycle_revision").notNull().default(0),
+    lastLifecycleAction: text("last_lifecycle_action"),
+    removedForDeletionId: text("removed_for_deletion_id"),
   },
   (table) => [
     uniqueIndex("memberships_choir_user_uidx").on(
@@ -333,3 +340,22 @@ export const annotationObjects = sqliteTable(
     ),
   ],
 );
+
+export const userLifecycle = sqliteTable("user_lifecycle", {
+  userId: text("user_id").primaryKey().references(() => user.id, { onDelete: "cascade" }),
+  deletionId: text("deletion_id").notNull().unique(),
+  authMethod: text("auth_method").notNull(),
+  deletedAt: integer("deleted_at", { mode: "timestamp_ms" }).notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+});
+export const lifecycleReauthentication = sqliteTable("lifecycle_reauthentication", {
+  userId: text("user_id").primaryKey().references(() => user.id, { onDelete: "cascade" }),
+  previousSessionId: text("previous_session_id").notNull(),
+  allowedMethods: text("allowed_methods").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+});
+export const sessionAuthMethods = sqliteTable("session_auth_methods", {
+  sessionId: text("session_id").primaryKey().references(() => session.id, { onDelete: "cascade" }),
+  method: text("method").notNull(),
+});

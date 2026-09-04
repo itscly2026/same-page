@@ -1,10 +1,11 @@
+import { env as testEnv } from "cloudflare:test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Env, WaitUntilContext } from "../env";
 import { createGuestSessionToken } from "../security/guest-session";
 import { resolvePrincipalCandidates } from "./principal";
 
-const env = { INVITE_SECRET: "test-invite-secret" } as Env;
+const env: Env = { ...testEnv, INVITE_SECRET: "test-invite-secret" };
 const executionContext = { waitUntil: vi.fn() } as unknown as WaitUntilContext;
 
 describe("principal candidates", () => {

@@ -10,6 +10,24 @@ beforeEach(async () => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("independent scheduled cleanup tasks", () => {
+  it("continues storage and rate-limit cleanup after lifecycle failure", async () => {
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    await env.DB.prepare("INSERT INTO rate_limits VALUES ('expired-fixture', 1, 0)").run();
+    const prepare = env.DB.prepare.bind(env.DB);
+    const queries: string[] = [];
+    vi.spyOn(env.DB, "prepare").mockImplementation((sql) => {
+      queries.push(sql);
+      if (sql.startsWith("DELETE FROM user WHERE")) throw new Error("private-database-detail");
+      return prepare(sql);
+    });
+    const context = createExecutionContext();
+    worker.scheduled(createScheduledController(), env, context);
+    await expect(waitOnExecutionContext(context)).rejects.toThrow("user_lifecycle_cleanup_failed");
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM rate_limits").first()).toEqual({ count: 0 });
+    expect(queries.some((sql) => sql.includes("SELECT id, object_key FROM score_object_deletions"))).toBe(true);
+    expect(JSON.stringify(log.mock.calls)).not.toContain("private");
+  });
+
   it("cleans rate limits even when score cleanup fails, with a sanitized failure", async () => {
     const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
     await env.DB.prepare("INSERT INTO rate_limits VALUES ('private-identity', 1, 0)").run();

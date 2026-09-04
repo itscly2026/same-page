@@ -323,6 +323,7 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
           <Popover className="file-menu-popover account-menu-popover">
             <Menu aria-label="用户菜单">
               <MenuItem href={`/choirs/${choirId}/preferences`}>我的偏好</MenuItem>
+              <MenuItem href="/user">用户与成员关系</MenuItem>
             </Menu>
           </Popover>
         </MenuTrigger>
@@ -555,6 +556,7 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
                         >
                           <MenuItem id="rename">重命名</MenuItem>
                           <MenuItem id="replace">替换 PDF</MenuItem>
+                          <MenuItem id="history">历史 PDF 版本</MenuItem>
                           <MenuItem id="trash">移到回收站</MenuItem>
                         </Menu>
                       </Popover>

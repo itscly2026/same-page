@@ -41,6 +41,24 @@ export function createAuth(env: Env, executionContext: WaitUntilContext) {
       encryptOAuthTokens: true,
     },
     databaseHooks: {
+      session: {
+        create: {
+          async before(session) {
+            const expired = await env.DB.prepare("SELECT user_id FROM user_lifecycle WHERE user_id = ? AND expires_at <= ?")
+              .bind(session.userId, Date.now()).first();
+            if (expired) return false;
+          },
+          async after(session, context) {
+            const method = context?.path === "/sign-in/email" ? "credential"
+              : context?.path?.startsWith("/callback/") ? context.params?.id
+              : context?.path === "/sign-in/social" ? context.body?.provider : null;
+            if (method === "credential" || method === "google" || method === "wechat") {
+              await env.DB.prepare("INSERT INTO session_auth_methods (session_id, method) VALUES (?, ?)")
+                .bind(session.id, method).run();
+            }
+          },
+        },
+      },
       account: {
         create: {
           async before(account) {

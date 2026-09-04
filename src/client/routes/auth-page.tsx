@@ -311,6 +311,11 @@ export default function AuthPage() {
   };
 
   const finishAuthentication = useCallback(async () => {
+    const lifecycle = await diagnosticFetch("/api/user/lifecycle").then(async (response) => response.ok ? response.json() : null).catch(() => null);
+    if (lifecycle?.deletion || lifecycle?.reauthenticated) {
+      await navigate("/user");
+      return;
+    }
     const guestResponse = await diagnosticFetch("/api/guest/session").catch(() => null);
     if (!guestResponse?.ok) {
       await navigate("/");
@@ -767,6 +772,9 @@ function clearSocialEmailDraft() {
 }
 
 async function confirmAuthenticatedSession() {
+  const lifecycle = await diagnosticFetch("/api/user/lifecycle", { cache: "no-store" })
+    .then(async (response) => response.ok ? response.json() : null).catch(() => null);
+  if (lifecycle?.deletion) return true;
   const response = await diagnosticFetch("/api/auth/get-session", {
     cache: "no-store",
   }).catch(() => null);

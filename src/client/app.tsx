@@ -7,6 +7,8 @@ import { LocalIdentityObserver } from "./platform/local-identity-observer";
 import { ReaderPage } from "./reader/reader-runtime";
 import { HomePage } from "./routes/home-page";
 
+const UserLifecyclePage = lazy(() => import("./routes/user-lifecycle-page"));
+const MembershipManagementPage = lazy(() => import("./routes/membership-management-page"));
 const AuthPage = lazy(() => import("./routes/auth-page"));
 const ChoirPage = lazy(() => import("./routes/choir-page"));
 const DriveLayerPreferencesPage = lazy(
@@ -28,6 +30,8 @@ export function AppRoutes() {
       <Suspense fallback={<p className="route-loading">正在打开乐谱…</p>}>
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/user" element={<UserLifecyclePage />} />
+          <Route path="/choirs/:choirId/memberships" element={<MembershipManagementPage />} />
           <Route path="/login" element={<AuthPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/diagnostics" element={<DiagnosticsPage />} />

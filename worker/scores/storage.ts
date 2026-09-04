@@ -1,7 +1,7 @@
 import type { Env } from "../env";
 import { defaultSharedLayers } from "../../src/shared/annotations";
 
-const OLD_VERSION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+export const PDF_CANDIDATE_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
 export class StorageQuotaError extends Error {
   constructor() {
@@ -151,12 +151,13 @@ export async function createScoreVersion(options: {
   }
 }
 
-export async function replaceScoreVersion(options: {
+export async function stageScoreVersion(options: {
   env: Env;
   choirId: string;
   scoreId: string;
   membershipId: string;
   currentVersionId: string;
+  expectedRevision: number;
   pdf: InspectedPdf;
 }) {
   const versionId = crypto.randomUUID();
@@ -170,12 +171,14 @@ export async function replaceScoreVersion(options: {
 
   const lock = await options.env.DB.prepare(
     `UPDATE scores
-     SET replacement_lock_id = ?, replacement_lock_expires_at = ?
+     SET replacement_lock_id = ?, replacement_lock_expires_at = ?,
+         last_version_number = last_version_number + 1
      WHERE id = ?
        AND choir_id = ?
-       AND current_version_id = ?
+       AND current_version_id = ? AND version_revision = ? AND trashed_at IS NULL
+       AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND role = 'admin' AND status = 'active')
        AND (replacement_lock_id IS NULL OR replacement_lock_expires_at <= ?)
-     RETURNING id`,
+     RETURNING last_version_number`,
   )
     .bind(
       versionId,
@@ -183,41 +186,29 @@ export async function replaceScoreVersion(options: {
       options.scoreId,
       options.choirId,
       options.currentVersionId,
+      options.expectedRevision,
+      options.membershipId,
       now,
     )
-    .first<{ id: string }>();
+    .first<{ last_version_number: number }>();
   if (!lock) {
     throw new ConcurrentReplacementError();
   }
 
   try {
-    const results = await options.env.DB.batch([
+    versionNumber = lock.last_version_number;
+    await options.env.DB.batch([
       reserveStorage(options.env.DB, options.choirId, options.pdf.sizeBytes),
       options.env.DB.prepare(
         `INSERT INTO score_versions
           (id, choir_id, score_id, version_number, object_key, size_bytes,
-           sha256, page_count, state, uploaded_by_membership_id, created_at)
-         SELECT ?, ?, ?, COALESCE(MAX(version_number), 0) + 1, ?, ?, ?, ?,
-                'pending', ?, ?
-         FROM score_versions
-         WHERE score_id = ?
-         RETURNING version_number`,
-      ).bind(
-        versionId,
-        options.choirId,
-        options.scoreId,
-        objectKey,
-        options.pdf.sizeBytes,
-        options.pdf.sha256,
-        options.pdf.pageCount,
-        options.membershipId,
-        now,
-        options.scoreId,
-      ),
+           sha256, page_count, state, uploaded_by_membership_id, created_at,
+           candidate_expires_at, base_revision)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+      ).bind(versionId, options.choirId, options.scoreId, versionNumber, objectKey,
+        options.pdf.sizeBytes, options.pdf.sha256, options.pdf.pageCount,
+        options.membershipId, now, now + PDF_CANDIDATE_LIFETIME_MS, options.expectedRevision),
     ]);
-    versionNumber = Number(
-      (results[1].results[0] as { version_number: number }).version_number,
-    );
   } catch (error) {
     await releaseReplacementLock(options.env.DB, options.scoreId, versionId);
     throw classifyReservationError(error);
@@ -226,38 +217,15 @@ export async function replaceScoreVersion(options: {
   try {
     const object = await putPdf(options.env.SCORES_BUCKET, objectKey, options.pdf);
     const readyAt = Date.now();
-    const finalized = await options.env.DB.batch([
-      options.env.DB.prepare(
-        `UPDATE score_versions
-         SET retention_expires_at = ?
-         WHERE id = ? AND state = 'ready'`,
-      ).bind(readyAt + OLD_VERSION_RETENTION_MS, options.currentVersionId),
-      options.env.DB.prepare(
-        `UPDATE score_versions
-         SET state = 'ready', etag = ?, ready_at = ?
-         WHERE id = ? AND state = 'pending'`,
-      ).bind(object.httpEtag, readyAt, versionId),
-      options.env.DB.prepare(
-        `UPDATE scores
-         SET current_version_id = ?, updated_at = ?,
-             replacement_lock_id = NULL, replacement_lock_expires_at = NULL
-         WHERE id = ? AND current_version_id = ? AND replacement_lock_id = ?
-           AND EXISTS (
-             SELECT 1 FROM score_versions
-             WHERE id = ? AND state = 'ready'
-           )`,
-      ).bind(
-        versionId,
-        readyAt,
-        options.scoreId,
-        options.currentVersionId,
-        versionId,
-        versionId,
-      ),
-    ]);
-    if (finalized[2].meta.changes !== 1) {
-      throw new Error("PDF replacement lost its version lock");
-    }
+    const finalized = await options.env.DB.prepare(
+      `UPDATE score_versions SET state = 'ready', etag = ?, ready_at = ?
+       WHERE id = ? AND state = 'pending' AND candidate_expires_at > ?
+         AND EXISTS (SELECT 1 FROM scores WHERE id = ? AND trashed_at IS NULL
+           AND replacement_lock_id = ? AND version_revision = ?)`,
+    ).bind(object.httpEtag, readyAt, versionId, readyAt, options.scoreId,
+      versionId, options.expectedRevision).run();
+    if (finalized.meta.changes !== 1) throw new ConcurrentReplacementError();
+    await releaseReplacementLock(options.env.DB, options.scoreId, versionId);
     return {
       id: versionId,
       versionNumber,

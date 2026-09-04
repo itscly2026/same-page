@@ -804,7 +804,7 @@ interface OperationRow {
   score_id: string;
   layer_id: string;
   annotation_id: string;
-  actor_user_id: string;
+  actor_user_id: string | null;
   base_version: number;
   operation_type: string;
   payload_hash: string;

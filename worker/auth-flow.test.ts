@@ -357,6 +357,31 @@ describe("authentication and choir boundaries", () => {
     expect(await database.select().from(account)).toHaveLength(1);
   });
 
+  it.each(["google", "wechat"] as const)("supports original %s verification, deletion and explicit recovery", async (provider) => {
+    const authenticate = async () => {
+      if (provider === "wechat") return completeWechatAuthentication();
+      let cookie = "";
+      await completeGoogleAuthentication({ subject: "lifecycle-google", email: "lifecycle@example.test", name: "原登录身份", onSession: (value) => { cookie = value; } });
+      return cookie;
+    };
+    const first = await authenticate();
+    const current = await callWorker("/api/user/lifecycle", { headers: { cookie: first } });
+    const userId = (await current.json() as { userId: string }).userId;
+    const postLifecycle = (path: string, cookie: string, body: unknown) => callWorker(`/api/user/lifecycle/${path}`, {
+      method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    expect((await postLifecycle("reauthenticate", first, { expectedUserId: userId })).status).toBe(204);
+    const verified = await authenticate();
+    expect((await postLifecycle("delete", verified, { confirm: true, expectedUserId: userId })).status).toBe(204);
+    const recovery = await authenticate();
+    const state = await callWorker("/api/user/lifecycle", { headers: { cookie: recovery } });
+    const deletion = (await state.json() as { deletion: { authMethod: string; deletionId: string } }).deletion;
+    expect(deletion.authMethod).toBe(provider);
+    expect(await (await callWorker("/api/auth/get-session", { headers: { cookie: recovery } })).json()).toBeNull();
+    expect((await postLifecycle("restore", recovery, { confirm: true, deletionId: deletion.deletionId })).status).toBe(204);
+    expect((await createDatabase(env.DB).select().from(user))[0].id).toBe(userId);
+  });
+
   it("falls back to the Website App openid when WeChat omits unionid", async () => {
     await completeWechatAuthentication({
       openid: "wechat-openid-only",
@@ -1529,6 +1554,7 @@ async function completeWechatAuthentication(
 }
 
 async function completeGoogleAuthentication(profile: {
+  onSession?(cookie: string): void;
   subject: string;
   email: string;
   name: string;
@@ -1598,5 +1624,8 @@ async function completeGoogleAuthentication(profile: {
   );
   expect(callback.status, await callback.clone().text()).toBe(302);
   expect(callback.headers.get("location")).toBe("/login?oauth=complete");
+  const cookie = callback.headers.get("set-cookie")?.match(/(?:^|,\s*)((?:__Secure-)?better-auth\.session_token=[^;]+)/)?.[1];
+  expect(cookie).toBeTruthy();
+  profile.onSession?.(cookie!);
   return idToken;
 }
