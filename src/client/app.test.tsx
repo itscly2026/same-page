@@ -103,19 +103,16 @@ describe("AppRoutes", () => {
       screen.getByText("为合唱排练与共享批注打造的乐谱云盘。"),
     ).toHaveAttribute("lang", "zh-CN");
     expect(
-      screen.getByRole("heading", { name: "不同声部，分层共享批注" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", {
-        name: "共享批注按需看，个人笔记自己留",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "离线可用，联网同步" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "一份乐谱，多设备可用" }),
-    ).toBeInTheDocument();
+      within(screen.getByRole("region", { name: "产品特点" }))
+        .getAllByRole("heading", { level: 2 })
+        .map((heading) => heading.textContent),
+    ).toEqual([
+      "不同声部，分层共享批注",
+      "共享批注按需看，个人笔记自己留",
+      "替换乐谱，保留批注",
+      "离线可用，联网同步",
+      "一份乐谱，多设备可用",
+    ]);
     expect(
       screen.getByRole("link", { name: "了解更多功能" }),
     ).toHaveAttribute("href", "#features");
@@ -127,6 +124,11 @@ describe("AppRoutes", () => {
     expect(
       screen.getByText(
         "选择需要查看的声部批注，也能在个人层记下自己的提醒，只有你能看到。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "谱子有局部修订时，管理员可以直接替换 PDF；已有批注仍按原页码和位置显示，不必重新标注。",
       ),
     ).toBeInTheDocument();
     expect(
