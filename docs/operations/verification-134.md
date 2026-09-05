@@ -1,6 +1,6 @@
-# #134 本地交付记录
+# #134 验证与发布记录
 
-审查基线：`3d8eb3a995ef958955c4a318e6873345d8703da7`。本记录对应 #134 实施提交；本次操作止于当前分支提交，没有 push、生产迁移或部署。
+审查基线：`3d8eb3a995ef958955c4a318e6873345d8703da7`。本记录对应 #134 实施提交。初次本地验证后，按用户指示完成推送与生产发布；上线证据记录在末节。
 
 ## 结果
 
@@ -20,4 +20,17 @@
 
 此次发布链移除了 deploy 的一次构建；完整 verify 仍保留两个 PWA 合成构建和一个正式构建。新增 artifact 传输、摘要核对和真实 smoke 有额外耗时，不能把删掉的 14 秒直接声称为净加速。
 
-修改后的真实 Actions 关键路径、artifact ID/digest、Cloudflare deployment ID、生产 expected SHA 验收尚待推送后的实际流水线记录。此处不以本地耗时代替 CI，也不声称完成生产或实机验收；#9/#39 继续独立跟踪设备和外部身份提供方。
+修改后的真实 Actions 与生产证据见下方。此处不以本地耗时代替 CI；#9/#39 继续独立跟踪设备和外部身份提供方。
+
+## 2026-09-05 生产发布
+
+- 源码与线上 buildId：`c0f1487ca8f1e26d86d65066e4e2c627d258b60b`。
+- [Actions 33971285548](https://github.com/itscly2026/same-page/actions/runs/33971285548)：verify 与 deploy 均成功。verify 475 秒，deploy 69 秒，关键路径约 548 秒。本次运行完整范围，包含 Worker、PWA、迁移与真实存储 smoke；基线客户端范围为 375 秒，范围不同，不宣称净提速。部署端的重复构建已移除，产物传输、准入记录和更完整的线上验收各有额外成本。
+- [验证产物 9971102044](https://github.com/itscly2026/same-page/actions/runs/33971285548/artifacts/9971102044)：`release-c0f1487ca8f1e26d86d65066e4e2c627d258b60b`；GitHub artifact digest 为 `sha256:ac3b758d7726e40c8293e2e6385171db59c4396e3064ae16b7d307f9ba89c7a7`。独立下载后核对 87 个文件与清单、源码和验证 run ID，一致。
+- GitHub `production-release` 发布记录：`6282022209`，源码为上述 SHA。
+- D1：恢复点及迁移前聚合已记录；没有新 migration 需要应用。迁移后列、外键及同步游标核查通过。
+- Cloudflare Worker version：`598372d6-768a-49d2-a653-57becd5305fb`。直接部署 CI 产物，部署 job 没有重新构建。
+- 线上独立验收：以 CI 下载的 `dist/client/build.json` 为依据，核对 Worker、应用壳、构建身份、全部 40 个脚本摘要、manifest、Service Worker、第三方入口边界及未登录 401，全部通过。
+- Chromium 与 WebKit 的线上首页、公开云盘访问及 PDF 渲染均通过，未出现页面异常。结果另存本地 `artifacts/verification/production-browser.json`；桌面浏览器引擎自动化不代表 #9/#39 的真实设备和外部身份提供方验收。
+
+本记录后续仅文档提交不触发部署，生产身份继续指向上述产品源码 SHA。
