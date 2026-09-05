@@ -25,3 +25,22 @@ it("rejects injection and ambiguous/missing command parameters", () => {
     ["list", "--remote", "--status", "invalid"], ["show", "--remote", "--id", "abc"], ["list", "--remote", "--unknown"],
   ]) expect(() => diagnosticInboxQuery(args)).toThrow();
 });
+
+it("executes inbox filters, view and mark against the actual migration schema", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { readFileSync } = await import("node:fs");
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec(readFileSync(new URL("../migrations/0016_diagnostic_reports.sql", import.meta.url), "utf8"));
+    const id = "11111111-1111-4111-8111-111111111111";
+    const payload = JSON.stringify({ description: "synthetic issue", records: [{ category: "network" }] });
+    db.prepare("INSERT INTO diagnostic_reports (id, client_build, payload, payload_hash, created_at, expires_at) VALUES (?, 'abcdef1', ?, 'synthetic', 50, 200)").run(id, payload);
+    const run = args => db.prepare(diagnosticInboxQuery(args, 100).sql).all();
+    expect(run(["list", "--local", "--category", "network", "--build", "abcdef1"])).toEqual([expect.objectContaining({ id, status: "new" })]);
+    expect(run(["list", "--local", "--category", "internal"])).toEqual([]);
+    expect(run(["show", "--local", "--id", id])[0].payload).toBe(payload);
+    expect(run(["mark", "--local", "--id", id, "--status", "resolved"])).toEqual([{ id, status: "resolved" }]);
+    expect(run(["list", "--local", "--status", "new"])).toEqual([]);
+    expect(db.prepare(diagnosticInboxQuery(["show", "--local", "--id", id], 200).sql).all()).toEqual([]);
+  } finally { db.close(); }
+});

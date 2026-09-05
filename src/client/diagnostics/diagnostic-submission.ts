@@ -28,8 +28,8 @@ export function diagnosticEnvironment(ua = navigator.userAgent): DiagnosticRepor
   };
 }
 
-export function captureDiagnosticReport(description: string, reader: DiagnosticReader | null): DiagnosticReport {
-  return diagnosticReportSchema.parse({ ...JSON.parse(exportDiagnostics()), id: crypto.randomUUID(),
+export function captureDiagnosticReport(description: string, reader: DiagnosticReader | null, id = crypto.randomUUID()): DiagnosticReport {
+  return diagnosticReportSchema.parse({ ...JSON.parse(exportDiagnostics()), id,
     description, environment: diagnosticEnvironment(), reader });
 }
 
@@ -88,7 +88,7 @@ export async function sendDiagnosticReport(reader: DiagnosticReader | null) {
     if (started !== epoch) return;
     update({ ...state, phase: "failed", message: navigator.onLine
       ? "尚未确认收到诊断。当前内容仍保留，可重试或复制；重试不会重复创建反馈。"
-      : "当前离线，尚未发送诊断。请联网后重试，也可复制当前内容。" });
+      : "当前离线，尚未确认收到诊断。请联网后重试，也可复制当前内容；重试不会重复创建反馈。" });
   } finally {
     clearTimeout(timeout);
     if (started === epoch) pending = null;

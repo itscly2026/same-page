@@ -82,6 +82,7 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
     assert.equal(new URL(page.url()).pathname, "/privacy");
     assert.equal(await page.evaluate(() => window.__layoutDocumentMarker), "same-document");
     await footer.getByRole("link", { name: "故障诊断", exact: true }).press("Enter");
+    await page.getByText("查看诊断内容", { exact: true }).click();
     await page.getByRole("textbox", { name: "可发送给支持人员的诊断内容" }).waitFor();
     assert.equal(new URL(page.url()).pathname, "/diagnostics");
     assert.equal(await page.evaluate(() => window.__layoutDocumentMarker), "same-document");

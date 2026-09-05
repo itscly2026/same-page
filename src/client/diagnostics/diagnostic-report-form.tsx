@@ -6,6 +6,7 @@ import { captureDiagnosticReport, getDiagnosticSubmission, resetDiagnosticSubmis
 
 export function DiagnosticReportForm({ reader = null }: { reader?: DiagnosticReader | null }) {
   const submission = useSyncExternalStore(subscribeDiagnosticSubmission, getDiagnosticSubmission);
+  const [previewId] = useState(() => crypto.randomUUID());
   const [preview, setPreview] = useState(exportDiagnostics);
   const [message, setMessage] = useState("");
   useEffect(() => {
@@ -16,7 +17,7 @@ export function DiagnosticReportForm({ reader = null }: { reader?: DiagnosticRea
   }, []);
   // Preview the complete payload (including optional text) without freezing the incident until Send.
   let current = preview;
-  try { current = JSON.stringify(submission.report ?? captureDiagnosticReport(submission.description, reader), null, 2); }
+  try { current = JSON.stringify(submission.report ?? captureDiagnosticReport(submission.description, reader, previewId), null, 2); }
   catch { /* Copying existing diagnostic categories remains available. */ }
   const copy = async (value: string, success: string) => {
     try { await navigator.clipboard.writeText(value); setMessage(success); }

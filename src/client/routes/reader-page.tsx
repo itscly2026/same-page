@@ -529,6 +529,7 @@ function ReaderPageContent() {
         <Link className="primary-link" aria-disabled={editing || undefined} to={`/choirs/${choirId}`} onClick={event => { if (editing) event.preventDefault(); }}>返回云盘</Link>
         {editing && <span>请先完成或取消当前编辑，再返回云盘。</span>}
         {failedDisplay === document && <Button isDisabled={editing} onPress={reader.retry}>重新加载谱面</Button>}
+        {failedDisplay === document && diagnosticDialog}
         {displayChoices}
       </div> : null}
       {reader.snapshot.modeMessage ? <p className="reader-display-notice" role="status">{reader.snapshot.modeMessage}</p> : null}
@@ -582,7 +583,6 @@ function ReaderPageContent() {
                 aria-label="更多"
                 aria-expanded={moreOpen}
                 className="reader-icon-button"
-                isDisabled={editing}
                 onPress={() => setMoreOpen((open) => !open)}
               >
                 <Ellipsis aria-hidden="true" size={23} />
@@ -617,6 +617,7 @@ function ReaderPageContent() {
           </div>
           {moreOpen ? (
             <aside className="reader-more-menu" aria-label="更多阅读选项">
+              {!editing && <>
               <div className="segmented-control" aria-label="页面布局">
                 <Button
                   aria-pressed={layout === "page"}
@@ -680,6 +681,7 @@ function ReaderPageContent() {
                   {downloadMessage ?? syncStatus.message}
                 </p>
               ) : null}
+              </>}
               {diagnosticDialog}
             </aside>
           ) : null}
@@ -792,6 +794,7 @@ function ReaderPageContent() {
             <Button isDisabled={syncing} onPress={() => void manualSync()}>
               重试同步
             </Button>
+            {diagnosticDialog}
           </div>
         </aside>
       ) : null}

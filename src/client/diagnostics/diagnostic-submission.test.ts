@@ -82,3 +82,15 @@ it("handles rate limits and a mismatched receipt without claiming success", asyn
   expect(getDiagnosticSubmission().phase).toBe("failed");
   expect(getDiagnosticSubmission().message).toContain("尚未确认收到");
 });
+
+it("never claims non-delivery when connectivity drops after dispatch or an uncertain retry", async () => {
+  const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+  const fetchMock = vi.fn(async () => { online.mockReturnValue(false); throw new TypeError("response lost"); });
+  vi.stubGlobal("fetch", fetchMock);
+  await sendDiagnosticReport(null);
+  expect(getDiagnosticSubmission().message).toContain("当前离线，尚未确认收到");
+  expect(getDiagnosticSubmission().message).not.toContain("尚未发送");
+  await sendDiagnosticReport(null);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(getDiagnosticSubmission().message).toContain("尚未确认收到");
+});

@@ -35,7 +35,7 @@ it("sends optional description, displays a receipt, and retains sent snapshot wh
   const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => Response.json({ id: JSON.parse(String(init?.body)).id }));
   render(<MemoryRouter><DiagnosticsPage /></MemoryRouter>);
   fireEvent.change(screen.getByLabelText("刚才遇到了什么问题？（选填）"), { target: { value: "显示异常" } });
-  fireEvent.click(screen.getByRole("button", { name: "发送诊断", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "发送诊断" }));
   await screen.findByRole("button", { name: "复制反馈编号" });
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("status")).toHaveTextContent("已发送给合谱维护人员");
