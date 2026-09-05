@@ -50,22 +50,22 @@ The public test boundaries agreed with the user are ReaderSession open/switch/ca
 - Chromium and persistent-profile WebKit exercise upload, PDF-to-image switching, native conversion, image download, second-page offline browser-process restart and a truthful missing-PDF-mode message. Chromium additionally writes an offline annotation and verifies reconnect synchronization and switching back to PDF on the same page. WebKit's server is stopped to establish actual network unavailability; this avoids treating emulated offline navigation as proof. The image entry path is checked for absence of the PDF.js engine chunk.
 - Existing PDF storage smoke covers browser process restart, offline annotations, reconnect, version changes and owner isolation. Existing PWA update handover and precache gates still apply. The image-specific scenario also closes and relaunches each browser with its persistent profile while offline, then reads and annotates the stored image bundle. A real installed-PWA update remains device/release acceptance below.
 
-The first full run passed renderer, PWA update, lint, types, client and Worker suites, then one visual diagnostic test hit a process-cleanup `EPERM`. Its isolated rerun passed. Final gate results and performance are recorded after review below.
+The first full run passed renderer, PWA update, lint, types, client and Worker suites, then one visual diagnostic test hit a process-cleanup `EPERM`. Its isolated rerun passed. Final gate results and performance are recorded below.
 
 ## Final local checks and review
 
-All constituent checks passed, including the final targeted fixes: renderer regression, PWA handover, CI scope, lint, types, unit tests (37), client tests (286 in the aggregate run plus the final 44-test affected-file run), Worker unit/integration (7 / 66), visual tests (31), migration verification, production build/precache, real-storage smoke (6) and controlled loading performance. The two aggregate `check:full` attempts stopped on intermittent macOS process-group cleanup `kill EPERM` in different browser fixtures; isolated diagnostic rerun and the final complete six-scenario smoke rerun passed. Thus the constituent gates are green, while a single uninterrupted aggregate command has not been established. Remote CI, including the new Linux Docker gate, is pending.
+The final uninterrupted `npm run check:full` completed with exit code **0** on implementation commit `5aba1e1`: renderer regression, PWA handover, CI scope, lint, types, unit tests (37), client tests (287), Worker unit/integration (7 / 66), visual tests (31), migration verification, production build/precache, real-storage smoke (6) and controlled loading performance all passed. Earlier attempts hit intermittent macOS process-group cleanup `kill EPERM` in two different browser fixtures; the final aggregate run passed without changing that existing helper. The focused cancellation/preference regressions also passed in the affected 44-test run. Remote CI, including the new Linux Docker gate, is pending.
 
 The final smoke includes native image conversion and persistent-browser restart in Chromium and WebKit. A 320 × 568 menu check caught a 7-pixel bottom overflow; the corrected height reserve accounts for the top control capsule, page indicator and safe areas. Both engines now keep the scrolling menu inside the viewport; the resulting screenshots were inspected.
 
 | Normal PDF path | #136 recorded reference | #137 local run |
 | --- | ---: | ---: |
-| First open | 220–234 ms | 213 ms |
+| First open | 220–234 ms | 227 ms (another run: 213 ms) |
 | Reopen | 31 ms | 31 ms |
-| Return to cached drive | — | 29 ms |
+| Return to cached drive | — | 38 ms (another run: 29 ms) |
 | Precache entries / emitted bytes | 59 / 4,484,922 | 61 / 4,506,563 |
 
-The prior reference comes from `verification-136.md`, not a simultaneous control run. The same controlled WebKit harness applies 75-ms API delay and 5000-ms return-network delay; these single runs do not establish a statistically significant speedup or production latency. The new precache adds 21,641 bytes (0.48%); native rendering and font fixtures are not client assets. Evidence: `artifacts/verification/137/final-build.log`, `final-smoke.log`, `final-performance.log`, `review-edges-green.log` and both aggregate logs.
+The prior reference comes from `verification-136.md`, not a simultaneous control run. The same controlled WebKit harness applies 75-ms API delay and 5000-ms return-network delay; these single runs do not establish a statistically significant speedup or production latency. The new precache adds 21,641 bytes (0.48%); native rendering and font fixtures are not client assets. Evidence: `artifacts/verification/137/final-build.log`, `final-smoke.log`, `final-performance.log`, `review-edges-green.log` and `check-full-complete.log` (successful aggregate run).
 
 ### Standards
 
@@ -73,7 +73,7 @@ The independent review identified persistent preference changes during automatic
 
 ### Spec
 
-The independent review identified a late PDF result winning after selecting images, lack of recovery from a missing ready-generation object, and absence of image browser-process restart coverage. All three were fixed and tested. Follow-up preference/cancellation findings were also closed. **No outstanding code findings** after review of `303140e`; deployment, aggregate-run and physical-device acceptance limitations remain as stated here.
+The independent review identified a late PDF result winning after selecting images, lack of recovery from a missing ready-generation object, and absence of image browser-process restart coverage. All three were fixed and tested. Follow-up preference/cancellation findings were also closed. **No outstanding code findings** after review of `303140e`; deployment and physical-device acceptance limitations remain as stated here.
 
 ## Release and remaining acceptance
 
