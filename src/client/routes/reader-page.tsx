@@ -137,6 +137,7 @@ function ReaderPageContent() {
     ensureLoadingJourney("open-score", "direct");
   }, []);
   useEffect(() => {
+    if (workspaceError) return;
     let active = true;
     const fail = (message: string) => {
       if (!active) return;
@@ -168,7 +169,7 @@ function ReaderPageContent() {
       active = false;
       clearTimeout(timer);
     };
-  }, [choirId, scoreId, session.data?.user.id, session.isPending, workspaceAttempt]);
+  }, [choirId, scoreId, session.data?.user.id, session.isPending, workspaceAttempt, workspaceError]);
 
   const workspace =
     resolvedWorkspace &&

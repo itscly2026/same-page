@@ -38,6 +38,13 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     await expect(page.getByRole("status").filter({ hasText: "离线副本已完整校验" })).toBeVisible({ timeout: 30_000 });
     await mkdir("artifacts/verification/137", { recursive: true });
     await page.screenshot({ path: `artifacts/verification/137/${engineName}-images.png` });
+    await page.setViewportSize({ width: 320, height: 568 });
+    const menu = page.getByRole("complementary", { name: "更多阅读选项" });
+    await expect(menu).toBeVisible();
+    const bounds = await menu.boundingBox();
+    assert.ok(bounds && bounds.y >= 0 && bounds.y + bounds.height <= 568, "reading options must stay inside the narrow viewport");
+    await page.screenshot({ path: `artifacts/verification/137/${engineName}-images-narrow.png` });
+    await page.setViewportSize({ width: 1024, height: 768 });
     const readerUrl = page.url();
     if (engineName === "webkit") await fixture.stop();
     await context.close();

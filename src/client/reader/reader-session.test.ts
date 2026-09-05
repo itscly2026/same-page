@@ -121,7 +121,7 @@ it("keeps automatic recovery temporary and persists only an explicit choice", as
     expect(session.getSnapshot().mode).toBe("images");
     const reopened = new ReaderSession(workspace, null);
     expect(reopened.getSnapshot().mode).toBe("pdf");
-    reopened.selectMode("images");
+    session.selectMode("images");
     reopened.dispose();
     const explicit = new ReaderSession(workspace, null);
     expect(explicit.getSnapshot().mode).toBe("images");

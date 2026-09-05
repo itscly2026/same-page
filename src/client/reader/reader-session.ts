@@ -255,7 +255,11 @@ export class ReaderSession {
   };
   selectMode = (mode: ScoreDisplayMode) => { this.changeMode(mode, true); };
   private changeMode(mode: ScoreDisplayMode, persist: boolean) {
-    if (this.disposed || mode === this.state.mode) return false;
+    if (this.disposed) return false;
+    if (mode === this.state.mode) {
+      if (persist) writeDisplayPreference(this.workspace, mode, "score");
+      return false;
+    }
     if ((!navigator.onLine || this.lookup?.state === "network-unavailable") && (!this.state.offline || (this.state.offline.imageManifest ? "images" : "pdf") !== mode)) {
       this.publish({ modeMessage: `本机没有${mode === "images" ? "图片" : "PDF"}离线副本，请联网后下载。当前副本仍可使用。` });
       return false;

@@ -30,7 +30,7 @@ import { findVerifiedOfflineScore } from "../offline/offline-score-verification"
 import ReaderPage from "./reader-page";
 import { clearDiagnostics, exportDiagnostics } from "../diagnostics/diagnostics";
 
-const readerAuthState = vi.hoisted(() => ({ signedIn: true }));
+const readerAuthState = vi.hoisted(() => ({ signedIn: true, pending: false }));
 
 const virtualTestState = vi.hoisted(() => ({
   itemSize: 100,
@@ -107,7 +107,7 @@ vi.mock("@tanstack/react-virtual", () => ({
 
 vi.mock("../auth/auth-client", () => ({
   authClient: {
-    useSession: () => ({ data: readerAuthState.signedIn ? { user: { id: "user-1" } } : null, isPending: false }),
+    useSession: () => ({ data: readerAuthState.signedIn ? { user: { id: "user-1" } } : null, isPending: readerAuthState.pending }),
   },
 }));
 
@@ -188,6 +188,23 @@ vi.mock("../annotations/annotation-state", async (importOriginal) => {
 });
 
 describe("ReaderPage", () => {
+it("keeps workspace cancellation in force when authentication finishes", async () => {
+  readerAuthState.pending = true;
+  const storageRead = vi.spyOn(localDatabase.system, "get");
+  const content = () => <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}><Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /></Routes></MemoryRouter>;
+  const view = render(content());
+  const cancel = screen.getByRole("button", { name: "取消打开工作区" });
+  fireEvent.keyDown(cancel, { key: "Enter", code: "Enter" });
+  fireEvent.keyUp(cancel, { key: "Enter", code: "Enter" });
+  expect(await screen.findByRole("alert")).toHaveTextContent("已取消打开工作区");
+  readerAuthState.pending = false;
+  view.rerender(content());
+  await act(() => new Promise(resolve => setTimeout(resolve, 30)));
+  expect(screen.getByRole("alert")).toHaveTextContent("已取消打开工作区");
+  expect(screen.queryByLabelText("翻页阅读")).not.toBeInTheDocument();
+  expect(storageRead).not.toHaveBeenCalled();
+});
+
 it("lets a failed local storage open retry without losing the return link", async () => {
   vi.spyOn(localDatabase.system, "get").mockRejectedValueOnce(new DOMException("unavailable", "UnknownError"));
   render(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}><Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /></Routes></MemoryRouter>);
@@ -262,6 +279,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
 
   beforeEach(async () => {
     readerAuthState.signedIn = true;
+    readerAuthState.pending = false;
     clearDiagnostics();
     clearReaderDocumentCache();
     clearReaderScoreCache();
