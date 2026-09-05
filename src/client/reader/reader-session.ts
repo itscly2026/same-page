@@ -42,6 +42,31 @@ export class ReaderSession {
   private source: Source | null = null;
   private lease: ReaderDocumentLease | null = null;
   private generation = 0;
+  private retained: { document: ScoreDocument; mode: ScoreDisplayMode; source: Source | null; lease: ReaderDocumentLease | null } | null = null;
+  private retainDisplay() {
+    if (this.retained || !this.state.document || this.cloudInvalidated) return;
+    this.retained = { document: this.state.document, mode: this.state.mode, source: this.source, lease: this.lease };
+    this.lease = null;
+  }
+  confirmDisplay = (document: ScoreDocument) => {
+    if (document !== this.state.document) return;
+    this.retained?.lease?.release();
+    this.retained = null;
+  };
+  private restoreDisplay() {
+    if (!this.retained) return false;
+    const previous = this.retained;
+    this.displayAbort.abort();
+    this.generation++;
+    this.lease?.release();
+    this.lease = previous.lease;
+    this.source = previous.source;
+    this.retained = null;
+    this.pdfFailed = false;
+    writeDisplayPreference(this.workspace, previous.mode, "score");
+    this.publish({ document: previous.document, mode: previous.mode, status: "ready", error: null, modeMessage: "显示切换未完成，已保留原谱面。可在更多中重试显示方式。" });
+    return true;
+  }
   private lookupSequence = 0;
   private appliedLookup = 0;
   private confirmedVersion: string | null;
@@ -97,6 +122,7 @@ export class ReaderSession {
   private armDeadline() {
     if (this.deadline) clearTimeout(this.deadline);
     this.deadline = setTimeout(() => {
+      if (this.retained) { this.restoreDisplay(); return; }
       if (this.state.status === "loading") {
         this.publish({ status: "error", error: "加载用时较长，可以重试或返回云盘。这不代表设备不兼容。" });
         invalidateReaderDocument({ ...this.workspace });
@@ -155,15 +181,17 @@ export class ReaderSession {
   private openSource(source: Source, data?: ArrayBuffer) {
     if (this.disposed) return;
     if (this.state.mode === "images" && source.kind === "cloud" && !this.state.score) return;
+    this.retainDisplay();
     this.armDeadline();
     this.displayAbort.abort();
     this.displayAbort = new AbortController();
     const generation = ++this.generation;
     this.lease?.release();
     this.source = source;
+    const document = this.cloudInvalidated ? null : this.state.document;
     if (source.kind === "cloud") this.cloudInvalidated = false;
     this.pdfFailed = false;
-    this.publish({ document: null, status: "loading", error: null });
+    this.publish({ document, status: document ? "ready" : "loading", error: null });
     if (this.state.mode === "images") {
       const score = this.state.score!;
       const local = source.kind === "offline" ? this.state.offline : null;
@@ -173,10 +201,11 @@ export class ReaderSession {
         : prepareImageManifest(this.workspace, source.versionId!, score.currentVersion.sha256, signal);
       void manifest.then(async manifest => {
         if (!await this.current() || generation !== this.generation) return;
-        this.publish({ document: new ImageDocument(manifest, scoreImagesPath(this.workspace.choirId, this.workspace.scoreId, manifest.versionId), local?.blob), status: "ready" });
+        this.publish({ document: new ImageDocument(manifest, scoreImagesPath(this.workspace.choirId, this.workspace.scoreId, manifest.versionId), local?.blob), status: "ready", modeMessage: null });
       }).catch(error => {
         if (this.disposed || generation !== this.generation) return;
         recordFailure({ operation: "pdf", category: pdfFailureCategory(error), stage: "prepare" });
+        if (this.restoreDisplay()) return;
         this.publish({ status: "error", error: "图片兼容模式准备失败，可以重试或选择 PDF 阅读。本机草稿仍然保留。" });
       });
       return;
@@ -186,7 +215,7 @@ export class ReaderSession {
     this.lease = lease;
     void lease.promise.then(async (document) => {
       if (!await this.current() || generation !== this.generation) return;
-      this.publish({ document, status: "ready" });
+      this.publish({ document, status: "ready", modeMessage: null });
       this.resolveFailure();
     }).catch((error) => {
       if (this.disposed || generation !== this.generation) return;
@@ -196,6 +225,7 @@ export class ReaderSession {
         return;
       }
       if (error instanceof Error && error.name === "PdfEngineUnavailableError" && this.recoverDisplay(error)) return;
+      if (this.restoreDisplay()) return;
       this.pdfFailed = true;
       this.resolveFailure();
     });
@@ -247,6 +277,7 @@ export class ReaderSession {
     } finally { this.publish({ downloading: false }); }
   };
   recoverDisplay = (error: unknown) => {
+    if (!this.disposed && this.restoreDisplay()) return true;
     if (this.disposed || this.state.mode !== "pdf" || this.automaticRecoveryUsed || !navigator.onLine || pdfFailureCategory(error) !== "internal" || (error instanceof Error && error.name === "TimeoutError")) return false;
     this.automaticRecoveryUsed = true;
     if (!this.changeMode("images", false)) return false;
@@ -264,6 +295,7 @@ export class ReaderSession {
       this.publish({ modeMessage: `本机没有${mode === "images" ? "图片" : "PDF"}离线副本，请联网后下载。当前副本仍可使用。` });
       return false;
     }
+    this.retainDisplay();
     if (persist) writeDisplayPreference(this.workspace, mode, "score");
     this.displayAbort.abort();
     this.generation++;
@@ -271,7 +303,7 @@ export class ReaderSession {
     this.lease = null;
     this.source = null;
     this.pdfFailed = false;
-    this.publish({ mode, modeMessage: null, document: null, status: "loading", error: null });
+    this.publish({ mode, modeMessage: this.state.document ? "正在准备新的显示方式，原谱面继续保留…" : null, status: this.state.document ? "ready" : "loading", error: null });
     this.armDeadline();
     if (this.localMatches()) void this.openOffline(this.state.offline!);
     else if (this.confirmedVersion) this.openSource({ kind: "cloud", versionId: this.confirmedVersion });
@@ -296,6 +328,8 @@ export class ReaderSession {
     this.generation++;
     this.lease?.release();
     this.lease = null;
+    this.retained?.lease?.release();
+    this.retained = null;
     this.listeners.clear();
   }
 }

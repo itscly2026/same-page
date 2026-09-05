@@ -17,10 +17,7 @@ import {
 } from "../../shared/annotations";
 import type { LocalAnnotationRecord } from "../platform/local-database";
 import type { LocalWorkspace } from "../platform/local-workspace";
-import {
-  saveDraftWithHistory,
-  updateLatestHistoryDraft,
-} from "./annotation-state";
+import { useDraftWriter } from "./use-draft-writer";
 import { calculateTextEditorLayout } from "./text-editor-layout";
 
 export type AnnotationTool = "text" | "ink" | "eraser";
@@ -86,6 +83,7 @@ export function AnnotationOverlay({
   tool,
   activeLayerId,
   onInteractionChange,
+  onPersistenceChange,
 }: {
   workspace: LocalWorkspace;
   pageNumber: number;
@@ -95,7 +93,10 @@ export function AnnotationOverlay({
   tool: AnnotationTool;
   activeLayerId: string | null;
   onInteractionChange?(interaction: AnnotationOverlayInteraction): void;
+  onPersistenceChange?(state: "idle" | "saving" | "failed"): void;
 }) {
+  const writer = useDraftWriter(workspace);
+  useEffect(() => { if (editing) onPersistenceChange?.(writer.state); }, [editing, writer.state, onPersistenceChange]);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [draftStroke, setDraftStroke] = useState<Extract<AnnotationPayload, { kind: "ink" }> | null>(null);
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
@@ -212,7 +213,7 @@ export function AnnotationOverlay({
       }));
       if (distanceToPolyline(pointer, points) > ERASER_HIT_RADIUS_PX) continue;
       erasedStrokeIds.current.add(annotation.id);
-      void saveDraftWithHistory(workspace, {
+      void writer.persist({
         id: annotation.id,
         layerId: annotation.layerId,
         payload: null,
@@ -263,19 +264,20 @@ export function AnnotationOverlay({
     if (!textEditor || !activeLayerId) return;
     const editor = textEditor;
     const text = editorText.trim();
-    closeTextEditor();
     if (!text) {
       if (editor.source === "existing") {
-        await saveDraftWithHistory(workspace, {
+        const saved = await writer.persist({
           id: editor.id,
           layerId: activeLayerId,
           payload: null,
           deleted: true,
         });
+        if (!saved) return;
       }
+      closeTextEditor();
       return;
     }
-    await saveDraftWithHistory(workspace, {
+    const saved = await writer.persist({
       id: editor.id,
       layerId: activeLayerId,
       payload: {
@@ -287,6 +289,7 @@ export function AnnotationOverlay({
         text,
       },
     });
+    if (saved) closeTextEditor();
   };
 
   const addTransformPointer = (
@@ -425,7 +428,7 @@ export function AnnotationOverlay({
       });
       return;
     }
-    void saveDraftWithHistory(workspace, {
+    void writer.persist({
       id: transform.id,
       layerId: transform.layerId,
       payload: shouldDelete ? null : transform.preview,
@@ -528,10 +531,10 @@ export function AnnotationOverlay({
       const next = { ...current, points: [...current.points, position] };
       const input = { id: currentStrokeId.current!, layerId: activeLayerId, payload: next };
       if (strokeHistoryStarted.current) {
-        void updateLatestHistoryDraft(workspace, input);
+        void writer.persist(input, true);
       } else {
         strokeHistoryStarted.current = true;
-        void saveDraftWithHistory(workspace, input);
+        void writer.persist(input);
       }
       return next;
     });
@@ -655,7 +658,7 @@ export function AnnotationOverlay({
             onPointerCancel={cancelTextTransform}
             onKeyDown={(event) => {
               if (event.key === "Delete" || event.key === "Backspace") {
-                void saveDraftWithHistory(workspace, {
+                void writer.persist({
                   id: annotation.id,
                   layerId: annotation.layerId,
                   payload: null,
@@ -672,6 +675,11 @@ export function AnnotationOverlay({
       </div>
       {editing ? createPortal(
         <>
+          {writer.state === "failed" && <aside className="annotation-storage-error" role="alert">
+            <strong>本机保存失败</strong>
+            <p>修改仍留在当前编辑器，尚未可靠保存。请保留此页面，释放设备空间后重试。</p>
+            <button type="button" onClick={() => void writer.retry()}>重试本机保存</button>
+          </aside>}
           {editing && tool === "text" && !textEditor && !transformingText ? (
             <p className="annotation-text-hint" role="status">轻点任意位置添加文字</p>
           ) : null}

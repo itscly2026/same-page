@@ -52,7 +52,7 @@ export function PdfPageCanvas({
 
   useEffect(() => {
     const sourceChanged =
-      source.current.document !== document || source.current.pageNumber !== pageNumber;
+      source.current.pageNumber !== pageNumber;
     source.current = { document, pageNumber };
     const previousFront = frontCanvas.current;
     const nextFront = 1 - previousFront;
@@ -127,7 +127,7 @@ export function PdfPageCanvas({
           recordFailure({ operation: "pdf", category: pdfFailureCategory(reason), stage: "decode", pdfReason: pdfFailureReason(reason, true), engineVersion: "kind" in document ? document.manifest.engine : pdfEngineVersion });
           setError(true);
           if (className === "pdf-page-canvas") recoveryRef.current?.failed(pageNumber, reason);
-          lease?.ready();
+          lease?.failed?.();
         }
       });
 
@@ -167,5 +167,6 @@ export function PdfPageCanvas({
 
 export interface PdfPageRenderLease {
   ready(): void;
+  failed?(): void;
   cancel(): void;
 }

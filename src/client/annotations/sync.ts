@@ -125,7 +125,7 @@ export async function withScoreSyncLock<T>(
     return navigator.locks.request(`same-page:sync:${scopeKey}`, options, async (lock) => {
       if (!lock) return undefined;
       await assertLocalWorkspaceActive(workspace);
-      return action(workspace);
+      return observeSync(workspace, () => action(workspace));
     });
   }
   const owner = crypto.randomUUID();
@@ -147,7 +147,7 @@ export async function withScoreSyncLock<T>(
   );
   if (!acquired) return undefined;
   try {
-    return await action({ ...workspace, syncLockToken: owner });
+    return await observeSync(workspace, () => action({ ...workspace, syncLockToken: owner }));
   } finally {
     await withLocalWorkspaceTransaction(
       workspace,
@@ -174,4 +174,30 @@ function toWireOperation(operation: AnnotationOutboxRecord) {
     type: operation.type,
     payload: operation.payload,
   };
+}
+
+// Observe the existing sync lock, including background recovery, without
+// treating request completion as proof that every local object was accepted.
+const syncActivity = new Map<string, "running" | "failed">();
+const syncListeners = new Set<() => void>();
+export const subscribeAnnotationSync = (listener: () => void) => {
+  syncListeners.add(listener);
+  return () => { syncListeners.delete(listener); };
+};
+export const getAnnotationSyncActivity = (scopeKey: string) => syncActivity.get(scopeKey) ?? "idle";
+async function observeSync<T>(workspace: LocalWorkspace, action: () => Promise<T>) {
+  const publish = (state: "running" | "failed" | "idle") => {
+    if (state === "idle") syncActivity.delete(workspace.scopeKey);
+    else syncActivity.set(workspace.scopeKey, state);
+    syncListeners.forEach(listener => listener());
+  };
+  publish("running");
+  try {
+    const result = await action();
+    publish("idle");
+    return result;
+  } catch (error) {
+    publish(error instanceof LocalWorkspaceOwnerChangedError ? "idle" : "failed");
+    throw error;
+  }
 }

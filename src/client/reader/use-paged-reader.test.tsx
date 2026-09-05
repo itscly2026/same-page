@@ -26,6 +26,24 @@ afterEach(() => {
 });
 
 describe("usePagedReader", () => {
+  it("keeps the current page when a prefetched target fails and retries its render", () => {
+    const { result } = renderPager(vi.fn());
+    let render!: PageRenderLease;
+    act(() => { render = result.current.beginPageRender(3); render.failed(); });
+    act(() => result.current.request(3));
+    expect(result.current.anchorPage).toBe(2);
+    expect(result.current.failedPage).toBe(3);
+    const key = result.current.renderKey(3);
+    act(() => result.current.retryPage());
+    expect(result.current.failedPage).toBeNull();
+    expect(result.current.renderKey(3)).not.toBe(key);
+    act(() => { render = result.current.beginPageRender(3); render.ready(); });
+    flushFrame();
+    expect(result.current.phase).toBe("settling");
+    act(() => result.current.finishTransition());
+    expect(result.current.anchorPage).toBe(3);
+  });
+
   it("accepts the first request in the same commit that enables paging", () => {
     const onPageChange = vi.fn();
     const { result, rerender } = renderHook(

@@ -24,7 +24,7 @@ export function useReaderSession(workspace: LocalWorkspace | null, userId: strin
     };
   }, [workspace, userId, attempt]);
   const active = current?.session.workspace.scopeKey === workspace?.scopeKey ? current : null;
-  return { recoverDisplay: (error: unknown) => active?.session.recoverDisplay(error), selectMode: (mode: "pdf" | "images") => {
+  return { confirmDisplay: (document: import("./image-document").ScoreDocument) => active?.session.confirmDisplay(document), recoverDisplay: (error: unknown) => active?.session.recoverDisplay(error), selectMode: (mode: "pdf" | "images") => {
     if (!active) return;
     if (active.snapshot.status === "error") {
       writeDisplayPreference(active.session.workspace, mode, "score");

@@ -89,6 +89,18 @@ it("opens server page geometry in image mode without starting PDF.js", async () 
     const page = await session.getSnapshot().document!.getPage(1);
     expect(page.getViewport({ scale: 1 })).toMatchObject({ width: 800, height: 600 });
     expect(vi.mocked(loadPdfDocument).mock.calls.length).toBe(before);
+    const original = session.getSnapshot().document!;
+    session.confirmDisplay(original);
+    let rejectPdf!: (reason: Error) => void;
+    vi.mocked(loadPdfDocument).mockReturnValueOnce({ promise: new Promise((_resolve, reject) => { rejectPdf = reject; }), destroy: vi.fn().mockResolvedValue(undefined) });
+    session.selectMode("pdf");
+    expect(session.getSnapshot().document).toBe(original);
+    expect(session.getSnapshot().status).toBe("ready");
+    await vi.waitFor(() => expect(rejectPdf).toBeDefined());
+    rejectPdf(new Error("decode failed"));
+    await vi.waitFor(() => expect(session.getSnapshot().mode).toBe("images"));
+    expect(session.getSnapshot().document).toBe(original);
+    expect(session.getSnapshot().modeMessage).toContain("已保留原谱面");
   } finally { session.dispose(); }
 });
 

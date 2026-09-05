@@ -12,10 +12,11 @@ import {
   lazy,
   useRef,
   useState,
+  useSyncExternalStore,
   Suspense,
 } from "react";
 import {
-  Button, Dialog, Modal, ModalOverlay,
+  Button, Dialog, Modal, ModalOverlay, Popover,
 } from "react-aria-components";
 import { Link, useParams } from "react-router-dom";
 
@@ -36,7 +37,7 @@ import {
   retryScoreSyncErrors,
 } from "../annotations/annotation-state";
 import { requestOutboxRecovery } from "../annotations/outbox-recovery";
-import { syncAnnotations } from "../annotations/sync";
+import { getAnnotationSyncActivity, subscribeAnnotationSync, syncAnnotations } from "../annotations/sync";
 import {
   beginAnnotationEditSession,
   endAnnotationEditSession,
@@ -113,13 +114,24 @@ function ReaderPageContent() {
   const [editing, setEditing] = useState(false);
   const [annotationInteraction, setAnnotationInteraction] =
     useState<AnnotationOverlayInteraction>("idle");
+  const [persistence, setPersistence] = useState<"idle" | "saving" | "failed">("idle");
   const [tool, setTool] = useState<AnnotationTool>("text");
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const [syncOutcome, setSyncOutcome] = useState<ReaderSyncOutcome>("none");
   const [syncing, setSyncing] = useState(false);
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
+  }, []);
+  const syncActivity = useSyncExternalStore(subscribeAnnotationSync,
+    () => getAnnotationSyncActivity(resolvedWorkspace?.scopeKey ?? ""));
   const [chromeVisible, setChromeVisible] = useState(false);
   const [readerPanel, setReaderPanel] = useState<ReaderPanel | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreTrigger = useRef<HTMLButtonElement>(null);
   const [editingOrigin, setEditingOrigin] = useState<{
     layout: ReaderLayout;
     page: number;
@@ -302,7 +314,7 @@ function ReaderPageContent() {
     setTool("text");
     beginAnnotationEditSession();
     setEditing(true);
-    setSyncOutcome("local-draft");
+
   };
 
   const requestEditing = () => {
@@ -328,9 +340,11 @@ function ReaderPageContent() {
       setContinuousRestorePosition(editingOrigin.continuousPosition);
     }
     setEditingOrigin(null);
-    const queued = await queueScoreDrafts(workspace);
+    let queued: number;
+    try { queued = await queueScoreDrafts(workspace); }
+    catch { setSyncOutcome("failed"); return; }
     if (queued === 0) {
-      setSyncOutcome("synced");
+      setSyncOutcome("none");
       return;
     }
     if (!navigator.onLine) {
@@ -416,8 +430,8 @@ function ReaderPageContent() {
   }
 
   const displayChoices = <div className="reader-display-choices" aria-label="谱面显示方式">
-    <Button isDisabled={annotationInteraction === "composing-text"} className="secondary-button" aria-pressed={reader.snapshot.mode === "pdf"} onPress={() => reader.selectMode("pdf")}>PDF 阅读</Button>
-    <Button isDisabled={annotationInteraction === "composing-text"} className="secondary-button" aria-pressed={reader.snapshot.mode === "images"} onPress={() => reader.selectMode("images")}>图片兼容模式</Button>
+    <Button isDisabled={annotationInteraction === "composing-text" || persistence !== "idle"} className="secondary-button" aria-pressed={reader.snapshot.mode === "pdf"} onPress={() => reader.selectMode("pdf")}>PDF 阅读</Button>
+    <Button isDisabled={annotationInteraction === "composing-text" || persistence !== "idle"} className="secondary-button" aria-pressed={reader.snapshot.mode === "images"} onPress={() => reader.selectMode("images")}>图片兼容模式</Button>
     {reader.snapshot.modeMessage && <p role="status">{reader.snapshot.modeMessage}</p>}
   </div>;
   const loadError = reader.snapshot.error;
@@ -498,10 +512,16 @@ function ReaderPageContent() {
     tool,
     activeLayerId,
     onInteractionChange: setAnnotationInteraction,
+    onPersistenceChange: setPersistence,
   };
   const syncStatus = deriveReaderSyncStatus({
-    outcome: syncOutcome,
-    syncing,
+    outcome: cloudState === "trashed" ? "trash-preserved" : syncActivity === "failed" && online ? "failed" : syncOutcome,
+    syncing: syncing || syncActivity === "running",
+    loaded: activeAnnotations !== null,
+    draftCount: annotations.filter(annotation => annotation.state === "draft").length,
+    acceptedCount: annotations.filter(annotation => annotation.state === "synced" && annotation.version > 0).length,
+    permissionErrorCount: annotations.filter(annotation => annotation.syncErrorCode === "permission_denied").length,
+    online,
     pendingCount,
     conflictCount: conflicts.length,
     syncErrorCount,
@@ -510,7 +530,7 @@ function ReaderPageContent() {
 
   return (
     <DisplayRecovery.Provider value={{
-      ready: page => { if (page === currentPage) { setVisibleDisplay(document); setFailedDisplay(null); } },
+      ready: page => { if (page === currentPage) { setVisibleDisplay(document); setFailedDisplay(null); reader.confirmDisplay(document); } },
       failed: (page, reason) => {
         if (page !== currentPage) return;
         setFailedDisplay(document);
@@ -548,7 +568,7 @@ function ReaderPageContent() {
               startLoadingJourney("exit-score", "warm");
             }}
           >
-            <ArrowLeft aria-hidden="true" size={22} />
+            <ArrowLeft aria-hidden="true" size={21} />
           </Link>
           <strong className="reader-chrome__title">{readerTitle}{editing ? <span className="reader-editing-hint">编辑中 · 点铅笔完成</span> : null}</strong>
           <div className="reader-chrome__actions-stack">
@@ -564,7 +584,7 @@ function ReaderPageContent() {
                   editAvailability === "preparing" ||
                   editAvailability === "read-only" ||
                   editAvailability === "trashed" ||
-                  (editing && annotationInteraction === "composing-text")
+                  (editing && (annotationInteraction === "composing-text" || persistence !== "idle"))
                 }
                 onPress={() => editing ? void finishEditing() : requestEditing()}
               >
@@ -580,12 +600,13 @@ function ReaderPageContent() {
                 <Layers aria-hidden="true" size={21} />
               </Button>
               <Button
+                ref={moreTrigger}
                 aria-label="更多"
                 aria-expanded={moreOpen}
                 className="reader-icon-button"
                 onPress={() => setMoreOpen((open) => !open)}
               >
-                <Ellipsis aria-hidden="true" size={23} />
+                <Ellipsis aria-hidden="true" size={21} />
               </Button>
             </div>
             <Button
@@ -616,8 +637,11 @@ function ReaderPageContent() {
             ) : null}
           </div>
           {moreOpen ? (
-            <aside className="reader-more-menu" aria-label="更多阅读选项">
+            <Popover triggerRef={moreTrigger} isOpen={moreOpen} onOpenChange={setMoreOpen} isNonModal placement="bottom end" className="reader-more-popover">
+            <Dialog className="reader-more-menu" aria-label="更多阅读选项">
+              <header className="reader-menu-heading"><strong>阅读选项</strong><Button aria-label="关闭更多阅读选项" onPress={() => setMoreOpen(false)}>关闭</Button></header>
               {!editing && <>
+              <section aria-label="页面布局与缩放"><h2>页面布局与缩放</h2>
               <div className="segmented-control" aria-label="页面布局">
                 <Button
                   aria-pressed={layout === "page"}
@@ -634,11 +658,6 @@ function ReaderPageContent() {
                   <span>连续滚动</span>
                 </Button>
               </div>
-              {displayChoices}
-              <Button onPress={() => reader.setDefaultMode(reader.snapshot.mode)}>本机默认使用当前显示方式</Button>
-              <Button onPress={reader.resetMode}>本谱跟随本机默认</Button>
-              <Button onPress={() => reader.setDefaultMode(null)}>恢复本机默认 PDF 阅读</Button>
-              <a href={`/api/choirs/${encodeURIComponent(choirId)}/scores/${encodeURIComponent(scoreId)}/versions/${encodeURIComponent(score.currentVersion.id)}/pdf`} download>下载原 PDF</a>
               <div className="reader-more-menu__zoom" aria-label="缩放控制">
                 <Button aria-label="适合页面" onPress={() => setZoom(1)}>
                   <Maximize2 aria-hidden="true" size={18} />
@@ -658,8 +677,17 @@ function ReaderPageContent() {
                   <Plus aria-hidden="true" size={18} />
                 </Button>
               </div>
+              </section>
+              <section aria-label="谱面显示方式"><h2>谱面显示方式</h2>
+              {displayChoices}
+              <Button onPress={() => reader.setDefaultMode(reader.snapshot.mode)}>本机默认使用当前显示方式</Button>
+              <Button onPress={reader.resetMode}>本谱跟随本机默认</Button>
+              <Button onPress={() => reader.setDefaultMode(null)}>恢复本机默认 PDF 阅读</Button>
+              <a href={`/api/choirs/${encodeURIComponent(choirId)}/scores/${encodeURIComponent(scoreId)}/versions/${encodeURIComponent(score.currentVersion.id)}/pdf`} download>下载原 PDF</a>
+              </section>
+              <section aria-label="本机离线副本"><h2>本机离线副本 · {reader.snapshot.mode === "pdf" ? "PDF" : "图片"}</h2>
               <p className="reader-more-menu__status" role="status">
-                {offlineScoreLabel(offline, score.currentVersion.id, offlineStatus?.invalid, reader.snapshot.mode)}
+                {downloading ? "正在下载并校验…" : !offlineStatus ? "正在校验本机副本…" : offlineScoreLabel(offline, score.currentVersion.id, offlineStatus.invalid, reader.snapshot.mode)}
               </p>
               <Button
                 isDisabled={downloading || cloudState === "trashed"}
@@ -668,22 +696,22 @@ function ReaderPageContent() {
                 <Download aria-hidden="true" size={18} />
                 {downloading ? "正在下载并校验…" : downloadMessage?.includes("未完成") ? "重试下载离线副本" : hasNewOfflineVersion ? "下载新版离线副本" : "下载离线副本"}
               </Button>
-              <Button isDisabled={syncing || cloudState === "trashed"} onPress={() => void manualSync()}>
-                <RefreshCw aria-hidden="true" size={18} />
-                {syncing ? "同步中…" : "立即同步"}
-              </Button>
-              {downloadMessage || syncStatus.message ? (
-                <p
-                  className="reader-more-menu__status"
-                  data-kind={downloadMessage ? "download" : syncStatus.kind}
-                  role="status"
-                >
-                  {downloadMessage ?? syncStatus.message}
-                </p>
-              ) : null}
+              {downloadMessage && <p className="reader-more-menu__status" role="status">{downloadMessage}</p>}
+              </section>
+              <section aria-label="保存与同步"><h2>保存与同步</h2>
+                <p className="reader-more-menu__status" data-kind={syncStatus.kind} role="status">{syncStatus.message}</p>
+                <Button className="reader-sync-action" isDisabled={syncing || syncActivity === "running" || cloudState === "trashed"} onPress={() => void manualSync()}>
+                  <RefreshCw aria-hidden="true" size={18} />
+                  {syncing || syncActivity === "running" ? "同步中…" : syncStatus.kind === "failed" ? "重试同步" : "立即同步"}
+                </Button>
+              </section>
               </>}
-              {diagnosticDialog}
-            </aside>
+              <section aria-label="阅读帮助"><h2>帮助</h2>
+                <p className="reader-more-menu__status">轻点中央显示工具；点按两侧或左右滑动翻页。编辑时锁定当前页，再点铅笔完成。批注同步与离线副本分别准备。</p>
+                {diagnosticDialog}
+              </section>
+            </Dialog>
+            </Popover>
           ) : null}
         </header>
       ) : null}
@@ -699,7 +727,7 @@ function ReaderPageContent() {
         />
       ) : null}
 
-      {editing && annotationInteraction !== "transforming-text" ? (
+      {editing && annotationInteraction === "idle" && persistence === "idle" ? (
         <Suspense fallback={<p role="status">正在准备批注工具…</p>}>
           <ReaderEditingControls
             workspace={workspace}
@@ -786,11 +814,11 @@ function ReaderPageContent() {
           })}
         </aside>
       ) : null}
-      {syncErrorCount > 0 ? (
+      {syncStatus.kind === "failed" || syncStatus.kind === "risk" ? (
         <aside className="annotation-conflicts" aria-label="批注同步异常">
-          <strong>{syncErrorCount} 项批注同步异常</strong>
+          <strong>{syncStatus.message}</strong>
           <div>
-            <span>本机版本仍然保留。若共享层编辑权已撤销，请在恢复权限后重试；其它有权限的批注会继续同步。</span>
+            <Link className="text-button" to="/diagnostics">查看原因</Link>
             <Button isDisabled={syncing} onPress={() => void manualSync()}>
               重试同步
             </Button>

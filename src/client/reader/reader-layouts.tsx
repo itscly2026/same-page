@@ -42,6 +42,7 @@ export interface AnnotationPageProps {
   tool: AnnotationTool;
   activeLayerId: string | null;
   onInteractionChange(interaction: AnnotationOverlayInteraction): void;
+  onPersistenceChange?(state: "idle" | "saving" | "failed"): void;
 }
 
 export interface ContinuousReaderPosition {
@@ -124,6 +125,10 @@ export function PageLayout({
 
   return (
     <section className="page-reader" aria-label="翻页阅读">
+      {pager.failedPage !== null && <aside className="reader-page-failure" role="alert">
+        第 {pager.failedPage} 页显示失败，当前页已保留。
+        <Button onPress={pager.retryPage}>重试翻页</Button>
+      </aside>}
       <div
         className="page-reader__viewport"
         data-zoom={zoom}
@@ -178,7 +183,7 @@ export function PageLayout({
                   data-page-number={item.page}
                   data-page-turn-current={item.position === 0 || undefined}
                   data-page-turn-target={item.page === pager.targetPage || undefined}
-                  key={item.page}
+                  key={pager.renderKey(item.page)}
                   style={{
                     "--page-turn-slot-offset": `${item.position * pageTurnDistance}px`,
                   } as CSSProperties}

@@ -175,7 +175,8 @@ vi.mock("../offline/use-offline-score", async (importOriginal) => {
   return { ...actual, useOfflineScore: () => undefined };
 });
 
-vi.mock("../annotations/sync", () => ({
+vi.mock("../annotations/sync", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../annotations/sync")>(),
   syncAnnotations: vi.fn().mockResolvedValue({ pushed: 0, pulled: 0 }),
 }));
 

@@ -135,7 +135,8 @@ function createPager(): PagedReader {
       end: vi.fn(() => false),
       cancel: vi.fn(() => true),
     },
-    beginPageRender: vi.fn(() => ({ ready: vi.fn(), cancel: vi.fn() })),
+    failedPage: null, retryPage: vi.fn(), renderKey: page => String(page),
+    beginPageRender: vi.fn(() => ({ ready: vi.fn(), failed: vi.fn(), cancel: vi.fn() })),
     finishTransition: vi.fn(),
   };
 }
