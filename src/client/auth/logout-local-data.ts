@@ -1,3 +1,4 @@
+import { retainGuestSharedAnnotations } from "../annotations/annotation-state";
 import {
   annotationRecordKey,
   guestOwnerSystemKey,
@@ -50,21 +51,6 @@ export async function clearPrivateLocalDataAfterLogout() {
       localDatabase.offlineScores,
     ],
     async () => {
-      const layers = await localDatabase.annotationLayers
-        .where("ownerKey")
-        .equals(ownerKey)
-        .toArray();
-      const annotations = await localDatabase.annotations
-        .where("ownerKey")
-        .equals(ownerKey)
-        .toArray();
-      const sharedLayers = layers.filter((layer) => layer.kind === "shared");
-      const sharedLayerIds = new Set(sharedLayers.map((layer) => layer.id));
-      const sharedAnnotations = annotations.filter(
-        (annotation) =>
-          sharedLayerIds.has(annotation.layerId) &&
-          annotation.state === "synced",
-      );
       const offlineScores = await localDatabase.offlineScores
         .where("ownerKey")
         .equals(ownerKey)
@@ -83,32 +69,6 @@ export async function clearPrivateLocalDataAfterLogout() {
         return createLocalWorkspace(guestOwner, choirId, scoreId);
       };
 
-      const nextLayers = await Promise.all(
-        sharedLayers.map(async (layer) => {
-          const workspace = await guestWorkspace(layer.choirId, layer.scoreId);
-          return {
-            ...layer,
-            ...workspace,
-            key: localWorkspaceRecordKey(workspace, layer.id),
-            canEdit: false,
-            scoreSubscriptionOverride: null,
-            subscribed: true,
-          };
-        }),
-      );
-      const nextAnnotations = await Promise.all(
-        sharedAnnotations.map(async (annotation) => {
-          const workspace = await guestWorkspace(
-            annotation.choirId,
-            annotation.scoreId,
-          );
-          return {
-            ...annotation,
-            ...workspace,
-            key: annotationRecordKey(workspace.scopeKey, annotation.id),
-          };
-        }),
-      );
       const nextOfflineScores = [];
       for (const score of offlineScores) {
         const workspace = await guestWorkspace(score.choirId, score.scoreId);
@@ -151,30 +111,9 @@ export async function clearPrivateLocalDataAfterLogout() {
           },
         });
       }
-      const [outbox, conflicts, cursors, leases] = await Promise.all([
-        localDatabase.annotationOutbox.where("ownerKey").equals(ownerKey).primaryKeys(),
-        localDatabase.annotationConflicts.where("ownerKey").equals(ownerKey).primaryKeys(),
-        localDatabase.annotationSyncCursors.where("ownerKey").equals(ownerKey).primaryKeys(),
-        localDatabase.syncLeases.where("ownerKey").equals(ownerKey).primaryKeys(),
-      ]);
-      await Promise.all([
-        localDatabase.annotationLayers.bulkDelete(layers.map((layer) => layer.key)),
-        localDatabase.annotations.bulkDelete(
-          annotations.map((annotation) => annotation.key),
-        ),
-        localDatabase.offlineScores.bulkDelete(
-          offlineScores.map((score) => score.key),
-        ),
-        localDatabase.annotationOutbox.bulkDelete(outbox),
-        localDatabase.annotationConflicts.bulkDelete(conflicts),
-        localDatabase.annotationSyncCursors.bulkDelete(cursors),
-        localDatabase.syncLeases.bulkDelete(leases),
-      ]);
-      await Promise.all([
-        localDatabase.annotationLayers.bulkPut(nextLayers),
-        localDatabase.annotations.bulkPut(nextAnnotations),
-        localDatabase.offlineScores.bulkPut(nextOfflineScores),
-      ]);
+      await retainGuestSharedAnnotations(ownerKey, guestWorkspace);
+      await localDatabase.offlineScores.bulkDelete(offlineScores.map(score => score.key));
+      await localDatabase.offlineScores.bulkPut(nextOfflineScores);
     },
   );
   await clearCurrentAuthenticatedLocalOwner();

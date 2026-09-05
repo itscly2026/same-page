@@ -176,8 +176,8 @@ vi.mock("../annotations/sync", () => ({
   syncAnnotations: vi.fn().mockResolvedValue({ pushed: 0, pulled: 0 }),
 }));
 
-vi.mock("../annotations/local-annotations", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../annotations/local-annotations")>();
+vi.mock("../annotations/annotation-state", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../annotations/annotation-state")>();
   return {
     ...actual,
     queueScoreDrafts: vi.fn().mockResolvedValue(0),

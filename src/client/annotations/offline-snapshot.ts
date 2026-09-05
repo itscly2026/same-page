@@ -5,7 +5,6 @@ import {
 import {
   localDatabase,
   type OfflineAnnotationSnapshot,
-  type OfflineScoreRecord,
 } from "../platform/local-database";
 import {
   assertLocalWorkspaceActive,
@@ -46,47 +45,6 @@ export async function captureOfflineAnnotationSnapshot(
             ?.cursor ?? 0,
         verifiedAt: Date.now(),
       };
-    },
-  );
-}
-
-export async function restoreOfflineAnnotationSnapshot(
-  workspace: LocalWorkspace,
-  record: OfflineScoreRecord,
-) {
-  await assertLocalWorkspaceActive(workspace);
-  if (record.scopeKey !== workspace.scopeKey) return;
-  const snapshot = record.annotationSnapshot;
-  if (!snapshot) return;
-  for (const layer of snapshot.layers) annotationLayerSummarySchema.parse(layer);
-  for (const annotation of snapshot.annotations) {
-    if (annotation.payload) annotationPayloadSchema.parse(annotation.payload);
-  }
-  await withLocalWorkspaceTransaction(
-    workspace,
-    "rw",
-    [
-      localDatabase.annotationLayers,
-      localDatabase.annotations,
-      localDatabase.annotationSyncCursors,
-    ],
-    async () => {
-      for (const layer of snapshot.layers) {
-        if (!(await localDatabase.annotationLayers.get(layer.key))) {
-          await localDatabase.annotationLayers.put(layer);
-        }
-      }
-      for (const annotation of snapshot.annotations) {
-        if (!(await localDatabase.annotations.get(annotation.key))) {
-          await localDatabase.annotations.put(annotation);
-        }
-      }
-      if (!(await localDatabase.annotationSyncCursors.get(workspace.scopeKey))) {
-        await localDatabase.annotationSyncCursors.put({
-          ...workspace,
-          cursor: snapshot.cursor,
-        });
-      }
     },
   );
 }

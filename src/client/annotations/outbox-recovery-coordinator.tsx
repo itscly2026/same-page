@@ -15,6 +15,7 @@ export function OutboxRecoveryCoordinator({
   useEffect(() => {
     let disposed = false;
     let running = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let pendingTrigger: OutboxRecoveryTrigger | null = null;
 
     const schedule = (trigger: OutboxRecoveryTrigger) => {
@@ -29,8 +30,13 @@ export function OutboxRecoveryCoordinator({
         pendingTrigger = trigger;
         return;
       }
+      clearTimeout(timer);
       running = true;
-      void recoverAnnotationOutbox(ownerKey, trigger).finally(() => {
+      void recoverAnnotationOutbox(ownerKey, trigger).then((summary) => {
+        if (!disposed && summary.remainingOperations > 0 && summary.nextAttemptAt) {
+          timer = setTimeout(() => schedule("foreground"), Math.max(1_000, summary.nextAttemptAt - Date.now()));
+        }
+      }).finally(() => {
         running = false;
         if (disposed || !pendingTrigger) return;
         const nextTrigger = pendingTrigger;
@@ -51,6 +57,7 @@ export function OutboxRecoveryCoordinator({
     );
     return () => {
       disposed = true;
+      clearTimeout(timer);
       pendingTrigger = null;
       window.removeEventListener("online", onOnline);
       window.removeEventListener(

@@ -62,6 +62,71 @@ beforeEach(async () => {
 afterEach(() => network.resetHandlers());
 
 describe("annotation layers and object synchronization", () => {
+  it.each(["target", "actor"])("rejects a delayed grant across %s membership changes", async (changed) => {
+    const fixture = await createFixture();
+    const member = await createMember(fixture.joinCode!, "grant-target@example.test", "成员");
+    const target = await createDatabase(env.DB).query.memberships.findFirst({ where: eq(memberships.userId, member.userId) });
+    const actor = await createDatabase(env.DB).query.memberships.findFirst({ where: eq(memberships.userId, fixture.adminUserId) });
+    if (changed === "actor") {
+      expect((await callWorker(`/api/choirs/${fixture.choirId}/memberships/${target!.id}`, jsonRequest(fixture.adminCookie, { action: "promote", expectedRevision: 0 }))).status).toBe(204);
+    }
+    const another = changed === "actor" ? await createMember(fixture.joinCode!, "grant-another@example.test", "另一成员") : null;
+    const grantTarget = another ? await createDatabase(env.DB).query.memberships.findFirst({ where: eq(memberships.userId, another.userId) }) : target;
+    const DB = new Proxy(env.DB, { get(db, key) {
+      if (key === "batch") return async (statements: D1PreparedStatement[]) => {
+        const membershipId = changed === "target" ? target!.id : actor!.id;
+        const adminCookie = changed === "target" ? fixture.adminCookie : member.cookie;
+        const path = `/api/choirs/${fixture.choirId}/memberships/${membershipId}`;
+        expect((await callWorker(path, jsonRequest(adminCookie, { action: "remove", expectedRevision: 0 }))).status).toBe(204);
+        expect((await callWorker(path, jsonRequest(adminCookie, { action: "restore", expectedRevision: 1 }))).status).toBe(204);
+        return db.batch(statements);
+      };
+      const value = Reflect.get(db, key); return typeof value === "function" ? value.bind(db) : value;
+    }});
+    const execution = createExecutionContext();
+    const response = await worker.fetch(new Request(`https://same-page.test/api/choirs/${fixture.choirId}/shared-layers/E/grants/${grantTarget!.id}`, { ...jsonRequest(fixture.adminCookie, { granted: true }), method: "PUT" }), { ...env, DB }, execution);
+    await waitOnExecutionContext(execution);
+    expect(response.status).toBe(409);
+    const grants = await callWorker(`/api/choirs/${fixture.choirId}/shared-layers/E/grants`, { headers: { cookie: changed === "target" ? fixture.adminCookie : member.cookie } });
+    expect(await grants.json()).toMatchObject({ members: expect.arrayContaining([expect.objectContaining({ id: grantTarget!.id, role: "member", granted: false })]) });
+  });
+
+  it("measures real local D1 batches of 1 and 100 mixed operations", async () => {
+    const fixture = await createFixture();
+    const layersResponse = await callWorker(`/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/layers`, { headers: { cookie: fixture.adminCookie } });
+    const { layers } = await layersResponse.json() as { layers: Array<{ id: string; kind: string }> };
+    const personal = layers.find(layer => layer.kind === "personal")!;
+    const measurements: unknown[] = [];
+    for (const size of [1, 100]) {
+      let sql = 0, roundTrips = 0;
+      const wrap = (statement: D1PreparedStatement): D1PreparedStatement => new Proxy(statement, {
+        get(target, key) {
+          if (key === "bind") return (...args: unknown[]) => wrap(target.bind(...args));
+          const value = Reflect.get(target, key);
+          if (typeof value !== "function") return value;
+          return (...args: unknown[]) => { sql++; roundTrips++; return value.apply(target, args); };
+        },
+      });
+      const DB = new Proxy(env.DB, { get(target, key) {
+        if (key === "prepare") return (query: string) => wrap(target.prepare(query));
+        if (key === "batch") return (statements: D1PreparedStatement[]) => { sql += statements.length; roundTrips++; return target.batch(statements); };
+        const value = Reflect.get(target, key); return typeof value === "function" ? value.bind(target) : value;
+      }});
+      const operations = Array.from({ length: size }, (_, i) => operation(crypto.randomUUID(), i % 2 ? personal.id : fixture.layerId, 0, "benchmark"));
+      const execution = createExecutionContext();
+      const start = performance.now();
+      const response = await worker.fetch(new Request(`https://same-page.test/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/annotations/push`, jsonRequest(fixture.adminCookie, { operations }, { "x-same-page-owner-user-id": fixture.adminUserId })), { ...env, DB }, execution);
+      await waitOnExecutionContext(execution);
+      expect(response.status).toBe(200);
+      const body = await response.json() as { results: Array<{ status: string }> };
+      expect(body.results).toHaveLength(size);
+      expect(body.results.every(result => result.status === "accepted")).toBe(true);
+      measurements.push({ size, sql, roundTrips, elapsedMs: Math.round(performance.now() - start) });
+    }
+    console.log("ANNOTATION_BENCHMARK", JSON.stringify(measurements));
+    expect(measurements).toEqual([expect.objectContaining({ size: 1, sql: 11, roundTrips: 6 }), expect.objectContaining({ size: 100, sql: 11, roundTrips: 6 })]);
+  });
+
   it("lets signed-in preview users sync only their own personal layer without joining", async () => {
     const fixture = await createFixture();
     await env.DB.prepare("UPDATE choirs SET guest_admission_mode = 'open', is_preview_entry = 1, join_code_hash = NULL, join_code_ciphertext = NULL WHERE id = ?")
@@ -96,11 +161,11 @@ describe("annotation layers and object synchronization", () => {
         layers: expect.arrayContaining([expect.objectContaining({ id: personal.id })]),
       });
       expect(await (await read(`${base}/annotations`, other.cookie)).json()).toMatchObject({ objects: [] });
-      expect((await push({ ...fixture, adminCookie: other.cookie, adminUserId: other.userId }, [
+      expect(await (await push({ ...fixture, adminCookie: other.cookie, adminUserId: other.userId }, [
         operation(op.annotationId, personal.id, 1, "不能改别人的"),
-      ])).status).toBe(404);
+      ])).json()).toMatchObject({ results: [{ status: "permission_denied" }] });
     }
-    expect((await push(author, [operation(crypto.randomUUID(), fixture.layerId, 0, "不能改共享层")])).status).toBe(403);
+    expect(await (await push(author, [operation(crypto.randomUUID(), fixture.layerId, 0, "不能改共享层")])).json()).toMatchObject({ results: [{ status: "permission_denied" }] });
     expect((await callWorker(`/api/choirs/${fixture.choirId}/scores`, uploadRequest(first.cookie, "禁止上传.pdf"))).status).toBe(403);
     const guestResponse = await callWorker("/api/guest/session", jsonRequest("", { admission: "open", choirId: fixture.choirId }));
     const guestCookie = cookieFrom(guestResponse);
@@ -571,7 +636,7 @@ describe("annotation layers and object synchronization", () => {
       { ...fixture, adminCookie: member.cookie, adminUserId: member.userId },
       [operation(crypto.randomUUID(), fixture.layerId, 0, "已撤权")],
     );
-    expect(revoked.status).toBe(403);
+    expect(await revoked.json()).toMatchObject({ results: [{ status: "permission_denied" }] });
 
     const memberLayers = await callWorker(
       `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/layers`,
@@ -581,10 +646,15 @@ describe("annotation layers and object synchronization", () => {
       layers: Array<{ id: string; kind: string }>;
     };
     const memberPersonal = memberLayerBody.layers.find((layer) => layer.kind === "personal")!;
+    const mixed = await push({ ...fixture, adminCookie: member.cookie, adminUserId: member.userId }, [
+      operation(crypto.randomUUID(), fixture.layerId, 0, "失权草稿"),
+      operation(crypto.randomUUID(), memberPersonal.id, 0, "合法个人草稿"),
+    ]);
+    expect(await mixed.json()).toMatchObject({ results: [{ status: "permission_denied" }, { status: "accepted" }] });
     const adminPersonalAttempt = await push(fixture, [
       operation(crypto.randomUUID(), memberPersonal.id, 0, "管理员也不能看"),
     ]);
-    expect(adminPersonalAttempt.status).toBe(404);
+    expect(await adminPersonalAttempt.json()).toMatchObject({ results: [{ status: "permission_denied" }] });
 
     const otherChoir = await provisionChoir({
       binding: env.DB,

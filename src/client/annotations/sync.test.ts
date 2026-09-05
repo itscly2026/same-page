@@ -13,8 +13,8 @@ import {
 import {
   queueScoreDrafts,
   saveAnnotationDraft,
-} from "./local-annotations";
-import { pushPendingAnnotations } from "./sync";
+} from "./annotation-state";
+import { pushPendingAnnotations, syncAnnotations } from "./sync";
 
 const workspace = createLocalWorkspace(
   authenticatedLocalOwnerKey("user-1"),
@@ -28,7 +28,7 @@ describe("bounded annotation push", () => {
     Object.defineProperty(navigator, "locks", {
       configurable: true,
       value: {
-        request: (_name: string, action: () => Promise<unknown>) => action(),
+        request: (_name: string, _options: LockOptions, action: (lock: object) => Promise<unknown>) => action({}),
       },
     });
     await localDatabase.open();
@@ -50,6 +50,29 @@ describe("bounded annotation push", () => {
         value: undefined,
       });
     }
+  });
+
+  it("pulls readable cloud changes even when push is forbidden", async () => {
+    const id = crypto.randomUUID(), layerId = crypto.randomUUID();
+    await saveAnnotationDraft(workspace, { id, layerId, payload: { kind: "text", pageNumber: 1, x: .1, y: .2, fontScale: .024, text: "local" } });
+    await queueScoreDrafts(workspace);
+    const cloudId = crypto.randomUUID();
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (_url, init) => init?.method === "POST"
+      ? Response.json({}, { status: 403 })
+      : Response.json({ cursor: 7, objects: [{ id: cloudId, layerId, version: 1, deleted: false, payload: { kind: "text", pageNumber: 1, x: .1, y: .2, fontScale: .024, text: "cloud" }, createdByDisplayName: "", updatedByDisplayName: "", updatedAt: 1 }] })));
+    await expect(syncAnnotations(workspace, { pull: true })).rejects.toThrow();
+    expect(await localDatabase.annotations.get(annotationRecordKey(workspace.scopeKey, cloudId))).toMatchObject({ state: "synced" });
+    expect(await localDatabase.annotationOutbox.count()).toBe(1);
+  });
+
+  it("returns busy immediately when another tab holds the Web Lock", async () => {
+    Object.defineProperty(navigator, "locks", { configurable: true, value: {
+      request: async (_name: string, options: LockOptions, action: (lock: null) => Promise<unknown>) => {
+        expect(options.ifAvailable).toBe(true);
+        return action(null);
+      },
+    }});
+    await expect(pushPendingAnnotations(workspace, { maxOperations: 100 })).resolves.toBeUndefined();
   });
 
   it("leaves work beyond the application recovery limit for a later trigger", async () => {

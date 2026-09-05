@@ -16,7 +16,7 @@ import {
   beginAnnotationEditSession,
   endAnnotationEditSession,
   undoAnnotationEdit,
-} from "./edit-history";
+} from "./annotation-state";
 import {
   AnnotationOverlay,
   type AnnotationOverlayInteraction,

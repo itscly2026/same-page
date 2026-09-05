@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { saveAnnotationDraft, visibleLocalAnnotations } from "../annotations/local-annotations";
+import { saveAnnotationDraft, visibleLocalAnnotations } from "../annotations/annotation-state";
 import { activateAuthenticatedLocalOwner, createLocalWorkspace, currentLocalOwnerKey } from "../platform/local-workspace";
 import UserLifecyclePage from "./user-lifecycle-page";
 

@@ -203,7 +203,7 @@ export const annotationPullResponseSchema = z.object({
 export const annotationPushResponseSchema = z.object({
   results: z.array(z.object({
     opId: z.string(),
-    status: z.enum(["accepted", "conflict", "op_id_reused"]),
+    status: z.enum(["accepted", "conflict", "op_id_reused", "permission_denied"]),
     object: annotationObjectRecordSchema.nullable().optional(),
   })),
 });

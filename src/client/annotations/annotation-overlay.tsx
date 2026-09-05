@@ -20,7 +20,7 @@ import type { LocalWorkspace } from "../platform/local-workspace";
 import {
   saveDraftWithHistory,
   updateLatestHistoryDraft,
-} from "./edit-history";
+} from "./annotation-state";
 import { calculateTextEditorLayout } from "./text-editor-layout";
 
 export type AnnotationTool = "text" | "ink" | "eraser";

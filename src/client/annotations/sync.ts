@@ -4,25 +4,29 @@ import {
   annotationPushResponseSchema,
 } from "../../shared/annotations";
 import {
-  annotationRecordKey,
   localDatabase,
   type AnnotationOutboxRecord,
 } from "../platform/local-database";
 import {
   assertLocalWorkspaceActive,
+  captureLocalWorkspaceSession,
   LocalWorkspaceOwnerChangedError,
   type LocalWorkspace,
   withLocalWorkspaceTransaction,
 } from "../platform/local-workspace";
-import { applyPulledAnnotations, applyPushResults } from "./local-annotations";
+import { applyPulledAnnotations, applyPushResults, prepareAnnotationPush } from "./annotation-state";
 
 export async function syncAnnotations(
   workspace: LocalWorkspace,
   options: { pull: boolean },
 ) {
   await assertLocalWorkspaceActive(workspace);
-  return withScoreSyncLock(workspace, async () => {
-    const pushed = await drainAnnotationOutbox(workspace);
+  return withScoreSyncLock(workspace, async (workspace) => {
+    let pushed = 0;
+    let pushError: unknown;
+    try { pushed = await drainAnnotationOutbox(workspace); }
+    catch (error) { pushError = error; }
+
     let pulled = 0;
     if (options.pull) {
       await assertLocalWorkspaceActive(workspace);
@@ -31,6 +35,7 @@ export async function syncAnnotations(
       )?.cursor ?? 0;
       const response = await diagnosticFetch(
         `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/annotations?cursor=${cursor}`,
+        { signal: AbortSignal.timeout(30_000) },
       );
       if (!response.ok) throw new Error("annotation_pull_failed");
       const body = await parseDiagnosticResponse(response, annotationPullResponseSchema);
@@ -38,6 +43,7 @@ export async function syncAnnotations(
       await applyPulledAnnotations(workspace, body.cursor, body.objects);
       pulled = body.objects.length;
     }
+    if (pushError) throw pushError;
     return { pushed, pulled };
   });
 }
@@ -53,8 +59,9 @@ export async function pushPendingAnnotations(
   options: { maxOperations: number },
 ) {
   await assertLocalWorkspaceActive(workspace);
-  return withScoreSyncLock(workspace, () =>
+  return withScoreSyncLock(workspace, (workspace) =>
     drainAnnotationOutbox(workspace, options),
+    { ifAvailable: true },
   );
 }
 
@@ -66,107 +73,7 @@ async function drainAnnotationOutbox(
   let pushed = 0;
   const maxOperations = options.maxOperations ?? Number.POSITIVE_INFINITY;
   while (pushed < maxOperations) {
-    const batch = await withLocalWorkspaceTransaction(
-      workspace,
-      "rw",
-      [
-        localDatabase.annotations,
-        localDatabase.annotationOutbox,
-        localDatabase.annotationConflicts,
-      ],
-      async () => {
-        const operations = await localDatabase.annotationOutbox
-          .where("scopeKey")
-          .equals(workspace.scopeKey)
-          .sortBy("createdAt");
-        const discardedOperationIds = new Set<string>();
-        for (const invalidDelete of operations.filter(
-          (operation) =>
-            operation.baseVersion === 0 && operation.type === "delete",
-        )) {
-          const related = operations.filter(
-            (operation) =>
-              operation.annotationId === invalidDelete.annotationId,
-          );
-          const attemptedCreate = related.find(
-            (operation) =>
-              operation.baseVersion === 0 &&
-              operation.type === "upsert" &&
-              operation.attemptedAt !== null,
-          );
-          discardedOperationIds.add(invalidDelete.opId);
-          if (attemptedCreate) {
-            for (const operation of related) {
-              if (operation.attemptedAt === null) {
-                discardedOperationIds.add(operation.opId);
-              }
-            }
-            const local = await localDatabase.annotations.get(
-              annotationRecordKey(workspace.scopeKey, invalidDelete.annotationId),
-            );
-            if (local?.version === 0) {
-              await localDatabase.annotations.update(local.key, {
-                deleted: true,
-                payload: null,
-                state: "pending",
-                lastOpId: attemptedCreate.opId,
-              });
-            }
-            continue;
-          }
-          for (const operation of related) {
-            if (operation.attemptedAt === null) {
-              discardedOperationIds.add(operation.opId);
-            }
-          }
-          const key = annotationRecordKey(
-            workspace.scopeKey,
-            invalidDelete.annotationId,
-          );
-          const local = await localDatabase.annotations.get(key);
-          if (local?.version === 0 && local.deleted) {
-            await localDatabase.annotations.delete(key);
-          }
-          const pseudoConflicts = await localDatabase.annotationConflicts
-            .where("[scopeKey+annotationId]")
-            .equals([workspace.scopeKey, invalidDelete.annotationId])
-            .filter(
-              (conflict) =>
-                conflict.opId === invalidDelete.opId &&
-                conflict.localDeleted &&
-                conflict.canonical === null,
-            )
-            .toArray();
-          await localDatabase.annotationConflicts.bulkDelete(
-            pseudoConflicts.map((conflict) => conflict.opId),
-          );
-        }
-        await localDatabase.annotationOutbox.bulkDelete([
-          ...discardedOperationIds,
-        ]);
-        const seenAnnotationIds = new Set<string>();
-        const selected = operations
-          .filter(
-            (operation) => !discardedOperationIds.has(operation.opId),
-          )
-          .filter((operation) => {
-            if (seenAnnotationIds.has(operation.annotationId)) return false;
-            seenAnnotationIds.add(operation.annotationId);
-            return true;
-          })
-          .slice(0, Math.min(100, maxOperations - pushed));
-        for (const operation of selected) {
-          assertOutboxOperation(operation);
-        }
-        await localDatabase.annotationOutbox.bulkUpdate(
-          selected.map((operation) => ({
-            key: operation.opId,
-            changes: { attemptedAt: Date.now() },
-          })),
-        );
-        return selected;
-      },
-    );
+    const batch = await prepareAnnotationPush(workspace, maxOperations - pushed);
     if (batch.length === 0) return pushed;
     await assertLocalWorkspaceActive(workspace);
     const expectedUserId = authenticatedUserId(workspace);
@@ -175,6 +82,7 @@ async function drainAnnotationOutbox(
       `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/annotations/push`,
       {
         method: "POST",
+        signal: AbortSignal.timeout(30_000),
         headers: {
           "content-type": "application/json",
           "x-same-page-owner-user-id": expectedUserId,
@@ -185,6 +93,9 @@ async function drainAnnotationOutbox(
     if (!response.ok) throw new AnnotationPushError(response.status);
     const body = await parseDiagnosticResponse(response, annotationPushResponseSchema);
     await assertLocalWorkspaceActive(workspace);
+    if (body.results.length !== batch.length || new Set(body.results.map(result => result.opId)).size !== batch.length || body.results.some(result => !batch.some(op => op.opId === result.opId))) {
+      throw new Error("annotation_push_incomplete_response");
+    }
     if (body.results.some((result) => result.status === "conflict")) {
       recordFailure({ operation: "sync", category: "conflict", stage: "push" });
     }
@@ -205,11 +116,17 @@ function authenticatedUserId(workspace: LocalWorkspace) {
 
 export async function withScoreSyncLock<T>(
   workspace: LocalWorkspace,
-  action: () => Promise<T>,
+  action: (workspace: LocalWorkspace) => Promise<T>,
+  options: { ifAvailable?: boolean } = {},
 ) {
+  workspace = await captureLocalWorkspaceSession(workspace);
   const scopeKey = workspace.scopeKey;
   if (navigator.locks) {
-    return navigator.locks.request(`same-page:sync:${scopeKey}`, action);
+    return navigator.locks.request(`same-page:sync:${scopeKey}`, options, async (lock) => {
+      if (!lock) return undefined;
+      await assertLocalWorkspaceActive(workspace);
+      return action(workspace);
+    });
   }
   const owner = crypto.randomUUID();
   const acquired = await withLocalWorkspaceTransaction(
@@ -219,6 +136,7 @@ export async function withScoreSyncLock<T>(
     async () => {
       const current = await localDatabase.syncLeases.get(scopeKey);
       if (current && current.expiresAt > Date.now()) return false;
+      await localDatabase.system.put({ key: `annotation-sync-fence:${scopeKey}`, value: owner });
       await localDatabase.syncLeases.put({
         ...workspace,
         lockOwner: owner,
@@ -229,7 +147,7 @@ export async function withScoreSyncLock<T>(
   );
   if (!acquired) return undefined;
   try {
-    return await action();
+    return await action({ ...workspace, syncLockToken: owner });
   } finally {
     await withLocalWorkspaceTransaction(
       workspace,
@@ -248,7 +166,6 @@ export async function withScoreSyncLock<T>(
 }
 
 function toWireOperation(operation: AnnotationOutboxRecord) {
-  assertOutboxOperation(operation);
   return {
     opId: operation.opId,
     annotationId: operation.annotationId,
@@ -257,10 +174,4 @@ function toWireOperation(operation: AnnotationOutboxRecord) {
     type: operation.type,
     payload: operation.payload,
   };
-}
-
-function assertOutboxOperation(operation: AnnotationOutboxRecord) {
-  if (operation.baseVersion === 0 && operation.type === "delete") {
-    throw new Error("annotation_outbox_invariant_version_zero_delete");
-  }
 }

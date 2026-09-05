@@ -51,7 +51,7 @@ export type LocalAnnotationState =
   | "conflict"
   | "sync-error";
 
-export type AnnotationSyncErrorCode = "op_id_reused";
+export type AnnotationSyncErrorCode = "op_id_reused" | "permission_denied";
 
 export interface LocalAnnotationRecord {
   key: string;
@@ -233,6 +233,9 @@ export class SamePageDatabase extends Dexie {
           "&key,ownerKey,scopeKey,[scopeKey+id],kind,sortOrder",
       })
       .upgrade(clearSupersededLayerModelData);
+    this.version(8).stores({
+      annotationOutbox: "&opId,ownerKey,scopeKey,[ownerKey+scopeKey],[scopeKey+annotationId],createdAt",
+    });
   }
 }
 

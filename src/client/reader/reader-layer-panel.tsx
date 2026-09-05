@@ -3,7 +3,7 @@ import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { Button } from "react-aria-components";
 
 import type { AnnotationLayerSummary } from "../../shared/annotations";
-import { updateCachedLayer } from "../annotations/local-annotations";
+import { updateCachedLayer } from "../annotations/annotation-state";
 import type { LocalWorkspace } from "../platform/local-workspace";
 import "./reader-ux.css";
 

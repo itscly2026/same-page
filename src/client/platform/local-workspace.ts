@@ -17,6 +17,8 @@ export interface LocalWorkspace {
   readonly choirId: string;
   readonly scoreId: string;
   readonly scopeKey: string;
+  readonly sessionEpoch?: string;
+  readonly syncLockToken?: string;
 }
 
 export class LocalWorkspaceOwnerChangedError extends Error {
@@ -33,10 +35,15 @@ export function authenticatedLocalOwnerKey(
 
 export async function activateAuthenticatedLocalOwner(userId: string) {
   const ownerKey = authenticatedLocalOwnerKey(userId);
-  await localDatabase.system.bulkPut([
-    { key: LAST_AUTHENTICATED_OWNER_KEY, value: ownerKey },
-    { key: ACTIVE_LOCAL_OWNER_KEY, value: ownerKey },
-  ]);
+  await localDatabase.transaction("rw", localDatabase.system, async () => {
+    if ((await currentLocalOwnerKey()) !== ownerKey) {
+      await localDatabase.system.put({ key: "local-workspace:epoch", value: crypto.randomUUID() });
+    }
+    await localDatabase.system.bulkPut([
+      { key: LAST_AUTHENTICATED_OWNER_KEY, value: ownerKey },
+      { key: ACTIVE_LOCAL_OWNER_KEY, value: ownerKey },
+    ]);
+  });
   return ownerKey;
 }
 
@@ -71,8 +78,17 @@ export function localWorkspaceRecordKey(
   return JSON.stringify([workspace.scopeKey, recordId]);
 }
 
+export async function captureLocalWorkspaceSession(workspace: LocalWorkspace): Promise<LocalWorkspace> {
+  return withLocalWorkspaceTransaction(workspace, "r", [], async () => ({
+    ...workspace,
+    sessionEpoch: (await localDatabase.system.get("local-workspace:epoch"))?.value ?? "",
+  }));
+}
+
 export async function assertLocalWorkspaceActive(workspace: LocalWorkspace) {
-  if (!(await isLocalWorkspaceActive(workspace))) {
+  if (!(await isLocalWorkspaceActive(workspace)) ||
+      (workspace.sessionEpoch !== undefined && workspace.sessionEpoch !== ((await localDatabase.system.get("local-workspace:epoch"))?.value ?? "")) ||
+      (workspace.syncLockToken !== undefined && workspace.syncLockToken !== (await localDatabase.system.get(`annotation-sync-fence:${workspace.scopeKey}`))?.value)) {
     throw new LocalWorkspaceOwnerChangedError();
   }
 }
@@ -116,6 +132,7 @@ export async function clearCurrentAuthenticatedLocalOwner() {
   await localDatabase.system.bulkDelete([
     LAST_AUTHENTICATED_OWNER_KEY,
     ACTIVE_LOCAL_OWNER_KEY,
+    "local-workspace:epoch",
   ]);
   return ownerKey;
 }

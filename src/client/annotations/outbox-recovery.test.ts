@@ -62,6 +62,7 @@ describe("application outbox recovery", () => {
     expect(summary.remainingOperations).toBe(1);
     expect(fetch).toHaveBeenCalledWith(
       `/api/choirs/${b.choirId}/scores/${b.scoreId}/status`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 
@@ -127,6 +128,32 @@ describe("application outbox recovery", () => {
     expect(pushPendingAnnotations).not.toHaveBeenCalled();
     expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).not.toContain("score-b");
     expect(await localDatabase.annotationOutbox.count()).toBe(2);
+  });
+
+  it("rotates past eight failures and a scope larger than the operation discovery limit", async () => {
+    const owner = authenticatedLocalOwnerKey("user-a");
+    for (let i = 0; i < 805; i++) await seedOperation("user-a", "choir-1", "score-0", `a-${i}`);
+    for (let i = 1; i <= 9; i++) await seedOperation("user-a", "choir-1", `score-${i}`, `z-${i}`);
+    vi.mocked(pushPendingAnnotations).mockRejectedValue(new Error("unavailable"));
+    await recoverAnnotationOutbox(owner, "online");
+    await recoverAnnotationOutbox(owner, "foreground");
+    expect(vi.mocked(pushPendingAnnotations).mock.calls.some(([workspace]) => workspace.scoreId === "score-9")).toBe(true);
+    const attempts = vi.mocked(pushPendingAnnotations).mock.calls.length;
+    await recoverAnnotationOutbox(owner, "online");
+    expect(vi.mocked(pushPendingAnnotations).mock.calls.length).toBe(attempts);
+  });
+
+  it("continues to the next healthy score when one score is busy in another tab", async () => {
+    const a = await seedOperation("user-a", "choir-1", "busy", "busy-op");
+    await seedOperation("user-a", "choir-1", "healthy", "healthy-op");
+    vi.mocked(pushPendingAnnotations).mockImplementation(async workspace => {
+      if (workspace.scoreId === "busy") return undefined;
+      await localDatabase.annotationOutbox.where("scopeKey").equals(workspace.scopeKey).delete();
+      return 1;
+    });
+    const summary = await recoverAnnotationOutbox(a.ownerKey, "online");
+    expect(summary.results).toEqual([expect.objectContaining({ outcome: "busy" }), expect.objectContaining({ outcome: "pushed", pushed: 1 })]);
+    expect(summary.remainingOperations).toBe(1);
   });
 
   it("bounds scope discovery and work per trigger", async () => {

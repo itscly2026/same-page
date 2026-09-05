@@ -1,7 +1,7 @@
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
 import { annotationLayerListResponseSchema } from "../../shared/annotations";
 import type { ScoreSummary } from "../../shared/scores";
-import { cacheAnnotationLayers } from "../annotations/local-annotations";
+import { cacheAnnotationLayers } from "../annotations/annotation-state";
 import { captureOfflineAnnotationSnapshot, ensureOfflineAppShell } from "../annotations/offline-snapshot";
 import { syncAnnotations } from "../annotations/sync";
 import { activateVerifiedOfflineScore, localDatabase } from "../platform/local-database";

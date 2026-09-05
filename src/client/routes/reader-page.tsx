@@ -37,16 +37,16 @@ import {
   queueScoreDrafts,
   reapplyAnnotationConflict,
   retryScoreSyncErrors,
-} from "../annotations/local-annotations";
+} from "../annotations/annotation-state";
 import { requestOutboxRecovery } from "../annotations/outbox-recovery";
 import { syncAnnotations } from "../annotations/sync";
 import {
   restoreOfflineAnnotationSnapshot,
-} from "../annotations/offline-snapshot";
+} from "../annotations/annotation-state";
 import {
   beginAnnotationEditSession,
   endAnnotationEditSession,
-} from "../annotations/edit-history";
+} from "../annotations/annotation-state";
 import { authClient } from "../auth/auth-client";
 import {
   ensureLoadingJourney,
@@ -1380,7 +1380,7 @@ export default function ReaderPage() {
         <aside className="annotation-conflicts" aria-label="批注同步异常">
           <strong>{syncErrorCount} 项批注同步异常</strong>
           <div>
-            <span>这不是协同编辑冲突；本机版本仍然保留。</span>
+            <span>本机版本仍然保留。若共享层编辑权已撤销，请在恢复权限后重试；其它有权限的批注会继续同步。</span>
             <Button isDisabled={syncing} onPress={() => void manualSync()}>
               重试同步
             </Button>

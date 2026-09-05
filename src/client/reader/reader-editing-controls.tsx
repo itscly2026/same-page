@@ -8,7 +8,7 @@ import {
   type DefaultSharedLayerSlot,
 } from "../../shared/annotations";
 import type { AnnotationTool } from "../annotations/annotation-overlay";
-import { redoAnnotationEdit, undoAnnotationEdit } from "../annotations/edit-history";
+import { redoAnnotationEdit, undoAnnotationEdit } from "../annotations/annotation-state";
 import type { LocalWorkspace } from "../platform/local-workspace";
 import "./reader-ux.css";
 
