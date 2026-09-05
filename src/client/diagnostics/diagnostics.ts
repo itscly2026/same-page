@@ -1,3 +1,4 @@
+import pdfPackage from "pdfjs-dist/package.json";
 import { buildId } from "../../shared/build";
 import {
   categoryForStatus, diagnosticCategories, diagnosticOperations, diagnosticStages,
@@ -5,7 +6,21 @@ import {
   type DiagnosticCategory, type DiagnosticOperation, type DiagnosticStage,
 } from "../../shared/diagnostics";
 
+export const pdfEngineVersion = `pdfjs-${pdfPackage.version}`;
+const pdfReasons = ["encrypted", "corrupt-pdf", "engine-unavailable", "version-mismatch", "timeout", "render-failed", "document-failed"] as const;
+type PdfReason = typeof pdfReasons[number];
+export function pdfFailureReason(error: unknown, rendering = false): PdfReason {
+  const name = typeof error === "object" && error !== null && "name" in error ? error.name : "";
+  if (name === "PasswordException") return "encrypted";
+  if (name === "InvalidPDFException") return "corrupt-pdf";
+  if (name === "PdfEngineUnavailableError") return "engine-unavailable";
+  if (name === "ReaderDocumentVersionMismatchError") return "version-mismatch";
+  if (name === "TimeoutError") return "timeout";
+  return rendering ? "render-failed" : "document-failed";
+}
 interface Failure {
+  engineVersion?: string;
+  pdfReason?: PdfReason;
   operation: DiagnosticOperation;
   category: DiagnosticCategory;
   stage?: DiagnosticStage;
@@ -13,6 +28,8 @@ interface Failure {
   serverBuild?: string | null;
 }
 interface DiagnosticRecord {
+  engineVersion?: string;
+  pdfReason?: PdfReason;
   id: string;
   time: number;
   operation: DiagnosticOperation;
@@ -81,7 +98,7 @@ export function pdfFailureCategory(error: unknown): DiagnosticCategory {
     if ("name" in error && error.name === "UnknownErrorException" && "details" in error &&
       ["TypeError: Failed to fetch", "TypeError: Load failed", "TypeError: NetworkError when attempting to fetch resource."].includes(String(error.details))) return "network";
   }
-  return error instanceof TypeError ? "network" : "internal";
+  return "internal";
 }
 
 export function recordFailure(failure: Failure) {
@@ -104,6 +121,8 @@ export function recordFailure(failure: Failure) {
       return;
     }
     records.push({
+      ...(failure.engineVersion && /^(pdfjs|pdfium)-[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$/.test(failure.engineVersion) ? { engineVersion: failure.engineVersion } : {}),
+      ...(failure.pdfReason && pdfReasons.includes(failure.pdfReason) ? { pdfReason: failure.pdfReason } : {}),
       id: crypto.randomUUID(), time: now, operation, category, stage,
       requestId, serverBuild, count: 1,
       retryable: category === "network" || category === "internal" || category === "rate-limit",

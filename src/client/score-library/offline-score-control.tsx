@@ -1,3 +1,4 @@
+import { readDisplayPreference } from "../reader/display-preferences";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Dialog, Heading, Popover, Tooltip, TooltipTrigger } from "react-aria-components";
@@ -32,7 +33,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, disabled = fal
   const phase = attempt?.identity === identity ? attempt.phase : null;
   const record = offline?.scopeKey === workspace?.scopeKey ? offline?.record ?? null : null;
   const invalid = offline?.scopeKey === workspace?.scopeKey && offline?.invalid;
-  const label = offlineScoreLabel(record, score.currentVersion.id, invalid);
+  const label = offlineScoreLabel(record, score.currentVersion.id, invalid, workspace ? readDisplayPreference(workspace) : undefined);
   const prepare = async () => {
     if (running.current) return;
     running.current = true;
@@ -57,7 +58,8 @@ export function OfflineScoreControl({ score, authenticatedUserId, disabled = fal
   const downloading = phase === "downloading";
   const failed = phase === "failed";
   const stale = Boolean(record && record.versionId !== score.currentVersion.id);
-  const needsDownload = !record || stale || failed;
+  const modeMissing = workspace && record && (record.imageManifest ? "images" : "pdf") !== readDisplayPreference(workspace);
+  const needsDownload = !record || stale || failed || modeMissing;
   const state = downloading ? "downloading" : failed || invalid ? "error" : stale ? "stale" : record ? "ready" : "missing";
   const description = downloading ? "正在下载并校验…" : failed ? `${attempt?.message ?? "下载未完成，请重试。"} ${label}` : label;
   const actionLabel = failed ? "重试下载" : stale ? "下载新版离线副本" : "下载离线副本";

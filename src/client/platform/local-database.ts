@@ -31,7 +31,9 @@ export interface OfflineScoreRecord {
   fileName: string;
   sha256: string;
   pageCount: number;
+  // PDF bytes, or the ordered lossless offline page bundle described by imageManifest.
   blob: Blob;
+  imageManifest?: import("../../shared/score-images").ImageManifest;
   active: 0 | 1;
   verifiedAt: number;
   annotationSnapshot: OfflineAnnotationSnapshot;

@@ -10,14 +10,14 @@ import { startViteServer } from "../scripts/vite-server.mjs";
 
 // Each call owns a fresh local Worker store. Bindings are disposed before Vite
 // opens them, so the seed and server never contend for the same SQLite files.
-export async function startStorageFixture({ authenticated = false, script = "preview", expired = false } = {}) {
+export async function startStorageFixture({ authenticated = false, script = "preview", expired = false, rendererOrigin } = {}) {
   const accounts = authenticated ? [0, 1].map(() => ({ id: randomUUID(), email: `${randomUUID()}@example.test`, password: randomBytes(24).toString("hex") })) : [];
   const choirId = randomUUID(), scoreId = randomUUID(), versionId = randomUUID();
   const fileName = "本地链路测试.pdf";
   const pdf = createSampleScorePdf();
   const hash = createHash("sha256").update(pdf).digest("hex");
   const server = await startViteServer({
-    script, timeoutMs: 30_000,
+    script, rendererOrigin, timeoutMs: 30_000,
     prepare: async ({ statePath, configPath, signal }) => {
       const platform = await getPlatformProxy({ configPath, persist: { path: path.join(statePath, "v3") } });
       try {

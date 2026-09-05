@@ -53,6 +53,28 @@ beforeEach(async () => {
 afterEach(() => network.resetHandlers());
 
 describe("PDF file library and delivery", () => {
+  it("deduplicates concurrent preparation and allows retry after dispatch fails", async () => {
+    const { adminCookie, choirId } = await createAdminChoir();
+    const score = await upload(choirId, adminCookie, "队列.pdf", createMinimalPdf(200, 200));
+    const endpoint = `/api/choirs/${choirId}/scores/${score.id}/versions/${score.versionId}/images`;
+    const send = vi.fn().mockRejectedValueOnce(new Error("queue unavailable")).mockResolvedValue(undefined);
+    const runtime = { ...env, IMAGE_JOBS: { send, sendBatch: vi.fn(), metrics: vi.fn() } } satisfies typeof env;
+    expect((await callWorker(endpoint, { method: "POST", headers: { cookie: adminCookie } }, runtime)).status).toBe(503);
+    expect(await (await callWorker(endpoint, { headers: { cookie: adminCookie } }, runtime)).json()).toMatchObject({ state: "failed" });
+    const responses = await Promise.all([1, 2].map(() => callWorker(endpoint, { method: "POST", headers: { cookie: adminCookie } }, runtime)));
+    expect(responses.map(response => response.status)).toEqual([202, 202]);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(await (await callWorker(endpoint, { headers: { cookie: adminCookie } }, runtime)).json()).toEqual({ state: "preparing" });
+  });
+  it("image preparation status inherits PDF version access and starts absent", async () => {
+    const { adminCookie, choirId } = await createAdminChoir();
+    const score = await upload(choirId, adminCookie, "兼容.pdf", createMinimalPdf(200, 200));
+    const endpoint = `/api/choirs/${choirId}/scores/${score.id}/versions/${score.versionId}/images`;
+    const response = await callWorker(endpoint, { headers: { cookie: adminCookie } });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ state: "absent" });
+    expect((await callWorker(endpoint)).status).toBe(403);
+  });
   it("does not truncate literal long filename searches on either library endpoint", async () => {
     const { adminCookie, choirId } = await createAdminChoir();
     const name = "合唱排练".repeat(31) + "%_结尾.pdf";

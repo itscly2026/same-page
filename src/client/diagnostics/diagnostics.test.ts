@@ -26,7 +26,7 @@ describe("private diagnostics", () => {
     expect(JSON.parse(exportDiagnostics()).records).toHaveLength(0);
   });
 
-  it.each([[{ name: "ResponseException", status: 403 }, "permission"], [{ name: "ResponseException", status: 404 }, "not-found"], [{ name: "ResponseException", status: 0 }, "network"], [{ name: "InvalidPDFException" }, "validation"], [new TypeError("secret"), "network"], [new Error("secret"), "internal"]])("classifies PDF.js failures without retaining errors", (error, category) => {
+  it.each([[{ name: "ResponseException", status: 403 }, "permission"], [{ name: "ResponseException", status: 404 }, "not-found"], [{ name: "ResponseException", status: 0 }, "network"], [{ name: "InvalidPDFException" }, "validation"], [new TypeError("secret"), "internal"], [new Error("secret"), "internal"]])("classifies PDF.js failures without retaining errors", (error, category) => {
     expect(pdfFailureCategory(error)).toBe(category);
   });
   it("correlates HTTP failures without consuming responses or retaining sensitive input", async () => {

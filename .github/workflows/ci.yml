@@ -44,6 +44,18 @@ jobs:
         if: steps.scope.outputs.full == 'true'
         run: npm ci --prefer-offline --no-audit --no-fund
 
+      - name: Use Python for native PDF regression
+        if: steps.scope.outputs.full == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Install and verify native renderer
+        if: steps.scope.outputs.full == 'true'
+        run: |
+          python -m pip install -r renderer/requirements.txt
+          python renderer/verify.py
+
       - name: Lint
         if: steps.scope.outputs.full == 'true'
         run: npm run lint
@@ -98,7 +110,7 @@ jobs:
         if: steps.scope.outputs.build == 'true'
         run: |
           node scripts/release-artifact.mjs seal "$GITHUB_SHA"
-          tar -cf release.tar dist migrations wrangler.jsonc package-lock.json release.json
+          tar -cf release.tar dist migrations renderer wrangler.jsonc package-lock.json release.json
 
       - name: Upload verified release
         if: steps.scope.outputs.build == 'true'

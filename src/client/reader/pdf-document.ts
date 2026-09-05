@@ -1,12 +1,10 @@
 import { diagnosticFetch } from "../diagnostics/diagnostics";
-import {
-  getDocument,
-  GlobalWorkerOptions,
-  type PDFDocumentProxy,
-} from "pdfjs-dist";
+import type { PDFDocumentProxy, getDocument as GetDocument } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 
-GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+export class PdfEngineUnavailableError extends Error {
+  constructor() { super("pdf_engine_unavailable"); this.name = "PdfEngineUnavailableError"; }
+}
 
 export function preloadPdfWorkerAsset(target: Document = document) {
   if (target.head.querySelector("link[data-same-page-pdf-worker]")) return;
@@ -31,8 +29,13 @@ export function loadPdfDocument(
 ): PdfDocumentLoad {
   const abortController = new AbortController();
   let destroyed = false;
-  let loadingTask: ReturnType<typeof getDocument> | null = null;
+  let loadingTask: ReturnType<typeof GetDocument> | null = null;
   const promise = (async () => {
+    let engine: typeof import("pdfjs-dist");
+    try { engine = await import("pdfjs-dist"); }
+    catch { throw new PdfEngineUnavailableError(); }
+    if (destroyed) throw new DOMException("PDF load cancelled", "AbortError");
+    engine.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
     let resolvedSource = source;
     let actualVersionId = expectedVersionId ?? null;
     if (typeof source === "string" && !expectedVersionId) {
@@ -41,13 +44,13 @@ export function loadPdfDocument(
         credentials: "include",
         signal: abortController.signal,
       });
-      if (!response.ok) throw new Error(`pdf_head_${response.status}`);
+      if (!response.ok) throw Object.assign(new Error("pdf_head_failed"), { status: response.status });
       actualVersionId = response.headers.get("X-Score-Version");
       if (!actualVersionId) throw new Error("pdf_version_header_missing");
       resolvedSource = versionedPdfUrl(source, actualVersionId);
     }
     if (destroyed) throw new DOMException("PDF load cancelled", "AbortError");
-    loadingTask = getDocument(
+    loadingTask = engine.getDocument(
       typeof resolvedSource === "string"
         ? {
             url: resolvedSource,

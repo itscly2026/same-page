@@ -14,7 +14,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
   });
 }
 
-export async function startViteServer({ script, port, cwd = process.cwd(), env = process.env, timeoutMs = 30_000, prepare }) {
+export async function startViteServer({ script, port, cwd = process.cwd(), env = process.env, timeoutMs = 30_000, prepare, rendererOrigin }) {
   const statePath = await mkdtemp(path.join(tmpdir(), "same-page-vite-"));
   const logs = [];
   let child;
@@ -43,24 +43,41 @@ export async function startViteServer({ script, port, cwd = process.cwd(), env =
       delete config.configPath; delete config.userConfigPath;
       for (const db of config.d1_databases ?? []) db.migrations_dir = path.resolve(path.dirname(sourceConfig), db.migrations_dir ?? "migrations");
       config.vars = { ...config.vars, BETTER_AUTH_URL: origin, AUTH_EMAIL_FROM: "Fixture <fixture@example.invalid>", BETTER_AUTH_SECRET: "same-page-local-test-secret-only", INVITE_SECRET: "same-page-local-test-invite-only" };
+      // Native conversion is exercised through the same DO fetch transport with
+      // a local Python subprocess, independently of Docker/Cloudflare scheduling.
+      delete config.containers;
+      let auxiliaryConfig;
+      if (rendererOrigin) {
+        auxiliaryConfig = path.join(statePath, "renderer-wrangler.json");
+        const main = path.join(statePath, "renderer-fixture.mjs");
+        await writeFile(main, `import { DurableObject } from "cloudflare:workers";
+export class PdfRenderer extends DurableObject { fetch(request) {
+ const url = new URL(request.url); return fetch(new Request(${JSON.stringify(rendererOrigin)} + url.pathname + url.search, request));
+} }
+export default { fetch() { return new Response(null, {status:404}); } };`);
+        await writeFile(auxiliaryConfig, JSON.stringify({ name: "same-page-renderer-fixture", main, compatibility_date: config.compatibility_date,
+          durable_objects: { bindings: [{ name: "SELF", class_name: "PdfRenderer" }] },
+          migrations: [{ tag: "v1", new_sqlite_classes: ["PdfRenderer"] }] }));
+        config.durable_objects.bindings = [{ name: "PDF_RENDERER", class_name: "PdfRenderer", script_name: "same-page-renderer-fixture" }];
+      }
       config.routes = []; config.triggers = {}; config.observability = { enabled: false };
       await writeFile(configPath, JSON.stringify(config));
       await writeFile(path.join(statePath, ".dev.vars"), "");
       if (script === "preview") {
         await mkdir(path.join(statePath, ".wrangler/deploy"), { recursive: true });
-        await writeFile(path.join(statePath, ".wrangler/deploy/config.json"), JSON.stringify({ configPath, auxiliaryWorkers: [] }));
+        await writeFile(path.join(statePath, ".wrangler/deploy/config.json"), JSON.stringify({ configPath, auxiliaryWorkers: auxiliaryConfig ? [{ configPath: auxiliaryConfig }] : [] }));
       }
       shutdown.signal.throwIfAborted();
       await prepare?.({ statePath, configPath, origin, signal: shutdown.signal });
       shutdown.signal.throwIfAborted();
-      return { origin, runId, configPath };
+      return { origin, runId, configPath, auxiliaryConfig };
     })();
-    const { origin, runId, configPath } = await preparing;
+    const { origin, runId, configPath, auxiliaryConfig } = await preparing;
     shutdown.signal.throwIfAborted();
     const executable = process.platform === "win32" ? "npm.cmd" : "npm";
     child = spawn(executable, ["run", script, "--", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
       cwd, detached: detachedProcessGroup(),
-      env: { ...env, SAME_PAGE_TEST_STATE: statePath, SAME_PAGE_TEST_RUN: runId, CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH: configPath },
+      env: { ...env, SAME_PAGE_TEST_STATE: statePath, SAME_PAGE_TEST_RUN: runId, ...(auxiliaryConfig ? { SAME_PAGE_TEST_AUX_CONFIG: auxiliaryConfig } : {}), CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH: configPath },
       stdio: ["ignore", "pipe", "pipe"],
     });
     child.stdout.on("data", (chunk) => rememberLog(logs, chunk));

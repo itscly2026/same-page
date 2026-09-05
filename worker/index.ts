@@ -1,3 +1,6 @@
+export { PdfRenderer } from "./images/container";
+import { convertScoreImages } from "./images/conversion";
+import { imageRoutes } from "./images/routes";
 import { cleanupLifecycles } from "./lifecycle/cleanup";
 import { lifecycleRoutes } from "./lifecycle/routes";
 import { Hono } from "hono";
@@ -42,6 +45,7 @@ app.on(["GET", "POST"], "/api/auth/*", handleAuthRequest);
 app.route("/api", lifecycleRoutes);
 app.route("/api", choirRoutes);
 app.route("/api", scoreRoutes);
+app.route("/api", imageRoutes);
 app.route("/api", annotationRoutes);
 
 app.notFound((context) => context.json({ error: "not_found" }, 404));
@@ -59,6 +63,13 @@ app.onError((error, context) => {
 
 export default {
   fetch: app.fetch,
+  async queue(batch, env) {
+    for (const message of batch.messages) {
+      const job = message.body as { versionId: string; generation: string };
+      await convertScoreImages(env, job);
+      message.ack();
+    }
+  },
   scheduled(_controller, env, context) {
     context.waitUntil(cleanupScoreStorage(env).catch(() => {
       logFailure("storage", "cleanup", 500, crypto.randomUUID());

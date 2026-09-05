@@ -40,6 +40,7 @@ export interface ReaderDocumentLease {
 export class ReaderDocumentVersionMismatchError extends Error {
   constructor(readonly expectedVersionId: string) {
     super("reader_document_version_mismatch");
+    this.name = "ReaderDocumentVersionMismatchError";
   }
 }
 

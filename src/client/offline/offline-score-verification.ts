@@ -1,3 +1,4 @@
+import { imageManifestSchema } from "../../shared/score-images";
 import Dexie from "dexie";
 import { annotationLayerSummarySchema, annotationPayloadSchema, type AnnotationLayerSummary } from "../../shared/annotations";
 import { findActiveOfflineScore, type OfflineScoreRecord } from "../platform/local-database";
@@ -9,7 +10,7 @@ let running = 0;
 
 // Deduplicate only in-flight checks. Opening again always validates current bytes.
 export function verifyOfflineScore(record: OfflineScoreRecord) {
-  const identity = JSON.stringify([record.key, record.verifiedAt, record.sha256, record.blob.size, record.annotationSnapshot]);
+  const identity = JSON.stringify([record.key, record.verifiedAt, record.sha256, record.blob.size, record.annotationSnapshot, record.imageManifest]);
   let tasks = verificationTasks.get(record.blob);
   if (!tasks) { tasks = new Map(); verificationTasks.set(record.blob, tasks); }
   let task = tasks.get(identity);
@@ -34,6 +35,21 @@ async function verifyRecord(record: OfflineScoreRecord) {
   try {
     if (!record.blob.size || !record.verifiedAt || !record.annotationSnapshot?.verifiedAt) return false;
     if (await sha256Hex(await record.blob.arrayBuffer()) !== record.sha256) return false;
+    if (record.imageManifest) {
+      const manifest = imageManifestSchema.parse(record.imageManifest);
+      if (manifest.versionId !== record.versionId || manifest.pages.length !== record.pageCount) return false;
+      let offset = 0;
+      for (const page of manifest.pages) {
+        const asset = page.assets[0];
+        const bytes = await record.blob.slice(offset, offset + asset.sizeBytes).arrayBuffer();
+        if (bytes.byteLength !== asset.sizeBytes || await sha256Hex(bytes) !== asset.sha256) return false;
+        if (bytes.byteLength < 24) return false;
+        const header = new DataView(bytes);
+        if (header.getUint32(0) !== 0x89504e47 || header.getUint32(4) !== 0x0d0a1a0a || header.getUint32(16) !== asset.width || header.getUint32(20) !== asset.height) return false;
+        offset += asset.sizeBytes;
+      }
+      if (offset !== record.blob.size) return false;
+    }
     const layers = record.annotationSnapshot.layers;
     if (!hasCompleteOfflineLayers(layers, record.ownerKey)) return false;
     const layerIds = new Set(layers.map((layer) => layer.id));

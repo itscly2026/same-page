@@ -1,3 +1,5 @@
+import { DisplayRecovery } from "../reader/display-recovery";
+import type { ScoreDocument } from "../reader/image-document";
 import "../reader/reader-ux.css";
 import { useReaderSession } from "../reader/use-reader-session";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -160,6 +162,8 @@ function ReaderPageContent() {
     resolvedWorkspace.scoreId === scoreId
       ? resolvedWorkspace
       : null;
+  const [visibleDisplay, setVisibleDisplay] = useState<ScoreDocument | null>(null);
+  const [failedDisplay, setFailedDisplay] = useState<ScoreDocument | null>(null);
   const reader = useReaderSession(workspace, session.data?.user.id ?? null);
   const { score, document, offline: loadedOffline, cloudState, downloading, downloadMessage } = reader.snapshot;
   const documentScopeKey = document ? workspace?.scopeKey ?? null : null;
@@ -375,9 +379,14 @@ function ReaderPageContent() {
   };
 
   if (!workspace) {
-    return <p className="route-loading">正在打开本机工作区…</p>;
+    return <main className="page-shell compact-page"><p role="status">正在打开本机工作区…</p><Link className="primary-link" to={`/choirs/${choirId}`}>返回云盘</Link></main>;
   }
 
+  const displayChoices = <div className="reader-display-choices" aria-label="谱面显示方式">
+    <Button isDisabled={annotationInteraction === "composing-text"} className="secondary-button" aria-pressed={reader.snapshot.mode === "pdf"} onPress={() => reader.selectMode("pdf")}>PDF 阅读</Button>
+    <Button isDisabled={annotationInteraction === "composing-text"} className="secondary-button" aria-pressed={reader.snapshot.mode === "images"} onPress={() => reader.selectMode("images")}>图片兼容模式</Button>
+    {reader.snapshot.modeMessage && <p role="status">{reader.snapshot.modeMessage}</p>}
+  </div>;
   const loadError = reader.snapshot.error;
   if (loadError) {
     return (
@@ -394,6 +403,8 @@ function ReaderPageContent() {
         >
           返回云盘
         </Link>
+        <Button className="secondary-button" onPress={reader.retry}>重试加载</Button>
+        {displayChoices}
         <Link to="/diagnostics">故障诊断</Link>
       </main>
     );
@@ -410,7 +421,10 @@ function ReaderPageContent() {
         <div className="reader-loading__paper" aria-hidden="true" />
         <div className="reader-loading__label" role="status">
           <strong>{score?.fileName ?? "乐谱"}</strong>
-          <span>正在加载乐谱…</span>
+          <span>{reader.snapshot.mode === "images" ? "正在准备图片兼容模式…" : "正在加载乐谱…"}</span>
+          {displayChoices}
+          <Link className="primary-link" to={`/choirs/${choirId}`}>返回云盘</Link>
+          <Button className="secondary-button" onPress={reader.cancel}>取消加载</Button>
         </div>
       </main>
     );
@@ -461,6 +475,14 @@ function ReaderPageContent() {
   const readerTitle = displayReaderTitle(score.fileName);
 
   return (
+    <DisplayRecovery.Provider value={{
+      ready: page => { if (page === currentPage) { setVisibleDisplay(document); setFailedDisplay(null); } },
+      failed: (page, reason) => {
+        if (page !== currentPage) return;
+        setFailedDisplay(document);
+        if (!editing) reader.recoverDisplay(reason);
+      },
+    }}>
     <main className="reader-shell" data-chrome-visible={chromeVisible || undefined}>
       <h1 className="visually-hidden">{score.fileName}</h1>
       {cloudState === "trashed" ? (
@@ -468,8 +490,14 @@ function ReaderPageContent() {
           乐谱已移入回收站。本机离线副本和未同步批注仍保留，恢复后可继续同步。
         </aside>
       ) : null}
+      {visibleDisplay !== document || failedDisplay === document ? <div className="reader-display-recovery" role="status">
+        <span>{failedDisplay === document ? "页面显示失败，可重试本页或切换显示方式。" : "正在显示首屏…"}</span>
+        <Link className="primary-link" to={`/choirs/${choirId}`}>返回云盘</Link>
+        {displayChoices}
+      </div> : null}
+      {reader.snapshot.modeMessage ? <p className="reader-display-notice" role="status">{reader.snapshot.modeMessage}</p> : null}
       {chromeVisible ? (
-        <header className="reader-chrome" aria-label="阅读器控制">
+      <header className="reader-chrome" aria-label="阅读器控制">
           <Link
             aria-label="返回云盘"
             aria-disabled={editing || undefined}
@@ -569,6 +597,11 @@ function ReaderPageContent() {
                   <span>连续滚动</span>
                 </Button>
               </div>
+              {displayChoices}
+              <Button onPress={() => reader.setDefaultMode(reader.snapshot.mode)}>本机默认使用当前显示方式</Button>
+              <Button onPress={reader.resetMode}>本谱跟随本机默认</Button>
+              <Button onPress={() => reader.setDefaultMode(null)}>恢复本机默认 PDF 阅读</Button>
+              <a href={`/api/choirs/${encodeURIComponent(choirId)}/scores/${encodeURIComponent(scoreId)}/versions/${encodeURIComponent(score.currentVersion.id)}/pdf`} download>下载原 PDF</a>
               <div className="reader-more-menu__zoom" aria-label="缩放控制">
                 <Button aria-label="适合页面" onPress={() => setZoom(1)}>
                   <Maximize2 aria-hidden="true" size={18} />
@@ -589,7 +622,7 @@ function ReaderPageContent() {
                 </Button>
               </div>
               <p className="reader-more-menu__status" role="status">
-                {offlineScoreLabel(offline, score.currentVersion.id, offlineStatus?.invalid)}
+                {offlineScoreLabel(offline, score.currentVersion.id, offlineStatus?.invalid, reader.snapshot.mode)}
               </p>
               <Button
                 isDisabled={downloading || cloudState === "trashed"}
@@ -755,6 +788,7 @@ function ReaderPageContent() {
         )}
       </div>
     </main>
+    </DisplayRecovery.Provider>
   );
 }
 

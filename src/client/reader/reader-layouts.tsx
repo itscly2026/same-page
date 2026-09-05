@@ -18,7 +18,7 @@ import type {
 } from "../annotations/annotation-overlay";
 import type { LocalAnnotationRecord } from "../platform/local-database";
 import type { LocalWorkspace } from "../platform/local-workspace";
-import type { PDFDocumentProxy } from "./pdf-document";
+import type { ScoreDocument } from "./image-document";
 import { PdfPageCanvas, type PdfPageRenderLease } from "./pdf-page";
 import {
   calculateFittedPageWidth,
@@ -50,7 +50,7 @@ export interface ContinuousReaderPosition {
 }
 
 interface ReaderLayoutProps {
-  document: PDFDocumentProxy;
+  document: ScoreDocument;
   currentPage: number;
   zoom: number;
   onZoomChange(value: number): void;
@@ -369,7 +369,7 @@ export function PageNavigatorPanel({
   currentPage,
   onSelect,
 }: {
-  document: PDFDocumentProxy;
+  document: ScoreDocument;
   currentPage: number;
   onSelect(page: number): void;
 }) {
@@ -424,7 +424,7 @@ function PdfPageThumbnail({
   document,
   pageNumber,
 }: {
-  document: PDFDocumentProxy;
+  document: ScoreDocument;
   pageNumber: number;
 }) {
   const aspectRatio = usePdfPageAspectRatio(document, pageNumber);
@@ -447,7 +447,7 @@ function AnnotatedPdfPage({
   annotationProps,
   onPageRenderStart,
 }: {
-  document: PDFDocumentProxy;
+  document: ScoreDocument;
   pageNumber: number;
   width: number;
   aspectRatio?: number;
@@ -501,7 +501,7 @@ function useElementSize(ref: RefObject<HTMLElement | null>) {
 }
 
 function usePdfPageAspectRatio(
-  document: PDFDocumentProxy,
+  document: ScoreDocument,
   pageNumber: number,
   knownRatio?: number,
 ) {

@@ -1,0 +1,7 @@
+# Provide independent image score display
+
+Keep PDF.js as the product default and provide an explicitly selected, owner-scoped local image display preference. PDFium runs in a private Cloudflare Container behind a serial Queue consumer, because native rendering needs a separate memory, CPU and network boundary; deriving images inside the normal Worker request or client PDF.js would not provide an independent recovery path.
+
+A generation belongs to an immutable PDF version. Only a complete validated manifest is published, and every image request uses the original PDF version access policy. Generation object keys never overlap, deletion uses the existing retryable storage queue and rechecks references; physical derivative bytes are service overhead, outside the existing one-GB PDF quota. Fixed lossless RGB PNG tiers preserve anti-aliasing and colour. A mode change preserves page numbers and normalized annotation coordinates.
+
+One verified offline copy contains either a PDF or the complete ordered bundle of the lower image tier plus its manifest and annotation snapshot. The existing activation transaction replaces it only after complete validation. The previous copy survives failed downloads, and readers already holding its immutable Blob remain valid. Image-only copies stay readable at higher zoom without an online request; switching to a missing mode requires downloading that mode. No automatic dual download or device-brand classification is introduced.

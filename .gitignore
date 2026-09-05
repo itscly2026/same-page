@@ -9,3 +9,4 @@ worker-configuration.d.ts
 artifacts/verification/
 release.json
 release.tar
+renderer/**/__pycache__/

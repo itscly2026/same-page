@@ -418,24 +418,7 @@ async function serveScorePdf(
   context: Context<AppEnvironment>,
   requestedVersionId?: string,
 ) {
-  const choirId = context.req.param("choirId") ?? "";
-  const scoreId = context.req.param("scoreId") ?? "";
-  const access = await resolveChoirAccess(context, choirId);
-  const row = await measureServerTiming(context, "d1", () => context.env.DB.prepare(
-    `SELECT scores.current_version_id, versions.id AS version_id,
-            versions.object_key, versions.size_bytes, versions.etag,
-            versions.sha256
-     FROM scores
-     INNER JOIN score_versions AS versions
-       ON versions.score_id = scores.id AND versions.state = 'ready'
-     WHERE scores.id = ? AND scores.choir_id = ? AND scores.trashed_at IS NULL
-       AND versions.id = COALESCE(?, scores.current_version_id)
-       AND (versions.candidate_expires_at IS NULL OR (? = 1 AND versions.candidate_expires_at > ?))
-       AND (versions.retention_expires_at IS NULL OR versions.retention_expires_at > ?)
-     LIMIT 1`,
-  )
-    .bind(scoreId, choirId, requestedVersionId ?? null, access.canManage ? 1 : 0, Date.now(), Date.now())
-    .first<PdfRow>());
+  const row = await resolveScorePdfVersion(context, requestedVersionId);
   if (!row || !row.etag) {
     return context.json({ error: "score_not_found" }, 404);
   }
@@ -485,6 +468,28 @@ async function serveScorePdf(
     return context.json({ error: "score_file_unavailable" }, 503);
   }
   return new Response(object.body, { status, headers });
+}
+
+export async function resolveScorePdfVersion(context: Context<AppEnvironment>, requestedVersionId?: string) {
+  const choirId = context.req.param("choirId") ?? "";
+  const scoreId = context.req.param("scoreId") ?? "";
+  const access = await resolveChoirAccess(context, choirId);
+  const row = await measureServerTiming(context, "d1", () => context.env.DB.prepare(
+    `SELECT scores.current_version_id, versions.id AS version_id,
+            versions.object_key, versions.size_bytes, versions.etag,
+            versions.sha256, versions.page_count
+     FROM scores
+     INNER JOIN score_versions AS versions
+       ON versions.score_id = scores.id AND versions.state = 'ready'
+     WHERE scores.id = ? AND scores.choir_id = ? AND scores.trashed_at IS NULL
+       AND versions.id = COALESCE(?, scores.current_version_id)
+       AND (versions.candidate_expires_at IS NULL OR (? = 1 AND versions.candidate_expires_at > ?))
+       AND (versions.retention_expires_at IS NULL OR versions.retention_expires_at > ?)
+     LIMIT 1`,
+  )
+    .bind(scoreId, choirId, requestedVersionId ?? null, access.canManage ? 1 : 0, Date.now(), Date.now())
+    .first<PdfRow>());
+  return row;
 }
 
 async function resolveChoirAccess(
@@ -641,6 +646,7 @@ function serializeTrashedScoreRow(row: TrashedScoreRow) {
 }
 
 interface PdfRow {
+  page_count: number;
   current_version_id: string;
   version_id: string;
   object_key: string;

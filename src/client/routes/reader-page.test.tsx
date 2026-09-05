@@ -127,7 +127,8 @@ vi.mock("../reader/pdf-document", () => ({
 }));
 
 vi.mock("../reader/pdf-page", async () => {
-  const { useEffect, useLayoutEffect, useRef } = await import("react");
+  const { useContext, useEffect, useLayoutEffect, useRef } = await import("react");
+  const { DisplayRecovery } = await import("../reader/display-recovery");
   return {
     PdfPageCanvas: ({
       pageNumber,
@@ -136,6 +137,9 @@ vi.mock("../reader/pdf-page", async () => {
       pageNumber: number;
       onRenderStart?(page: number): { ready(): void; cancel(): void };
     }) => {
+      const recovery = useContext(DisplayRecovery);
+      const recoveryRef = useRef(recovery);
+      recoveryRef.current = recovery;
       const leaseRef = useRef<ReturnType<NonNullable<typeof onRenderStart>>>(null);
       useLayoutEffect(() => {
         const lease = onRenderStart?.(pageNumber);
@@ -145,7 +149,7 @@ vi.mock("../reader/pdf-page", async () => {
           lease?.cancel();
         };
       }, [onRenderStart, pageNumber]);
-      useEffect(() => leaseRef.current?.ready(), [onRenderStart, pageNumber]);
+      useEffect(() => { leaseRef.current?.ready(); recoveryRef.current?.ready(pageNumber); }, [onRenderStart, pageNumber]);
       return <div aria-label={`渲染第 ${pageNumber} 页`} />;
     },
   };
@@ -184,6 +188,18 @@ vi.mock("../annotations/annotation-state", async (importOriginal) => {
 });
 
 describe("ReaderPage", () => {
+it("offers an exit and cancellation while the PDF never settles", async () => {
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+  vi.mocked(loadPdfDocument).mockReturnValue({ promise: new Promise(() => {}), destroy: vi.fn().mockResolvedValue(undefined) });
+  render(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}><Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /></Routes></MemoryRouter>);
+  expect(await screen.findByRole("link", { name: "返回云盘" })).toHaveAttribute("href", "/choirs/choir-1");
+  const cancel = await screen.findByRole("button", { name: "取消加载" });
+  fireEvent.keyDown(cancel, { key: "Enter", code: "Enter" });
+  fireEvent.keyUp(cancel, { key: "Enter", code: "Enter" });
+  expect(await screen.findByRole("button", { name: "重试加载" })).toBeVisible();
+});
+
+
   const getPageViewport = () => {
     const viewport = screen
       .getByLabelText("翻页阅读")
@@ -1238,7 +1254,7 @@ describe("ReaderPage", () => {
     await waitFor(() => expect(findVerifiedOfflineScore).toHaveBeenCalled());
     await waitFor(() =>
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-        "/api/choirs/choir-1/scores/score-1/bootstrap",
+        "/api/choirs/choir-1/scores/score-1/bootstrap", expect.objectContaining({ signal: expect.any(AbortSignal) }),
       ),
     );
     expect(loadPdfDocument).toHaveBeenCalledTimes(1);
@@ -1285,7 +1301,7 @@ describe("ReaderPage", () => {
     releaseBlob(staleData);
     await waitFor(() =>
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-        "/api/choirs/choir-1/scores/score-2/bootstrap",
+        "/api/choirs/choir-1/scores/score-2/bootstrap", expect.objectContaining({ signal: expect.any(AbortSignal) }),
       ),
     );
 

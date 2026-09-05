@@ -91,11 +91,18 @@ export async function cleanupScoreStorage(
        )`,
   ).run();
 
+  await env.DB.prepare("UPDATE score_image_jobs SET state = 'failed', failure = 'conversion-timeout' WHERE state = 'preparing' AND updated_at < ?")
+    .bind(now - 20 * 60_000).run();
+  await env.DB.prepare(`DELETE FROM score_image_objects WHERE EXISTS (SELECT 1 FROM score_image_jobs j
+    WHERE j.version_id = score_image_objects.version_id AND (j.state = 'failed' OR j.generation <> score_image_objects.generation))`).run();
+
   const queued = await env.DB.prepare(
     "SELECT id, object_key FROM score_object_deletions ORDER BY created_at LIMIT 100",
   ).all<{ id: string; object_key: string }>();
   for (const item of queued.results) {
-    await env.SCORES_BUCKET.delete(item.object_key);
+    const referenced = await env.DB.prepare(`SELECT object_key FROM score_image_objects WHERE object_key = ?
+      UNION ALL SELECT object_key FROM score_versions WHERE object_key = ? LIMIT 1`).bind(item.object_key, item.object_key).first();
+    if (!referenced) await env.SCORES_BUCKET.delete(item.object_key);
     await env.DB.prepare("DELETE FROM score_object_deletions WHERE id = ?")
       .bind(item.id)
       .run();
