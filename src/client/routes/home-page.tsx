@@ -85,8 +85,12 @@ const productFeatures = [
 ] as const;
 
 export function HomePage() {
-  const navigate = useNavigate();
   const session = authClient.useSession();
+  return <HomeContent key={session.isPending ? "pending" : session.data?.user.id ?? "guest"} session={session} />;
+}
+
+function HomeContent({ session }: { session: ReturnType<typeof authClient.useSession> }) {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [joinOpen, setJoinOpen] = useState(searchParams.get("join") === "1");
   const [joinStep, setJoinStep] = useState<JoinStep>({ kind: "invite" });
@@ -102,7 +106,7 @@ export function HomePage() {
   const [loggingOut, setLoggingOut] = useState(false);
   const userId = session.data?.user.id;
   useEffect(() => {
-    if (session.isPending) return;
+    if (session.isPending || userId) return;
     let active = true;
     void loadPreviewChoir().then((choir) => {
       if (!active) return;
@@ -292,11 +296,10 @@ export function HomePage() {
         }
       />
 
-      {userId ? (
+      {!session.isPending && userId ? (
         <main className="page-shell my-drives-page">
-          <div className="my-drives-heading"><div><h1>我已加入的云盘</h1><p>选择云盘，继续排练。</p></div><Button className="primary-button" onPress={() => setJoinOpen(true)}>加入新云盘</Button></div>
-          <MembershipList userId={userId} />
-          {previewChoir ? <Link className="hero-preview-link" to={`/choirs/${previewChoir.id}`}>访问公开体验云盘</Link> : null}
+          <div className="my-drives-heading"><div><h1>我已加入的云盘</h1><p>选择云盘，继续排练。</p></div><Button className="secondary-button" onPress={() => setJoinOpen(true)}>加入新云盘</Button></div>
+          <MembershipList userId={userId} autoEnter={!joinOpen && searchParams.size === 0} />
           {pageMessage ? <p role="alert">{pageMessage}</p> : null}
         </main>
       ) : session.isPending ? <main className="page-shell"><p role="status">正在加载…</p></main> : <main className="marketing-content">

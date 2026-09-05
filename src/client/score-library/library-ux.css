@@ -1,8 +1,7 @@
 .my-drives-page { max-width: 60rem; min-height: 65vh; }
 .my-drives-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.8rem; }
-.my-drives-heading h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.4rem); }
+.my-drives-heading h1 { margin: 0; font-size: clamp(1.5rem, 3vw, 2rem); }
 .my-drives-heading p { color: var(--muted); }
-.my-drives-page > .hero-preview-link { display: inline-block; margin-top: 1.5rem; }
 .membership-row { min-height: 4.5rem; }
 .membership-row > span:first-child { min-width: 0; }
 .membership-row strong, .membership-row small { overflow-wrap: anywhere; }
@@ -30,3 +29,21 @@
   .library-controls .library-search { flex: 1 1 10rem; max-width: 100%; }
   .file-library .file-row__open { gap: .65rem; }
 }
+
+.my-drives-heading > div, .library-title { min-width: 0; }
+.my-drives-heading h1, .library-title h1 { overflow-wrap: anywhere; }
+.my-drives-heading > button, .library-actions { flex-shrink: 0; }
+.file-library .library-heading h1 { font-size: clamp(1.5rem, 3vw, 2rem); }
+.file-library .library-workspace { border-radius: .75rem; box-shadow: none; }
+.membership-list { gap: 0; }
+.membership-row { border-radius: 0; border-width: 0 0 1px; }
+.file-info-name { overflow-wrap: anywhere; line-height: 1.6; }
+.file-info-list { display: grid; gap: .75rem; margin-block: 1.5rem; }
+.file-info-list > div { display: flex; justify-content: space-between; gap: 1rem; }
+.file-info-list dt { color: var(--muted); }
+.file-info-list dd { margin: 0; }
+
+.saved-score-links { margin-top: 2rem; }
+.saved-score-links h2 { font-size: 1rem; }
+.saved-score-links p { color: var(--muted); line-height: 1.6; }
+.saved-score-links .membership-row { overflow-wrap: anywhere; }

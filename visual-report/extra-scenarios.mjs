@@ -13,7 +13,7 @@ function reader(id, title, description, ready, actions = [], extra = {}) {
 }
 export const extraVisualReportScenarios = [
   scene("library-empty", "文件库 · 空库", "空库给管理员明确上传入口。", driveRoute, selector(".library-empty-state"), [], { identity: "admin" }),
-  scene("library-search-none", "文件库 · 搜索无结果", "保留云盘总数，并提供清除搜索。", driveRoute, role("button", "清除搜索"), [{ type: "fillRole", role: "searchbox", name: "搜索文件名", value: "不存在的乐谱" }]),
+  scene("library-search-none", "文件库 · 搜索无结果", "保留云盘总数，并提供清除搜索。", driveRoute, role("button", "清除搜索"), [{ type: "fillRole", role: "searchbox", name: "搜索乐谱", value: "不存在的乐谱" }]),
   scene("library-long-list", "文件库 · 长文件名与列表", "30 份长名称乐谱，名称、排序和离线状态并存。", driveRoute, selector(".file-list .file-row:nth-child(8)")),
   scene("library-upload-partial", "文件库 · 上传部分失败", "两个虚构 PDF 分别成功与超过大小限制；重试队列归 #104。", driveRoute, text("PDF 超过 20 MB。"), [click("button", "上传 PDF"), { type: "uploadSamples" }, { type: "waitVisible", selector: ".upload-list [data-status=success]" }], { identity: "admin" }),
   scene("preferences-mobile", "我的偏好 · 手机", "默认显示优先，颜色与恢复为次级操作。", `${driveRoute}/preferences`, selector(".settings-layer-row:nth-child(5)")),

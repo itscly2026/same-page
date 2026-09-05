@@ -149,6 +149,7 @@ export function resolveFixtureRequest({
         identity === "guest"
           ? []
           : [
+              ...(scenarioId === "home-member-preview-entry" ? [{ id: "visual-membership-other", displayName: "周宁", role: "member", choir: { ...choir, id: "other-drive", name: "周末排练云盘" } }] : []),
               {
                 id: `visual-membership-${identity}`,
                 displayName: identity === "admin" ? "林老师" : "周宁",

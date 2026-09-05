@@ -59,8 +59,8 @@ export function OfflineScoreControl({ score, authenticatedUserId, disabled = fal
   const failed = phase === "failed";
   const stale = Boolean(record && record.versionId !== score.currentVersion.id);
   const modeMissing = workspace && record && (record.imageManifest ? "images" : "pdf") !== readDisplayPreference(workspace);
-  const needsDownload = !record || stale || failed || modeMissing;
-  const state = downloading ? "downloading" : failed || invalid ? "error" : stale ? "stale" : record ? "ready" : "missing";
+  const needsDownload = !record || invalid || stale || failed || modeMissing;
+  const state = downloading ? "downloading" : failed || invalid ? "error" : stale ? "stale" : modeMissing ? "missing" : record ? "ready" : "missing";
   const description = downloading ? "正在下载并校验…" : failed ? `${attempt?.message ?? "下载未完成，请重试。"} ${label}` : label;
   const actionLabel = failed ? "重试下载" : stale ? "下载新版离线副本" : "下载离线副本";
   const Icon = state === "downloading" ? LoaderCircle : state === "error" ? CircleAlert : state === "stale" ? RefreshCw : state === "ready" ? HardDrive : Download;

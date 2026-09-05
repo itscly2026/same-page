@@ -425,7 +425,7 @@ describe("AppRoutes", () => {
     expect(screen.queryByRole("link", { name: "登录或注册" })).not.toBeInTheDocument();
   });
 
-  it("keeps the public preview entry visible after sign-in", async () => {
+  it("keeps public preview out of signed-in membership lists", async () => {
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "user-1", email: "member@example.test" } },
       isPending: false,
@@ -452,9 +452,9 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    expect(
-      await screen.findByRole("link", { name: "访问公开体验云盘" }),
-    ).toHaveAttribute("href", "/choirs/preview-choir");
+    expect(await screen.findByText(/还没有已加入的云盘/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "访问公开体验云盘" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/或先访问公开体验/)).not.toBeInTheDocument();
   });
 
   it("normalizes a grouped pasted invitation and enters as a guest", async () => {
@@ -579,11 +579,11 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("link", { name: /小红花云盘.*小花/ })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: /小红花云盘.*成员/ })).toHaveAttribute(
       "href",
       "/choirs/choir-1",
     );
-    expect(screen.getByRole("link", { name: /周末云盘.*Alto/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /周末云盘.*成员/ })).toHaveAttribute(
       "href",
       "/choirs/choir-2",
     );
@@ -1203,7 +1203,7 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    const scoreLink = await screen.findByRole("link", { name: /排练 10\.pdf.*2\.0 MB/ });
+    const scoreLink = await screen.findByRole("link", { name: /排练 10\.pdf/ });
     expect(scoreLink).toHaveAttribute(
       "href",
       "/choirs/choir-1/scores/score-10",
@@ -1217,10 +1217,17 @@ describe("AppRoutes", () => {
     expect(screen.queryByRole("button", { name: "上传 PDF" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "回收站" })).not.toBeInTheDocument();
     expect(screen.queryByText(/云盘存储已使用/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/更多操作/)).not.toBeInTheDocument();
+    expect(screen.queryByText("2.0 MB")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    expect(screen.queryByRole("menuitem", { name: "重命名" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "文件信息" }));
+    const info = await screen.findByRole("dialog", { name: "文件信息" });
+    expect(within(info).getByText("2.0 MB")).toBeInTheDocument();
+    fireEvent.click(within(info).getByRole("button", { name: "关闭" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "搜索" })).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole("searchbox", { name: "搜索文件名" }), {
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索乐谱" }), {
       target: { value: "排练" },
     });
     expect(screen.getByText("找到 1 份，共 1 份乐谱")).toBeInTheDocument();
@@ -1233,7 +1240,7 @@ describe("AppRoutes", () => {
     expect(
       await screen.findByText("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。"),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /排练 10\.pdf.*2\.0 MB/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /排练 10\.pdf/ })).toBeInTheDocument();
 
   });
 
@@ -1295,7 +1302,7 @@ describe("AppRoutes", () => {
       expect(
         await screen.findByRole("link", { name: /缓存中的春日\.pdf/ }),
       ).toBeInTheDocument();
-      expect(screen.getByRole("searchbox", { name: "搜索文件名" })).toHaveValue("春日");
+      expect(screen.getByRole("searchbox", { name: "搜索乐谱" })).toHaveValue("春日");
       expect(screen.queryByText("正在打开云盘…")).not.toBeInTheDocument();
       await waitFor(() => expect(restoredAfterListCommit).toBe(true));
     } finally {
@@ -1421,7 +1428,7 @@ describe("AppRoutes", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<MemoryRouter initialEntries={["/choirs/choir-1"]}><AppRoutes /></MemoryRouter>);
     await screen.findByRole("link", { name: /初始结果\.pdf/ });
-    const searchbox = screen.getByRole("searchbox", { name: "搜索文件名" });
+    const searchbox = screen.getByRole("searchbox", { name: "搜索乐谱" });
     fireEvent.change(searchbox, { target: { value: "慢" } });
     expect(screen.getByText("找到 0 份，共 2 份乐谱")).toBeInTheDocument();
     expect(searchbox).toHaveValue("慢");

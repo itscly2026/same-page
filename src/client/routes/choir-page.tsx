@@ -483,7 +483,7 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
                   void refresh();
                 }}
               >
-                <TextField value={search} onChange={updateSearch} aria-label="搜索文件名">
+                <TextField value={search} onChange={updateSearch} aria-label="搜索乐谱">
                   <Input type="search" placeholder="搜索乐谱" />
                 </TextField>
               </Form>
@@ -542,11 +542,9 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
                   >
                     <span className="pdf-file-icon" aria-hidden="true">PDF</span>
                     <span className="file-row__name" title={score.fileName}>{score.fileName}</span>
-                    <span className="file-row__size">{formatBytes(score.currentVersion.sizeBytes)}</span>
                   </Link>
                   <div className="file-row__offline"><OfflineScoreControl score={score} authenticatedUserId={userId ?? null} disabled={session.isPending} /></div>
-                  {result.permissions.canManage ? (
-                    <MenuTrigger>
+                  <MenuTrigger>
                       <Button className="file-menu-button" aria-label={`${score.fileName} 更多操作`}>
                         ···
                       </Button>
@@ -555,14 +553,16 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
                           aria-label={`${score.fileName} 操作`}
                           onAction={(key) => openScoreAction(score, key as ScoreAction)}
                         >
+                          <MenuItem id="info">文件信息</MenuItem>
+                          {result.permissions.canManage && <>
                           <MenuItem id="rename">重命名</MenuItem>
                           <MenuItem id="replace">替换 PDF</MenuItem>
                           <MenuItem id="history">历史 PDF 版本</MenuItem>
                           <MenuItem id="trash">移到回收站</MenuItem>
+                          </>}
                         </Menu>
                       </Popover>
                     </MenuTrigger>
-                  ) : null}
                 </article>
               ))}
             </section>
