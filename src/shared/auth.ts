@@ -7,9 +7,10 @@ export const PASSWORD_POLICY = {
 
 export const AUTH_OTP_COOLDOWN_SECONDS = 60;
 
-export const authFlowResponseSchema = z.object({
-  flow: z.enum(["sign-in", "sign-up"]),
-});
+export const authFlowResponseSchema = z.discriminatedUnion("flow", [
+  z.object({ flow: z.enum(["sign-in", "sign-up"]) }),
+  z.object({ flow: z.literal("set-password"), hasGoogle: z.boolean() }),
+]);
 
 export const socialAuthProviderSchema = z.enum(["google", "wechat"]);
 export type SocialAuthProvider = z.infer<typeof socialAuthProviderSchema>;

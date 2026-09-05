@@ -109,6 +109,7 @@ describe("AuthPage", () => {
       }),
     );
 
+    expect(screen.getByRole("button", { name: "使用 Google 继续" })).toBeEnabled();
     fireEvent.change(passwordField, {
       target: { value: "correct horse battery staple" },
     });
@@ -120,6 +121,112 @@ describe("AuthPage", () => {
         password: "correct horse battery staple",
       });
     });
+  });
+
+  it("verifies a Google user's mailbox before choosing a Same Page password and continues after automatic login", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const originalFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (input === "/api/auth/flow") return Response.json({ flow: "set-password", hasGoogle: true });
+      if (input === "/api/auth/email-otp/check-verification-otp" || input === "/api/auth/email-otp/reset-password") return Response.json({ success: true });
+      return originalFetch(input, init);
+    });
+    renderAuthPage();
+    await identify("google@example.test");
+    expect(await screen.findByText("你此前通过 Google 登录，尚未设置合谱密码")).toBeInTheDocument();
+    expect(screen.queryByLabelText("密码")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "忘记密码" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "使用 Google 继续" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "设置密码，以后用邮箱登录" }));
+    fireEvent.change(await screen.findByLabelText("六位验证码"), { target: { value: "123456" } });
+    expect(screen.queryByLabelText("密码（至少 10 位）")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "验证邮箱" }));
+    fireEvent.change(await screen.findByLabelText("密码（至少 10 位）"), { target: { value: "my new Same Page password" } });
+    fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "my new Same Page password" } });
+    fireEvent.click(screen.getByRole("button", { name: "设置密码并登录" }));
+    expect(await screen.findByText("密码已设置，以后可以使用邮箱密码或 Google 登录")).toBeInTheDocument();
+    expect(authClient.signIn.email).toHaveBeenCalledWith({ email: "google@example.test", password: "my new Same Page password" });
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    expect(await screen.findByLabelText("current route")).toHaveTextContent("/");
+  });
+
+  it.each(["sign-in", "set-password"])("hides unavailable Google on the %s screen", async (flow) => {
+    mockFirstPasswordFlow(async (input) => {
+      if (input === "/api/auth/flow") return Response.json(flow === "set-password" ? { flow, hasGoogle: true } : { flow });
+      if (input === "/api/auth/social-providers") return Response.json({ providers: [] });
+    });
+    renderAuthPage();
+    await identify("google@example.test");
+    await screen.findByRole("heading", { name: flow === "sign-in" ? "登录" : "使用 Google 登录" });
+    expect(screen.queryByRole("button", { name: "使用 Google 继续" })).not.toBeInTheDocument();
+    if (flow === "set-password") expect(screen.getByRole("button", { name: "设置密码，以后用邮箱登录" })).toBeEnabled();
+  });
+
+  it("recovers a lost OTP delivery response through cooldown without entering registration", async () => {
+    let requests = 0;
+    mockFirstPasswordFlow(async (input) => {
+      if (input === "/api/auth/email-otp/request-password-reset") {
+        if (++requests === 1) throw new TypeError("Network failure");
+        return Response.json({}, { status: 429, headers: { "Retry-After": "42" } });
+      }
+    });
+    renderAuthPage();
+    await identify("google@example.test");
+    fireEvent.click(await screen.findByRole("button", { name: "设置密码，以后用邮箱登录" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("暂时无法发送验证码");
+    fireEvent.click(screen.getByRole("button", { name: "设置密码，以后用邮箱登录" }));
+    expect(await screen.findByLabelText("六位验证码")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新发送验证码（42 秒）" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("已收到的验证码仍可使用");
+    fireEvent.click(screen.getByRole("button", { name: "返回登录方式" }));
+    expect(await screen.findByText("你此前通过 Google 登录，尚未设置合谱密码")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "更换邮箱" }));
+    expect(await screen.findByLabelText("邮箱")).toHaveValue("google@example.test");
+  });
+
+  it.each([400, 403, 429, 503, "network"])("keeps mailbox verification retryable after %s", async (failure) => {
+    let checks = 0;
+    mockFirstPasswordFlow(async (input) => {
+      if (input === "/api/auth/email-otp/check-verification-otp" && ++checks === 1) {
+        if (failure === "network") throw new TypeError("Network failure");
+        return Response.json({}, { status: Number(failure) });
+      }
+    });
+    renderAuthPage();
+    await startFirstPassword();
+    fireEvent.change(screen.getByLabelText("六位验证码"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "验证邮箱" }));
+    await vi.waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(failure === 429 ? "尝试次数过多" : failure === 400 || failure === 403 ? "验证码错误、已过期或尝试次数已用尽" : "暂时无法验证"));
+    expect(screen.queryByLabelText("密码（至少 10 位）")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "验证邮箱" }));
+    expect(await screen.findByLabelText("密码（至少 10 位）")).toBeInTheDocument();
+  });
+
+  it.each(["lost-response", "expired-code", "login-failed"])("recovers %s while setting the first password", async (failure) => {
+    mockFirstPasswordFlow(async input => {
+      if (input === "/api/auth/email-otp/reset-password") {
+        if (failure === "lost-response") throw new TypeError("Network failure");
+        if (failure === "expired-code") return Response.json({}, { status: 400 });
+      }
+    });
+    if (failure === "login-failed") vi.mocked(authClient.signIn.email).mockRejectedValueOnce(new TypeError("Network failure"));
+    renderAuthPage();
+    await startFirstPassword();
+    fireEvent.change(screen.getByLabelText("六位验证码"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "验证邮箱" }));
+    fireEvent.change(await screen.findByLabelText("密码（至少 10 位）"), { target: { value: "new secure password" } });
+    fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "new secure password" } });
+    fireEvent.click(screen.getByRole("button", { name: "设置密码并登录" }));
+    if (failure === "expired-code") {
+      expect(await screen.findByLabelText("六位验证码")).toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent("请重新验证邮箱");
+      expect(authClient.signIn.email).not.toHaveBeenCalled();
+    } else if (failure === "login-failed") {
+      expect(await screen.findByLabelText("密码")).toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent("密码已设置，自动登录没有完成");
+    } else {
+      expect(await screen.findByText("密码已设置，以后可以使用邮箱密码或 Google 登录")).toBeInTheDocument();
+    }
   });
 
   it("starts Google sign-in while preserving the typed email draft", async () => {
@@ -599,4 +706,22 @@ function renderAuthPage(initialEntry = "/login") {
 function CurrentRoute() {
   const location = useLocation();
   return <output aria-label="current route">{location.pathname}</output>;
+}
+
+function mockFirstPasswordFlow(override: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response | undefined> = async () => undefined) {
+  const fetchMock = vi.mocked(fetch);
+  const originalFetch = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (input, init) => {
+    const response = await override(input, init);
+    if (response) return response;
+    if (input === "/api/auth/flow") return Response.json({ flow: "set-password", hasGoogle: true });
+    if (input === "/api/auth/email-otp/check-verification-otp" || input === "/api/auth/email-otp/reset-password") return Response.json({ success: true });
+    return originalFetch(input, init);
+  });
+}
+
+async function startFirstPassword() {
+  await identify("google@example.test");
+  fireEvent.click(await screen.findByRole("button", { name: "设置密码，以后用邮箱登录" }));
+  await screen.findByLabelText("六位验证码");
 }

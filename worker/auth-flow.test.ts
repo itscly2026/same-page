@@ -29,6 +29,8 @@ import { provisionChoir } from "./choirs/provision";
 import { createDatabase } from "./db/database";
 import {
   account,
+  scores,
+  scoreVersions,
   choirs,
   memberships,
   sharedLayerEditGrants,
@@ -404,13 +406,9 @@ describe("authentication and choir boundaries", () => {
 
   it("links Google only to an existing verified email and creates a user for a different email", async () => {
     const database = createDatabase(env.DB);
-    const existingUserId = crypto.randomUUID();
-    await database.insert(user).values({
-      id: existingUserId,
-      name: "邮箱成员",
-      email: "verified@example.test",
-      emailVerified: true,
-    });
+    const registration = await registerWithPassword({ callWorker, email: "verified@example.test", latestOtp });
+    const session = await callWorker("/api/auth/get-session", { headers: { cookie: registration.cookie } });
+    const existingUserId = ((await session.json()) as { user: { id: string } }).user.id;
 
     const googleIdToken = await completeGoogleAuthentication({
       subject: "google-existing-subject",
@@ -420,7 +418,7 @@ describe("authentication and choir boundaries", () => {
     let users = await database.select().from(user);
     expect(users).toHaveLength(1);
     expect(users[0].id).toBe(existingUserId);
-    expect(users[0].name).toBe("邮箱成员");
+    expect(users[0].name).toBe("Same Page 用户");
     const googleAccounts = await database.select().from(account);
     expect(googleAccounts).toContainEqual(
       expect.objectContaining({
@@ -440,7 +438,9 @@ describe("authentication and choir boundaries", () => {
       name: "Google 新昵称",
     });
     expect(await database.select().from(user)).toHaveLength(1);
-    expect(await database.select().from(account)).toHaveLength(1);
+    expect(await database.select().from(account)).toHaveLength(2);
+    const passwordLogin = await signInWithPassword({ callWorker, email: "verified@example.test" });
+    expect(await passwordLogin.json()).toMatchObject({ user: { id: existingUserId } });
 
     await completeGoogleAuthentication({
       subject: "google-new-subject",
@@ -456,6 +456,16 @@ describe("authentication and choir boundaries", () => {
         name: "另一位成员",
       }),
     );
+  });
+
+  it("does not link Google to an unverified local identity", async () => {
+    const email = "unverified@example.test";
+    const database = createDatabase(env.DB);
+    await database.insert(user).values({ id: crypto.randomUUID(), name: "未验证用户", email, emailVerified: false });
+    await completeGoogleAuthentication({ subject: "unverified-google", email, name: "Google 用户", expectLinkFailure: true });
+    const response = await callWorker("/api/auth/flow", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
+    expect(await response.json()).toEqual({ flow: "sign-up" });
+    expect(await database.select().from(account)).toHaveLength(0);
   });
 
   it("allows exactly one open-admission preview entry", async () => {
@@ -500,14 +510,19 @@ describe("authentication and choir boundaries", () => {
     ).rejects.toThrow();
   });
 
-  it("routes normalized emails with bounded account discovery", async () => {
-    const database = createDatabase(env.DB);
-    await database.insert(user).values({
-      id: crypto.randomUUID(),
-      name: "Existing user",
-      email: "existing@example.test",
-      emailVerified: true,
+  it("routes Google-only users to first password setup instead of a missing password", async () => {
+    await completeGoogleAuthentication({ subject: "google-first", email: "google-first@example.test", name: "Google 用户" });
+    const response = await callWorker("/api/auth/flow", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: " Google-First@Example.Test " }),
     });
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toEqual({ flow: "set-password", hasGoogle: true });
+  });
+
+  it("routes normalized emails with bounded account discovery", async () => {
+    await registerWithPassword({ callWorker, email: "existing@example.test", latestOtp });
 
     const existing = await callWorker("/api/auth/flow", {
       method: "POST",
@@ -1122,54 +1137,76 @@ describe("authentication and choir boundaries", () => {
     expect(loggedOutput).not.toContain(adminRegistration.otp);
   });
 
-  it("sets the first password for a verified account without a credential", async () => {
+  it("keeps the Google user's ID, membership and personal annotations after verified first password setup", async () => {
+    const email = "google-setup@example.test";
+    const profile = { subject: "google-setup", email, name: "Google 用户" };
+    let googleCookie = "";
+    await completeGoogleAuthentication({ ...profile, onSession: value => { googleCookie = value; } });
+    const read = (path: string, cookie: string) => callWorker(path, { headers: { cookie } });
+    const originalSession = await (await read("/api/auth/get-session", googleCookie)).json() as { user: { id: string } };
+    const userId = originalSession.user.id;
+    const { choirId } = await provisionChoir({ binding: env.DB, adminUserId: userId, adminDisplayName: "原显示名", inviteSecret: env.INVITE_SECRET });
     const database = createDatabase(env.DB);
-    const email = "existing-admin@example.test";
-    const userId = crypto.randomUUID();
-    await database.insert(user).values({
-      id: userId,
-      name: "管理员",
-      email,
-      emailVerified: true,
+    const scoreId = crypto.randomUUID();
+    const versionId = crypto.randomUUID();
+    await database.insert(scores).values({ id: scoreId, choirId, fileName: "测试.pdf", fileNameKey: "测试.pdf" });
+    await database.insert(scoreVersions).values({ id: versionId, choirId, scoreId, versionNumber: 1, objectKey: `test/${versionId}`, sizeBytes: 100, sha256: "a".repeat(64), pageCount: 1, state: "ready" });
+    await database.update(scores).set({ currentVersionId: versionId }).where(eq(scores.id, scoreId));
+    const base = `/api/choirs/${choirId}/scores/${scoreId}`;
+    const layers = await (await read(`${base}/layers`, googleCookie)).json() as { layers: Array<{ id: string; kind: string }> };
+    const layerId = layers.layers.find(layer => layer.kind === "personal")!.id;
+    const annotationId = crypto.randomUUID();
+    const push = await callWorker(`${base}/annotations/push`, {
+      method: "POST", headers: { "content-type": "application/json", cookie: googleCookie, "x-same-page-owner-user-id": userId },
+      body: JSON.stringify({ operations: [{ opId: crypto.randomUUID(), annotationId, layerId, baseVersion: 0, type: "upsert", payload: { kind: "text", pageNumber: 1, x: 0.2, y: 0.3, fontScale: 0.024, text: "原个人批注" } }] }),
     });
-
-    const requestReset = await callWorker(
-      "/api/auth/email-otp/request-password-reset",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email }),
-      },
-    );
-    expect(requestReset.status).toBe(200);
+    expect(await push.json()).toMatchObject({ results: [{ status: "accepted" }] });
+    const membershipsBefore = await (await read("/api/choirs", googleCookie)).json();
+    const annotationsBefore = await (await read(`${base}/annotations`, googleCookie)).json();
+    const post = (path: string, body: unknown) => callWorker(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    expect((await post("/api/auth/email-otp/request-password-reset", { email })).status).toBe(200);
     const otp = latestOtp();
-    expect(deliveredEmails.at(-1)?.subject).toBe(
-      "Same Page 密码重设验证码",
-    );
     await expectOtpStoredAsHash(otp);
+    expect((await post("/api/auth/email-otp/request-password-reset", { email })).status).toBe(429);
+    const check = { email, otp, type: "forget-password" };
+    expect((await post("/api/auth/email-otp/check-verification-otp", { ...check, otp: "not-a-code" })).status).toBe(400);
+    expect((await post("/api/auth/email-otp/check-verification-otp", check)).status).toBe(200);
+    const password = "new Same Page password";
+    // Password policy rejects before consuming a valid code.
+    expect((await post("/api/auth/email-otp/reset-password", { email, otp, password: "short" })).status).toBe(400);
+    expect((await post("/api/auth/email-otp/reset-password", { email, otp, password })).status).toBe(200);
+    expect((await post("/api/auth/email-otp/reset-password", { email, otp, password })).status).toBe(400);
+    expect((await post("/api/auth/email-otp/check-verification-otp", check)).status).toBe(400);
+    const login = await signInWithPassword({ callWorker, email, password });
+    expect(login.status).toBe(200);
+    const passwordCookie = cookieFrom(login);
+    await completeGoogleAuthentication({ ...profile, onSession: value => { googleCookie = value; } });
+    for (const cookie of [passwordCookie, googleCookie]) {
+      expect(await (await read("/api/auth/get-session", cookie)).json()).toMatchObject({ user: { id: userId } });
+      expect(await (await read("/api/choirs", cookie)).json()).toEqual(membershipsBefore);
+      expect(await (await read(`${base}/annotations`, cookie)).json()).toEqual(annotationsBefore);
+    }
+    expect(await (await post("/api/auth/flow", { email })).json()).toEqual({ flow: "sign-in" });
+  });
 
-    const newPassword = "new secure administrator password";
-    const reset = await callWorker("/api/auth/email-otp/reset-password", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, otp, password: newPassword }),
-    });
-    expect(reset.status).toBe(200);
-
-    const credential = await database.query.account.findFirst({
-      where: eq(account.userId, userId),
-      columns: { password: true, providerId: true },
-    });
-    expect(credential).toMatchObject({ providerId: "credential" });
-    expect(credential?.password).toBeTruthy();
-    expect(credential?.password).not.toBe(newPassword);
-
-    const signIn = await signInWithPassword({
-      callWorker,
-      email,
-      password: newPassword,
-    });
-    expect(signIn.status).toBe(200);
+  it.each(["expired", "exhausted"])("rejects %s first password verification without enabling password login", async (failure) => {
+    const email = "rejected@example.test";
+    await completeGoogleAuthentication({ subject: "rejected", email, name: "Google 用户" });
+    const post = (path: string, body: unknown) => callWorker(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    await post("/api/auth/email-otp/request-password-reset", { email });
+    const otp = latestOtp();
+    if (failure === "expired") {
+      await env.DB.prepare("UPDATE verification SET expires_at = ?").bind(Date.now() - 1).run();
+    } else {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        expect((await post("/api/auth/email-otp/check-verification-otp", { email, type: "forget-password", otp: "wrong-code" })).status).toBe(400);
+      }
+    }
+    expect((await post("/api/auth/email-otp/check-verification-otp", { email, type: "forget-password", otp })).ok).toBe(false);
+    const password = "must not enable login";
+    expect((await post("/api/auth/email-otp/reset-password", { email, otp, password })).ok).toBe(false);
+    expect((await signInWithPassword({ callWorker, email, password })).status).toBe(401);
+    expect(await (await post("/api/auth/flow", { email })).json()).toEqual({ flow: "set-password", hasGoogle: true });
   });
 
   it("replaces every unverified pre-existing credential with the mailbox owner's password", async () => {
@@ -1554,6 +1591,7 @@ async function completeWechatAuthentication(
 }
 
 async function completeGoogleAuthentication(profile: {
+  expectLinkFailure?: boolean;
   onSession?(cookie: string): void;
   subject: string;
   email: string;
@@ -1623,6 +1661,10 @@ async function completeGoogleAuthentication(profile: {
     },
   );
   expect(callback.status, await callback.clone().text()).toBe(302);
+  if (profile.expectLinkFailure) {
+    expect(callback.headers.get("location")).toContain("error=account_not_linked");
+    return idToken;
+  }
   expect(callback.headers.get("location")).toBe("/login?oauth=complete");
   const cookie = callback.headers.get("set-cookie")?.match(/(?:^|,\s*)((?:__Secure-)?better-auth\.session_token=[^;]+)/)?.[1];
   expect(cookie).toBeTruthy();
