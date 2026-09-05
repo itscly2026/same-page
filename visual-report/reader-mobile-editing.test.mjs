@@ -9,7 +9,7 @@ import { startViteServer } from "../scripts/vite-server.mjs";
 import { resolveFixtureRequest } from "./fixtures.mjs";
 
 const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const port = Number(process.env.READER_MOBILE_TEST_PORT ?? 4187);
+const port = process.env.READER_MOBILE_TEST_PORT ? Number(process.env.READER_MOBILE_TEST_PORT) : undefined;
 let appServer;
 let appOrigin = process.env.LAYOUT_TEST_ORIGIN;
 

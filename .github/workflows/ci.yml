@@ -64,7 +64,8 @@ jobs:
         if: >-
           steps.scope.outputs.visual == 'true' ||
           steps.scope.outputs.pwa == 'true' ||
-          steps.scope.outputs.performance == 'true'
+          steps.scope.outputs.performance == 'true' ||
+          steps.scope.outputs.smoke == 'true'
         run: npx playwright install --with-deps chromium webkit
 
       - name: PWA update handover
@@ -89,6 +90,44 @@ jobs:
         if: steps.scope.outputs.migration == 'true'
         run: npm run test:migrations
 
+      - name: Real browser Worker storage smoke
+        if: steps.scope.outputs.smoke == 'true'
+        run: npm run test:smoke
+
+      - name: Seal verified release
+        if: steps.scope.outputs.build == 'true'
+        run: |
+          node scripts/release-artifact.mjs seal "$GITHUB_SHA"
+          tar -cf release.tar dist migrations wrangler.jsonc package-lock.json release.json
+
+      - name: Upload verified release
+        if: steps.scope.outputs.build == 'true'
+        id: artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.sha }}
+          overwrite: true
+          path: release.tar
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Record verification identity
+        if: steps.scope.outputs.build == 'true'
+        run: |
+          echo "Source: $GITHUB_SHA; artifact: $ARTIFACT_URL; digest: $ARTIFACT_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.artifact.outputs.artifact-digest }}
+
+      - name: Preserve synthetic test evidence
+        if: always() && steps.scope.outputs.full == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-${{ github.sha }}-${{ github.run_attempt }}
+          path: artifacts/verification/
+          if-no-files-found: ignore
+          retention-days: 14
+
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify.outputs.deploy == 'true'
     needs: verify
@@ -98,23 +137,46 @@ jobs:
       group: same-page-production
       cancel-in-progress: false
     environment: production
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Admit release under production lock
+        id: admission
+        run: node scripts/release-admission.mjs admit
+
+      - name: Download verified release
+        if: steps.admission.outputs.proceed == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: release-${{ github.sha }}
+
+      - name: Verify artifact before production writes
+        if: steps.admission.outputs.proceed == 'true'
+        run: |
+          tar -xf release.tar
+          node scripts/release-artifact.mjs verify "$GITHUB_SHA"
 
       - name: Use Node.js 24
+        if: steps.admission.outputs.proceed == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
 
       - name: Install dependencies
+        if: steps.admission.outputs.proceed == 'true'
         run: npm ci --prefer-offline --no-audit --no-fund
 
-      - name: Build production assets
-        run: npm run build
-
       - name: Record production recovery point and aggregate state
+        if: steps.admission.outputs.proceed == 'true'
         run: |
           npx wrangler d1 time-travel info same-page-production --json
           node scripts/verify-lifecycle-migration.mjs before "$RUNNER_TEMP/same-page-before-migration.json"
@@ -123,18 +185,21 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Apply production database migrations
+        if: steps.admission.outputs.proceed == 'true'
         run: npx wrangler d1 migrations apply same-page-production --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Backfill production score filenames
+        if: steps.admission.outputs.proceed == 'true'
         run: node scripts/backfill-score-file-names.mjs --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Verify production score schema
+        if: steps.admission.outputs.proceed == 'true'
         run: >-
           npx wrangler d1 execute same-page-production --remote
           --command "SELECT scores.file_name, scores.file_name_key,
@@ -148,17 +213,27 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Verify production lifecycle schema
+        if: steps.admission.outputs.proceed == 'true'
         run: node scripts/verify-lifecycle-migration.mjs after "$RUNNER_TEMP/same-page-before-migration.json"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Deploy Worker and assets
+        if: steps.admission.outputs.proceed == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+          command: deploy --config dist/same_page/wrangler.json
 
       - name: Verify production deployment
-        run: npm run verify:deployment -- https://samepage.clyapps.com
+        if: steps.admission.outputs.proceed == 'true'
+        run: npm run verify:deployment -- https://samepage.clyapps.com "$GITHUB_SHA"
+
+      - name: Record release result
+        if: always() && steps.admission.outputs.deployment_id != ''
+        run: node scripts/release-admission.mjs "$RELEASE_STATE"
+        env:
+          DEPLOYMENT_ID: ${{ steps.admission.outputs.deployment_id }}
+          RELEASE_STATE: ${{ job.status == 'success' && 'success' || 'failure' }}

@@ -6,3 +6,6 @@ dist/
 coverage/
 artifacts/visual-report/
 worker-configuration.d.ts
+artifacts/verification/
+release.json
+release.tar

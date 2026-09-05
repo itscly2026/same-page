@@ -1,5 +1,8 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
 import react from "@vitejs/plugin-react";
+import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
@@ -10,7 +13,14 @@ const buildId = process.env.SAME_PAGE_BUILD_ID
   ?? process.env.GITHUB_SHA
   ?? execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 
-export default defineConfig({
+const testState = process.env.SAME_PAGE_TEST_STATE;
+const testHeaders = testState ? { "x-same-page-test-server": process.env.SAME_PAGE_TEST_RUN! } : undefined;
+
+export default defineConfig(({ isPreview }) => ({
+  ...(testState && isPreview ? { root: testState } : {}),
+  ...(testState ? { cacheDir: `${testState}/vite-cache`, envDir: testState } : {}),
+  server: { headers: testHeaders },
+  preview: { headers: testHeaders },
   define: {
     __SAME_PAGE_BUILD_ID__: JSON.stringify(buildId),
   },
@@ -23,16 +33,29 @@ export default defineConfig({
   plugins: [
     {
       name: "same-page-build-identity",
-      generateBundle() {
-        this.emitFile({
-          type: "asset",
-          fileName: "build.json",
-          source: `${JSON.stringify({ buildId })}\n`,
+      configurePreviewServer(server) {
+        if (testHeaders) server.middlewares.use((_request, response, next) => {
+          response.setHeader("x-same-page-test-server", testHeaders["x-same-page-test-server"]);
+          next();
         });
+      },
+      transformIndexHtml() {
+        return [{ tag: "meta", attrs: { name: "same-page-build-id", content: buildId }, injectTo: "head" }];
+      },
+      async writeBundle(options, bundle) {
+        // Read final disk bytes after Vite's preload/import rewrites.
+        const output = options.dir!;
+        const scripts = Object.fromEntries(await Promise.all(Object.values(bundle)
+          .filter((entry) => /\.(?:m?js)$/.test(entry.fileName))
+          .map(async (entry) => [`/${entry.fileName}`, createHash("sha256")
+            .update(await readFile(path.join(output, entry.fileName))).digest("hex")])));
+        await writeFile(path.join(output, "build.json"), `${JSON.stringify({ buildId, scripts })}\n`);
       },
     },
     react(),
-    cloudflare(),
+    cloudflare(testState ? {
+      persistState: { path: testState }, inspectorPort: false, remoteBindings: false,
+    } : {}),
     VitePWA({
       registerType: "prompt",
       injectRegister: false,
@@ -88,4 +111,4 @@ export default defineConfig({
       },
     }),
   ],
-});
+}));

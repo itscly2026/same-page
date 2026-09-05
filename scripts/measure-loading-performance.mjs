@@ -8,8 +8,7 @@ import { startViteServer } from "./vite-server.mjs";
 import { evaluateLoadingBudget } from "./loading-performance-budget.mjs";
 import { resolveFixtureRequest } from "../visual-report/fixtures.mjs";
 
-const port = Number.parseInt(process.env.LOADING_TEST_PORT ?? "4184", 10);
-const origin = `http://127.0.0.1:${port}`;
+const port = process.env.LOADING_TEST_PORT ? Number(process.env.LOADING_TEST_PORT) : undefined;
 const controlledDelayMs = Number.parseInt(
   process.env.LOADING_TEST_DELAY_MS ?? "75",
   10,
@@ -26,6 +25,7 @@ const expectedJourneys = ["enter-drive", "open-score", "exit-score"];
 const requestOrder = [];
 let returningToDrive = false;
 const preview = await startViteServer({ script: "preview", port });
+const origin = preview.origin;
 
 let browser;
 try {

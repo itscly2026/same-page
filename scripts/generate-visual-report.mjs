@@ -19,8 +19,7 @@ import { startViteServer } from "./vite-server.mjs";
 const repositoryRoot = process.cwd();
 const outputRoot = path.resolve(repositoryRoot, "artifacts/visual-report");
 const screenshotsRoot = path.join(outputRoot, "screenshots");
-const port = Number.parseInt(process.env.VISUAL_REPORT_PORT ?? "4173", 10);
-const baseUrl = `http://127.0.0.1:${port}`;
+const port = process.env.VISUAL_REPORT_PORT ? Number(process.env.VISUAL_REPORT_PORT) : undefined;
 
 ensureSafeOutputPath(outputRoot);
 validateVisualReportScenarios();
@@ -39,6 +38,7 @@ await rm(outputRoot, { recursive: true, force: true });
 await mkdir(screenshotsRoot, { recursive: true });
 
 const preview = await startViteServer({ script: "preview", port, cwd: repositoryRoot });
+const baseUrl = preview.origin;
 
 let browser;
 let activeCapture;

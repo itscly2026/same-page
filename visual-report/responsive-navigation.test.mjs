@@ -14,7 +14,7 @@ let origin = process.env.LAYOUT_TEST_ORIGIN;
 
 before(async () => {
   if (!origin) {
-    server = await startViteServer({ script: "dev", port: 4196, cwd: repositoryRoot });
+    server = await startViteServer({ script: "dev", cwd: repositoryRoot });
     origin = server.origin;
   }
 });

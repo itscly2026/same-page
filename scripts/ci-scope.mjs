@@ -14,6 +14,7 @@ const checkNames = [
   "migration",
   "build",
   "deploy",
+  "smoke",
 ];
 
 const checks = (enabled = []) => Object.fromEntries(
@@ -55,6 +56,7 @@ export function determineCiScope({ cwd, eventName, event }) {
       };
     }
     const selected = selectChecks(files);
+    if (selected.deploy) selected.build = true;
     return {
       full: true,
       ...selected,
@@ -77,6 +79,7 @@ function selectChecks(files) {
 }
 
 function checksForPath(file) {
+  if (rootDocuments.has(file) || (file.startsWith("docs/") && file.endsWith(".md"))) return [];
   if (file.startsWith(".github/")) {
     return checkNames.filter((name) => name !== "deploy");
   }
@@ -85,19 +88,19 @@ function checksForPath(file) {
   }
   if (file === "eslint.config.js" || file === "tsconfig.node.json") return [];
   if (file === "tsconfig.app.json") return ["client", "build", "deploy"];
-  if (file === "tsconfig.worker.json") return ["worker", "build", "deploy"];
+  if (file === "tsconfig.worker.json") return ["worker", "build", "smoke", "deploy"];
   if (file === "tsconfig.json") return ["client", "worker", "build", "deploy"];
   if (["vitest.client.config.ts", "vitest.node.config.ts"].includes(file)) return ["client"];
   if (["vitest.worker.config.ts", "vitest.worker-unit.config.ts"].includes(file)) return ["worker"];
 
   if (file.startsWith("src/shared/")) {
     if (isTestPath(file)) return ["client"];
-    return ["client", "worker", "visual", "performance", "build", "deploy"];
+    return ["client", "worker", "visual", "performance", "build", "smoke", "deploy"];
   }
   if (file.startsWith("src/test/")) return ["client"];
   if (file.startsWith("src/client/")) {
     if (isTestPath(file)) return ["client"];
-    const selected = ["client", "visual", "performance", "build", "deploy"];
+    const selected = ["client", "visual", "performance", "build", "smoke", "deploy"];
     if (
       file === "src/client/main.tsx"
       || file.startsWith("src/client/components/reload-prompt")
@@ -108,12 +111,13 @@ function checksForPath(file) {
   if (file.startsWith("worker/")) {
     return isTestPath(file) || file.startsWith("worker/test/")
       ? ["worker"]
-      : ["worker", "build", "deploy"];
+      : ["worker", "build", "smoke", "deploy"];
   }
-  if (file.startsWith("migrations/")) return ["worker", "migration", "deploy"];
-  if (file.startsWith("visual-report/")) return ["visual"];
+  if (file.startsWith("migrations/")) return ["worker", "migration", "build", "smoke", "deploy"];
+  if (file.startsWith("browser-tests/")) return ["smoke", "build"];
+  if (file.startsWith("visual-report/")) return ["visual", "performance", "build", "smoke"];
   if (file.startsWith("public/") || file === "index.html") {
-    return ["visual", "pwa", "performance", "build", "deploy"];
+    return ["visual", "pwa", "performance", "build", "smoke", "deploy"];
   }
   if (file.startsWith("scripts/")) {
     if (file.startsWith("scripts/ci-scope.")) return [];
@@ -122,7 +126,7 @@ function checksForPath(file) {
       file.startsWith("scripts/measure-loading-performance.")
       || file.startsWith("scripts/loading-performance-")
     ) return ["client", "performance", "build"];
-    if (file.startsWith("scripts/generate-visual-report.") || file.startsWith("scripts/vite-server.")) {
+    if (file.startsWith("scripts/generate-visual-report.")) {
       return ["client", "visual"];
     }
     if (file.startsWith("scripts/backfill-score-file-names.")) {
@@ -131,7 +135,8 @@ function checksForPath(file) {
     if (file.startsWith("scripts/verify-score-schema-migration.")) {
       return ["migration"];
     }
-    return ["client"];
+    // Shared or unknown verification tools fail closed without publishing product code.
+    return checkNames.filter((name) => name !== "deploy");
   }
   return null;
 }

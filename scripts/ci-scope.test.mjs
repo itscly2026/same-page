@@ -54,12 +54,12 @@ test("code, config, dependencies, workflow and unknown files require full verifi
 test("runtime areas select only their relevant expensive checks", (t) => {
   const repo = repository(t);
   const expectedByPath = new Map([
-    ["src/client/routes/home-page.tsx", ["client", "visual", "performance", "build", "deploy"]],
-    ["src/client/pwa-navigation.ts", ["client", "visual", "pwa", "performance", "build", "deploy"]],
-    ["worker/index.ts", ["worker", "build", "deploy"]],
-    ["src/shared/health.ts", ["client", "worker", "visual", "performance", "build", "deploy"]],
-    ["migrations/0002.sql", ["worker", "migration", "deploy"]],
-    ["visual-report/layout.test.mjs", ["visual"]],
+    ["src/client/routes/home-page.tsx", ["client", "visual", "performance", "build", "smoke", "deploy"]],
+    ["src/client/pwa-navigation.ts", ["client", "visual", "pwa", "performance", "build", "smoke", "deploy"]],
+    ["worker/index.ts", ["worker", "build", "smoke", "deploy"]],
+    ["src/shared/health.ts", ["client", "worker", "visual", "performance", "build", "smoke", "deploy"]],
+    ["migrations/0002.sql", ["worker", "migration", "build", "smoke", "deploy"]],
+    ["visual-report/layout.test.mjs", ["visual", "performance", "build", "smoke"]],
     ["scripts/verify-score-schema-migration.mjs", ["migration"]],
   ]);
 
@@ -69,7 +69,7 @@ test("runtime areas select only their relevant expensive checks", (t) => {
     repo.commit();
     const scope = repo.scope();
     assert.equal(scope.full, true, name);
-    for (const check of ["client", "worker", "visual", "pwa", "performance", "migration", "build", "deploy"]) {
+    for (const check of ["client", "worker", "visual", "pwa", "performance", "migration", "build", "deploy", "smoke"]) {
       assert.equal(scope[check], enabled.includes(check), `${name}: ${check}`);
     }
   }
@@ -169,7 +169,7 @@ test("the workflow entrypoint emits scope and rejects whitespace errors in docs"
   assert.equal(run().status, 0);
   assert.equal(
     readFileSync(output, "utf8"),
-    "full=false\nclient=false\nworker=false\nvisual=false\npwa=false\nperformance=false\nmigration=false\nbuild=false\ndeploy=false\n",
+    "full=false\nclient=false\nworker=false\nvisual=false\npwa=false\nperformance=false\nmigration=false\nbuild=false\ndeploy=false\nsmoke=false\n",
   );
   rmSync(output);
   repo.put("docs/change.md", "bad whitespace \t\n");
@@ -177,4 +177,21 @@ test("the workflow entrypoint emits scope and rejects whitespace errors in docs"
   const result = run();
   assert.notEqual(result.status, 0);
   assert.match(result.stdout, /trailing whitespace/);
+});
+
+test("shared test infrastructure selects its actual browser, PWA, performance and artifact consumers without deployment", (t) => {
+  const repo = repository(t);
+  for (const name of ["scripts/vite-server.mjs", "scripts/process-lifecycle.mjs", "scripts/deployment-identity.mjs", "scripts/release-artifact.mjs", "scripts/new-shared-helper.mjs"]) {
+    repo.git("reset", "--hard", repo.base);
+    repo.put(name); repo.commit();
+    const scope = repo.scope();
+    for (const check of ["client", "visual", "pwa", "performance", "build", "smoke"]) assert.equal(scope[check], true, `${name}: ${check}`);
+    assert.equal(scope.deploy, false, name);
+  }
+});
+
+test("documentation mixed with verification changes does not trigger deployment", (t) => {
+  const repo = repository(t);
+  repo.put("README.md", "docs updated"); repo.put("scripts/release-admission.mjs"); repo.commit();
+  assert.equal(repo.scope().deploy, false);
 });

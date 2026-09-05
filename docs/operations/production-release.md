@@ -45,7 +45,7 @@
 5. 部署 Worker 与静态资源；Wrangler 的 custom domain 配置负责创建 DNS 记录和证书。
 6. 在 GitHub `production` environment 中设置 `CLOUDFLARE_API_TOKEN` 与
    `CLOUDFLARE_ACCOUNT_ID`。
-7. 运行 `npm run verify:deployment -- https://samepage.clyapps.com`。
+7. 运行 `npm run verify:deployment -- https://samepage.clyapps.com <expected-source-SHA>`。
 8. 首位管理员完成 OTP 注册后，通过受控命令创建“小红花云盘”。自动化命令不显示
    初始邀请码；管理员登录后在「管理 → 邀请码」查看，并通过私密渠道交付。
 9. 如需启用“公开体验”，使用 `--guest-admission open --preview-entry` 创建唯一的公开体验云盘；已有开放准入云盘必须通过受控 SQL 明确设置 `is_preview_entry = 1`，不得按名称自动匹配。
@@ -94,8 +94,9 @@ authorization code、token、完整 profile 或 Secret。
 | 中国大陆网络下 Google 超时 | 记录网络、设备和时间，将 Google 判为该场景不可用；确认邮箱入口始终可见可用。不要通过放宽 OAuth 校验或增加代理回调规避。 |
 
 后续 `main` 发布必须先通过 CI 根据变更范围选择的门禁；无法识别范围时运行完整门禁，只有影响生产产物或 migration 的变更才进入 deploy job。正式发布或 migration 前，本地运行全量超集 `npm run check:full`；先运行 `npm ci` 和 `npx playwright install chromium webkit`（Linux/CI 使用 `--with-deps`）。`npm run check` 不包含 PWA 更新交接及加载性能，不能作为发布前的完整集合。
-deploy job 随后执行 D1 migrations、Wrangler deploy 与线上机器验证；迁移或验证失败时
-workflow 失败，不能记为发布成功。
+deploy job 在生产锁内核对发布顺序，记录发布尝试，下载 verify 的原始产物并校验完整清单，再执行 D1 恢复点记录、migrations、迁移后聚合/结构核查、Wrangler deploy 与线上机器验证。迁移或验证失败时 workflow 失败，不能记为发布成功。部署阶段不重新构建。
+
+构建身份、HTML meta、Worker 须匹配显式 expected SHA；实际脚本逐个核对已验证发布包 `dist/client/build.json` 中的 SHA256（包括入口、共享与延迟加载脚本及 PDF Worker）。独立验收需下载对应 artifact；CLI 第三个参数可指定该清单路径，不能使用另一版本的本地构建。全部返回同一个旧版本仍失败。验收最多 12 次、每次请求超时 15 秒、间隔 3 秒，超过传播窗口则保留失败。成功记录只能在这些检查全部完成后写入。迁移后的失败尝试仍推进发布边界；旧作业不能在它之后部署旧 Worker。
 
 ## 每次发布记录
 
@@ -104,9 +105,9 @@ workflow 失败，不能记为发布成功。
 | 门槛 | 可接受证据 |
 | --- | --- |
 | 代码 | commit、PR、`npm run check:full` 结果（按范围 CI 的本地全量超集，不代表部署或实机验收） |
-| CI | verify 与 deploy job 的 workflow URL 和结论 |
+| CI | verify 与 deploy job 的 workflow URL 和结论、artifact ID/digest、release.json SHA 与文件摘要 |
 | Cloudflare | Worker deployment ID、D1 migration 状态、R2 绑定 |
-| 生产 URL | HTTPS、应用壳、manifest、Service Worker、`/api/health`、未登录 401 |
+| 生产 URL | 显式 expected SHA；Worker、build.json、HTML 与脚本身份一致；HTTPS、manifest、Service Worker、未登录 401 |
 | 第三方登录 | 提供方审核状态、回调配置、入口可见性、真实 Google/微信各一次成功与取消返回 |
 | DNS | `samepage.clyapps.com` 的解析与证书；不得改动根域邮件记录 |
 | 邮件 | QQ、163、Gmail、Outlook 各一次真实 OTP 到达与延迟；不记录 OTP |
@@ -134,3 +135,14 @@ workflow 失败，不能记为发布成功。
 15. 管理员打开「管理 → 邀请码」查看当前码，关闭重开仍可查看；旧码仅有校验值时补录原码并确认原码继续有效，主动轮换后确认旧码失效。
 
 真实 Safari、PWA 存储驱逐、手写笔和大陆网络表现不能由桌面自动化或 WebKit 模拟替代。
+
+## 发布失败与显式回滚
+
+1. 先在 Actions 确定失败阶段。准入跳过表示已有更新的发布尝试；历史不可达、分叉、GitHub 记录不可用或 artifact 校验失败都在生产写入前停止。不要通过删除发布记录或修改 expected SHA 绕过。
+2. 下载失败或 artifact 过期：重跑 verify 和 deploy。相同 SHA 允许重试；不允许在部署阶段临时构建一份新产物。`npm run deploy` 仅供已获授权的手工恢复，要求 `SAME_PAGE_RELEASE_SHA` 与已校验的 release.json 一致，不构建、不迁移，也不替代完整发布流程；执行时须停止并发 CI 发布并单独记录。
+3. 迁移失败：使用本次步骤记录的 D1 Time Travel 恢复点和迁移前聚合结果，先确定哪些迁移已应用。保留非取消的部署锁，不要在迁移过程中启动另一次写入。修复幂等迁移后重试同 SHA 或发布后继修复。
+4. Worker/静态资源上传或线上身份验收失败：检查 expected SHA、上传 artifact、线上 health/build.json/HTML/脚本各自版本与 Actions 原始错误。传播超时不能写成功；可重试同 SHA 的 deploy，仍须重新执行恢复点和迁移核查。
+5. 代码回滚采用新的 `git revert` 提交，经过完整验证和同一发布链路向前发布，使发布顺序仍单调。先核对回滚代码与当前 schema 是否兼容；迁移不兼容时先设计明确的数据恢复/前向修复，不能直接用旧 Worker 覆盖新 schema。恢复 D1 是单独、明确授权的生产操作，应说明可能丢失恢复点之后的数据并核查 R2 一致性；本工作流不会自动恢复数据库。
+6. GitHub 发布记录缺失或历史分叉时，先重建可信版本证据并恢复正常 main 历史；正常发布不提供强制忽略开关。首次启用记录时只读核对线上 Worker SHA，必须能在完整 Git 历史中解析。
+
+默认通过 CI 发布。手工恢复完成后须记录源码、artifact、D1、Worker deployment ID 和独立线上验收；恢复点、流水线通过、外部身份提供方成功和实机验收各自独立。

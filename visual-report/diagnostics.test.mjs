@@ -4,8 +4,9 @@ import { chromium } from "@playwright/test";
 import { startViteServer } from "../scripts/vite-server.mjs";
 import { resolveFixtureRequest } from "./fixtures.mjs";
 
-test("real reader reports PDF permission, network and malformed bootstrap failures safely", async () => {
-  const server = await startViteServer({ script: "dev", port: 4198 });
+test("real reader reports PDF permission, network and malformed bootstrap failures safely", async (t) => {
+  const server = await startViteServer({ script: "dev" });
+  t.after(() => server.stop());
   const browser = await chromium.launch({ headless: true });
   try {
     for (const scenario of ["pdf-denied", "pdf-network", "bad-bootstrap"]) {
@@ -23,7 +24,7 @@ test("real reader reports PDF permission, network and malformed bootstrap failur
         }
       });
       const page = await context.newPage();
-      await page.goto("http://127.0.0.1:4198/choirs/visual-choir/scores/visual-score", { waitUntil: "domcontentloaded" });
+      await page.goto(`${server.origin}/choirs/visual-choir/scores/visual-score`, { waitUntil: "domcontentloaded" });
       await page.getByRole("alert").waitFor();
       if (scenario === "bad-bootstrap") assert.match(await page.getByRole("alert").innerText(), /服务暂时不可用或返回内容异常/);
       await page.getByRole("link", { name: "故障诊断", exact: true }).click();

@@ -6,7 +6,7 @@ import { resolveFixtureRequest, visualFixture } from "./fixtures.mjs";
 
 let server;
 const deployedOrigin = process.env.SAME_PAGE_UPLOAD_TEST_ORIGIN;
-before(async () => { if (!deployedOrigin) server = await startViteServer({ script: "dev", port: 4197 }); });
+before(async () => { if (!deployedOrigin) server = await startViteServer({ script: "dev" }); });
 after(async () => { await server?.stop(); });
 
 for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {

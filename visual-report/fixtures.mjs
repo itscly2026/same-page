@@ -387,7 +387,7 @@ function json(body, status = 200) {
   };
 }
 
-function createSampleScorePdf() {
+export function createSampleScorePdf() {
   const pageOne = scorePageContent("SAME PAGE VISUAL FIXTURE", "Rehearsal score - page 1", 1);
   const pageTwo = scorePageContent("SAME PAGE VISUAL FIXTURE", "Rehearsal score - page 2", 2);
   const objects = [

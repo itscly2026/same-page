@@ -21,3 +21,16 @@ describe("child process lifecycle", () => {
     expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
   });
 });
+
+it("cleans a descendant even after its launcher exits", async () => {
+  if (process.platform === "win32") return;
+  const child = spawn(process.execPath, ["-e", `const {spawn}=require('node:child_process'); const p=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}); console.log(p.pid); p.unref();`], { detached: true, stdio: ["ignore", "pipe", "pipe"] });
+  const pid = await new Promise((resolve) => child.stdout.once("data", (chunk) => resolve(Number(String(chunk).trim()))));
+  await new Promise((resolve) => child.once("exit", resolve));
+  try {
+    await stopChildProcessTree(child, 300);
+    expect(() => process.kill(pid, 0)).toThrow();
+  } finally {
+    try { process.kill(pid, "SIGKILL"); } catch { /* already stopped */ }
+  }
+});
