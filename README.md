@@ -204,16 +204,16 @@ npm ci
 npm run dev          # React + Worker 本地开发
 npm run lint         # ESLint
 npm run typecheck    # 客户端、配置与 Worker 类型检查
-npm run test         # React/Vitest 单元测试
-npm run test:worker  # workerd 内的 Worker 测试
+npm run test         # Node 纯单元测试 + React/jsdom 测试
+npm run test:worker  # Node 纯单元测试 + workerd 集成测试
 npm run build        # 类型检查与生产构建
 npm run check        # 常规集合，已包含视觉浏览器测试，详见下方
-npm run check:full   # 与 CI 完整 verify 相同的检查集合（非部署）
+npm run check:full   # 本地全量检查集合（非部署）
 ```
 
-`check` 包含 CI 范围回归测试、lint、类型检查、客户端、Worker、视觉浏览器测试、迁移测试与生产构建；它不是纯单元测试的快速入口。`check:full` 在此基础上增加真实 PWA 更新交接与加载性能检查。代码变更的 CI 保持逐步骤执行同一完整集合，便于定位失败；两者执行顺序不必相同。纯文档改动执行轻量 `verify`，具体白名单、取消策略与用量说明见 [CI 用量与检查范围](docs/operations/ci.md)。单独的 `npm run test` 可用于较快的客户端反馈。
+`check` 包含 CI 范围回归测试、lint、类型检查、客户端、Worker、视觉浏览器测试、迁移测试与生产构建；它不是纯单元测试的快速入口。`check:full` 在此基础上增加真实 PWA 更新交接与加载性能检查，是发布前的本地全量集合。CI 会按变更路径选择受影响的昂贵步骤，纯文档改动只执行轻量 `verify`；具体规则、取消策略与用量说明见 [CI 用量与检查范围](docs/operations/ci.md)。单独的 `npm run test` 可用于较快的客户端反馈。
 
-视觉浏览器测试文件串行执行，避免各自启动的 Vite/workerd 争用调试端口及同一工作目录下的本地 SQLite；没有跳过测试用例。
+视觉浏览器测试最多并行运行两个文件。需要开发服务器的文件使用互不相同的端口，浏览器请求由固定 fixture 截获。测试矩阵保留 Chromium/WebKit、关键响应式断点和代表性身份，不再重复覆盖已由组件测试验证的身份组合。
 
 首次运行任何含浏览器的集合前，先安装两个引擎：
 

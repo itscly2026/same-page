@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,77 +14,76 @@ const persistencePath = mkdtempSync(join(tmpdir(), "same-page-migration-"));
 const targetArgs = ["--local", "--persist-to", persistencePath];
 
 try {
-  for (const migration of [
+  applyMigrations(
     "0001_auth_and_choirs.sql",
     "0002_scores_and_pdf_versions.sql",
     "0003_queue_deleted_score_objects.sql",
     "0004_annotations_and_sync.sql",
-  ]) {
-    executeD1({ file: join(repositoryRoot, "migrations", migration), targetArgs });
-  }
+  );
 
   executeD1({ command: legacyFixtureSql(), targetArgs });
-  executeD1({
-    file: join(repositoryRoot, "migrations", "0005_filename_library_and_trash.sql"),
-    targetArgs,
-  });
+  applyMigrations("0005_filename_library_and_trash.sql");
   assert.equal(backfillLegacyScoreFileNames(targetArgs), 4);
   assert.equal(backfillLegacyScoreFileNames(targetArgs), 0);
-  executeD1({
-    file: join(repositoryRoot, "migrations", "0006_default_shared_layer_slots.sql"),
-    targetArgs,
-  });
-  executeD1({
-    file: join(repositoryRoot, "migrations", "0006_preview_entry.sql"),
-    targetArgs,
-  });
+  applyMigrations(
+    "0006_default_shared_layer_slots.sql",
+    "0006_preview_entry.sql",
+  );
   executeD1({ command: legacyPreviewFixtureSql(), targetArgs });
-  executeD1({
-    file: join(repositoryRoot, "migrations", "0007_rename_product_drives.sql"),
-    targetArgs,
-  });
-  executeD1({
-    file: join(repositoryRoot, "migrations", "0008_text_annotation_font_scale.sql"),
-    targetArgs,
-  });
-  executeD1({
-    file: join(repositoryRoot, "migrations", "0009_fixed_layer_preferences.sql"),
-    targetArgs,
-  });
-  executeD1({
-    file: join(repositoryRoot, "migrations", "0010_remove_score_layer_colors.sql"),
-    targetArgs,
-  });
+  applyMigrations(
+    "0007_rename_product_drives.sql",
+    "0008_text_annotation_font_scale.sql",
+    "0009_fixed_layer_preferences.sql",
+    "0010_remove_score_layer_colors.sql",
+  );
 
   const inviteState = query("SELECT id, join_code_hash, guest_session_version FROM choirs ORDER BY id");
-  executeD1({
-    file: join(repositoryRoot, "migrations", "0011_retrievable_join_codes.sql"),
-    targetArgs,
-  });
-  assert.deepEqual(query("SELECT id, join_code_hash, guest_session_version FROM choirs ORDER BY id"), inviteState);
-  assert(query("SELECT join_code_ciphertext FROM choirs").every((row) => row.join_code_ciphertext === null));
+  applyMigrations("0011_retrievable_join_codes.sql");
+  const [currentInviteState, inviteCiphertexts] = queryMany([
+    "SELECT id, join_code_hash, guest_session_version FROM choirs ORDER BY id",
+    "SELECT join_code_ciphertext FROM choirs",
+  ]);
+  assert.deepEqual(currentInviteState, inviteState);
+  assert(inviteCiphertexts.every((row) => row.join_code_ciphertext === null));
 
   executeD1({ command: "INSERT INTO rate_limits VALUES ('expired-fixture', 3, 0), ('live-fixture', 4, 9999999999999)", targetArgs });
-  executeD1({
-    file: join(repositoryRoot, "migrations", "0012_rate_limit_expiry_index.sql"),
-    targetArgs,
-  });
-  assert.deepEqual(query("SELECT * FROM rate_limits ORDER BY key"), [
+  applyMigrations("0012_rate_limit_expiry_index.sql");
+  const [rateLimits, expiryIndex, expiryPlan] = queryMany([
+    "SELECT * FROM rate_limits ORDER BY key",
+    "PRAGMA index_info(rate_limits_expiry_key_idx)",
+    "EXPLAIN QUERY PLAN SELECT key FROM rate_limits WHERE window_expires_at <= 100 ORDER BY window_expires_at, key LIMIT 500",
+  ]);
+  assert.deepEqual(rateLimits, [
     { key: "expired-fixture", count: 3, window_expires_at: 0 },
     { key: "live-fixture", count: 4, window_expires_at: 9999999999999 },
   ]);
-  assert.deepEqual(query("PRAGMA index_info(rate_limits_expiry_key_idx)").map((row) => row.name), ["window_expires_at", "key"]);
-  const expiryPlan = query("EXPLAIN QUERY PLAN SELECT key FROM rate_limits WHERE window_expires_at <= 100 ORDER BY window_expires_at, key LIMIT 500");
+  assert.deepEqual(expiryIndex.map((row) => row.name), ["window_expires_at", "key"]);
   assert(expiryPlan.some((row) => /COVERING INDEX rate_limits_expiry_key_idx/.test(row.detail)));
   assert(!expiryPlan.some((row) => /SCAN rate_limits|TEMP B-TREE/.test(row.detail)));
 
-  executeD1({ file: join(repositoryRoot, "migrations", "0013_safe_pdf_replacement.sql"), targetArgs });
-  assert(query("SELECT version_revision, last_version_number FROM scores")
+  applyMigrations("0013_safe_pdf_replacement.sql");
+  const state = queryNamed({
+    scoreVersions: "SELECT version_revision, last_version_number FROM scores",
+    scoreColumns: "PRAGMA table_info(scores)",
+    scoreIndexes: "PRAGMA index_list(scores)",
+    layerColumns: "PRAGMA table_info(annotation_layers)",
+    layerIndexes: "PRAGMA index_list(annotation_layers)",
+    scorePreferenceColumns: "PRAGMA table_info(user_score_layer_preferences)",
+    defaultSharedColor: "SELECT default_color FROM choir_shared_layer_settings WHERE choir_id = 'choir' AND slot = 'S'",
+    drives: "SELECT id, name FROM choirs ORDER BY id",
+    scores: "SELECT id FROM scores",
+    versions: "SELECT id FROM score_versions",
+    layers: "SELECT id FROM annotation_layers",
+    objects: "SELECT id FROM annotation_objects",
+    syncOperations: "SELECT op_id FROM annotation_sync_operations",
+    deletions: "SELECT id FROM score_object_deletions",
+    foreignKeyCheck: "PRAGMA foreign_key_check",
+  });
+  assert(state.scoreVersions
     .every((row) => row.version_revision === 1 && row.last_version_number >= 1));
-  verifySchema();
-  verifyDriveNames();
-  verifyContentReset();
-  verifyRelatedRecords();
+  verifySchema(state);
+  verifyDriveNames(state.drives);
+  verifyResetAndRelatedRecords(state);
   executeD1({ command: `
     INSERT INTO sqlite_sequence (name, seq)
       SELECT 'annotation_sync_operations', 1000
@@ -92,18 +91,23 @@ try {
     UPDATE sqlite_sequence SET seq = 1000 WHERE name = 'annotation_sync_operations';
   `, targetArgs });
   assert.deepEqual(query("SELECT seq FROM sqlite_sequence WHERE name = 'annotation_sync_operations'"), [{ seq: 1000 }]);
-  executeD1({ file: join(repositoryRoot, "migrations", "0014_user_and_membership_lifecycle.sql"), targetArgs });
-  assert.deepEqual(query("SELECT seq FROM sqlite_sequence WHERE name = 'annotation_sync_operations'"), [{ seq: 1000 }]);
-  assert.equal(query("SELECT * FROM user_lifecycle").length, 0);
-  assert(query("PRAGMA foreign_key_list(annotation_sync_operations)")
+  applyMigrations("0014_user_and_membership_lifecycle.sql");
+  const [sequence, userLifecycle, operationForeignKeys] = queryMany([
+    "SELECT seq FROM sqlite_sequence WHERE name = 'annotation_sync_operations'",
+    "SELECT * FROM user_lifecycle",
+    "PRAGMA foreign_key_list(annotation_sync_operations)",
+  ]);
+  assert.deepEqual(sequence, [{ seq: 1000 }]);
+  assert.equal(userLifecycle.length, 0);
+  assert(operationForeignKeys
     .some((row) => row.from === "actor_user_id" && row.on_delete === "SET NULL"));
   process.stdout.write("Verified legacy score schema migration.\n");
 } finally {
   rmSync(persistencePath, { recursive: true, force: true });
 }
 
-function verifySchema() {
-  const columns = query("PRAGMA table_info(scores)").map((row) => row.name);
+function verifySchema(state) {
+  const columns = state.scoreColumns.map((row) => row.name);
   assert.deepEqual(columns, [
     "id",
     "choir_id",
@@ -119,33 +123,29 @@ function verifySchema() {
     "version_revision",
     "last_version_number",
   ]);
-  const indexes = query("PRAGMA index_list(scores)").map((row) => row.name);
+  const indexes = state.scoreIndexes.map((row) => row.name);
   assert(indexes.includes("scores_active_filename_uidx"));
   assert(indexes.includes("scores_choir_filename_idx"));
   assert(indexes.includes("scores_trash_expiry_idx"));
-  const layerColumns = query("PRAGMA table_info(annotation_layers)").map(
+  const layerColumns = state.layerColumns.map(
     (row) => row.name,
   );
   assert(layerColumns.includes("default_slot"));
-  const layerIndexes = query("PRAGMA index_list(annotation_layers)").map(
+  const layerIndexes = state.layerIndexes.map(
     (row) => row.name,
   );
   assert(layerIndexes.includes("annotation_layers_default_slot_uidx"));
-  const scorePreferenceColumns = query(
-    "PRAGMA table_info(user_score_layer_preferences)",
-  ).map((row) => row.name);
+  const scorePreferenceColumns = state.scorePreferenceColumns.map((row) => row.name);
   assert(!scorePreferenceColumns.includes("color_override"));
   assert.deepEqual(
-    query(
-      "SELECT default_color FROM choir_shared_layer_settings WHERE choir_id = 'choir' AND slot = 'S'",
-    ),
+    state.defaultSharedColor,
     [{ default_color: "#7c3aed" }],
   );
 }
 
-function verifyDriveNames() {
+function verifyDriveNames(drives) {
   assert.deepEqual(
-    query("SELECT id, name FROM choirs ORDER BY id"),
+    drives,
     [
       { id: "choir", name: "示例云盘" },
       { id: "preview", name: "公开体验云盘" },
@@ -153,27 +153,38 @@ function verifyDriveNames() {
   );
 }
 
-function verifyRelatedRecords() {
-  assert.equal(query("SELECT id FROM scores").length, 0);
-  assert.equal(query("SELECT id FROM score_versions").length, 0);
-  assert.equal(query("SELECT id FROM annotation_layers").length, 0);
-  assert.equal(query("SELECT id FROM annotation_objects").length, 0);
-  assert.equal(query("SELECT id FROM score_object_deletions").length, 1);
-  assert.deepEqual(query("PRAGMA foreign_key_check"), []);
-}
-
-function verifyContentReset() {
-  assert.equal(query("SELECT id FROM scores").length, 0);
-  assert.equal(query("SELECT id FROM score_versions").length, 0);
-  assert.equal(query("SELECT id FROM annotation_objects").length, 0);
-  assert.equal(
-    query("SELECT op_id FROM annotation_sync_operations").length,
-    0,
-  );
+function verifyResetAndRelatedRecords(state) {
+  assert.equal(state.scores.length, 0);
+  assert.equal(state.versions.length, 0);
+  assert.equal(state.layers.length, 0);
+  assert.equal(state.objects.length, 0);
+  assert.equal(state.syncOperations.length, 0);
+  assert.equal(state.deletions.length, 1);
+  assert.deepEqual(state.foreignKeyCheck, []);
 }
 
 function query(command) {
   return executeD1({ command, targetArgs })[0]?.results ?? [];
+}
+
+function queryMany(commands) {
+  const result = executeD1({ command: commands.join(";\n"), targetArgs });
+  assert.equal(result.length, commands.length);
+  return result.map((entry) => entry.results ?? []);
+}
+
+function queryNamed(commands) {
+  const entries = Object.entries(commands);
+  const results = queryMany(entries.map(([, command]) => command));
+  return Object.fromEntries(entries.map(([name], index) => [name, results[index]]));
+}
+
+function applyMigrations(...names) {
+  const command = names.map((name) => readFileSync(
+    join(repositoryRoot, "migrations", name),
+    "utf8",
+  )).join("\n");
+  executeD1({ command, targetArgs });
 }
 
 function legacyFixtureSql() {

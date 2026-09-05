@@ -58,7 +58,6 @@ for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {
       await page.getByRole("status").filter({ hasText: "等待 2 份" }).waitFor();
       await expect.poll(() => pending.length).toBe(1);
       assert.deepEqual(files, ["a.pdf"]);
-      await page.screenshot({ path: `/tmp/same-page-104-${engine.name()}-queue.png` });
       await pending.shift()();
       await page.waitForFunction(() => document.querySelector('.upload-list li[data-status="success"]')?.textContent.includes("a.pdf"));
       await page.waitForFunction(() => document.querySelector('.upload-list li[data-status="uploading"]')?.textContent.includes("b.pdf"));
@@ -67,7 +66,6 @@ for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {
       // Simulate a response lost after the server may already have committed.
       await pending.shift()(503);
       await page.getByRole("alert").filter({ hasText: "队列已暂停" }).waitFor();
-      await page.screenshot({ path: `/tmp/same-page-104-${engine.name()}-uncertain.png` });
       assert.equal(await page.getByRole("button", { name: "重试 b.pdf" }).count(), 0);
       assert.equal(files.length, 2);
       await page.getByRole("button", { name: "继续等待项" }).click();
