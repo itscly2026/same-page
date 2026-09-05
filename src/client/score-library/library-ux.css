@@ -16,7 +16,7 @@
 .library-sort-control svg { position: absolute; right: .5rem; top: 50%; transform: translateY(-50%); pointer-events: none; }
 .library-results-summary { padding: 0 1rem; color: var(--muted); font-size: .9rem; }
 .library-retry { display: inline-flex; margin-left: .7rem; }
-.file-library .file-row__name { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; line-height: 1.5; }
+.file-library .file-row__name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; white-space: normal; overflow-wrap: anywhere; line-height: 1.5; }
 .file-library .file-row__open { padding-right: .5rem; }
 .file-library .file-row { flex-wrap: nowrap; gap: .25rem; }
 .file-library .file-menu-button { position: static; flex: 0 0 44px; width: 44px; height: 44px; }
@@ -35,8 +35,8 @@
 .my-drives-heading > button, .library-actions { flex-shrink: 0; }
 .file-library .library-heading h1 { font-size: clamp(1.5rem, 3vw, 2rem); }
 .file-library .library-workspace { border-radius: .75rem; box-shadow: none; }
-.membership-list { gap: 0; }
-.membership-row { border-radius: 0; border-width: 0 0 1px; }
+.my-drives-page .membership-list, .drive-picker-dialog .membership-list { gap: 0; }
+.my-drives-page .membership-row, .drive-picker-dialog .membership-row { border-radius: 0; border-width: 0 0 1px; }
 .file-info-name { overflow-wrap: anywhere; line-height: 1.6; }
 .file-info-list { display: grid; gap: .75rem; margin-block: 1.5rem; }
 .file-info-list > div { display: flex; justify-content: space-between; gap: 1rem; }
