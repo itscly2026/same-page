@@ -36,4 +36,8 @@
 
 ## 代码审查
 
-按 code-review 技能以 `6de4882` 为固定点，由独立子代理审查：Standards 0 项，Spec 0 项。最终视觉调整将另行复核。
+按 code-review 技能以 `6de4882` 为固定点，由独立子代理审查实现提交 `10d4837`，并追加复核 `a5a5baa` 的最终视觉调整及证据：Standards 0 项，Spec 0 项。
+
+## 全量检查入口
+
+本地以 `VITEST_MAX_WORKERS=2 npm run check:full` 运行完整检查，降低并发以避免开发机资源竞争造成导航等待超时；Python 使用按 `renderer/requirements.txt` 安装的独立虚拟环境。检查包含原生渲染、PWA 更新、lint/typecheck、全部单元/客户端/Worker 测试、浏览器布局、迁移、生产构建、浏览器 Worker smoke 和加载性能预算。最终结果记录于 [PR #144](https://github.com/itscly2026/same-page/pull/144) 的验证说明及 CI；这份文档不代表已经发布。
