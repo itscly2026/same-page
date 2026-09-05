@@ -249,28 +249,35 @@ export class ReaderSession {
   recoverDisplay = (error: unknown) => {
     if (this.disposed || this.state.mode !== "pdf" || this.automaticRecoveryUsed || !navigator.onLine || pdfFailureCategory(error) !== "internal" || (error instanceof Error && error.name === "TimeoutError")) return false;
     this.automaticRecoveryUsed = true;
-    this.selectMode("images");
+    if (!this.changeMode("images", false)) return false;
     this.publish({ modeMessage: "PDF 显示失败，已尝试图片兼容模式。你仍可切回 PDF 阅读。" });
     return true;
   };
-  selectMode = (mode: ScoreDisplayMode) => {
-    if (this.disposed || mode === this.state.mode) return;
+  selectMode = (mode: ScoreDisplayMode) => { this.changeMode(mode, true); };
+  private changeMode(mode: ScoreDisplayMode, persist: boolean) {
+    if (this.disposed || mode === this.state.mode) return false;
     if ((!navigator.onLine || this.lookup?.state === "network-unavailable") && (!this.state.offline || (this.state.offline.imageManifest ? "images" : "pdf") !== mode)) {
       this.publish({ modeMessage: `本机没有${mode === "images" ? "图片" : "PDF"}离线副本，请联网后下载。当前副本仍可使用。` });
-      return;
+      return false;
     }
-    writeDisplayPreference(this.workspace, mode, "score");
-    this.publish({ mode, modeMessage: null });
+    if (persist) writeDisplayPreference(this.workspace, mode, "score");
+    this.displayAbort.abort();
+    this.generation++;
+    this.lease?.release();
+    this.lease = null;
     this.source = null;
+    this.pdfFailed = false;
+    this.publish({ mode, modeMessage: null, document: null, status: "loading", error: null });
+    this.armDeadline();
     if (this.localMatches()) void this.openOffline(this.state.offline!);
     else if (this.confirmedVersion) this.openSource({ kind: "cloud", versionId: this.confirmedVersion });
     else void this.confirmCloud();
-  };
+    return true;
+  }
   setDefaultMode = (mode: ScoreDisplayMode | null) => writeDisplayPreference(this.workspace, mode, "default");
   resetMode = () => {
     writeDisplayPreference(this.workspace, null, "score");
-    this.selectMode(readDisplayPreference(this.workspace));
-    writeDisplayPreference(this.workspace, null, "score");
+    this.changeMode(readDisplayPreference(this.workspace), false);
   };
   cancel = () => {
     this.publish({ status: "error", error: "加载已取消，本机草稿仍然保留。" });

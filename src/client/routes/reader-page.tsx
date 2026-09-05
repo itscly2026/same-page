@@ -97,6 +97,9 @@ function ReaderPageContent() {
   const session = authClient.useSession();
   const [resolvedWorkspace, setResolvedWorkspace] =
     useState<LocalWorkspace | null>(null);
+  const [workspaceAttempt, setWorkspaceAttempt] = useState(0);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const cancelWorkspace = useRef(() => {});
   const workspaceIsActive = useLiveQuery(
     () => resolvedWorkspace
       ? isLocalWorkspaceActive(resolvedWorkspace)
@@ -134,25 +137,38 @@ function ReaderPageContent() {
     ensureLoadingJourney("open-score", "direct");
   }, []);
   useEffect(() => {
-    if (session.isPending) return;
     let active = true;
+    const fail = (message: string) => {
+      if (!active) return;
+      active = false;
+      clearTimeout(timer);
+      setWorkspaceError(message);
+    };
+    const timer = setTimeout(() => fail("打开本机工作区用时较长，可以重试或返回云盘。"), 45_000);
+    cancelWorkspace.current = () => fail("已取消打开工作区，本机草稿仍然保留。");
+    if (session.isPending) return () => { active = false; clearTimeout(timer); };
     void resolveLocalWorkspace({
       authenticatedUserId: session.data?.user.id ?? null,
       choirId,
       scoreId,
     }).then(async (resolved) => {
+      if (!active) return;
       const workspace = await captureLocalWorkspaceSession(resolved);
       try {
         await cleanupUncreatedDeleteConflicts(workspace);
       } catch {
         // Historical cleanup must never prevent the local workspace from opening.
       }
-      if (active) setResolvedWorkspace(workspace);
-    });
+      if (active) {
+        clearTimeout(timer);
+        setResolvedWorkspace(workspace);
+      }
+    }).catch(() => fail("本机工作区暂时无法打开，请重试；已保存的内容仍然保留。"));
     return () => {
       active = false;
+      clearTimeout(timer);
     };
-  }, [choirId, scoreId, session.data?.user.id, session.isPending]);
+  }, [choirId, scoreId, session.data?.user.id, session.isPending, workspaceAttempt]);
 
   const workspace =
     resolvedWorkspace &&
@@ -379,7 +395,13 @@ function ReaderPageContent() {
   };
 
   if (!workspace) {
-    return <main className="page-shell compact-page"><p role="status">正在打开本机工作区…</p><Link className="primary-link" to={`/choirs/${choirId}`}>返回云盘</Link></main>;
+    return <main className="page-shell compact-page">
+      <p role={workspaceError ? "alert" : "status"}>{workspaceError ?? "正在打开本机工作区…"}</p>
+      <Link className="primary-link" to={`/choirs/${choirId}`}>返回云盘</Link>
+      {workspaceError
+        ? <Button className="secondary-button" onPress={() => { setWorkspaceError(null); setWorkspaceAttempt(value => value + 1); }}>重试打开工作区</Button>
+        : <Button className="secondary-button" onPress={() => cancelWorkspace.current()}>取消打开工作区</Button>}
+    </main>;
   }
 
   const displayChoices = <div className="reader-display-choices" aria-label="谱面显示方式">
@@ -492,7 +514,9 @@ function ReaderPageContent() {
       ) : null}
       {visibleDisplay !== document || failedDisplay === document ? <div className="reader-display-recovery" role="status">
         <span>{failedDisplay === document ? "页面显示失败，可重试本页或切换显示方式。" : "正在显示首屏…"}</span>
-        <Link className="primary-link" to={`/choirs/${choirId}`}>返回云盘</Link>
+        <Link className="primary-link" aria-disabled={editing || undefined} to={`/choirs/${choirId}`} onClick={event => { if (editing) event.preventDefault(); }}>返回云盘</Link>
+        {editing && <span>请先完成或取消当前编辑，再返回云盘。</span>}
+        {failedDisplay === document && <Button isDisabled={editing} onPress={reader.retry}>重新加载谱面</Button>}
         {displayChoices}
       </div> : null}
       {reader.snapshot.modeMessage ? <p className="reader-display-notice" role="status">{reader.snapshot.modeMessage}</p> : null}

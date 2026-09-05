@@ -13,13 +13,13 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     const fixture = await startStorageFixture({ authenticated: true, rendererOrigin: native.origin }); t.after(() => fixture.stop());
     const profile = await mkdtemp(path.join(tmpdir(), "same-page-images-"));
     t.after(() => rm(profile, { recursive: true, force: true }));
-    const context = await engine.launchPersistentContext(profile, { headless: true, serviceWorkers: "allow", viewport: { width: 1024, height: 768 } });
+    let context = await engine.launchPersistentContext(profile, { headless: true, serviceWorkers: "allow", viewport: { width: 1024, height: 768 } });
     t.after(() => context.close());
     const account = fixture.accounts[1];
     assert.equal((await context.request.post(`${fixture.origin}/api/auth/sign-in/email`, {
       headers: { origin: fixture.origin }, data: { email: account.email, password: account.password },
     })).status(), 200);
-    const page = await context.newPage();
+    let page = await context.newPage();
     const base = `${fixture.origin}/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/versions/${fixture.versionId}/images`;
     await page.goto(fixture.origin);
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
@@ -38,11 +38,15 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     await expect(page.getByRole("status").filter({ hasText: "离线副本已完整校验" })).toBeVisible({ timeout: 30_000 });
     await mkdir("artifacts/verification/137", { recursive: true });
     await page.screenshot({ path: `artifacts/verification/137/${engineName}-images.png` });
+    const readerUrl = page.url();
+    if (engineName === "webkit") await fixture.stop();
+    await context.close();
+    context = await engine.launchPersistentContext(profile, { headless: true, serviceWorkers: "allow", viewport: { width: 1024, height: 768 } });
+    if (engineName === "chromium") await context.setOffline(true);
+    page = await context.newPage();
     const resources = [];
     page.on("request", request => resources.push(request.url()));
-    if (engineName === "webkit") await fixture.stop();
-    else await context.setOffline(true);
-    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.goto(readerUrl, { waitUntil: "domcontentloaded" });
     await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
     await page.keyboard.press("ArrowRight");
     await expect(page.locator('.page-reader__sheet[data-page-turn-current]')).toHaveAttribute("data-page-number", "2");

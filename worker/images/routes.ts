@@ -47,7 +47,11 @@ imageRoutes.get(`${path}/:generation/:page/:asset`, async context => {
   const asset = page?.assets.find(a => `${a.edge}.png` === context.req.param("asset"));
   if (!page || !asset) return context.json({ error: "image_not_found" }, 404);
   const object = await context.env.SCORES_BUCKET.get(imageObjectKey(version.version_id, job.generation, page.pageNumber, asset.edge));
-  if (!object) return context.json({ error: "image_unavailable" }, 503);
+  if (!object) {
+    await context.env.DB.prepare("UPDATE score_image_jobs SET state = 'failed', manifest = NULL, failure = 'image-unavailable', updated_at = ? WHERE version_id = ? AND generation = ? AND state = 'ready'")
+      .bind(Date.now(), version.version_id, job.generation).run();
+    return context.json({ error: "image_unavailable" }, 503);
+  }
   return new Response(object.body, { headers: {
     "Content-Type": "image/png", "Content-Length": String(asset.sizeBytes), "Cache-Control": "private, no-store",
     "X-Content-SHA256": asset.sha256, "X-Score-Version": version.version_id, "X-Content-Type-Options": "nosniff",

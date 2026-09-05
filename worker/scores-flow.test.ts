@@ -66,6 +66,23 @@ describe("PDF file library and delivery", () => {
     expect(send).toHaveBeenCalledTimes(2);
     expect(await (await callWorker(endpoint, { headers: { cookie: adminCookie } }, runtime)).json()).toEqual({ state: "preparing" });
   });
+  it("makes a ready generation with a missing object retryable without changing PDF identity", async () => {
+    const { adminCookie, choirId } = await createAdminChoir();
+    const score = await upload(choirId, adminCookie, "重建.pdf", createMinimalPdf(200, 200));
+    const endpoint = `/api/choirs/${choirId}/scores/${score.id}/versions/${score.versionId}/images`;
+    const generation = crypto.randomUUID();
+    const manifest = { versionId: score.versionId, sourceSha256: "a".repeat(64), generation, spec: "png-rgb-v1", engine: "pdfium-153.0.7999.0",
+      pages: [{ pageNumber: 1, width: 200, height: 200, crop: [0, 0, 200, 200], rotation: 0,
+        assets: [2048, 3072].map(edge => ({ edge, width: edge, height: edge, sizeBytes: 100, sha256: "b".repeat(64) })) }] };
+    await env.DB.prepare("INSERT INTO score_image_jobs(version_id, generation, state, updated_at, manifest) VALUES (?, ?, 'ready', ?, ?)")
+      .bind(score.versionId, generation, Date.now(), JSON.stringify(manifest)).run();
+    expect((await callWorker(`${endpoint}/${generation}/1/2048.png`, { headers: { cookie: adminCookie } })).status).toBe(503);
+    expect(await (await callWorker(endpoint, { headers: { cookie: adminCookie } })).json()).toMatchObject({ state: "failed" });
+    const send = vi.fn().mockResolvedValue(undefined);
+    const runtime = { ...env, IMAGE_JOBS: { send, sendBatch: vi.fn(), metrics: vi.fn() } } satisfies typeof env;
+    expect((await callWorker(endpoint, { method: "POST", headers: { cookie: adminCookie } }, runtime)).status).toBe(202);
+    expect(send).toHaveBeenCalledWith({ versionId: score.versionId, generation: expect.not.stringMatching(generation) });
+  });
   it("image preparation status inherits PDF version access and starts absent", async () => {
     const { adminCookie, choirId } = await createAdminChoir();
     const score = await upload(choirId, adminCookie, "兼容.pdf", createMinimalPdf(200, 200));

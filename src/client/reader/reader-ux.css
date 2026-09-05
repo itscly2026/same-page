@@ -89,3 +89,6 @@
 .page-render-recovery { position: absolute; z-index: 3; inset: 1rem; background: #fff; color: #171717; }
 .reader-loading__label { gap: 0.5rem; text-shadow: none; }
 .reader-loading__label .reader-display-choices { justify-content: center; }
+
+.reader-more-menu { max-height: calc(100dvh - 7rem); overflow-y: auto; overscroll-behavior: contain; }
+.reader-more-menu > a { display: flex; align-items: center; min-height: 44px; }

@@ -188,6 +188,17 @@ vi.mock("../annotations/annotation-state", async (importOriginal) => {
 });
 
 describe("ReaderPage", () => {
+it("lets a failed local storage open retry without losing the return link", async () => {
+  vi.spyOn(localDatabase.system, "get").mockRejectedValueOnce(new DOMException("unavailable", "UnknownError"));
+  render(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}><Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /></Routes></MemoryRouter>);
+  expect(await screen.findByRole("alert")).toHaveTextContent("本机工作区暂时无法打开");
+  expect(screen.getByRole("link", { name: "返回云盘" })).toBeVisible();
+  const retry = screen.getByRole("button", { name: "重试打开工作区" });
+  fireEvent.keyDown(retry, { key: "Enter", code: "Enter" });
+  fireEvent.keyUp(retry, { key: "Enter", code: "Enter" });
+  expect(await screen.findByLabelText("翻页阅读")).toBeInTheDocument();
+});
+
 it("offers an exit and cancellation while the PDF never settles", async () => {
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
   vi.mocked(loadPdfDocument).mockReturnValue({ promise: new Promise(() => {}), destroy: vi.fn().mockResolvedValue(undefined) });

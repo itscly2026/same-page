@@ -91,3 +91,40 @@ it("opens server page geometry in image mode without starting PDF.js", async () 
     expect(vi.mocked(loadPdfDocument).mock.calls.length).toBe(before);
   } finally { session.dispose(); }
 });
+
+it("ignores a late PDF when selecting images before version confirmation", async () => {
+  const workspace = await resolveLocalWorkspace({ authenticatedUserId: null, choirId: "late-mode-drive", scoreId: "score" });
+  let finish!: (value: Awaited<ReturnType<typeof loadPdfDocument>["promise"]>) => void;
+  vi.mocked(loadPdfDocument).mockReturnValueOnce({ promise: new Promise(resolve => { finish = resolve; }), destroy: vi.fn().mockResolvedValue(undefined) });
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+  const session = new ReaderSession(workspace, null);
+  session.open();
+  try {
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    session.selectMode("images");
+    // Only document identity is consumed; PDF.js is the external engine boundary.
+    finish({ document: { numPages: 99 } as Awaited<ReturnType<typeof loadPdfDocument>["promise"]>["document"], versionId: "late-version" });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(session.getSnapshot()).toMatchObject({ mode: "images", status: "loading", document: null });
+  } finally { session.dispose(); }
+});
+
+it("keeps automatic recovery temporary and persists only an explicit choice", async () => {
+  const workspace = await resolveLocalWorkspace({ authenticatedUserId: null, choirId: "automatic-mode-drive", scoreId: "score" });
+  const values = new Map<string, string>();
+  vi.stubGlobal("localStorage", { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+  const session = new ReaderSession(workspace, null);
+  try {
+    expect(session.recoverDisplay(new Error("render failure"))).toBe(true);
+    expect(session.getSnapshot().mode).toBe("images");
+    const reopened = new ReaderSession(workspace, null);
+    expect(reopened.getSnapshot().mode).toBe("pdf");
+    reopened.selectMode("images");
+    reopened.dispose();
+    const explicit = new ReaderSession(workspace, null);
+    expect(explicit.getSnapshot().mode).toBe("images");
+    explicit.dispose();
+  } finally { session.dispose(); }
+});

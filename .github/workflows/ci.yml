@@ -56,6 +56,16 @@ jobs:
           python -m pip install -r renderer/requirements.txt
           python renderer/verify.py
 
+      - name: Verify packaged Linux renderer without network access
+        if: steps.scope.outputs.full == 'true'
+        run: |
+          docker build --tag same-page-renderer:verify renderer
+          docker run --rm --network none --memory 1g --cpus 1 \
+            --mount type=bind,src="$PWD/renderer/fixtures",dst=/app/fixtures,readonly \
+            --mount type=bind,src="$PWD/renderer/verify.py",dst=/app/verify.py,readonly \
+            --tmpfs /artifacts:uid=10001,gid=10001,size=64m \
+            same-page-renderer:verify python /app/verify.py
+
       - name: Lint
         if: steps.scope.outputs.full == 'true'
         run: npm run lint
