@@ -56,7 +56,8 @@ try {
     /\/assets\/pdf\.worker-.*\.mjs$/.test(new URL(response.url()).pathname),
   );
   await page.goto(origin, { waitUntil: "domcontentloaded" });
-  await page.getByRole("link", { name: /示例云盘/ }).click();
+  // A single confirmed membership enters directly from the default route.
+  await page.waitForURL(`${origin}/choirs/visual-choir`);
   await page.locator(".file-list").waitFor({ state: "visible" });
   const enterRequests = [...requestOrder];
   assert.equal(

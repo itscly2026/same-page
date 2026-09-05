@@ -41,3 +41,5 @@
 ## 全量检查入口
 
 本地以 `VITEST_MAX_WORKERS=2 npm run check:full` 运行完整检查，降低并发以避免开发机资源竞争造成导航等待超时；Python 使用按 `renderer/requirements.txt` 安装的独立虚拟环境。检查包含原生渲染、PWA 更新、lint/typecheck、全部单元/客户端/Worker 测试、浏览器布局、迁移、生产构建、浏览器 Worker smoke 和加载性能预算。最终结果记录于 [PR #144](https://github.com/itscly2026/same-page/pull/144) 的验证说明及 CI；这份文档不代表已经发布。
+
+本轮结果：CI 范围测试、lint、typecheck、37 项单元测试、298 项客户端测试、7 项 Worker 单元测试、66 项 Worker 集成测试、33 项浏览器/视觉测试、迁移、构建及 precache 审计通过；原生渲染与 PWA 更新检查通过。本地 Node 25 的并发 smoke 进程异常后，用与 CI 相同的 Node 24、`--test-concurrency=1` 完整复跑 6 项 smoke，全部通过。`measure-loading-performance.mjs` 已同步单成员自动直达行为，原有单 bootstrap、无重复列表请求、缓存返回、冷打开/重开及性能预算断言全部通过。首轮 CI 暴露的是该性能脚本仍点击旧入口的遗漏，修正后提交重新运行 CI。
