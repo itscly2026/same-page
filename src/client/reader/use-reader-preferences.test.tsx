@@ -16,6 +16,15 @@ describe("useReaderPreferences", () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
+  it("clamps the stored page when a replacement PDF becomes shorter", () => {
+    const scope = { identity: "guest", choirId: "choir-1", scoreId: "score-1" };
+    stored.set("reader-preferences:guest:choir-1:score-1", '{"layout":"page","page":10}');
+    const view = renderHook(({ pageCount }) => useReaderPreferences({ ...scope, pageCount }), { initialProps: { pageCount: 10 } });
+    view.rerender({ pageCount: 2 });
+    expect(view.result.current.currentPage).toBe(2);
+    expect(stored.get("reader-preferences:guest:choir-1:score-1")).toBe('{"layout":"page","page":2}');
+  });
+
   it("restores one scoped layout and page preference without leaking to another score", async () => {
     const scope = { identity: "guest", choirId: "choir-1", scoreId: "score-1" };
     const first = renderHook(() => useReaderPreferences(scope));

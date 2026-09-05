@@ -10,7 +10,7 @@ import { startViteServer } from "../scripts/vite-server.mjs";
 
 // Each call owns a fresh local Worker store. Bindings are disposed before Vite
 // opens them, so the seed and server never contend for the same SQLite files.
-export async function startStorageFixture({ authenticated = false, script = "preview" } = {}) {
+export async function startStorageFixture({ authenticated = false, script = "preview", expired = false } = {}) {
   const accounts = authenticated ? [0, 1].map(() => ({ id: randomUUID(), email: `${randomUUID()}@example.test`, password: randomBytes(24).toString("hex") })) : [];
   const choirId = randomUUID(), scoreId = randomUUID(), versionId = randomUUID();
   const fileName = "本地链路测试.pdf";
@@ -35,6 +35,11 @@ export async function startStorageFixture({ authenticated = false, script = "pre
           DB.prepare("INSERT INTO scores (id, choir_id, file_name, file_name_key, current_version_id) VALUES (?, ?, ?, ?, ?)").bind(scoreId, choirId, fileName, fileName, versionId),
           DB.prepare("INSERT INTO score_versions (id, choir_id, score_id, version_number, object_key, size_bytes, sha256, etag, page_count, state) VALUES (?, ?, ?, 1, ?, ?, ?, ?, 2, 'ready')").bind(versionId, choirId, scoreId, objectKey, pdf.length, hash, object.etag),
         ]);
+        if (expired) {
+          const now = Date.now();
+          await DB.prepare("UPDATE scores SET trashed_at = ?, trash_expires_at = ? WHERE id = ?")
+            .bind(now - 31 * 86400000, now - 86400000, scoreId).run();
+        }
         for (const [index, account] of accounts.entries()) {
           const now = Date.now();
           await DB.batch([

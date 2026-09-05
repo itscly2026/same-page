@@ -32,6 +32,21 @@ describe("reader document cache", () => {
     vi.clearAllMocks();
   });
 
+  it("keeps a replaced document alive until its last reader releases it", async () => {
+    const options = { ownerKey: ownerA, choirId: "choir", scoreId: "score", source: "/score.pdf", sourceKind: "cloud" as const };
+    const old = acquireReaderDocument({ ...options, versionId: "v1" });
+    await old.promise;
+    const next = acquireReaderDocument({ ...options, versionId: "v2" });
+    await next.promise;
+    expect(destroy).not.toHaveBeenCalled();
+    old.release();
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(await next.promise).toBe(document);
+    next.release();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(destroy).toHaveBeenCalledTimes(2);
+  });
+
   it("reuses a short reopen of the same immutable score version", async () => {
     const options = {
       ownerKey: ownerA,
@@ -161,7 +176,8 @@ describe("reader document cache", () => {
       sourceKind: "cloud",
     });
     await Promise.resolve();
-
+    expect(destroy).not.toHaveBeenCalled();
+    lease.release();
     expect(destroy).toHaveBeenCalledTimes(1);
   });
 
@@ -246,8 +262,9 @@ describe("reader document cache", () => {
 
     await expect(second.promise).resolves.toBe(document);
     expect(loadPdfDocument).toHaveBeenCalledTimes(2);
-    expect(destroyPending).toHaveBeenCalledTimes(1);
+    expect(destroyPending).not.toHaveBeenCalled();
     first.release();
+    expect(destroyPending).toHaveBeenCalledTimes(1);
     second.release();
   });
 

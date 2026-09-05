@@ -1,3 +1,4 @@
+import { hasCompleteOfflineLayers } from "../offline/offline-score-verification";
 import { annotationLayerSummarySchema, annotationPayloadSchema } from "../../shared/annotations";
 import type {
   AnnotationLayerSummary,
@@ -21,6 +22,23 @@ import {
   type LocalWorkspaceOwnerKey,
   withLocalWorkspaceTransaction,
 } from "../platform/local-workspace";
+
+export function readAnnotationLayers(workspace: LocalWorkspace) {
+  return withLocalWorkspaceTransaction(workspace, "r", [localDatabase.annotationLayers], () =>
+    localDatabase.annotationLayers.where("scopeKey").equals(workspace.scopeKey).toArray());
+}
+
+export function readScoreAnnotationState(workspace: LocalWorkspace) {
+  return withLocalWorkspaceTransaction(workspace, "r", [localDatabase.annotationLayers, localDatabase.annotations, localDatabase.annotationOutbox, localDatabase.annotationConflicts], async () => {
+    const [layers, annotations, pendingCount, conflicts] = await Promise.all([
+      localDatabase.annotationLayers.where("scopeKey").equals(workspace.scopeKey).toArray(),
+      localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey).toArray(),
+      localDatabase.annotationOutbox.where("scopeKey").equals(workspace.scopeKey).count(),
+      localDatabase.annotationConflicts.where("scopeKey").equals(workspace.scopeKey).toArray(),
+    ]);
+    return { scopeKey: workspace.scopeKey, layersReady: hasCompleteOfflineLayers(layers, workspace.ownerKey), layers, annotations, pendingCount, conflicts, syncErrorCount: annotations.filter((annotation) => annotation.state === "sync-error").length };
+  });
+}
 
 export interface DraftInput {
   id: string;

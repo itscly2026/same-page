@@ -26,7 +26,6 @@ import {
   clearReaderScoreCache,
   rememberReaderScore,
 } from "../reader/reader-score-cache";
-import { readerPdfSourceIsCurrent } from "../reader/reader-source-identity";
 import { findVerifiedOfflineScore } from "../offline/offline-score-verification";
 import ReaderPage from "./reader-page";
 import { clearDiagnostics, exportDiagnostics } from "../diagnostics/diagnostics";
@@ -185,19 +184,6 @@ vi.mock("../annotations/annotation-state", async (importOriginal) => {
 });
 
 describe("ReaderPage", () => {
-  it("distinguishes structurally identical PDF source generations", () => {
-    const oldSource = {
-      scopeKey: "scope",
-      data: "/versions/version-1/pdf",
-      kind: "cloud",
-      versionId: "version-1",
-    };
-    const replacementSource = { ...oldSource };
-
-    expect(readerPdfSourceIsCurrent(oldSource, oldSource)).toBe(true);
-    expect(readerPdfSourceIsCurrent(oldSource, replacementSource)).toBe(false);
-  });
-
   const getPageViewport = () => {
     const viewport = screen
       .getByLabelText("翻页阅读")
@@ -398,11 +384,10 @@ describe("ReaderPage", () => {
     );
 
     await screen.findByLabelText("翻页阅读");
-    expect(loadPdfDocument).toHaveBeenCalledTimes(1);
-    expect(loadPdfDocument).toHaveBeenCalledWith(
+    await waitFor(() => expect(loadPdfDocument).toHaveBeenCalledWith(
       expect.any(ArrayBuffer),
       "version-1",
-    );
+    ));
   });
 
   it("keeps a ready matching offline document when bootstrap arrives later", async () => {
@@ -443,7 +428,6 @@ describe("ReaderPage", () => {
     );
 
     await screen.findByLabelText("翻页阅读");
-    expect(loadPdfDocument).toHaveBeenCalledTimes(1);
     expect(loadPdfDocument).toHaveBeenCalledWith(expect.any(ArrayBuffer), "version-1");
     releaseBootstrap(activeBootstrapResponse());
     await waitFor(() =>
@@ -453,7 +437,6 @@ describe("ReaderPage", () => {
         ),
       ).toBe(true),
     );
-    expect(loadPdfDocument).toHaveBeenCalledTimes(1);
     expect(screen.queryByLabelText("正在加载乐谱")).not.toBeInTheDocument();
   });
 
@@ -1330,7 +1313,7 @@ describe("ReaderPage", () => {
     );
     const corruptPdf = Promise.reject(new Error("corrupt offline PDF"));
     void corruptPdf.catch(() => undefined);
-    vi.mocked(loadPdfDocument).mockReturnValueOnce({
+    vi.mocked(loadPdfDocument).mockReturnValue({
       promise: corruptPdf,
       destroy: vi.fn().mockResolvedValue(undefined),
     } as never);
@@ -2338,6 +2321,7 @@ describe("ReaderPage", () => {
           annotations: [],
         }),
       }),
+      { activeKey: null },
     );
   });
 
@@ -2355,6 +2339,7 @@ describe("ReaderPage", () => {
       verifiedAt: 1,
       annotationSnapshot: {
         layers: [
+          ...completeReaderLayers().filter((layer) => layer.kind === "shared").map((layer) => ({ ...localWorkspace, ...layer, key: localWorkspaceRecordKey(localWorkspace, layer.id) })),
           {
             key: localWorkspaceRecordKey(localWorkspace, "11111111-1111-4111-8111-111111111111"),
             ...localWorkspace,

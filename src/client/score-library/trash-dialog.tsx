@@ -73,6 +73,12 @@ export function TrashDialog({
         setMessage("当前文件库已有同名文件，请先为恢复的文件换一个名称。");
         return;
       }
+      if (response.status === 404) {
+        setRestoreConflict(null);
+        setTrash((current) => current.filter((entry) => entry.id !== score.id));
+        setMessage("这份乐谱已不在可恢复的回收站中，可能已到期或被处理。请刷新云盘。");
+        return;
+      }
       if (!response.ok) throw new Error("restore_failed");
       setRestoreConflict(null);
       setTrash((current) => current.filter((entry) => entry.id !== score.id));

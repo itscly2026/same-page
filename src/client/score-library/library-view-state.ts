@@ -1,3 +1,4 @@
+import { scoreFileNameKey } from "../../shared/scores";
 import type { ScoreSummary } from "../../shared/scores";
 import type { DriveCacheOwnerKey } from "./drive-library-cache";
 
@@ -59,10 +60,10 @@ export function selectLibraryScores(
   scores: ScoreSummary[], search: string, sort: LibrarySort,
   owner: DriveCacheOwnerKey, choirId: string,
 ) {
-  const query = search.trim().normalize("NFKC").toLocaleLowerCase();
+  const query = scoreFileNameKey(search.trim());
   const opened = sort === "opened" ? readRecentlyOpened(owner, choirId) : {};
   return scores
-    .filter((score) => score.fileName.normalize("NFKC").toLocaleLowerCase().includes(query))
+    .filter((score) => scoreFileNameKey(score.fileName).includes(query))
     .sort((a, b) => {
       const difference = sort === "updated" ? b.updatedAt - a.updatedAt
         : sort === "opened" ? (opened[b.id] ?? 0) - (opened[a.id] ?? 0) : 0;

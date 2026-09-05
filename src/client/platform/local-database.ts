@@ -303,7 +303,8 @@ export async function verifyLocalDatabase(): Promise<void> {
 }
 
 export async function activateVerifiedOfflineScore(
-  record: Omit<OfflineScoreRecord, "active" | "verifiedAt">,
+  record: Omit<OfflineScoreRecord, "active" | "verifiedAt"> & { sessionEpoch?: string },
+  expected?: { activeKey: string | null },
 ) {
   await localDatabase.transaction(
     "rw",
@@ -317,16 +318,19 @@ export async function activateVerifiedOfflineScore(
         ? activeOwner?.value === record.ownerKey
         : !activeOwner?.value.startsWith("user:") &&
           guestOwner?.value === record.ownerKey;
-      if (!ownerIsActive) throw new Error("local_workspace_owner_changed");
+      const epoch = (await localDatabase.system.get("local-workspace:epoch"))?.value ?? "";
+      if (!ownerIsActive || (record.sessionEpoch !== undefined && record.sessionEpoch !== epoch)) throw new Error("local_workspace_owner_changed");
       const existing = await localDatabase.offlineScores
         .where("[ownerKey+choirId+scoreId]")
         .equals([record.ownerKey, record.choirId, record.scoreId])
         .toArray();
-      await Promise.all(
-        existing.map((entry) =>
-          localDatabase.offlineScores.update(entry.key, { active: 0 }),
-        ),
-      );
+      if (expected && (existing.find((entry) => entry.active === 1)?.key ?? null) !== expected.activeKey) {
+        if (existing.some((entry) => entry.active === 1 && entry.key === record.key)) return;
+        throw new Error("offline_copy_changed_during_download");
+      }
+      // Blob values already read by another session remain valid after deleting
+      // the IndexedDB reference. Annotation tables are deliberately untouched.
+      await localDatabase.offlineScores.bulkDelete(existing.map((entry) => entry.key));
       await localDatabase.offlineScores.put({
         ...record,
         active: 1,

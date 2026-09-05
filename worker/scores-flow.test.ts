@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import worker from "./index";
 import { provisionChoir } from "./choirs/provision";
@@ -53,6 +53,44 @@ beforeEach(async () => {
 afterEach(() => network.resetHandlers());
 
 describe("PDF file library and delivery", () => {
+  it("does not truncate literal long filename searches on either library endpoint", async () => {
+    const { adminCookie, choirId } = await createAdminChoir();
+    const name = "合唱排练".repeat(31) + "%_结尾.pdf";
+    const score = await upload(choirId, adminCookie, name, createMinimalPdf(200, 200));
+    for (const endpoint of ["scores", "bootstrap"]) {
+      for (const [query, matches] of [[name, true], ["%_", true], ["\\", false], ["合唱排练".repeat(31) + "不匹配", false]] as const) {
+        const response = await callWorker(`/api/choirs/${choirId}/${endpoint}?q=${encodeURIComponent(query)}`, { headers: { cookie: adminCookie } });
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ scores: matches ? [{ id: score.id }] : [] });
+      }
+    }
+  });
+
+  it.each([-1, 0, 1])("restores only strictly before expiration (offset %i)", async (offset) => {
+    const { adminCookie, choirId } = await createAdminChoir();
+    const score = await upload(choirId, adminCookie, "期限.pdf", createMinimalPdf(200, 200));
+    const now = Date.now();
+    await env.DB.prepare("UPDATE scores SET trashed_at = ?, trash_expires_at = ? WHERE id = ?").bind(now - 30 * 86400000, now + offset, score.id).run();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      const response = await callWorker(`/api/choirs/${choirId}/scores/${score.id}/restore`, { method: "POST", headers: { cookie: adminCookie } });
+      expect(response.status).toBe(offset > 0 ? 204 : 404);
+    } finally { clock.mockRestore(); }
+  });
+
+  it("excludes expired trash and refuses restoration before delayed cleanup", async () => {
+    const { adminCookie, choirId } = await createAdminChoir();
+    const score = await upload(choirId, adminCookie, "过期.pdf", createMinimalPdf(200, 200));
+    await callWorker(`/api/choirs/${choirId}/scores/${score.id}`, { method: "DELETE", headers: { cookie: adminCookie } });
+    await env.DB.prepare("UPDATE scores SET trashed_at = ?, trash_expires_at = ? WHERE id = ?").bind(Date.now() - 31 * 86400000, Date.now() - 86400000, score.id).run();
+    const list = await callWorker(`/api/choirs/${choirId}/scores/trash`, { headers: { cookie: adminCookie } });
+    expect(await list.json()).toMatchObject({ scores: [] });
+    const restored = await callWorker(`/api/choirs/${choirId}/scores/${score.id}/restore`, { method: "POST", headers: { cookie: adminCookie } });
+    expect(restored.status).toBe(404);
+    await cleanupScoreStorage(env);
+    expect((await callWorker(`/api/choirs/${choirId}/scores/${score.id}/restore`, { method: "POST", headers: { cookie: adminCookie } })).status).toBe(404);
+  });
+
   it("uses file names, exposes validated uploads immediately, and preserves replacement delivery", async () => {
     const { adminCookie, choirId, joinCode } = await createAdminChoir();
 

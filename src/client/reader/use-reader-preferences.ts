@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export type ReaderLayout = "page" | "continuous";
 
@@ -16,16 +16,20 @@ export function useReaderPreferences({
   identity,
   choirId,
   scoreId,
+  pageCount,
 }: {
   identity: string;
   choirId: string;
   scoreId: string;
+  pageCount?: number;
 }) {
   const key = `reader-preferences:${identity}:${choirId}:${scoreId}`;
   const [state, setState] = useState<{ key: string; value: ReaderPreferences }>(
     () => ({ key, value: readPreferences(key) }),
   );
-  const preferences = state.key === key ? state.value : readPreferences(key);
+  const stored = state.key === key ? state.value : readPreferences(key);
+  const preferences = useMemo(() => pageCount && stored.page > pageCount ? { ...stored, page: pageCount } : stored, [pageCount, stored]);
+  if (preferences !== stored) setState({ key, value: preferences });
 
   const update = useCallback(
     (change: (current: ReaderPreferences) => ReaderPreferences) => {

@@ -27,6 +27,7 @@ interface CachedDocument {
 }
 
 const documents = new Map<string, CachedDocument>();
+const retired = new Set<CachedDocument>();
 let activeOwner: LocalWorkspaceOwnerKey | null = null;
 
 onReaderIdentityChange(clearReaderDocumentCache);
@@ -170,6 +171,8 @@ export function activateReaderDocumentOwner(ownerKey: LocalWorkspaceOwnerKey) {
 export function clearReaderDocumentCache() {
   for (const [key, cached] of documents) evict(key, cached);
   documents.clear();
+  for (const cached of retired) destroyLoad(cached.load);
+  retired.clear();
   activeOwner = null;
 }
 
@@ -189,7 +192,12 @@ function documentKey(options: {
 
 function release(key: string, cached: CachedDocument) {
   cached.references = Math.max(0, cached.references - 1);
-  if (cached.references > 0 || documents.get(key) !== cached) return;
+  if (cached.references > 0) return;
+  if (documents.get(key) !== cached) {
+    retired.delete(cached);
+    destroyLoad(cached.load);
+    return;
+  }
   evictInactiveOverflow();
   if (documents.get(key) !== cached) return;
   cached.releaseTimer = window.setTimeout(() => evict(key, cached), RELEASE_DELAY_MS);
@@ -208,7 +216,8 @@ function evict(key: string, cached: CachedDocument) {
   if (documents.get(key) === cached) documents.delete(key);
   if (cached.releaseTimer !== null) window.clearTimeout(cached.releaseTimer);
   cached.releaseTimer = null;
-  destroyLoad(cached.load);
+  if (cached.references > 0) retired.add(cached);
+  else destroyLoad(cached.load);
 }
 
 function destroyLoad(load: CachedDocument["load"]) {

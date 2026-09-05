@@ -44,8 +44,7 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
   const userId = candidates.user?.userId ?? "";
   const guestChoirId = candidates.guest?.choirId ?? "";
   const guestSessionVersion = candidates.guest?.guestSessionVersion ?? -1;
-  const search = context.req.query("q")?.trim().slice(0, 120) ?? "";
-  const pattern = `%${escapeLike(scoreFileNameKey(search))}%`;
+  const search = scoreFileNameKey(context.req.query("q")?.trim() ?? "");
   const rows = await measureServerTiming(context, "d1", () =>
     context.env.DB.prepare(
       `SELECT choirs.id AS drive_id, choirs.name AS drive_name,
@@ -70,7 +69,7 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
         AND (memberships.status = 'active' OR
              (? <> '' AND choirs.is_preview_entry = 1 AND choirs.guest_admission_mode = 'open') OR
              (choirs.id = ? AND choirs.guest_session_version = ?))
-        AND (? = '' OR scores.file_name_key LIKE ? ESCAPE '\\')
+        AND instr(scores.file_name_key, ?) > 0
        LEFT JOIN score_versions AS versions
          ON versions.id = scores.current_version_id AND versions.state = 'ready'
        WHERE choirs.id = ?`,
@@ -83,7 +82,6 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
         guestChoirId,
         guestSessionVersion,
         search,
-        pattern,
         choirId,
       )
       .all<DriveBootstrapRow>());
@@ -145,8 +143,7 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
 scoreRoutes.get("/choirs/:choirId/scores", async (context) => {
   const choirId = context.req.param("choirId");
   const access = await resolveChoirAccess(context, choirId);
-  const search = context.req.query("q")?.trim().slice(0, 120) ?? "";
-  const pattern = `%${escapeLike(scoreFileNameKey(search))}%`;
+  const search = scoreFileNameKey(context.req.query("q")?.trim() ?? "");
   const result = await measureServerTiming(context, "d1", () => context.env.DB.prepare(
     `SELECT scores.id, scores.choir_id, scores.file_name, scores.updated_at,
             versions.id AS version_id, versions.version_number,
@@ -156,9 +153,9 @@ scoreRoutes.get("/choirs/:choirId/scores", async (context) => {
      INNER JOIN score_versions AS versions
        ON versions.id = scores.current_version_id AND versions.state = 'ready'
      WHERE scores.choir_id = ? AND scores.trashed_at IS NULL
-       AND (? = '' OR scores.file_name_key LIKE ? ESCAPE '\\')`,
+       AND instr(scores.file_name_key, ?) > 0`,
   )
-    .bind(choirId, search, pattern)
+    .bind(choirId, search)
     .all<ScoreRow>());
   const storage = await measureServerTiming(context, "d1", () =>
     loadStorage(context, choirId));
@@ -185,9 +182,9 @@ scoreRoutes.get("/choirs/:choirId/scores/trash", async (context) => {
      FROM scores
      INNER JOIN score_versions AS versions
        ON versions.id = scores.current_version_id AND versions.state = 'ready'
-     WHERE scores.choir_id = ? AND scores.trashed_at IS NOT NULL`,
+     WHERE scores.choir_id = ? AND scores.trashed_at IS NOT NULL AND scores.trash_expires_at > ?`,
   )
-    .bind(choirId)
+    .bind(choirId, Date.now())
     .all<TrashedScoreRow>();
   const serialized = result.results
     .map(serializeTrashedScoreRow)
@@ -386,13 +383,14 @@ scoreRoutes.post("/choirs/:choirId/scores/:scoreId/restore", async (context) => 
   const choirId = context.req.param("choirId");
   const scoreId = context.req.param("scoreId");
   await requireAdmin(context, choirId);
+  const now = Date.now();
   try {
     const restored = await context.env.DB.prepare(
       `UPDATE scores
        SET trashed_at = NULL, trash_expires_at = NULL, updated_at = ?
-       WHERE id = ? AND choir_id = ? AND trashed_at IS NOT NULL`,
+       WHERE id = ? AND choir_id = ? AND trashed_at IS NOT NULL AND trash_expires_at > ?`,
     )
-      .bind(Date.now(), scoreId, choirId)
+      .bind(now, scoreId, choirId, now)
       .run();
     if (restored.meta.changes !== 1) {
       return context.json({ error: "score_not_found" }, 404);
@@ -595,10 +593,6 @@ function parseRange(
   }
   const end = Math.min(requestedEnd, size - 1);
   return { offset: start, length: end - start + 1 };
-}
-
-function escapeLike(value: string) {
-  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
 }
 
 interface ScoreRow {

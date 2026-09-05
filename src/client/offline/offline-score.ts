@@ -1,19 +1,20 @@
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
 import { annotationLayerListResponseSchema } from "../../shared/annotations";
 import type { ScoreSummary } from "../../shared/scores";
-import { cacheAnnotationLayers } from "../annotations/annotation-state";
+import { cacheAnnotationLayers, readAnnotationLayers } from "../annotations/annotation-state";
 import { captureOfflineAnnotationSnapshot, ensureOfflineAppShell } from "../annotations/offline-snapshot";
 import { syncAnnotations } from "../annotations/sync";
-import { activateVerifiedOfflineScore, localDatabase } from "../platform/local-database";
-import { assertLocalWorkspaceActive, localWorkspaceRecordKey, type LocalWorkspace } from "../platform/local-workspace";
+import { activateVerifiedOfflineScore, findActiveOfflineScore } from "../platform/local-database";
+import { assertLocalWorkspaceActive, captureLocalWorkspaceSession, localWorkspaceRecordKey, type LocalWorkspace } from "../platform/local-workspace";
 
 import { findVerifiedOfflineScore, hasCompleteOfflineLayers, sha256Hex, verifyOfflineScore } from "./offline-score-verification";
 
 // Both entry points use the same verified replacement path. A failed attempt never
 // activates the new PDF or removes the existing copy, annotations, or drafts.
 export async function prepareOfflineScore(workspace: LocalWorkspace, score: ScoreSummary) {
-  await assertLocalWorkspaceActive(workspace);
+  workspace = await captureLocalWorkspaceSession(workspace);
   if (workspace.choirId !== score.choirId || workspace.scoreId !== score.id) throw new Error("offline_score_scope_mismatch");
+  const previous = await findActiveOfflineScore(workspace.ownerKey, workspace.choirId, workspace.scoreId);
   const base = `/api/choirs/${encodeURIComponent(score.choirId)}/scores/${encodeURIComponent(score.id)}`;
   const response = await diagnosticFetch(`${base}/versions/${encodeURIComponent(score.currentVersion.id)}/pdf`);
   if (!response.ok) throw new Error("offline_pdf_download_failed");
@@ -27,7 +28,7 @@ export async function prepareOfflineScore(workspace: LocalWorkspace, score: Scor
   // An expired user can keep their local copy, but a guest API response must
   // never replace that user's private layer metadata while preparing a download.
   if (!hasCompleteOfflineLayers(layers, workspace.ownerKey)) throw new Error("offline_download_requires_matching_identity");
-  const existing = await localDatabase.annotationLayers.where("scopeKey").equals(workspace.scopeKey).toArray();
+  const existing = await readAnnotationLayers(workspace);
   const currentById = new Map(existing.map((layer) => [layer.id, layer]));
   await cacheAnnotationLayers(workspace, workspace.ownerKey.startsWith("user:") ? layers : layers.map((layer) => ({
     ...layer, subscribed: currentById.get(layer.id)?.subscribed ?? layer.subscribed,
@@ -42,7 +43,7 @@ export async function prepareOfflineScore(workspace: LocalWorkspace, score: Scor
     blob: new Blob([data], { type: "application/pdf" }), annotationSnapshot,
   };
   if (!(await verifyOfflineScore({ ...record, active: 1, verifiedAt: Date.now() }))) throw new Error("offline_annotation_snapshot_incomplete");
-  await activateVerifiedOfflineScore(record);
+  await activateVerifiedOfflineScore(record, { activeKey: previous?.key ?? null });
   const verified = await findVerifiedOfflineScore(workspace);
   if (!verified) throw new Error("offline_copy_unavailable");
   return verified;
