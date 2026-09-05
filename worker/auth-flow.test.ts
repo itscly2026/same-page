@@ -419,7 +419,7 @@ describe("authentication and choir boundaries", () => {
     expect(users).toHaveLength(1);
     expect(users[0].id).toBe(existingUserId);
     expect(users[0].name).toBe("Same Page 用户");
-    const googleAccounts = await database.select().from(account);
+    const googleAccounts = await database.select().from(account).where(eq(account.providerId, "google"));
     expect(googleAccounts).toContainEqual(
       expect.objectContaining({
         accountId: "google-existing-subject",
@@ -1163,6 +1163,8 @@ describe("authentication and choir boundaries", () => {
     expect(await push.json()).toMatchObject({ results: [{ status: "accepted" }] });
     const membershipsBefore = await (await read("/api/choirs", googleCookie)).json();
     const annotationsBefore = await (await read(`${base}/annotations`, googleCookie)).json();
+    expect(membershipsBefore).toMatchObject({ memberships: [expect.objectContaining({ displayName: "原显示名", role: "admin", choir: expect.objectContaining({ id: choirId }) })] });
+    expect(annotationsBefore).toMatchObject({ objects: [expect.objectContaining({ id: annotationId, payload: expect.objectContaining({ text: "原个人批注" }) })] });
     const post = (path: string, body: unknown) => callWorker(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     expect((await post("/api/auth/email-otp/request-password-reset", { email })).status).toBe(200);
     const otp = latestOtp();
