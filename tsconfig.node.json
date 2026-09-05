@@ -17,6 +17,8 @@
     "eslint.config.js",
     "vite.config.ts",
     "vitest.client.config.ts",
+    "vitest.node.config.ts",
+    "vitest.worker-unit.config.ts",
     "vitest.worker.config.ts"
   ]
 }

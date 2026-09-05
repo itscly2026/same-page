@@ -51,6 +51,49 @@ test("code, config, dependencies, workflow and unknown files require full verifi
   }
 });
 
+test("runtime areas select only their relevant expensive checks", (t) => {
+  const repo = repository(t);
+  const expectedByPath = new Map([
+    ["src/client/routes/home-page.tsx", ["client", "visual", "performance", "build", "deploy"]],
+    ["src/client/pwa-navigation.ts", ["client", "visual", "pwa", "performance", "build", "deploy"]],
+    ["worker/index.ts", ["worker", "build", "deploy"]],
+    ["src/shared/health.ts", ["client", "worker", "visual", "performance", "build", "deploy"]],
+    ["migrations/0002.sql", ["worker", "migration", "deploy"]],
+    ["visual-report/layout.test.mjs", ["visual"]],
+    ["scripts/verify-score-schema-migration.mjs", ["migration"]],
+  ]);
+
+  for (const [name, enabled] of expectedByPath) {
+    repo.git("reset", "--hard", repo.base);
+    repo.put(name, "updated\n");
+    repo.commit();
+    const scope = repo.scope();
+    assert.equal(scope.full, true, name);
+    for (const check of ["client", "worker", "visual", "pwa", "performance", "migration", "build", "deploy"]) {
+      assert.equal(scope[check], enabled.includes(check), `${name}: ${check}`);
+    }
+  }
+});
+
+test("test and CI changes run checks without deploying product code", (t) => {
+  const repo = repository(t);
+  for (const [name, enabled] of [
+    ["src/client/app.test.tsx", ["client"]],
+    ["src/shared/annotations.test.ts", ["client"]],
+    ["src/test/setup.ts", ["client"]],
+    ["worker/index.test.ts", ["worker"]],
+    [".github/workflows/ci.yml", ["client", "worker", "visual", "pwa", "performance", "migration", "build"]],
+  ]) {
+    repo.git("reset", "--hard", repo.base);
+    repo.put(name, "updated\n");
+    repo.commit();
+    const scope = repo.scope();
+    assert.equal(scope.full, true, name);
+    assert.equal(scope.deploy, false, name);
+    for (const check of enabled) assert.equal(scope[check], true, `${name}: ${check}`);
+  }
+});
+
 test("push scope includes every commit since before, not just the last commit", (t) => {
   const repo = repository(t);
   repo.put("src/app.ts", "changed\n");
@@ -124,7 +167,10 @@ test("the workflow entrypoint emits scope and rejects whitespace errors in docs"
   repo.put("docs/change.md");
   repo.commit();
   assert.equal(run().status, 0);
-  assert.equal(readFileSync(output, "utf8"), "full=false\n");
+  assert.equal(
+    readFileSync(output, "utf8"),
+    "full=false\nclient=false\nworker=false\nvisual=false\npwa=false\nperformance=false\nmigration=false\nbuild=false\ndeploy=false\n",
+  );
   rmSync(output);
   repo.put("docs/change.md", "bad whitespace \t\n");
   repo.commit();

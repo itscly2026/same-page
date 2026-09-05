@@ -5,9 +5,24 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const rootDocuments = new Set(["README.md", "CONTEXT.md", "AGENTS.md"]);
+const checkNames = [
+  "client",
+  "worker",
+  "visual",
+  "pwa",
+  "performance",
+  "migration",
+  "build",
+  "deploy",
+];
+
+const checks = (enabled = []) => Object.fromEntries(
+  checkNames.map((name) => [name, enabled.includes(name)]),
+);
+const allChecks = () => checks(checkNames);
 
 export function determineCiScope({ cwd, eventName, event }) {
-  const full = (reason) => ({ full: true, reason });
+  const full = (reason) => ({ full: true, ...allChecks(), reason });
   const baseSha = eventName === "pull_request"
     ? event?.pull_request?.base?.sha
     : eventName === "push" ? event?.before : undefined;
@@ -31,12 +46,98 @@ export function determineCiScope({ cwd, eventName, event }) {
     if (files.length === 0) return full("No changed paths; running all checks.");
     const onlyDocuments = files.every((file) => rootDocuments.has(file)
       || (file.startsWith("docs/") && file.endsWith(".md")));
-    return onlyDocuments
-      ? { full: false, base, reason: "Only Markdown documentation changed; checking patch whitespace." }
-      : full("Runtime, tooling or other files changed; running all checks.");
+    if (onlyDocuments) {
+      return {
+        full: false,
+        ...checks(),
+        base,
+        reason: "Only Markdown documentation changed; checking patch whitespace.",
+      };
+    }
+    const selected = selectChecks(files);
+    return {
+      full: true,
+      ...selected,
+      base,
+      reason: `Selected checks for: ${files.join(", ")}`,
+    };
   } catch {
     return full("Comparison history unavailable; running all checks.");
   }
+}
+
+function selectChecks(files) {
+  const selected = new Set();
+  for (const file of files) {
+    const pathChecks = checksForPath(file);
+    if (!pathChecks) return allChecks();
+    for (const name of pathChecks) selected.add(name);
+  }
+  return checks([...selected]);
+}
+
+function checksForPath(file) {
+  if (file.startsWith(".github/")) {
+    return checkNames.filter((name) => name !== "deploy");
+  }
+  if (["package.json", "package-lock.json", ".nvmrc", "vite.config.ts", "wrangler.jsonc"].includes(file)) {
+    return checkNames;
+  }
+  if (file === "eslint.config.js" || file === "tsconfig.node.json") return [];
+  if (file === "tsconfig.app.json") return ["client", "build", "deploy"];
+  if (file === "tsconfig.worker.json") return ["worker", "build", "deploy"];
+  if (file === "tsconfig.json") return ["client", "worker", "build", "deploy"];
+  if (["vitest.client.config.ts", "vitest.node.config.ts"].includes(file)) return ["client"];
+  if (["vitest.worker.config.ts", "vitest.worker-unit.config.ts"].includes(file)) return ["worker"];
+
+  if (file.startsWith("src/shared/")) {
+    if (isTestPath(file)) return ["client"];
+    return ["client", "worker", "visual", "performance", "build", "deploy"];
+  }
+  if (file.startsWith("src/test/")) return ["client"];
+  if (file.startsWith("src/client/")) {
+    if (isTestPath(file)) return ["client"];
+    const selected = ["client", "visual", "performance", "build", "deploy"];
+    if (
+      file === "src/client/main.tsx"
+      || file.startsWith("src/client/components/reload-prompt")
+      || file.startsWith("src/client/pwa-navigation")
+    ) selected.push("pwa");
+    return selected;
+  }
+  if (file.startsWith("worker/")) {
+    return isTestPath(file) || file.startsWith("worker/test/")
+      ? ["worker"]
+      : ["worker", "build", "deploy"];
+  }
+  if (file.startsWith("migrations/")) return ["worker", "migration", "deploy"];
+  if (file.startsWith("visual-report/")) return ["visual"];
+  if (file.startsWith("public/") || file === "index.html") {
+    return ["visual", "pwa", "performance", "build", "deploy"];
+  }
+  if (file.startsWith("scripts/")) {
+    if (file.startsWith("scripts/ci-scope.")) return [];
+    if (file.startsWith("scripts/verify-pwa-update.")) return ["client", "pwa"];
+    if (
+      file.startsWith("scripts/measure-loading-performance.")
+      || file.startsWith("scripts/loading-performance-")
+    ) return ["client", "performance", "build"];
+    if (file.startsWith("scripts/generate-visual-report.") || file.startsWith("scripts/vite-server.")) {
+      return ["client", "visual"];
+    }
+    if (file.startsWith("scripts/backfill-score-file-names.")) {
+      return ["client", "migration", "deploy"];
+    }
+    if (file.startsWith("scripts/verify-score-schema-migration.")) {
+      return ["migration"];
+    }
+    return ["client"];
+  }
+  return null;
+}
+
+function isTestPath(file) {
+  return /(?:^|\/)\w[\w.-]*\.test\.[cm]?[jt]sx?$/.test(file);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -51,8 +152,17 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     execFileSync("git", ["diff", "--check", scope.base, "HEAD", "--"], { stdio: "inherit" });
   }
   console.log(scope.reason);
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `full=${scope.full}\n`);
+  if (process.env.GITHUB_OUTPUT) {
+    const output = ["full", ...checkNames]
+      .map((name) => `${name}=${scope[name]}`)
+      .join("\n");
+    appendFileSync(process.env.GITHUB_OUTPUT, `${output}\n`);
+  }
   if (process.env.GITHUB_STEP_SUMMARY) {
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `CI scope: ${scope.full ? "full" : "documentation"}. ${scope.reason}\n`);
+    const selected = checkNames.filter((name) => scope[name]);
+    appendFileSync(
+      process.env.GITHUB_STEP_SUMMARY,
+      `CI scope: ${scope.full ? selected.join(", ") || "fast checks" : "documentation"}. ${scope.reason}\n`,
+    );
   }
 }

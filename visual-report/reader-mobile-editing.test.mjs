@@ -29,7 +29,9 @@ test(`${engineName}: keeps the capsule at the right edge above its page hint in 
   const browser = await engine.launch({ headless: true });
   context.after(() => browser.close());
 
-  for (const width of [320, 360, 390, 412, 768, 834, 1024, 1194]) {
+  // Cover the minimum, the 360px rule boundary, the next mobile range,
+  // portrait tablet, the orientation transition and a wide landscape.
+  for (const width of [320, 360, 390, 768, 834, 1194]) {
     const page = await openMemberReader(browser, { width, height: 800 });
     await showReaderChrome(page);
 

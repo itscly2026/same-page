@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
-      full: ${{ steps.scope.outputs.full }}
+      deploy: ${{ steps.scope.outputs.deploy }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -53,41 +53,44 @@ jobs:
         run: npm run typecheck
 
       - name: Client tests
-        if: steps.scope.outputs.full == 'true'
+        if: steps.scope.outputs.client == 'true'
         run: npm run test
 
       - name: Worker tests
-        if: steps.scope.outputs.full == 'true'
+        if: steps.scope.outputs.worker == 'true'
         run: npm run test:worker
 
       - name: Install Playwright Chromium and WebKit
-        if: steps.scope.outputs.full == 'true'
+        if: >-
+          steps.scope.outputs.visual == 'true' ||
+          steps.scope.outputs.pwa == 'true' ||
+          steps.scope.outputs.performance == 'true'
         run: npx playwright install --with-deps chromium webkit
 
       - name: PWA update handover
-        if: steps.scope.outputs.full == 'true'
+        if: steps.scope.outputs.pwa == 'true'
         run: npm run test:pwa-update
 
       # PWA handover builds two synthetic versions; overwrite them with the
       # current commit before measuring production assets.
       - name: Production build
-        if: steps.scope.outputs.full == 'true'
+        if: steps.scope.outputs.build == 'true'
         run: npm run build
 
       - name: Loading performance feedback loop
-        if: steps.scope.outputs.full == 'true'
+        if: steps.scope.outputs.performance == 'true'
         run: node scripts/measure-loading-performance.mjs
 
       - name: Visual report tests
-        if: steps.scope.outputs.full == 'true'
+        if: steps.scope.outputs.visual == 'true'
         run: npm run test:visual-report
 
       - name: Migration tests
-        if: steps.scope.outputs.full == 'true'
+        if: steps.scope.outputs.migration == 'true'
         run: npm run test:migrations
 
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify.outputs.full == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify.outputs.deploy == 'true'
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
