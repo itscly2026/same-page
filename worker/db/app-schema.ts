@@ -359,3 +359,18 @@ export const sessionAuthMethods = sqliteTable("session_auth_methods", {
   sessionId: text("session_id").primaryKey().references(() => session.id, { onDelete: "cascade" }),
   method: text("method").notNull(),
 });
+
+// No user/drive relationship: support reports never grant access to private scores.
+export const diagnosticReports = sqliteTable("diagnostic_reports", {
+  id: text("id").primaryKey(),
+  clientBuild: text("client_build"),
+  payload: text("payload").notNull(),
+  payloadHash: text("payload_hash").notNull(),
+  status: text("status", { enum: ["new", "investigating", "resolved"] }).notNull().default("new"),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+}, table => [
+  index("diagnostic_reports_expiry_idx").on(table.expiresAt, table.id),
+  index("diagnostic_reports_status_created_idx").on(table.status, table.createdAt),
+  index("diagnostic_reports_build_created_idx").on(table.clientBuild, table.createdAt),
+]);

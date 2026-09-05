@@ -36,7 +36,8 @@
     "cf-typegen": "wrangler types",
     "deploy": "node scripts/release-artifact.mjs verify \"$SAME_PAGE_RELEASE_SHA\" && wrangler deploy --config dist/same_page/wrangler.json",
     "test:smoke": "node --test browser-tests/*.test.mjs",
-    "test:renderer": "python3 renderer/verify.py"
+    "test:renderer": "python3 renderer/verify.py",
+    "diagnostics:inbox": "node scripts/diagnostic-reports.mjs"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.7.2",

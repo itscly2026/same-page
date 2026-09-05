@@ -12,6 +12,7 @@ import { AuthorizationError } from "./auth/authorization";
 import { handleAuthRequest } from "./auth/handler";
 import { choirRoutes } from "./choirs/routes";
 import type { AppEnvironment } from "./env";
+import { diagnosticReportRoutes, cleanupDiagnosticReports } from "./diagnostic-reports";
 import { diagnosticMiddleware, logFailure } from "./diagnostics";
 import { serverTimingMiddleware } from "./performance/server-timing";
 import { cleanupScoreStorage } from "./scores/cleanup";
@@ -42,6 +43,7 @@ app.get("/api/health", (context) => {
 
 app.on(["GET", "POST"], "/api/auth/*", handleAuthRequest);
 
+app.route("/api", diagnosticReportRoutes);
 app.route("/api", lifecycleRoutes);
 app.route("/api", choirRoutes);
 app.route("/api", scoreRoutes);
@@ -71,6 +73,10 @@ export default {
     }
   },
   scheduled(_controller, env, context) {
+    context.waitUntil(cleanupDiagnosticReports(env.DB).catch(() => {
+      logFailure("storage", "cleanup", 500, crypto.randomUUID());
+      throw new Error("diagnostic_report_cleanup_failed");
+    }));
     context.waitUntil(cleanupScoreStorage(env).catch(() => {
       logFailure("storage", "cleanup", 500, crypto.randomUUID());
       throw new Error("score_storage_cleanup_failed");

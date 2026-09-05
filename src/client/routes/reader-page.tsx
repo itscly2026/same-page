@@ -73,6 +73,8 @@ import {
   type ReaderSyncOutcome,
 } from "../reader/reader-sync-status";
 
+import { DiagnosticReportDialog } from "../diagnostics/diagnostic-report-dialog";
+
 type ReaderPanel = "layers" | "pages";
 
 const ReaderEditingControls = lazy(() =>
@@ -395,6 +397,13 @@ function ReaderPageContent() {
     }
   };
 
+  const diagnosticDialog = <DiagnosticReportDialog reader={{
+    displayMode: reader.snapshot.mode,
+    interactionMode: editing ? "editing" : "reading",
+    pendingCount: activeAnnotations ? Math.min(9999, pendingCount) : null,
+    conflictCount: activeAnnotations ? Math.min(9999, conflicts.length) : null,
+  }} />;
+
   if (!workspace) {
     return <main className="page-shell compact-page">
       <p role={workspaceError ? "alert" : "status"}>{workspaceError ?? "正在打开本机工作区…"}</p>
@@ -402,6 +411,7 @@ function ReaderPageContent() {
       {workspaceError
         ? <Button className="secondary-button" onPress={() => { setWorkspaceError(null); setWorkspaceAttempt(value => value + 1); }}>重试打开工作区</Button>
         : <Button className="secondary-button" onPress={() => cancelWorkspace.current()}>取消打开工作区</Button>}
+      {diagnosticDialog}
     </main>;
   }
 
@@ -428,7 +438,7 @@ function ReaderPageContent() {
         </Link>
         <Button className="secondary-button" onPress={reader.retry}>重试加载</Button>
         {displayChoices}
-        <Link to="/diagnostics">故障诊断</Link>
+        {diagnosticDialog}
       </main>
     );
   }
@@ -448,6 +458,7 @@ function ReaderPageContent() {
           {displayChoices}
           <Link className="primary-link" to={`/choirs/${choirId}`}>返回云盘</Link>
           <Button className="secondary-button" onPress={reader.cancel}>取消加载</Button>
+          {diagnosticDialog}
         </div>
       </main>
     );
@@ -669,7 +680,7 @@ function ReaderPageContent() {
                   {downloadMessage ?? syncStatus.message}
                 </p>
               ) : null}
-              <Link to="/diagnostics">故障诊断</Link>
+              {diagnosticDialog}
             </aside>
           ) : null}
         </header>
