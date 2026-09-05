@@ -12,7 +12,7 @@ import {
 import { AppHeader } from "../components/app-header";
 import { authClient } from "../auth/auth-client";
 import { SettingsFeedback } from "../settings/settings-feedback";
-import { settingsError, settingsResponse, sharedLayerDescriptions } from "../settings/settings-request";
+import { settingsError, settingsResponse } from "../settings/settings-request";
 import { useSettingsLifetime } from "../settings/use-settings-lifetime";
 
 export default function SharedLayerGrantsPage() {
@@ -36,7 +36,7 @@ function SharedLayerGrants({ choirId, slotParam }: { choirId: string; slotParam:
     setLoading(true);
     setLoadAttempt((attempt) => attempt + 1);
   };
-  const [message, setMessage] = useState<string | null>(null);
+  const [results, setResults] = useState<Record<string, { message: string; failedGrant?: boolean }>>({});
   const pendingMembersRef = useRef(new Set<string>());
   const [pendingMembers, setPendingMembers] = useState(new Set<string>());
 
@@ -69,10 +69,7 @@ function SharedLayerGrants({ choirId, slotParam }: { choirId: string; slotParam:
     const requestGeneration = generation.current;
     pendingMembersRef.current.add(member.id);
     setPendingMembers(new Set(pendingMembersRef.current));
-    const previousMember = member;
-    setMessage(null);
-    setMembers((current) => current.map((entry) =>
-      entry.id === member.id ? { ...entry, granted } : entry));
+    setResults((current) => ({ ...current, [member.id]: { message: "正在保存…" } }));
     try {
       const response = await diagnosticFetch(
         `/api/choirs/${choirId}/shared-layers/${slot}/grants/${member.id}`,
@@ -84,12 +81,14 @@ function SharedLayerGrants({ choirId, slotParam }: { choirId: string; slotParam:
       );
       await settingsResponse(response);
       if (requestGeneration !== generation.current) return;
-      setMessage("编辑权限已更新。");
+      setMembers((current) => current.map((entry) =>
+        entry.id === member.id ? { ...entry, granted } : entry));
+      setResults((current) => ({ ...current, [member.id]: { message: "编辑权限已更新。" } }));
     } catch (error: unknown) {
       if (requestGeneration !== generation.current) return;
-      setMembers((current) => current.map((entry) =>
-        entry.id === previousMember.id ? previousMember : entry));
-      setMessage(settingsError(error, "权限更新失败，原设置已保留。请重试。"));
+      setResults((current) => ({ ...current, [member.id]: {
+        message: settingsError(error, "权限更新失败，原设置已保留。"), failedGrant: granted,
+      } }));
     } finally {
       if (requestGeneration === generation.current) {
         pendingMembersRef.current.delete(member.id);
@@ -112,16 +111,16 @@ function SharedLayerGrants({ choirId, slotParam }: { choirId: string; slotParam:
         <header className="settings-heading">
           <p className="eyebrow">云盘管理 · {driveName || "共享层"}</p>
           <h1>{layerName} 编辑权限</h1>
-          {slot ? <p>{sharedLayerDescriptions[slot]}共享批注</p> : null}
           <p className="settings-copy">管理员始终可以编辑；以下授权对当前云盘中的全部乐谱生效。</p>
         </header>
-        {slot ? <SettingsFeedback loading={loading} loadError={loadError} message={message} retry={retryLoad} /> : <p role="alert">共享层不存在。</p>}
+        {slot ? <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} /> : <p role="alert">共享层不存在。</p>}
         <section className="settings-card" aria-label={`${layerName} 编辑成员`} aria-busy={loading}>
           {members.map((member) => (
-            <label className="settings-member-row" key={member.id}>
+            <article className="settings-member-item" key={member.id}>
+            <label className="settings-member-row">
               <span>
                 <strong>{member.displayName}</strong>
-                {member.role === "admin" ? <small>管理员 · 始终可编辑</small> : <small>{pendingMembers.has(member.id) ? "正在保存…" : member.granted ? "可以编辑" : "未授权编辑"}</small>}
+                {member.role === "admin" ? <small>管理员 · 始终可编辑</small> : <small>{member.granted ? "可以编辑" : "未授权编辑"}</small>}
               </span>
               <input
                 aria-label={`${member.displayName}${member.role === "admin" ? " 管理员" : ""}`}
@@ -131,6 +130,13 @@ function SharedLayerGrants({ choirId, slotParam }: { choirId: string; slotParam:
                 onChange={(event) => void updateGrant(member, event.target.checked)}
               />
             </label>
+            {results[member.id] ? <div className="settings-row-feedback">
+              <span role={results[member.id].failedGrant !== undefined ? "alert" : "status"}>{results[member.id].message}</span>
+              {results[member.id].failedGrant !== undefined ? <button type="button" className="text-button"
+                disabled={pendingMembers.has(member.id)} aria-label={`重试 ${member.displayName}`}
+                onClick={() => void updateGrant(member, results[member.id].failedGrant!)}>重试</button> : null}
+            </div> : null}
+            </article>
           ))}
         </section>
       </main>

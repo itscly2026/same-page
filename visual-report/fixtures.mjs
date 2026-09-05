@@ -562,9 +562,15 @@ export function createVisualFixtureSession(scenario = {}) {
       if (pathname.endsWith("/shared-layers") && payload.layers) payload.layers = payload.layers.map((entry) => ({ ...entry, defaultColor: colors.get(entry.slot) ?? entry.defaultColor }));
       if (pathname.endsWith("/grants") && payload.members) payload.members = payload.members.map((member) => ({ ...member, granted: grants.get(`${slot}:${member.id}`) ?? member.granted }));
       if (pathname.endsWith("/layers") && payload.layers) payload.layers = payload.layers.map((entry) => {
+        if (entry.kind === "personal") return entry;
+        const drivePreference = preferences.get(entry.defaultSlot);
         const preference = scorePreferences.get(entry.defaultSlot);
-        if (!preference) return entry;
-        return { ...entry, subscribed: preference.subscribed ?? entry.driveSubscribed ?? true, scoreSubscriptionOverride: preference.subscribed, subscriptionSource: preference.subscribed === null ? "drive" : "score" };
+        const driveSubscribed = drivePreference?.subscribed ?? entry.driveSubscribed;
+        const scoreSubscriptionOverride = preference ? preference.subscribed : entry.scoreSubscriptionOverride;
+        return { ...entry, driveSubscribed, scoreSubscriptionOverride,
+          subscribed: scoreSubscriptionOverride ?? driveSubscribed ?? entry.subscribed,
+          subscriptionSource: scoreSubscriptionOverride !== null ? "score" : driveSubscribed !== null ? "drive" : "product" };
+
       });
       return { ...response, body: JSON.stringify(payload) };
     },

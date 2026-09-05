@@ -716,10 +716,10 @@ function ReaderPageContent() {
         <ModalOverlay className="reader-panel-backdrop" isOpen isDismissable
           onOpenChange={(open) => { if (!open) setReaderPanel(null); }}>
           <Modal className="reader-panel reader-layers-dialog">
-            <Dialog aria-label="图层" className="reader-layers-content">
+            <Dialog aria-label="显示哪些批注" className="reader-layers-content">
               <header className="reader-panel__header">
-                <strong>图层</strong>
-                <Button aria-label="关闭页面与图层" onPress={() => setReaderPanel(null)}>
+                <strong>显示哪些批注</strong>
+                <Button aria-label="关闭批注显示" onPress={() => setReaderPanel(null)}>
                   关闭
                 </Button>
               </header>
