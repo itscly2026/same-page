@@ -23,6 +23,7 @@ import {
 import { authClient } from "../auth/auth-client";
 import sharedLayersIllustration from "../assets/home/shared-layers.webp";
 import personalLayerIllustration from "../assets/home/personal-layer.webp";
+import replacePdfIllustration from "../assets/home/replace-pdf.webp";
 import offlineSyncIllustration from "../assets/home/offline-sync.webp";
 import everyDeviceIllustration from "../assets/home/every-device.webp";
 import {
@@ -62,6 +63,12 @@ const productFeatures = [
     illustration: personalLayerIllustration,
     description:
       "选择需要查看的声部批注，也能在个人层记下自己的提醒，只有你能看到。",
+  },
+  {
+    title: "替换乐谱，保留批注",
+    illustration: replacePdfIllustration,
+    description:
+      "谱子有局部修订时，管理员可以直接替换 PDF；已有批注仍按原页码和位置显示，不必重新标注。",
   },
   {
     title: "离线可用，联网同步",
