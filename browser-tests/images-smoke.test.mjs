@@ -42,8 +42,8 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     const menu = page.getByRole("complementary", { name: "更多阅读选项" });
     await expect(menu).toBeVisible();
     const bounds = await menu.boundingBox();
-    assert.ok(bounds && bounds.y >= 0 && bounds.y + bounds.height <= 568, "reading options must stay inside the narrow viewport");
     await page.screenshot({ path: `artifacts/verification/137/${engineName}-images-narrow.png` });
+    assert.ok(bounds && bounds.y >= 0 && bounds.y + bounds.height <= 568, `reading options must stay inside the narrow viewport: ${JSON.stringify(bounds)}`);
     await page.setViewportSize({ width: 1024, height: 768 });
     const readerUrl = page.url();
     if (engineName === "webkit") await fixture.stop();

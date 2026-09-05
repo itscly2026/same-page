@@ -52,6 +52,29 @@ The public test boundaries agreed with the user are ReaderSession open/switch/ca
 
 The first full run passed renderer, PWA update, lint, types, client and Worker suites, then one visual diagnostic test hit a process-cleanup `EPERM`. Its isolated rerun passed. Final gate results and performance are recorded after review below.
 
+## Final local checks and review
+
+All constituent checks passed, including the final targeted fixes: renderer regression, PWA handover, CI scope, lint, types, unit tests (37), client tests (286 in the aggregate run plus the final 44-test affected-file run), Worker unit/integration (7 / 66), visual tests (31), migration verification, production build/precache, real-storage smoke (6) and controlled loading performance. The two aggregate `check:full` attempts stopped on intermittent macOS process-group cleanup `kill EPERM` in different browser fixtures; isolated diagnostic rerun and the final complete six-scenario smoke rerun passed. Thus the constituent gates are green, while a single uninterrupted aggregate command has not been established. Remote CI, including the new Linux Docker gate, is pending.
+
+The final smoke includes native image conversion and persistent-browser restart in Chromium and WebKit. A 320 × 568 menu check caught a 7-pixel bottom overflow; the corrected height reserve accounts for the top control capsule, page indicator and safe areas. Both engines now keep the scrolling menu inside the viewport; the resulting screenshots were inspected.
+
+| Normal PDF path | #136 recorded reference | #137 local run |
+| --- | ---: | ---: |
+| First open | 220–234 ms | 213 ms |
+| Reopen | 31 ms | 31 ms |
+| Return to cached drive | — | 29 ms |
+| Precache entries / emitted bytes | 59 / 4,484,922 | 61 / 4,506,563 |
+
+The prior reference comes from `verification-136.md`, not a simultaneous control run. The same controlled WebKit harness applies 75-ms API delay and 5000-ms return-network delay; these single runs do not establish a statistically significant speedup or production latency. The new precache adds 21,641 bytes (0.48%); native rendering and font fixtures are not client assets. Evidence: `artifacts/verification/137/final-build.log`, `final-smoke.log`, `final-performance.log`, `review-edges-green.log` and both aggregate logs.
+
+### Standards
+
+The independent review identified persistent preference changes during automatic recovery and a recovery exit that bypassed the editing guard. Both were fixed. Follow-up review identified explicit acceptance of an already selected automatic mode and cancellation during pending authentication; both were reproduced, fixed and rechecked. **No outstanding code findings** after review of `303140e`.
+
+### Spec
+
+The independent review identified a late PDF result winning after selecting images, lack of recovery from a missing ready-generation object, and absence of image browser-process restart coverage. All three were fixed and tested. Follow-up preference/cancellation findings were also closed. **No outstanding code findings** after review of `303140e`; deployment, aggregate-run and physical-device acceptance limitations remain as stated here.
+
 ## Release and remaining acceptance
 
 Before production release: provision the `same-page-images` Queue; verify account Containers availability and credentials, build/run the Linux Docker image with the native regression specimen, apply migration 0015, deploy the sealed Worker/assets plus renderer sources, then verify health/build identity and authenticated conversion on the deployed Container. Wrangler needs Docker to build the configured image; this was not verified locally. CI now builds the actual Dockerfile and runs the fixed specimen in that image as its unprivileged user with no network, a 1-GiB container limit and the native child limits; the remote CI result remains pending. The release archive includes the renderer inputs and hashes them so deployment cannot silently omit or substitute those sources. The upstream Python base tag is mutable, so the actual release image digest must also be recorded.
