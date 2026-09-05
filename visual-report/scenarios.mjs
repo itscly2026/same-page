@@ -187,12 +187,12 @@ export const visualReportScenarios = [
   },
   {
     id: "layer-preferences",
-    title: "我的偏好 · 图层",
-    description: "当前用户在当前云盘中的默认订阅与颜色覆盖。",
+    title: "阅读偏好 · 默认显示",
+    description: "优先设置当前云盘默认显示的批注，颜色进入次级界面。",
     device: "portrait",
     identity: "member",
     route: "/choirs/visual-choir/preferences",
-    ready: { type: "selector", selector: ".settings-card .settings-layer-row:nth-child(5)" },
+    ready: { type: "selector", selector: ".settings-card .preference-row:last-child" },
     actions: [],
   },
   {

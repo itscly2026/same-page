@@ -1,0 +1,76 @@
+{
+  "writes": [
+    {
+      "pathname": "/api/choirs/visual-choir/shared-layers/E/preference",
+      "body": {
+        "subscribed": false
+      },
+      "failed": true
+    },
+    {
+      "pathname": "/api/choirs/visual-choir/shared-layers/E/preference",
+      "body": {
+        "subscribed": false
+      },
+      "failed": false
+    },
+    {
+      "pathname": "/api/choirs/visual-choir/shared-layers/E/preference",
+      "body": {
+        "colorOverride": "#123456"
+      },
+      "failed": true
+    },
+    {
+      "pathname": "/api/choirs/visual-choir/shared-layers/E/preference",
+      "body": {
+        "colorOverride": "#123456"
+      },
+      "failed": false
+    },
+    {
+      "pathname": "/api/choirs/visual-choir/shared-layers/E/preference",
+      "body": {
+        "colorOverride": null
+      },
+      "failed": false
+    },
+    {
+      "pathname": "/api/choirs/visual-choir/scores/visual-score/shared-layers/B/preference",
+      "body": {
+        "subscribed": null
+      },
+      "failed": false
+    },
+    {
+      "pathname": "/api/choirs/visual-choir/scores/visual-score/shared-layers/E/preference",
+      "body": {
+        "subscribed": true
+      },
+      "failed": true
+    },
+    {
+      "pathname": "/api/choirs/visual-choir/scores/visual-score/shared-layers/E/preference",
+      "body": {
+        "subscribed": true
+      },
+      "failed": false
+    },
+    {
+      "pathname": "/api/choirs/visual-choir/scores/visual-score/shared-layers/E/preference",
+      "body": {
+        "subscribed": null
+      },
+      "failed": false
+    }
+  ],
+  "checks": [
+    "drive defaults",
+    "score override and restore",
+    "save failure and retry",
+    "custom color and restore",
+    "permission explanation",
+    "edit hidden layer without subscribing",
+    "exit restores reading"
+  ]
+}

@@ -114,7 +114,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByRole("button", { name: "恢复默认显示", exact: true }).click();
     await page.getByRole("button", { name: "恢复默认显示", exact: true }).waitFor({ state: "hidden" });
     failNext = true;
-    await scoreDisplay.click();
+    await page.locator(".reader-layer-toggle").filter({ has: scoreDisplay }).locator(".layer-card__identity").click();
     await page.getByRole("alert").waitFor();
     assert.equal(await scoreDisplay.isChecked(), false);
     await page.getByRole("button", { name: "重试未保存项" }).click();
@@ -125,6 +125,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     assert.equal(await scoreDisplay.isChecked(), false);
     await page.getByRole("button", { name: "关闭批注显示" }).click();
     assert.equal(await page.getByText("第一排男高音这里请统一提前吸气并保持轻声进入", { exact: true }).count(), 0);
+    assert.equal(await page.getByText("换气", { exact: true }).count(), 1, "Personal remains visible in reading");
     const beforeEditing = writes.length;
     await page.getByRole("button", { name: "编辑", exact: true }).click();
     await page.getByRole("button", { name: /当前编辑层/ }).click();
@@ -134,10 +135,12 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByRole("button", { name: "知道了" }).click();
     await page.getByRole("button", { name: "E，Ensemble", exact: true }).click();
     await page.getByText("第一排男高音这里请统一提前吸气并保持轻声进入", { exact: true }).waitFor();
+    assert.equal(await page.getByText("换气", { exact: true }).count(), 0, "editing shows only the selected shared layer");
     assert.equal(await page.getByRole("button", { name: "页面位置" }).isDisabled(), true);
     await capture(page, `${engineName}-edit-hidden-layer`);
     await page.getByRole("button", { name: "编辑", exact: true }).click();
     await page.getByText("第一排男高音这里请统一提前吸气并保持轻声进入", { exact: true }).waitFor({ state: "hidden" });
+    await page.getByText("换气", { exact: true }).waitFor();
     assert.equal(writes.length, beforeEditing, "editing never writes a subscription");
 
     identity = "admin";
