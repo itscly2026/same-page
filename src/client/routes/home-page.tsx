@@ -52,34 +52,28 @@ type JoinStep =
 
 const productFeatures = [
   {
-    title: "不同声部，分层共享",
+    title: "不同声部，分层共享批注",
     illustration: sharedLayersIllustration,
-    illustrationAlt: "不同颜色的共享批注层从同一份乐谱展开，每层保留多处标记。",
     description:
       "排练要求按声部分层共享，获授权的人可以留下批注，大家在同一份谱上查看。",
   },
   {
-    title: "只看需要的，也保留自己的",
+    title: "共享批注按需看，个人笔记自己留",
     illustration: personalLayerIllustration,
-    illustrationAlt:
-      "显示紫色 Tenor 男高音共享层与仅自己可见的绿色个人层，其余共享层呈灰色虚线隐藏状态。",
     description:
       "选择需要查看的声部批注，也能在个人层记下自己的提醒，只有你能看到。",
   },
   {
-    title: "有网就同步，没网不耽误",
+    title: "离线可用，联网同步",
     illustration: offlineSyncIllustration,
-    illustrationAlt:
-      "左侧断网时仍能用笔在谱上画出虚线连音线；右侧联网时显示实线批注和云同步图标。",
     description:
       "提前下载离线副本，断网也能继续看谱、做批注；恢复联网后，批注会继续同步。",
   },
   {
-    title: "一份乐谱，适配每台设备",
+    title: "一份乐谱，多设备可用",
     illustration: everyDeviceIllustration,
-    illustrationAlt: "电脑、平板和手机上显示同一份乐谱与相同的彩色批注。",
     description:
-      "在平板、手机或电脑上，都能打开同一份乐谱和批注。",
+      "建议将合谱像应用一样安装到 Android 手机和平板、iPhone、iPad、Windows 电脑或 Mac，随时打开同一份乐谱和批注。",
   },
 ] as const;
 
@@ -300,42 +294,47 @@ export function HomePage() {
         </main>
       ) : session.isPending ? <main className="page-shell"><p role="status">正在加载…</p></main> : <main className="marketing-content">
         <section className="marketing-hero" aria-labelledby="page-title">
-          <p className="hero-mark">合谱 · Same Page</p>
-          <h1 id="page-title" lang="en">
-            Harmony begins on the Same Page
-          </h1>
-          <p className="hero-zh" lang="zh-CN">
-            你的笔记我的谱
-          </p>
-          <div className="hero-description">
-            <p lang="en">
-              A cloud-based score library built for choir rehearsals and shared
-              annotations.
+          <div className="marketing-hero__content">
+            <p className="hero-mark">合谱 · Same Page</p>
+            <h1 id="page-title" lang="en">
+              Harmony begins on the Same Page
+            </h1>
+            <p className="hero-zh" lang="zh-CN">
+              你的笔记我的谱
             </p>
-            <p lang="zh-CN">为合唱排练与共享批注打造的乐谱云盘。</p>
-          </div>
-          <div className="hero-actions">
-            <Button
-              className="primary-button hero-cta"
-              onPress={() => setJoinOpen(true)}
-            >
-              进入云盘
-            </Button>
-            {previewChoir ? (
-              <Link
-                className="hero-preview-link"
-                to={`/choirs/${previewChoir.id}`}
-                onClick={() => startLoadingJourney("enter-drive", "warm")}
+            <div className="hero-description">
+              <p lang="en">
+                A cloud-based score library built for choir rehearsals and shared
+                annotations.
+              </p>
+              <p lang="zh-CN">为合唱排练与共享批注打造的乐谱云盘。</p>
+            </div>
+            <div className="hero-actions">
+              <Button
+                className="primary-button hero-cta"
+                onPress={() => setJoinOpen(true)}
               >
-                访问公开体验云盘
-              </Link>
+                进入云盘
+              </Button>
+              {previewChoir ? (
+                <Link
+                  className="hero-preview-link"
+                  to={`/choirs/${previewChoir.id}`}
+                  onClick={() => startLoadingJourney("enter-drive", "warm")}
+                >
+                  访问公开体验云盘
+                </Link>
+              ) : null}
+            </div>
+            {pageMessage ? (
+              <p className="form-message page-message" role="alert">
+                {pageMessage}
+              </p>
             ) : null}
           </div>
-          {pageMessage ? (
-            <p className="form-message page-message" role="alert">
-              {pageMessage}
-            </p>
-          ) : null}
+          <a className="marketing-more-features" href="#features">
+            了解更多功能 <span aria-hidden="true">↓</span>
+          </a>
         </section>
 
         <section id="features" className="marketing-features" aria-label="产品特点">
@@ -355,7 +354,7 @@ export function HomePage() {
               <img
                 className="marketing-feature__illustration"
                 src={feature.illustration}
-                alt={feature.illustrationAlt}
+                alt=""
                 width={1536}
                 height={1024}
                 loading="lazy"

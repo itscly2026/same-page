@@ -103,17 +103,22 @@ describe("AppRoutes", () => {
       screen.getByText("为合唱排练与共享批注打造的乐谱云盘。"),
     ).toHaveAttribute("lang", "zh-CN");
     expect(
-      screen.getByRole("heading", { name: "不同声部，分层共享" }),
+      screen.getByRole("heading", { name: "不同声部，分层共享批注" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "只看需要的，也保留自己的" }),
+      screen.getByRole("heading", {
+        name: "共享批注按需看，个人笔记自己留",
+      }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "有网就同步，没网不耽误" }),
+      screen.getByRole("heading", { name: "离线可用，联网同步" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "一份乐谱，适配每台设备" }),
+      screen.getByRole("heading", { name: "一份乐谱，多设备可用" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "了解更多功能" }),
+    ).toHaveAttribute("href", "#features");
     expect(
       screen.getByText(
         "排练要求按声部分层共享，获授权的人可以留下批注，大家在同一份谱上查看。",
@@ -131,7 +136,7 @@ describe("AppRoutes", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "在平板、手机或电脑上，都能打开同一份乐谱和批注。",
+        "建议将合谱像应用一样安装到 Android 手机和平板、iPhone、iPad、Windows 电脑或 Mac，随时打开同一份乐谱和批注。",
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "登录" })).toBeInTheDocument();
