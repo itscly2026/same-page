@@ -1,7 +1,8 @@
 export interface Env {
   DB: D1Database;
   IMAGE_JOBS: Queue<{ versionId: string; generation: string }>;
-  PDF_RENDERER: DurableObjectNamespace<import("./images/container").PdfRenderer>;
+  PDF_RENDERER_URL: string;
+  PDF_RENDERER_SECRET: string;
   SCORES_BUCKET: R2Bucket;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;

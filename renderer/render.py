@@ -9,6 +9,8 @@ import sys
 resource.setrlimit(resource.RLIMIT_CPU, (15, 15))
 if sys.platform == "linux":
     resource.setrlimit(resource.RLIMIT_AS, (768 * 1024**2, 768 * 1024**2))
+from sandbox import isolate
+isolate()
 import pypdfium2 as pdfium
 
 

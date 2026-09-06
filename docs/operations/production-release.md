@@ -21,8 +21,8 @@
 - Resend 发信域：`samepage.clyapps.com`，与根域真人邮件/Webmail 信誉隔离
 - Resend key：Same Page 独立、Sending access、只允许 `samepage.clyapps.com`
 - CI Cloudflare token：Same Page 独立，包含 Workers Scripts Write、D1 Write、
-  Workers R2 Storage Write、Account Settings Read、Containers Edit、Workers Queues Write，以及
-  `clyapps.com` 的 Workers Routes Write。账户须已启用 Workers Paid / Containers。
+  Workers R2 Storage Write、Account Settings Read、Workers Queues Write，以及
+  `clyapps.com` 的 Workers Routes Write。PDF 渲染运行于 Google Cloud Run，不再需要 Workers Paid / Containers。
 
 生产 Secret 只存在于 Resend、Cloudflare Worker 和 GitHub Actions 的 secret store。
 不得写入仓库、Issue、PR、日志、终端历史或发布记录。
@@ -138,14 +138,28 @@ deploy job 在生产锁内核对发布顺序，记录发布尝试，在汇总 ve
 
 ## 发布失败与显式回滚
 
-Containers 发布前先用同一 CI token 只读访问 `/accounts/{account_id}/containers/me`。
-这是 Wrangler 在镜像推送前使用的接口；检查放在 D1 恢复点、migration 和 Worker 上传之前。
-`401/403` 时核对实际 token 的 Containers Edit 权限、账户范围和套餐状态；
-仅凭 `Authentication error` 不能区分缺权限与未启用服务。预检通过只证明读取权限，
-镜像推送与容器发布仍必须成功。不要用重建镜像、重跑测试或跳过容器发布来掩盖认证错误。
-权限名称见 [Cloudflare API token permissions](https://developers.cloudflare.com/fundamentals/api/reference/permissions/)。
-Wrangler 的 Worker 上传与容器发布不具备事务性，见 [Deploy Containers](https://developers.cloudflare.com/containers/guides/deploy/)。
+Cloud Run 渲染器使用 Same Page 专属 GCP 项目和运行身份。一次性资源配置见
+`renderer/provision.sh`；GitHub WIF 只允许本仓库 main 分支的 CI 工作流。
+`PDF_RENDERER_SECRET` 分别保存于 GitHub Actions、Worker Secrets 和 Google Secret Manager；
+Google 端固定使用 `same-page-renderer-signing:1`，轮换时应协调两个运行端及 CI 探针。
+密钥只经标准输入或子进程环境传递，不写入仓库、命令参数或输出。
 
+CI 在验证任务中构建、测试并保存 `renderer/image.tar`，随 release artifact 一起封存。
+生产锁内先发布该镜像的不可变 digest，再验证 buildId、未签名请求 403、
+签名测试 PDF 的六张完整 PNG 与 golden 文件逐字节一致，最后执行 D1 和 Worker 发布。
+源配置中的 `PDF_RENDERER_URL` 是 Same Page 的稳定 Cloud Run 地址。
+
+Cloud Run 和 Worker 发布不具备跨平台事务性；失败时分别核对 Run revision/buildId
+与 Worker `/api/health`、`/build.json`，不能以任一端已成功代表完整发布。
+恢复使用同一 release artifact 和串行 production admission，禁止重新构建后覆盖旧 SHA。
+原 Durable Object 创建 migration 已在失败发布中上传，因此保留历史 tag，并添加删除类的 migration。
+Cloudflare CI token 仍须具备 Queues Write 以管理现有 Queue consumer。
+
+该服务采用公开 HTTPS 入口及应用签名鉴权；它不是 IAM 私有服务。
+完整 PDF 只上传一次，所有 PNG 流式返回 Worker 并按原授权保存到私有 R2。
+原生解析子进程无凭据，Linux seccomp 禁止网络和跨进程读取。
+成本配置为 1 vCPU / 1 GiB / min 0 / max 1 / concurrency 1；免费额度按结算账号共享，
+互联网出网、镜像存储及日志单独计量，参见 `cloud-run-evaluation.md`。
 
 1. 先在 Actions 确定失败阶段。准入跳过表示已有更新的发布尝试；历史不可达、分叉、GitHub 记录不可用或 artifact 校验失败都在生产写入前停止。不要通过删除发布记录或修改 expected SHA 绕过。
 2. 下载失败或 artifact 过期：重跑包含 integration、verify 和 deploy 的完整工作流。相同 SHA 允许重试；不允许在部署阶段临时构建一份新产物。`npm run deploy` 仅供已获授权的手工恢复，要求 `SAME_PAGE_RELEASE_SHA` 与已校验的 release.json 一致，不构建、不迁移，也不替代完整发布流程；执行时须停止并发 CI 发布并单独记录。

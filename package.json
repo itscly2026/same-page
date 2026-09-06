@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && node scripts/prepare-renderer-artifact.mjs && node scripts/verify-precache.mjs",
+    "build": "tsc -b && vite build && node scripts/verify-precache.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc -b --pretty false",
@@ -41,7 +41,6 @@
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.7.2",
-    "@cloudflare/containers": "^0.3.7",
     "@tanstack/react-virtual": "^3.14.10",
     "better-auth": "^1.7.2",
     "dexie": "^4.4.5",

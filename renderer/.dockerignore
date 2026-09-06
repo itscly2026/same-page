@@ -1,2 +1,5 @@
+image.tar
 __pycache__
 fixtures
+verify.py
+test_transport.py

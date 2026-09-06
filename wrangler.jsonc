@@ -27,7 +27,8 @@
   ],
   "vars": {
     "BETTER_AUTH_URL": "https://samepage.clyapps.com",
-    "AUTH_EMAIL_FROM": "Same Page <login@samepage.clyapps.com>"
+    "AUTH_EMAIL_FROM": "Same Page <login@samepage.clyapps.com>",
+    "PDF_RENDERER_URL": "https://same-page-renderer-638290534241.us-central1.run.app"
   },
   "assets": {
     "not_found_handling": "single-page-application",
@@ -50,26 +51,16 @@
       "0 * * * *"
     ]
   },
-  "containers": [
-    {
-      "class_name": "PdfRenderer",
-      "image": "./renderer/Dockerfile",
-      "max_instances": 1,
-      "instance_type": "basic"
-    }
-  ],
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "PDF_RENDERER",
-        "class_name": "PdfRenderer"
-      }
-    ]
-  },
   "migrations": [
     {
       "tag": "pdf-renderer-v1",
       "new_sqlite_classes": [
+        "PdfRenderer"
+      ]
+    },
+    {
+      "tag": "pdf-renderer-cloud-run-v2",
+      "deleted_classes": [
         "PdfRenderer"
       ]
     }
