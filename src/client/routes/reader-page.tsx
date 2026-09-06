@@ -212,20 +212,6 @@ function ReaderPageContent() {
       recordScoreOpened(driveCacheOwnerKey(workspace.ownerKey.startsWith("user:") ? workspace.ownerKey.slice(5) : null, choirId), choirId, scoreId);
     }
   }, [document, documentScopeKey, workspace, choirId, scoreId, session.data?.user.id]);
-  useEffect(() => {
-    if (!workspace || !document || !online || cloudState === "trashed") return;
-    const refresh = () => {
-      if (window.document.visibilityState === "visible") void syncAnnotations(workspace, { pull: true }).catch(() => undefined);
-    };
-    const timer = window.setInterval(refresh, 30_000);
-    window.addEventListener("online", refresh);
-    window.document.addEventListener("visibilitychange", refresh);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener("online", refresh);
-      window.document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [workspace, document, online, cloudState]);
   const annotationState = useLiveQuery(
     () => workspace ? readScoreAnnotationState(workspace).catch(() => null) : null,
     [workspace?.scopeKey], null,

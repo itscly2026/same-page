@@ -1,3 +1,4 @@
+import { sharedLayerLabel, sharedLayerPrefix } from "../../shared/annotations";
 import { useEffect, useRef, useState } from "react";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { Button } from "react-aria-components";
@@ -58,7 +59,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
     const failures = changes.filter((_, index) => results[index]?.status === "rejected");
     setFailed(failures);
     setMessage(failures.length
-      ? `${failures.length === changes.length ? "未能保存" : `已保存 ${changes.length - failures.length} 项；未能保存`}：${failures.map(({ layer }) => `${layer.sharedSlot && layer.sharedSlot.length === 1 ? `${layer.sharedSlot} · ` : ""}${layer.name}`).join("、")}。未保存的显示设置保持原样，请重试。`
+      ? `${failures.length === changes.length ? "未能保存" : `已保存 ${changes.length - failures.length} 项；未能保存`}：${failures.map(({ layer }) => sharedLayerLabel(layer.sharedSlot, layer.name)).join("、")}。未保存的显示设置保持原样，请重试。`
       : "本谱显示设置已保存");
     busy.current = false;
     setPending(false);
@@ -109,13 +110,13 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
             <article className="layer-card" key={layer.id}>
               <div className="layer-card__main reader-layer-row">
                 <label className="reader-layer-toggle">
-                  <input aria-label={`显示 ${layer.sharedSlot && layer.sharedSlot.length === 1 ? `${layer.sharedSlot} · ` : ""}${layer.name}`}
+                  <input aria-label={`显示 ${sharedLayerLabel(layer.sharedSlot, layer.name)}`}
                     checked={layer.subscribed} disabled={pending} type="checkbox"
                     onChange={(event) => void save([{ layer, subscribed: event.target.checked }])} />
-                  <span aria-label={`${layer.sharedSlot && layer.sharedSlot.length === 1 ? `${layer.sharedSlot} · ` : ""}${layer.name} 当前颜色`} className="layer-color-preview" style={{ background: layer.displayColor }} />
+                  <span aria-label={`${sharedLayerLabel(layer.sharedSlot, layer.name)} 当前颜色`} className="layer-color-preview" style={{ background: layer.displayColor }} />
                   <span className="layer-card__identity"><strong>
-                    <span className="layer-card__slot">{layer.sharedSlot?.length === 1 ? layer.sharedSlot : ""}</span>
-                    {layer.sharedSlot?.length === 1 ? <span aria-hidden="true" className="layer-card__separator">·</span> : null}{layer.name}
+                    <span className="layer-card__slot">{sharedLayerPrefix(layer.sharedSlot) ? layer.sharedSlot : ""}</span>
+                    {sharedLayerPrefix(layer.sharedSlot) ? <span aria-hidden="true" className="layer-card__separator">·</span> : null}{layer.name}
                   </strong></span>
                   {layer.scoreSubscriptionOverride !== null ? <span className="layer-card__score-override">本谱</span> : null}
                 </label>

@@ -2,7 +2,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
-import { cacheAnnotationLayers, readAnnotationLayers, readScoreAnnotationState, restoreOfflineAnnotationSnapshot } from "../annotations/annotation-state";
+import { cacheAnnotationLayers, readAnnotationLayers, readScoreAnnotationState, restoreOfflineAnnotationSnapshot, saveAnnotationDraft } from "../annotations/annotation-state";
 import { syncAnnotations } from "../annotations/sync";
 import { captureOfflineAnnotationSnapshot } from "../annotations/offline-snapshot";
 import { localDatabase, type OfflineScoreRecord } from "../platform/local-database";
@@ -108,4 +108,26 @@ it("loads older notes on a newly shared layer and removes revoked notes from off
   await restoreOfflineAnnotationSnapshot(workspace, staleRecord);
   expect((await readScoreAnnotationState(workspace)).annotations).toEqual([]);
   expect((await readAnnotationLayers(workspace)).some(layer => layer.id === published.id)).toBe(false);
+});
+
+
+it("keeps paused shared notes but does not restore their layer from an older offline snapshot", async () => {
+  const shared: AnnotationLayerSummary = { ...own, id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", kind: "shared", sharedSlot: "piano", name: "钢琴", sharing: undefined, canShare: undefined };
+  serverLayers = [{ ...own }, shared];
+  await cacheAnnotationLayers(workspace, serverLayers);
+  await saveAnnotationDraft(workspace, { id: crypto.randomUUID(), layerId: shared.id,
+    payload: { kind: "text", pageNumber: 1, x: .2, y: .3, fontScale: .024, text: "保留的伴奏笔记" } });
+  const staleRecord: OfflineScoreRecord = {
+    ...workspace, key: "paused-offline-test", versionId: "version", fileName: "谱.pdf", sha256: "test", pageCount: 1,
+    blob: new Blob(["test"]), active: 1, verifiedAt: 1, annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace),
+  };
+  await localDatabase.offlineScores.put(staleRecord);
+  serverLayers = [{ ...own }];
+  await syncAnnotations(workspace, { pull: true });
+  await restoreOfflineAnnotationSnapshot(workspace, staleRecord);
+  expect((await readAnnotationLayers(workspace)).some(layer => layer.id === shared.id)).toBe(false);
+  expect((await readScoreAnnotationState(workspace)).annotations).toEqual([expect.objectContaining({ layerId: shared.id })]);
+  serverLayers.push(shared);
+  await syncAnnotations(workspace, { pull: true });
+  expect((await readAnnotationLayers(workspace)).some(layer => layer.id === shared.id)).toBe(true);
 });

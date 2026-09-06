@@ -210,11 +210,7 @@ function queryNamed(commands) {
 }
 
 function applyMigrations(...names) {
-  const command = names.map((name) => readFileSync(
-    join(repositoryRoot, "migrations", name),
-    "utf8",
-  )).join("\n");
-  executeD1({ command, targetArgs });
+  for (const name of names) executeD1({ file: join(repositoryRoot, "migrations", name), targetArgs });
 }
 
 function legacyFixtureSql() {

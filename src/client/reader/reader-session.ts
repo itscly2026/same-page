@@ -1,7 +1,7 @@
 import { DiagnosticResponseError, diagnosticFetch, parseDiagnosticResponse, pdfFailureCategory, pdfFailureReason, pdfEngineVersion, recordFailure } from "../diagnostics/diagnostics";
 import { annotationLayerListResponseSchema } from "../../shared/annotations";
 import { readerScoreBootstrapSchema, type ScoreSummary } from "../../shared/scores";
-import { cacheAnnotationLayers, readAnnotationLayers, restoreOfflineAnnotationSnapshot } from "../annotations/annotation-state";
+import { removeCachedPublications, cacheAnnotationLayers, readAnnotationLayers, restoreOfflineAnnotationSnapshot } from "../annotations/annotation-state";
 import { syncAnnotations } from "../annotations/sync";
 import { type OfflineScoreRecord } from "../platform/local-database";
 import { assertLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
@@ -252,11 +252,17 @@ export class ReaderSession {
     if (this.state.capability !== "ready") this.publish({ capability: "preparing" });
     try {
       const response = await diagnosticFetch(`${scorePath(this.workspace)}/layers`, { signal: this.abort.signal });
-      if (!response.ok) throw new Error("layers_unavailable");
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) await removeCachedPublications(this.workspace);
+        throw new Error("layers_unavailable");
+      }
       const { layers } = await parseDiagnosticResponse(response, annotationLayerListResponseSchema);
       if (!await this.current() || this.getSnapshot().cloudState === "trashed") return;
       if (this.workspace.ownerKey.startsWith("user:") && this.workspace.ownerKey !== `user:${this.authenticatedUserId ?? ""}`) throw new Error("layer_identity_mismatch");
-      if (!hasCompleteOfflineLayers(layers, this.workspace.ownerKey)) throw new Error("layer_snapshot_incomplete");
+      if (!hasCompleteOfflineLayers(layers, this.workspace.ownerKey)) {
+        await removeCachedPublications(this.workspace);
+        throw new Error("layer_snapshot_incomplete");
+      }
       const previous = await readAnnotationLayers(this.workspace);
       if (!await this.current()) return;
       await cacheAnnotationLayers(this.workspace, this.authenticatedUserId ? layers : layers.map((layer) => ({ ...layer, subscribed: previous.find((entry) => entry.id === layer.id)?.subscribed ?? layer.subscribed })));

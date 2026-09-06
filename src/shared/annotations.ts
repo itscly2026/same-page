@@ -17,6 +17,15 @@ export const defaultSharedLayers: ReadonlyArray<{
   { slot: "B", name: "Bass", defaultColor: "#3157a4", sortOrder: 4 },
 ];
 
+export function sharedLayerPrefix(slot: string | null | undefined) {
+  return defaultSharedLayers.some(layer => layer.slot === slot) ? slot! : "";
+}
+
+export function sharedLayerLabel(slot: string | null | undefined, name: string, separator = " · ") {
+  const prefix = sharedLayerPrefix(slot);
+  return prefix ? `${prefix}${separator}${name}` : name;
+}
+
 export const normalizedCoordinateSchema = z.number().finite().min(0).max(1);
 
 export const DEFAULT_TEXT_FONT_SCALE = 0.024;

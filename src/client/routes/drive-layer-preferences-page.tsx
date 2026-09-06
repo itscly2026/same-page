@@ -1,3 +1,4 @@
+import { sharedLayerLabel } from "../../shared/annotations";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
@@ -118,7 +119,7 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
         <section className="settings-card" aria-label={colors ? "批注颜色" : "默认显示的批注"} aria-busy={loading}>
           {!colors ? <h2 className="settings-group-title">默认显示的批注</h2> : null}
           {layers.map((layer) => {
-            const name = `${layer.slot.length === 1 ? `${layer.slot} · ` : ""}${layer.name}`;
+            const name = sharedLayerLabel(layer.slot, layer.name);
             const result = results[`${layer.slot}:${colors ? "colors" : "display"}`];
             return <article className="preference-row" key={layer.slot}>
               {colors ? <>

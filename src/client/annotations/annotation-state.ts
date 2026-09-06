@@ -55,22 +55,28 @@ export async function cacheAnnotationLayers(workspace: LocalWorkspace, layers: A
     if (layers.some(layer => !previous.some(entry => entry.id === layer.id))) {
       await localDatabase.annotationSyncCursors.delete(workspace.scopeKey);
     }
-    const revoked = new Set(previous.filter(layer => layer.kind === "personal" && !layer.canEdit && !ids.has(layer.id)).map(layer => layer.id));
+    const offlineRecords = await localDatabase.offlineScores.where("scopeKey").equals(workspace.scopeKey).toArray();
+    const previousLayers = [...previous, ...offlineRecords.flatMap(record => record.annotationSnapshot.layers)];
+    const revoked = new Set(previousLayers.filter(layer => layer.kind === "personal" && !layer.canEdit && !ids.has(layer.id)).map(layer => layer.id));
     await localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey)
       .filter(annotation => revoked.has(annotation.layerId)).delete();
-    // Offline snapshots are another copy of the same data. Scrub them too, so opening
-    // an older PDF version cannot restore a withdrawn publication.
-    await localDatabase.offlineScores.where("scopeKey").equals(workspace.scopeKey).modify(record => {
-      if (!record.annotationSnapshot) return;
-      const snapshot = record.annotationSnapshot;
-      const inaccessible = new Set(snapshot.layers.filter(layer => layer.kind === "personal" && !layer.canEdit && !ids.has(layer.id)).map(layer => layer.id));
-      snapshot.layers = snapshot.layers.filter(layer => !inaccessible.has(layer.id));
-      snapshot.annotations = snapshot.annotations.filter(annotation => !inaccessible.has(annotation.layerId));
-    });
+    // Metadata is authoritative for every saved PDF version too. Keep paused shared
+    // notes, but never restore a paused layer or stale publication/edit permission.
+    for (const record of offlineRecords) {
+      record.annotationSnapshot.layers = layers.map(layer => ({ ...layer,
+        key: localWorkspaceRecordKey(workspace, layer.id), ...workspace }));
+      record.annotationSnapshot.annotations = record.annotationSnapshot.annotations.filter(annotation => !revoked.has(annotation.layerId));
+    }
+    await localDatabase.offlineScores.bulkPut(offlineRecords);
     await localDatabase.annotationLayers.where("scopeKey").equals(workspace.scopeKey).delete();
     await localDatabase.annotationLayers.bulkPut(layers.map(layer => ({ ...layer,
       key: localWorkspaceRecordKey(workspace, layer.id), ...workspace })));
   });
+}
+
+export async function removeCachedPublications(workspace: LocalWorkspace) {
+  const layers = await readAnnotationLayers(workspace);
+  await cacheAnnotationLayers(workspace, layers.filter(layer => layer.kind !== "personal" || layer.canEdit));
 }
 
 export async function updateCachedLayer(

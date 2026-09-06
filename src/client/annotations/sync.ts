@@ -16,7 +16,7 @@ import {
   type LocalWorkspace,
   withLocalWorkspaceTransaction,
 } from "../platform/local-workspace";
-import { cacheAnnotationLayers, readAnnotationLayers, applyPulledAnnotations, applyPushResults, prepareAnnotationPush } from "./annotation-state";
+import { removeCachedPublications, cacheAnnotationLayers, readAnnotationLayers, applyPulledAnnotations, applyPushResults, prepareAnnotationPush } from "./annotation-state";
 
 export async function syncAnnotations(
   workspace: LocalWorkspace,
@@ -35,15 +35,14 @@ export async function syncAnnotations(
       const layerResponse = await diagnosticFetch(`/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/layers`, { signal: AbortSignal.timeout(30_000) });
       if (!layerResponse.ok) {
         if (layerResponse.status === 401 || layerResponse.status === 403 || layerResponse.status === 404) {
-          const previous = await readAnnotationLayers(workspace);
-          await cacheAnnotationLayers(workspace, previous.filter(layer => layer.kind !== "personal" || layer.canEdit));
+          await removeCachedPublications(workspace);
         }
         throw new Error("annotation_layers_unavailable");
       }
       const { layers } = await parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema);
       const previous = await readAnnotationLayers(workspace);
       if (!hasCompleteOfflineLayers(layers, workspace.ownerKey)) {
-        await cacheAnnotationLayers(workspace, previous.filter(layer => layer.kind !== "personal" || layer.canEdit));
+        await removeCachedPublications(workspace);
         throw new Error("annotation_layer_identity_mismatch");
       }
       // Guest preferences live on this device; authenticated preferences come from the server.

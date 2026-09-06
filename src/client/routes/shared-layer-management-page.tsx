@@ -1,3 +1,4 @@
+import { sharedLayerLabel, sharedLayerPrefix } from "../../shared/annotations";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -145,7 +146,7 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
             <article className="settings-layer-row settings-layer-row--management" key={layer.slot}>
               <Link className="settings-layer-link" to={`/choirs/${choirId}/shared-layers/${layer.slot}`}>
                 <span className="settings-layer-swatch" style={{ background: layer.defaultColor }} />
-                <strong><span>{layer.slot.length === 1 ? `${layer.slot} · ` : ""}</span> {layer.name}</strong>
+                <strong><span>{sharedLayerPrefix(layer.slot) ? `${layer.slot} · ` : ""}</span> {layer.name}</strong>
                 <small>已授权 {layer.grantedMemberCount} 位成员</small>
                 <span aria-hidden="true">›</span>
               </Link>
@@ -154,7 +155,7 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
               <label className="settings-color-control">
                 <span>云盘默认颜色</span>
                 <input
-                  aria-label={`${layer.slot.length === 1 ? `${layer.slot} · ` : ""}${layer.name} 云盘默认颜色`}
+                  aria-label={`${sharedLayerLabel(layer.slot, layer.name)} 云盘默认颜色`}
                   type="color"
                   value={layer.defaultColor}
                   disabled={pendingSlots.has(layer.slot)}
@@ -164,7 +165,7 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
             {results[layer.slot] ? <div className="settings-row-feedback">
               <span role={results[layer.slot].failedColor ? "alert" : "status"}>{results[layer.slot].message}</span>
               {results[layer.slot].failedColor ? <button type="button" className="text-button"
-                disabled={pendingSlots.has(layer.slot)} aria-label={`重试 ${layer.slot.length === 1 ? `${layer.slot} · ` : ""}${layer.name}`}
+                disabled={pendingSlots.has(layer.slot)} aria-label={`重试 ${sharedLayerLabel(layer.slot, layer.name)}`}
                 onClick={() => void saveDefaultColor(layer, results[layer.slot].failedColor!)}>重试</button> : null}
             </div> : null}
             </article>

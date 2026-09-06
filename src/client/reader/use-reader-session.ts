@@ -14,9 +14,14 @@ export function useReaderSession(workspace: LocalWorkspace | null, userId: strin
     const unsubscribe = session.subscribe(() => setCurrent({ session, snapshot: session.getSnapshot() }));
     session.open();
     const refresh = () => { void session.refresh(); };
+    // Refresh score access before pulling subscriptions, including trash and membership changes.
+    const timer = window.setInterval(() => {
+      if (navigator.onLine && document.visibilityState === "visible") refresh();
+    }, 30_000);
     window.addEventListener("online", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
+      clearInterval(timer);
       unsubscribe();
       session.dispose();
       window.removeEventListener("online", refresh);

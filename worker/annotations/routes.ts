@@ -1,3 +1,4 @@
+import { createSharedLayerInstances } from "./shared-layer-instances";
 import { AnnotationScopeAccessError, synchronizeOperations } from "./synchronize";
 import { type Context, Hono } from "hono";
 
@@ -166,12 +167,7 @@ annotationRoutes.post("/choirs/:choirId/shared-layers", async context => {
       SELECT ?, ?, ?, COALESCE((SELECT MAX(sort_order) FROM choir_shared_layer_settings WHERE choir_id = ?), -1) + 1, ?, ?
       WHERE EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND role = 'admin' AND lifecycle_revision = ?)` )
       .bind(choirId, slot, parsed.data.name, choirId, parsed.data.defaultColor.toLowerCase(), member.id, member.id, member.lifecycleRevision),
-    context.env.DB.prepare(`INSERT INTO annotation_layers
-      (id, choir_id, score_id, kind, default_slot, name, sort_order, default_color, created_at, updated_at)
-      SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-8' || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),
-        scores.choir_id, scores.id, 'shared', settings.slot, settings.name, settings.sort_order, settings.default_color, ?, ?
-      FROM scores JOIN choir_shared_layer_settings settings ON settings.choir_id = scores.choir_id
-      WHERE scores.choir_id = ? AND settings.slot = ?`).bind(Date.now(), Date.now(), choirId, slot),
+    createSharedLayerInstances(context.env.DB, { choirId, slot, membershipId: member.id }),
   ]);
   if (!results[0].meta.changes) return context.json({ error: "membership_changed" }, 409);
   return context.json({ slot }, 201);

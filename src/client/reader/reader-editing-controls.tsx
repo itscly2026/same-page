@@ -1,3 +1,4 @@
+import { sharedLayerLabel, sharedLayerPrefix } from "../../shared/annotations";
 import { useState } from "react";
 import { ChevronDown, Eraser, Lock, Pencil, Redo2, Type, Undo2, X } from "lucide-react";
 import { Button, Dialog, DialogTrigger, Popover } from "react-aria-components";
@@ -42,9 +43,9 @@ export function ReaderEditingControls({
         <Button
           isDisabled={isDisabled}
           className="reader-edit-layer-trigger"
-          aria-label={`当前编辑层：${selectedLayer?.kind === "personal" ? "P · Personal" : `${selectedLayer?.sharedSlot?.length === 1 ? `${selectedLayer.sharedSlot} · ` : ""}${selectedLayer?.name}`}，写到哪里`}
+          aria-label={`当前编辑层：${selectedLayer?.kind === "personal" ? "P · Personal" : sharedLayerLabel(selectedLayer?.sharedSlot, selectedLayer?.name ?? "")}，写到哪里`}
         >
-          <span>{selectedLayer?.kind === "personal" ? "P ·" : selectedLayer?.sharedSlot?.length === 1 ? `${selectedLayer.sharedSlot} ·` : ""}</span>
+          <span>{selectedLayer?.kind === "personal" ? "P ·" : sharedLayerPrefix(selectedLayer?.sharedSlot) ? `${sharedLayerPrefix(selectedLayer?.sharedSlot)} ·` : ""}</span>
           <span>{selectedLayer?.kind === "personal" ? "Personal" : selectedLayer?.name}</span>
           <ChevronDown aria-hidden="true" size={14} />
         </Button>
@@ -129,7 +130,7 @@ function LayerSlotButton({
   activeLayerId: string | null;
   onLayerChange(layerId: string): void;
 }) {
-  const label = slot === "P" ? "P，Personal" : `${slot.length === 1 ? `${slot}，` : ""}${layer?.name ?? ""}`;
+  const label = slot === "P" ? "P，Personal" : sharedLayerLabel(slot, layer?.name ?? "", "，");
   const button = (
     <Button
       isDisabled={isDisabled}
@@ -141,7 +142,7 @@ function LayerSlotButton({
       }}
     >
       <i aria-hidden="true" style={{ background: layer?.displayColor ?? "transparent" }} />
-      <span>{slot.length === 1 ? `${slot} · ` : ""}{slot === "P" ? "Personal" : layer?.name ?? slot}</span>
+      <span>{slot === "P" ? "P · Personal" : sharedLayerLabel(slot, layer?.name ?? "")}</span>
       {layer && !layer.canEdit ? (
         <Lock aria-hidden="true" className="annotation-layer-slot__lock" size={11} />
       ) : null}
@@ -174,7 +175,7 @@ function LayerPermissionContent({
         <Lock aria-hidden="true" size={20} />
       </div>
       <h2>仅可查看</h2>
-      <p>{layer.sharedSlot?.length === 1 ? `${layer.sharedSlot} · ` : ""}{layer.name} 可以查看，但只有云盘管理员和被授权成员可以编辑。</p>
+      <p>{sharedLayerPrefix(layer.sharedSlot) ? `${layer.sharedSlot} · ` : ""}{layer.name} 可以查看，但只有云盘管理员和被授权成员可以编辑。</p>
       <p>如需编辑权限，请联系云盘管理员。</p>
       <Button className="primary-button" onPress={onClose}>知道了</Button>
     </>

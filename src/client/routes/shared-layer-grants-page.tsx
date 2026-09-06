@@ -1,3 +1,4 @@
+import { sharedLayerLabel } from "../../shared/annotations";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -97,7 +98,7 @@ function SharedLayerGrants({ choirId, slotParam }: { choirId: string; slotParam:
     }
   };
 
-  const layerName = layer ? `${layer.slot.length === 1 ? `${layer.slot} · ` : ""}${layer.name}` : slot ?? "共享层";
+  const layerName = layer ? sharedLayerLabel(layer.slot, layer.name) : slot ?? "共享层";
 
 
   return (
