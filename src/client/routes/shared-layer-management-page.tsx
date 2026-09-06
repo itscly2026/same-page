@@ -138,7 +138,7 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
         <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} />
         <form className="settings-card layer-definition-form" onSubmit={event => { event.preventDefault(); void createLayer(); }}>
           <label>新共享层名称<input value={newName} maxLength={60} required disabled={creating} onChange={event => setNewName(event.target.value)} /></label>
-          <button type="submit" disabled={creating || loading}>新增共享层</button>
+          <button className="primary-button" type="submit" disabled={creating || loading}>新增共享层</button>
           {createMessage ? <p role="status">{createMessage}</p> : null}
         </form>
         <section className="settings-card" aria-label="共享层管理列表" aria-busy={loading}>
@@ -183,7 +183,7 @@ function LayerDefinitionForm({ layer, pending, save }: { layer: SharedLayerManag
   return <form className="layer-definition-form" onSubmit={event => { event.preventDefault(); save({ name: name.trim(), sortOrder: order }); }}>
     <label>名称<input aria-label={`${layer.name} 名称`} value={name} required maxLength={60} disabled={pending} onChange={event => setName(event.target.value)} /></label>
     <label>顺序<input aria-label={`${layer.name} 顺序`} type="number" min={0} max={10000} value={order} required disabled={pending} onChange={event => setOrder(Number(event.target.value))} /></label>
-    <button type="submit" disabled={pending}>保存名称和顺序</button>
-    <button type="button" disabled={pending} onClick={() => save({ active: !layer.active })}>{layer.active ? "停用" : "恢复"} {layer.name}</button>
+    <button className="secondary-button" type="submit" disabled={pending}>保存名称和顺序</button>
+    <button className="text-button" type="button" disabled={pending} onClick={() => save({ active: !layer.active })}>{layer.active ? "停用" : "恢复"} {layer.name}</button>
   </form>;
 }

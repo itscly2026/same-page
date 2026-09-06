@@ -3286,3 +3286,6 @@ h1 {
 .settings-layer-row--management > .layer-definition-form { grid-column: 1 / -1; order: 2; padding: 8px 0; }
 .layer-definition-form input[type="number"] { width: 6rem; }
 .layer-definition-form input:not([type="number"]) { width: min(100%, 16rem); }
+
+.layer-definition-form input { border: 1px solid var(--line); border-radius: .6rem; padding: .6rem .75rem; background: var(--surface); color: var(--ink); }
+.reader-sharing-control input, .reader-layer-toggle input { accent-color: var(--brand); }
