@@ -20,7 +20,6 @@ import {
   createLocalWorkspace,
   localWorkspaceRecordKey,
 } from "../platform/local-workspace";
-import { syncAnnotations } from "../annotations/sync";
 import { loadPdfDocument } from "../reader/pdf-document";
 import { clearReaderDocumentCache } from "../reader/reader-document-cache";
 import {
@@ -180,11 +179,6 @@ vi.mock("../offline/use-offline-score", async (importOriginal) => {
   return { ...actual, useOfflineScore: () => undefined };
 });
 
-vi.mock("../annotations/sync", async (importOriginal) => ({
-  ...await importOriginal<typeof import("../annotations/sync")>(),
-  syncAnnotations: vi.fn().mockResolvedValue({ pushed: 0, pulled: 0 }),
-}));
-
 vi.mock("../annotations/annotation-state", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../annotations/annotation-state")>();
   return {
@@ -331,6 +325,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
             ? new Response(new Uint8Array([1, 2, 3]), {
                 headers: { "content-type": "application/pdf" },
               })
+            : input.includes("/annotations?") ? Response.json({ cursor: 0, objects: [] })
             : activeBootstrapResponse(),
         ),
       ),
@@ -1507,6 +1502,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
         Promise.resolve(
           input.includes("/layers")
             ? Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } })
+            : input.includes("/annotations?") ? Response.json({ cursor: 0, objects: [] })
             : activeBootstrapResponse(),
         ),
       ),
@@ -1642,7 +1638,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     await screen.findByLabelText("翻页阅读");
     toggleChrome();
     const editButton = await screen.findByRole("button", { name: /^(编辑|完成编辑)$/ });
-    expect(editButton).toHaveAttribute("data-state", "failed");
+    await waitFor(() => expect(editButton).toHaveAttribute("data-state", "failed"));
     expect(exportDiagnostics()).toContain('"operation": "layers"');
     expect(screen.getByText("编辑准备失败，点按铅笔重试")).toHaveAttribute(
       "role",
@@ -2349,6 +2345,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
           }),
         );
       }
+      if (url.includes("/annotations?")) return Promise.resolve(Response.json({ cursor: 0, objects: [] }));
       if (url.includes("/versions/")) {
         return Promise.resolve(
           new Response(new Uint8Array([1, 2, 3]), {
@@ -2570,7 +2567,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     expect(screen.getByRole("button", { name: "立即同步" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "下载离线副本" })).toBeDisabled();
     expect(await localDatabase.annotationOutbox.count()).toBe(1);
-    expect(syncAnnotations).not.toHaveBeenCalled();
+    expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).endsWith("/annotations/push"))).toBe(false);
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
       "/api/choirs/choir-1/scores/score-1/bootstrap",
     ]);
@@ -2632,7 +2629,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     fireEvent(window, new Event("online"));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("乐谱已移入回收站");
-    expect(syncAnnotations).not.toHaveBeenCalled();
+    expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).endsWith("/annotations/push"))).toBe(false);
     expect(await localDatabase.annotationOutbox.count()).toBe(1);
   });
 });

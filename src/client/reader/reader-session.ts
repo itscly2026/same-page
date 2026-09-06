@@ -1,11 +1,10 @@
 import { DiagnosticResponseError, diagnosticFetch, parseDiagnosticResponse, pdfFailureCategory, pdfFailureReason, pdfEngineVersion, recordFailure } from "../diagnostics/diagnostics";
-import { annotationLayerListResponseSchema } from "../../shared/annotations";
 import { readerScoreBootstrapSchema, type ScoreSummary } from "../../shared/scores";
-import { removeCachedPublications, cacheAnnotationLayers, readAnnotationLayers, restoreOfflineAnnotationSnapshot } from "../annotations/annotation-state";
+import { restoreOfflineAnnotationSnapshot } from "../annotations/annotation-state";
 import { syncAnnotations } from "../annotations/sync";
 import { type OfflineScoreRecord } from "../platform/local-database";
 import { assertLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
-import { findVerifiedOfflineScore, hasCompleteOfflineLayers } from "../offline/offline-score-verification";
+import { findVerifiedOfflineScore } from "../offline/offline-score-verification";
 import { markLoadingJourneyMilestone } from "../performance/loading-performance";
 import { acquireReaderDocument, confirmReaderDocumentVersion, invalidateReaderDocument, ReaderDocumentVersionMismatchError, type ReaderDocumentLease } from "./reader-document-cache";
 import { peekReaderScore, rememberReaderScore, forgetReaderScore } from "./reader-score-cache";
@@ -273,27 +272,19 @@ export class ReaderSession {
   };
   private async prepareLayers() {
     if (this.state.capability !== "ready") this.publish({ capability: "preparing" });
+    let layersApplied = false;
     try {
-      const response = await diagnosticFetch(`${scorePath(this.workspace)}/layers`, { signal: this.abort.signal });
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) await removeCachedPublications(this.workspace);
-        throw new Error("layers_unavailable");
-      }
-      const { layers } = await parseDiagnosticResponse(response, annotationLayerListResponseSchema);
-      if (!await this.current() || this.getSnapshot().cloudState === "trashed") return;
       if (this.workspace.ownerKey.startsWith("user:") && this.workspace.ownerKey !== `user:${this.authenticatedUserId ?? ""}`) throw new Error("layer_identity_mismatch");
-      if (!hasCompleteOfflineLayers(layers, this.workspace.ownerKey)) {
-        await removeCachedPublications(this.workspace);
-        throw new Error("layer_snapshot_incomplete");
-      }
-      const previous = await readAnnotationLayers(this.workspace);
-      if (!await this.current()) return;
-      await cacheAnnotationLayers(this.workspace, this.authenticatedUserId ? layers : layers.map((layer) => ({ ...layer, subscribed: previous.find((entry) => entry.id === layer.id)?.subscribed ?? layer.subscribed })));
-      if (!await this.current() || this.getSnapshot().cloudState === "trashed") return;
-      this.publish({ capability: layers.some((layer) => layer.canEdit) ? "ready" : "read-only" });
-      await syncAnnotations(this.workspace, { pull: true }).catch(() => undefined);
+      await syncAnnotations(this.workspace, {
+        pull: true, freshLayers: false, signal: this.abort.signal,
+        onLayersApplied: layers => {
+          if (this.disposed || this.state.cloudState === "trashed") return;
+          layersApplied = true;
+          this.publish({ capability: layers.some(layer => layer.canEdit) ? "ready" : "read-only" });
+        },
+      });
     } catch {
-      if (!await this.current() || this.getSnapshot().cloudState === "trashed") return;
+      if (layersApplied || !await this.current() || this.getSnapshot().cloudState === "trashed") return;
       this.publish({ capability: this.state.offline ? (this.state.offline.annotationSnapshot.layers.some((layer) => layer.canEdit) ? "ready" : "read-only") : "failed" });
     }
   }
@@ -315,8 +306,6 @@ export class ReaderSession {
     const signal = AbortSignal.any([this.abort.signal, controller.signal]);
     this.publish({ downloading: true, downloadMessage: null });
     try {
-      // Let the opening pull finish before capturing a complete offline snapshot.
-      await this.retryLayers();
       signal.throwIfAborted();
       const { prepareOfflineScore } = await import("../offline/offline-score");
       const document = this.state.document;

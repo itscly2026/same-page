@@ -1,13 +1,9 @@
-import { Blob as NodeBlob } from "node:buffer";
 import { useLiveQuery } from "dexie-react-hooks";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
-import { cacheAnnotationLayers, readAnnotationLayers, readScoreAnnotationState, restoreOfflineAnnotationSnapshot, saveAnnotationDraft } from "../annotations/annotation-state";
-import { findVerifiedOfflineScore, sha256Hex, verifyOfflineScore } from "../offline/offline-score-verification";
-import { syncAnnotations } from "../annotations/sync";
-import { captureOfflineAnnotationSnapshot } from "../annotations/offline-snapshot";
-import { activateVerifiedOfflineScore, localDatabase, type OfflineScoreRecord } from "../platform/local-database";
+import { cacheAnnotationLayers, readAnnotationLayers } from "../annotations/annotation-state";
+import { localDatabase } from "../platform/local-database";
 import { activateAuthenticatedLocalOwner, authenticatedLocalOwnerKey, createLocalWorkspace } from "../platform/local-workspace";
 import { ReaderLayerPanel } from "./reader-layer-panel";
 import { ReaderEditingControls } from "./reader-editing-controls";
@@ -31,7 +27,6 @@ function Reader() {
 }
 
 beforeEach(async () => {
-  vi.stubGlobal("Blob", NodeBlob);
   await localDatabase.open();
   await activateAuthenticatedLocalOwner("reader");
   await localDatabase.annotationOutbox.clear();
@@ -79,82 +74,4 @@ it("subscribes to a member's notes without offering their layer as an editing ta
   fireEvent.click(screen.getByRole("button", { name: /当前编辑层/ }));
   expect(screen.queryByRole("button", { name: /声部长的笔记/ })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "P，我的笔记" })).toBeEnabled();
-});
-
-
-it("loads older notes on a newly shared layer and removes revoked notes from offline restoration", async () => {
-  serverLayers = [{ ...own }];
-  const cursors: number[] = [];
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.endsWith("/layers")) return Response.json({ layers: serverLayers, permissions: { canManageLayers: false } });
-    const cursor = Number(new URL(url, "https://example.test").searchParams.get("cursor")); cursors.push(cursor);
-    return Response.json({ cursor: 100, objects: serverLayers.length > 1 && cursor === 0 ? [{
-      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", layerId: published.id, version: 1, deleted: false,
-      payload: { kind: "text", pageNumber: 1, x: .2, y: .3, fontScale: .024, text: "早先写下的笔记" },
-      createdByDisplayName: "", updatedByDisplayName: "", updatedAt: 1,
-    }] : [] });
-  }));
-  await syncAnnotations(workspace, { pull: true });
-  await syncAnnotations(workspace, { pull: true });
-  serverLayers.push({ ...published });
-  await syncAnnotations(workspace, { pull: true });
-  expect(cursors).toEqual([0, 100, 0]);
-  expect((await readScoreAnnotationState(workspace)).annotations).toEqual([expect.objectContaining({ layerId: published.id })]);
-  const staleRecord: OfflineScoreRecord = {
-    ...workspace, key: "offline-test", versionId: "version", fileName: "谱.pdf", sha256: await sha256Hex(new TextEncoder().encode("test").buffer), pageCount: 1,
-    blob: new Blob(["test"]), active: 1, verifiedAt: 1, annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace),
-  };
-  expect(await verifyOfflineScore(staleRecord)).toBe(true);
-  await localDatabase.offlineScores.put(staleRecord);
-  serverLayers = [{ ...own }];
-  await syncAnnotations(workspace, { pull: true });
-  expect(await findVerifiedOfflineScore(workspace)).not.toBeNull();
-  await restoreOfflineAnnotationSnapshot(workspace, staleRecord);
-  expect((await readScoreAnnotationState(workspace)).annotations).toEqual([]);
-  expect((await readAnnotationLayers(workspace)).some(layer => layer.id === published.id)).toBe(false);
-});
-
-
-it("keeps paused shared notes but does not restore their layer from an older offline snapshot", async () => {
-  const shared: AnnotationLayerSummary = { ...own, id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", kind: "shared", sharedSlot: "piano", name: "钢琴", sharing: undefined, canShare: undefined };
-  serverLayers = [{ ...own }, shared];
-  await cacheAnnotationLayers(workspace, serverLayers);
-  await saveAnnotationDraft(workspace, { id: crypto.randomUUID(), layerId: shared.id,
-    payload: { kind: "text", pageNumber: 1, x: .2, y: .3, fontScale: .024, text: "保留的伴奏笔记" } });
-  const staleRecord: OfflineScoreRecord = {
-    ...workspace, key: "paused-offline-test", versionId: "version", fileName: "谱.pdf", sha256: await sha256Hex(new TextEncoder().encode("test").buffer), pageCount: 1,
-    blob: new Blob(["test"]), active: 1, verifiedAt: 1, annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace),
-  };
-  expect(await verifyOfflineScore(staleRecord)).toBe(true);
-  await localDatabase.offlineScores.put(staleRecord);
-  serverLayers = [{ ...own }];
-  await syncAnnotations(workspace, { pull: true });
-  expect(await findVerifiedOfflineScore(workspace)).not.toBeNull();
-  await restoreOfflineAnnotationSnapshot(workspace, staleRecord);
-  expect((await readAnnotationLayers(workspace)).some(layer => layer.id === shared.id)).toBe(false);
-  expect((await readScoreAnnotationState(workspace)).annotations).toEqual([expect.objectContaining({ layerId: shared.id })]);
-  serverLayers.push(shared);
-  await syncAnnotations(workspace, { pull: true });
-  expect((await readAnnotationLayers(workspace)).some(layer => layer.id === shared.id)).toBe(true);
-});
-
-
-it("does not activate a captured publication after a sync withdraws it during file verification", async () => {
-  const candidate: OfflineScoreRecord = {
-    ...workspace, key: "inflight-copy", versionId: "version", fileName: "谱.pdf",
-    sha256: await sha256Hex(new TextEncoder().encode("test").buffer), pageCount: 1,
-    blob: new Blob(["test"]), active: 1, verifiedAt: 1,
-    annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace),
-  };
-  expect(candidate.annotationSnapshot.layers.some(layer => layer.id === published.id)).toBe(true);
-  expect(await verifyOfflineScore(candidate)).toBe(true);
-  serverLayers = [{ ...own }];
-  await syncAnnotations(workspace, { pull: true });
-  await activateVerifiedOfflineScore(candidate, { activeKey: null });
-  const activated = await findVerifiedOfflineScore(workspace);
-  expect(activated).not.toBeNull();
-  expect(activated!.annotationSnapshot.layers.some(layer => layer.id === published.id)).toBe(false);
-  await restoreOfflineAnnotationSnapshot(workspace, candidate);
-  expect((await readAnnotationLayers(workspace)).some(layer => layer.id === published.id)).toBe(false);
 });

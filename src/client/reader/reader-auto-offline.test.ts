@@ -158,3 +158,42 @@ it("a new version cancels the old download and automatically prepares the curren
   await vi.waitFor(() => expect(session.getSnapshot().offline?.versionId).toBe("v2"));
   expect(activated).not.toContain("v1");
 });
+
+it("keeps the reader usable and its previous copy when refreshed layers succeed but content fails", async () => {
+  const session = await open();
+  await vi.waitFor(() => expect(session.getSnapshot().offline?.versionId).toBe("v1"));
+  const originalFetch = fetch;
+  let failPull = true;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    if (input.includes("/annotations?") && failPull) return new Response(null, { status: 503 });
+    return originalFetch(input, init);
+  }));
+  score = { ...score, currentVersion: { ...score.currentVersion, id: "v2", versionNumber: 2 } };
+  await session.refresh();
+  await vi.waitFor(() => expect(session.getSnapshot().downloadMessage).toContain("未完成"));
+  expect(session.getSnapshot()).toMatchObject({ status: "ready", capability: "read-only", offline: { versionId: "v1" } });
+  expect((await findVerifiedOfflineScore(session.workspace))?.versionId).toBe("v1");
+  failPull = false;
+  await session.download();
+  expect((await findVerifiedOfflineScore(session.workspace))?.versionId).toBe("v2");
+});
+
+it("refreshes layers after preparing bytes instead of activating the opening layer list", async () => {
+  const originalFetch = fetch;
+  let finish!: () => void;
+  let layerRequests = 0;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    if (input.endsWith("/layers")) layerRequests++;
+    if (input.endsWith("/pdf")) await new Promise<void>(resolve => { finish = resolve; });
+    return originalFetch(input, init);
+  }));
+  const session = await open();
+  await vi.waitFor(() => expect(finish).toBeDefined());
+  await vi.waitFor(() => expect(session.getSnapshot().capability).toBe("read-only"));
+  expect(layerRequests).toBe(1);
+  layers = layers.slice(0, 4);
+  finish();
+  await vi.waitFor(() => expect(session.getSnapshot().offline?.versionId).toBe("v1"));
+  expect(layerRequests).toBe(2);
+  expect(session.getSnapshot().offline?.annotationSnapshot.layers).toHaveLength(4);
+});
