@@ -43,8 +43,8 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     await expect(page.getByRole("button", { name: "图片兼容模式", exact: true })).toHaveAttribute("aria-pressed", "true");
     await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
     if (!await page.getByRole("button", { name: "更多", exact: true }).isVisible()) await page.locator(".page-reader__viewport").click({ position: { x: 510, y: 300 } });
-    if (!await page.getByRole("button", { name: "下载离线副本", exact: true }).isVisible()) await page.getByRole("button", { name: "更多", exact: true }).click();
-    await page.getByRole("button", { name: "下载离线副本", exact: true }).click();
+    if (!await page.getByRole("dialog", { name: "更多阅读选项" }).isVisible()) await page.getByRole("button", { name: "更多", exact: true }).click();
+    // Image-mode preparation now automatically saves its verified offline copy.
     await expect(page.getByRole("status").filter({ hasText: "离线副本已完整校验" })).toBeVisible({ timeout: 30_000 });
     await mkdir("artifacts/verification/137", { recursive: true });
     await page.screenshot({ path: `artifacts/verification/137/${engineName}-images.png` });
