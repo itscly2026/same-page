@@ -63,8 +63,8 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
   };
 
   return (
-    <section className="reader-layer-panel" aria-label="图层" aria-busy={pending}>
-      <p className="reader-layer-help">只调整这份乐谱的阅读显示，不影响编辑权限。</p>
+    <section className="reader-layer-panel" aria-label="显示哪些批注" aria-busy={pending}>
+      <p className="reader-layer-help">仅用于这份乐谱。</p>
       <div className="layer-section">
         <div className="layer-section__heading">
           <div><h3>共享层</h3></div>
@@ -74,7 +74,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
               <Button className="layer-section__restore" isDisabled={pending}
                 aria-description="将这份乐谱的所有共享层恢复为我的云盘默认显示设置"
                 onPress={() => void save(overriddenLayers.map((layer) => ({ layer, subscribed: null })))}>
-                恢复我的默认
+                恢复默认显示
               </Button>
             ) : null}
           </div>
@@ -88,7 +88,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
             <article className="layer-card" key={layer.id}>
               <div className="layer-card__main reader-layer-row">
                 <label className="reader-layer-toggle">
-                  <input aria-label={`订阅 ${layer.defaultSlot} · ${layer.name}`}
+                  <input aria-label={`显示 ${layer.defaultSlot} · ${layer.name}`}
                     checked={layer.subscribed} disabled={pending} type="checkbox"
                     onChange={(event) => void save([{ layer, subscribed: event.target.checked }])} />
                   <span aria-label={`${layer.defaultSlot} · ${layer.name} 当前颜色`} className="layer-color-preview" style={{ background: layer.displayColor }} />
@@ -98,23 +98,17 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
                   </strong></span>
                   {layer.scoreSubscriptionOverride !== null ? <span className="layer-card__score-override">本谱</span> : null}
                 </label>
-                {layer.scoreSubscriptionOverride !== null ? (
-                  <Button aria-label={`恢复 ${layer.defaultSlot} · ${layer.name} 的云盘默认订阅`}
-                    className="layer-card__restore" isDisabled={pending}
-                    onPress={() => void save([{ layer, subscribed: null }])}>恢复</Button>
-                ) : null}
               </div>
             </article>
           ))}
         </div>
       </div>
       {personalLayer ? <div className="layer-section layer-section--personal">
-        <div className="layer-section__heading"><div><h3>个人层</h3></div></div>
         <article className="layer-card"><div className="layer-card__main">
           <span className="layer-color-preview" style={{ background: personalLayer.displayColor }} />
           <div className="layer-card__identity"><strong><span className="layer-card__slot">P</span>
             <span aria-hidden="true" className="layer-card__separator">·</span>Personal</strong></div>
-          <span className="reader-layer-help">仅自己可见</span>
+          <span className="reader-layer-help">始终显示<br />仅自己可见</span>
         </div></article>
       </div> : null}
     </section>

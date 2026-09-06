@@ -3,19 +3,12 @@
 .settings-ux .settings-feedback p { flex: 1; margin: 0; }
 .settings-ux .settings-feedback--status { min-height: 1.4rem; }
 .settings-ux .settings-card:empty { display: none; }
-.settings-ux .settings-layer-row { position: relative; grid-template-columns: minmax(11rem, 1fr) auto auto minmax(8rem, auto); gap: .35rem 1rem; padding: .65rem 1rem; }
+.settings-ux .settings-layer-row { position: relative; grid-template-columns: minmax(0, 1fr) auto; gap: .35rem 1rem; padding: .65rem 1rem; }
 .settings-ux .settings-layer-row--management { grid-template-columns: minmax(0, 1fr) auto; }
-.settings-ux .settings-layer-identity { min-width: 0; gap: .15rem .55rem; }
-.settings-ux .settings-layer-identity strong { overflow-wrap: anywhere; }
-.settings-ux .settings-layer-description { display: inline-block; color: var(--muted); font-size: .8rem; font-weight: 400; }
-.settings-ux .settings-toggle { min-height: 44px; color: var(--ink); cursor: pointer; font-size: .9rem; font-weight: 600; }
 .settings-ux .settings-color-control { min-height: 44px; gap: .4rem; }
 .settings-ux .settings-color-control input { width: 44px; height: 44px; border-radius: .5rem; cursor: pointer; }
 .settings-ux .settings-color-control input::-webkit-color-swatch-wrapper { padding: .3rem; }
 .settings-ux .settings-color-control input::-webkit-color-swatch { border: 0; border-radius: .2rem; }
-.settings-ux .settings-color-options { min-width: 0; }
-.settings-ux .settings-color-options button { min-height: 44px; font-size: .8rem; }
-.settings-ux .settings-color-options button:disabled { color: var(--muted); cursor: default; text-decoration: none; opacity: .75; }
 .settings-ux .settings-layer-link { min-height: 44px; grid-template-columns: auto minmax(0, 1fr) auto; gap: .2rem .6rem; }
 .settings-ux .settings-layer-link .settings-layer-swatch { grid-row: 1 / 3; }
 .settings-ux .settings-layer-link small { grid-column: 2; }
@@ -26,7 +19,6 @@
 .settings-ux .settings-saving { grid-column: 1 / -1; color: var(--muted); font-size: .75rem; }
 .settings-ux :is(button, input, a):focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
 .settings-ux :is(input, button):disabled { cursor: default; }
-.settings-ux .settings-toggle:has(input:disabled) { cursor: default; opacity: .7; }
 .file-menu-popover [role="menu"] [role="menuitem"] { display: flex; align-items: center; min-height: 44px; box-sizing: border-box; color: var(--ink); text-decoration: none; }
 .file-menu-popover [role="menu"] [role="menuitem"]:is(:hover, [data-focused]):not([data-disabled]) { color: var(--brand); background: var(--brand-soft); }
 .file-menu-popover [role="menu"] [role="menuitem"][data-focus-visible] { outline: 2px solid var(--brand); outline-offset: -2px; }
@@ -40,9 +32,33 @@
   .settings-ux { padding-top: 1.5rem; }
   .settings-ux .settings-layer-row { grid-template-columns: minmax(0, 1fr) auto; gap: 0 .75rem; padding: .65rem .8rem; }
   .settings-ux .settings-color-control { justify-self: start; }
-  .settings-ux .settings-color-options { justify-self: end; }
   .settings-ux .settings-layer-row--management { grid-template-columns: minmax(0, 1fr) auto; gap: .75rem; }
   .settings-ux .settings-layer-row--management .settings-color-control { flex-direction: column; gap: .1rem; font-size: .7rem; }
   .settings-ux .settings-feedback { flex-wrap: wrap; }
   .settings-ux .settings-feedback p { flex-basis: 100%; }
 }
+
+.settings-ux .settings-heading h1 { font-size: 1.5rem; overflow-wrap: anywhere; }
+.settings-ux .settings-card { box-shadow: none; }
+.settings-ux .settings-feedback--status:empty { display: none; }
+.settings-ux .settings-layer-swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.reading-preferences { max-width: 42rem; }
+.settings-group-title { margin: 0; padding: 1rem 1rem .5rem; font-size: 1rem; }
+.preference-row { padding: .5rem 1rem; }
+.preference-row + .preference-row { border-top: 1px solid var(--line); }
+.preference-display-toggle { display: flex; gap: .75rem; align-items: center; min-height: 44px; cursor: pointer; }
+.preference-display-toggle strong { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: .95rem; font-weight: 500; }
+.preference-display-toggle input { width: 18px; height: 18px; flex-shrink: 0; accent-color: #171717; }
+.preference-display-toggle:focus-within { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: .3rem; }
+.preference-display-toggle:has(input:disabled) { opacity: .7; cursor: default; }
+.preference-color-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.preference-color-heading strong { font-size: .95rem; font-weight: 500; }
+.preference-color-preview { display: flex; align-items: center; gap: 1rem; padding: .5rem 0; font-size: .95rem; }
+.preference-color-preview svg { width: 6rem; height: 1.5rem; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.settings-row-feedback { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; font-size: .8rem; color: var(--muted); grid-column: 1 / -1; }
+.settings-row-feedback [role="alert"] { color: #8b3020; }
+.preference-row button, .settings-row-feedback button { min-height: 44px; min-width: 44px; }
+.settings-secondary-link { display: flex; align-items: center; justify-content: space-between; min-height: 52px; padding: .75rem 1rem; margin-top: 1rem; border: 1px solid var(--line); border-radius: 1rem; color: var(--ink); text-decoration: none; background: white; }
+
+.settings-member-item + .settings-member-item { border-top: 1px solid var(--line); }
+.settings-member-item .settings-row-feedback { padding: 0 1rem .5rem; }

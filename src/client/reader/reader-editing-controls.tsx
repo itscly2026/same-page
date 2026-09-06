@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, Eraser, Lock, Pencil, Redo2, Type, Undo2 } from "lucide-react";
+import { ChevronDown, Eraser, Lock, Pencil, Redo2, Type, Undo2, X } from "lucide-react";
 import { Button, Dialog, DialogTrigger, Popover } from "react-aria-components";
 
 import {
@@ -43,16 +43,16 @@ export function ReaderEditingControls({
       <DialogTrigger isOpen={choosingLayer} onOpenChange={setChoosingLayer}>
         <Button
           className="reader-edit-layer-trigger"
-          aria-label={`当前编辑层：${selectedLayer?.kind === "personal" ? "P · 个人层" : `${selectedLayer?.defaultSlot} · ${selectedLayer?.name}`}，选择编辑层`}
+          aria-label={`当前编辑层：${selectedLayer?.kind === "personal" ? "P · Personal" : `${selectedLayer?.defaultSlot} · ${selectedLayer?.name}`}，写到哪里`}
         >
-          <span>{selectedLayer?.defaultSlot ?? "P"}</span>
-          <span>{selectedLayer?.kind === "personal" ? "个人" : "共享"}</span>
+          <span>{selectedLayer?.defaultSlot ?? "P"} ·</span>
+          <span>{selectedLayer?.kind === "personal" ? "Personal" : selectedLayer?.name}</span>
           <ChevronDown aria-hidden="true" size={14} />
         </Button>
         <Popover className="reader-edit-layer-popover" placement="top" offset={12}>
-          <Dialog aria-label="选择编辑层">
-            <h2>选择编辑层</h2>
-            <p>编辑时只显示选中层。锁定的共享层可查看权限说明。</p>
+          <Dialog aria-label="写到哪里">
+            <div className="reader-target-heading"><h2>写到哪里</h2><Button aria-label="关闭写入目标" onPress={() => setChoosingLayer(false)}><X aria-hidden="true" size={18} /></Button></div>
+            <p>共享层 · 此云盘可见</p>
             <div className="annotation-layer-switcher" aria-label="编辑层">
               {defaultSharedLayerSlots.map((slot) => (
                 <LayerSlotButton
@@ -63,6 +63,9 @@ export function ReaderEditingControls({
                   onLayerChange={chooseLayer}
                 />
               ))}
+            </div>
+            <p>个人层 · 仅自己可见</p>
+            <div className="annotation-layer-switcher">
               <LayerSlotButton
                 slot="P"
                 layer={personalLayer}
@@ -70,7 +73,7 @@ export function ReaderEditingControls({
                 onLayerChange={chooseLayer}
               />
             </div>
-            <p>P · 个人层仅自己可见；E/S/A/T/B 为共享层。</p>
+            <p>编辑时只显示所选层，并锁定当前页。</p>
           </Dialog>
         </Popover>
       </DialogTrigger>
@@ -130,11 +133,12 @@ function LayerSlotButton({
         if (layer?.canEdit) onLayerChange(layer.id);
       }}
     >
-      <span>{slot}</span>
       <i aria-hidden="true" style={{ background: layer?.displayColor ?? "transparent" }} />
+      <span>{slot} · {slot === "P" ? "Personal" : layer?.name ?? slot}</span>
       {layer && !layer.canEdit ? (
         <Lock aria-hidden="true" className="annotation-layer-slot__lock" size={11} />
       ) : null}
+      {layer && !layer.canEdit ? <small>需管理员授权</small> : null}
     </Button>
   );
   if (!layer || layer.canEdit) return button;

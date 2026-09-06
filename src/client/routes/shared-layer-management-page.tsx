@@ -9,7 +9,7 @@ import {
 import { AppHeader } from "../components/app-header";
 import { authClient } from "../auth/auth-client";
 import { SettingsFeedback } from "../settings/settings-feedback";
-import { settingsError, settingsResponse, sharedLayerDescriptions } from "../settings/settings-request";
+import { settingsError, settingsResponse } from "../settings/settings-request";
 import { useSettingsLifetime } from "../settings/use-settings-lifetime";
 
 export default function SharedLayerManagementPage() {
@@ -30,7 +30,7 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
     setLoading(true);
     setLoadAttempt((attempt) => attempt + 1);
   };
-  const [message, setMessage] = useState<string | null>(null);
+  const [results, setResults] = useState<Record<string, { message: string; failedColor?: string }>>({});
   const pendingSlotsRef = useRef(new Set<string>());
   const [pendingSlots, setPendingSlots] = useState(new Set<string>());
 
@@ -59,10 +59,7 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
     const requestGeneration = generation.current;
     pendingSlotsRef.current.add(layer.slot);
     setPendingSlots(new Set(pendingSlotsRef.current));
-    const previousLayer = layer;
-    setMessage(null);
-    setLayers((current) => current.map((entry) =>
-      entry.slot === layer.slot ? { ...entry, defaultColor } : entry));
+    setResults((current) => ({ ...current, [layer.slot]: { message: "正在保存…" } }));
     try {
       const response = await diagnosticFetch(`/api/choirs/${choirId}/shared-layers/${layer.slot}/settings`, {
         method: "PUT",
@@ -71,12 +68,14 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
       });
       await settingsResponse(response);
       if (requestGeneration !== generation.current) return;
-      setMessage("云盘默认颜色已保存。");
+      setLayers((current) => current.map((entry) =>
+        entry.slot === layer.slot ? { ...entry, defaultColor } : entry));
+      setResults((current) => ({ ...current, [layer.slot]: { message: "云盘默认颜色已保存。" } }));
     } catch (error: unknown) {
       if (requestGeneration !== generation.current) return;
-      setLayers((current) => current.map((entry) =>
-        entry.slot === previousLayer.slot ? previousLayer : entry));
-      setMessage(settingsError(error, "颜色保存失败，原设置已保留。请重试。"));
+      setResults((current) => ({ ...current, [layer.slot]: {
+        message: settingsError(error, "颜色保存失败，原设置已保留。"), failedColor: defaultColor,
+      } }));
     } finally {
       if (requestGeneration === generation.current) {
         pendingSlotsRef.current.delete(layer.slot);
@@ -95,13 +94,13 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
           {driveName ? <p>{driveName}</p> : null}
           <p className="settings-copy">设置共享批注的默认颜色，或选择一个层管理谁可以编辑。颜色不会改变编辑权限，成员也可以选择自己的显示颜色。</p>
         </header>
-        <SettingsFeedback loading={loading} loadError={loadError} message={message} retry={retryLoad} />
+        <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} />
         <section className="settings-card" aria-label="共享层管理列表" aria-busy={loading}>
           {layers.map((layer) => (
             <article className="settings-layer-row settings-layer-row--management" key={layer.slot}>
               <Link className="settings-layer-link" to={`/choirs/${choirId}/shared-layers/${layer.slot}`}>
                 <span className="settings-layer-swatch" style={{ background: layer.defaultColor }} />
-                <strong><span>{layer.slot}</span> · {layer.name} <span className="settings-layer-description">{sharedLayerDescriptions[layer.slot]}</span></strong>
+                <strong><span>{layer.slot}</span> · {layer.name}</strong>
                 <small>已授权 {layer.grantedMemberCount} 位成员</small>
                 <span aria-hidden="true">›</span>
               </Link>
@@ -115,7 +114,12 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
                   onChange={(event) => void saveDefaultColor(layer, event.target.value)}
                 />
               </label>
-            {pendingSlots.has(layer.slot) ? <span className="settings-saving" role="status">正在保存…</span> : null}
+            {results[layer.slot] ? <div className="settings-row-feedback">
+              <span role={results[layer.slot].failedColor ? "alert" : "status"}>{results[layer.slot].message}</span>
+              {results[layer.slot].failedColor ? <button type="button" className="text-button"
+                disabled={pendingSlots.has(layer.slot)} aria-label={`重试 ${layer.slot} · ${layer.name}`}
+                onClick={() => void saveDefaultColor(layer, results[layer.slot].failedColor!)}>重试</button> : null}
+            </div> : null}
             </article>
           ))}
         </section>

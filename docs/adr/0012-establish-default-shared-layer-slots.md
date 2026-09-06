@@ -25,8 +25,16 @@ creates a score override. Edit locks therefore belong only to shared-layer
 buttons in the editing toolbar.
 
 The UI follows the same separation. A score's layer panel owns score
-subscription overrides and read-only effective colors. “我的偏好” owns the
-signed-in user's drive-scoped subscription defaults and color overrides.
+subscription overrides and read-only effective colors under “显示哪些批注”.
+“恢复默认显示” exists only while score overrides exist. Personal is an
+always-visible status row. “我的偏好” opens “阅读偏好”: display defaults come
+first, with “批注颜色” as a separate secondary screen in the same drive context.
+Color overrides have one state, either drive default or custom, and only custom
+colors offer a reset. All slots retain their English names without fixed Chinese
+voice-part translations. “写到哪里” identifies shared and personal audiences,
+while the editing toolbar keeps the selected target visible. Settings retain
+confirmed values until a save succeeds and offer adjacent failure feedback and
+retry; concurrent saves on different layers cannot overwrite each other's status.
 “云盘管理 → 共享层” owns administrator default colors and member edit grants.
 
 This replaces the earlier G/S/A/T/B plus custom-layer model. Because the product

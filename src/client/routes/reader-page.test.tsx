@@ -1585,8 +1585,8 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     await finishPageTurn();
     expect(currentRenderedPage()).toBe("3");
     fireEvent.click(screen.getByRole("button", { name: "图层" }));
-    expect(screen.getByRole("dialog", { name: "图层" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "关闭页面与图层" }));
+    expect(screen.getByRole("dialog", { name: "显示哪些批注" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭批注显示" }));
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.queryByText("尚未同步批注")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "翻页" })).toHaveAttribute(
@@ -1778,7 +1778,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     await screen.findByLabelText("翻页阅读");
     toggleChrome();
     fireEvent.click(screen.getByRole("button", { name: "图层" }));
-    const panel = screen.getByRole("dialog", { name: "图层" });
+    const panel = screen.getByRole("dialog", { name: "显示哪些批注" });
 
     await within(panel).findByText("Ensemble");
     expect(panel).toHaveTextContent("E·Ensemble");
@@ -1786,8 +1786,8 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     expect(within(panel).getAllByRole("checkbox")).toHaveLength(5);
     expect(within(panel).getByText("Personal")).toBeInTheDocument();
     expect(within(panel).getByText("本谱")).toBeInTheDocument();
-    expect(within(panel).getByRole("button", { name: "恢复我的默认" })).toBeInTheDocument();
-    expect(within(panel).getByRole("button", { name: /恢复 B · Bass/ })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "恢复默认显示" })).toBeInTheDocument();
+    expect(within(panel).getByText(/始终显示/)).toBeInTheDocument();
     expect(within(panel).queryByText("Preferences")).not.toBeInTheDocument();
     expect(within(panel).queryByRole("button", { name: /只读/ })).not.toBeInTheDocument();
     expect(panel.querySelector('input[type="color"]')).toBeNull();
@@ -2230,11 +2230,11 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     expect(
       Array.from(
         screen
-          .getByLabelText("编辑层")
+          .getByRole("dialog", { name: "写到哪里" })
           .querySelectorAll<HTMLButtonElement>(".annotation-layer-slot"),
-        (button) => button.textContent,
+        (button) => button.getAttribute("aria-label"),
       ),
-    ).toEqual(["E", "S", "A", "T", "B", "P"]);
+    ).toEqual(["E，Ensemble", "S，Soprano，只读，查看权限说明", "A，Alto，只读，查看权限说明", "T，Tenor，只读，查看权限说明", "B，Bass，只读，查看权限说明", "P，Personal"]);
     expect(
       screen.getByRole("button", { name: "S，Soprano，只读，查看权限说明" }),
     ).toBeEnabled();
