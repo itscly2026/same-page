@@ -1,6 +1,8 @@
+import { hasCompleteOfflineLayers } from "../offline/offline-score-verification";
 import { parseDiagnosticResponse, diagnosticFetch, recordFailure } from "../diagnostics/diagnostics";
 import {
   annotationPullResponseSchema,
+  annotationLayerListResponseSchema,
   annotationPushResponseSchema,
 } from "../../shared/annotations";
 import {
@@ -14,7 +16,7 @@ import {
   type LocalWorkspace,
   withLocalWorkspaceTransaction,
 } from "../platform/local-workspace";
-import { applyPulledAnnotations, applyPushResults, prepareAnnotationPush } from "./annotation-state";
+import { removeCachedPublications, cacheAnnotationLayers, readAnnotationLayers, applyPulledAnnotations, applyPushResults, prepareAnnotationPush } from "./annotation-state";
 
 export async function syncAnnotations(
   workspace: LocalWorkspace,
@@ -30,18 +32,39 @@ export async function syncAnnotations(
     let pulled = 0;
     if (options.pull) {
       await assertLocalWorkspaceActive(workspace);
-      const cursor = (
-        await localDatabase.annotationSyncCursors.get(workspace.scopeKey)
-      )?.cursor ?? 0;
-      const response = await diagnosticFetch(
-        `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/annotations?cursor=${cursor}`,
-        { signal: AbortSignal.timeout(30_000) },
-      );
-      if (!response.ok) throw new Error("annotation_pull_failed");
-      const body = await parseDiagnosticResponse(response, annotationPullResponseSchema);
-      await assertLocalWorkspaceActive(workspace);
-      await applyPulledAnnotations(workspace, body.cursor, body.objects);
-      pulled = body.objects.length;
+      const layerResponse = await diagnosticFetch(`/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/layers`, { signal: AbortSignal.timeout(30_000) });
+      if (!layerResponse.ok) {
+        if (layerResponse.status === 401 || layerResponse.status === 403 || layerResponse.status === 404) {
+          await removeCachedPublications(workspace);
+        }
+        throw new Error("annotation_layers_unavailable");
+      }
+      const { layers } = await parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema);
+      const previous = await readAnnotationLayers(workspace);
+      if (!hasCompleteOfflineLayers(layers, workspace.ownerKey)) {
+        await removeCachedPublications(workspace);
+        throw new Error("annotation_layer_identity_mismatch");
+      }
+      // Guest preferences live on this device; authenticated preferences come from the server.
+      await cacheAnnotationLayers(workspace, workspace.ownerKey.startsWith("user:") ? layers : layers.map(layer => ({
+        ...layer, subscribed: previous.find(entry => entry.id === layer.id)?.subscribed ?? layer.subscribed,
+      })));
+      const checkpoint = await localDatabase.annotationSyncCursors.get(workspace.scopeKey);
+      const layerIds = layers.map(layer => layer.id).sort();
+      let cursor = JSON.stringify(checkpoint?.layerIds) === JSON.stringify(layerIds) ? checkpoint?.cursor ?? 0 : 0;
+      while (true) {
+        const response = await diagnosticFetch(
+          `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/annotations?cursor=${cursor}`,
+          { signal: AbortSignal.timeout(30_000) },
+        );
+        if (!response.ok) throw new Error("annotation_pull_failed");
+        const body = await parseDiagnosticResponse(response, annotationPullResponseSchema);
+        await assertLocalWorkspaceActive(workspace);
+        await applyPulledAnnotations(workspace, body.cursor, body.objects, layerIds);
+        pulled += body.objects.length;
+        if (!body.hasMore || body.cursor <= cursor) break;
+        cursor = body.cursor;
+      }
     }
     if (pushError) throw pushError;
     return { pushed, pulled };

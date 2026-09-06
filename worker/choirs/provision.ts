@@ -64,9 +64,9 @@ export async function provisionChoir(options: {
     ...defaultSharedLayers.map((layer) =>
       options.binding.prepare(
         `INSERT INTO choir_shared_layer_settings
-          (choir_id, slot, default_color, updated_by_membership_id)
-         VALUES (?, ?, ?, ?)`,
-      ).bind(choirId, layer.slot, layer.defaultColor, membershipId),
+          (choir_id, slot, name, sort_order, default_color, updated_by_membership_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      ).bind(choirId, layer.slot, layer.name, layer.sortOrder, layer.defaultColor, membershipId),
     ),
   ]);
 

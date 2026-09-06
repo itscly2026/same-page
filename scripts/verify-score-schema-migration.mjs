@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -101,6 +101,36 @@ try {
   assert.equal(userLifecycle.length, 0);
   assert(operationForeignKeys
     .some((row) => row.from === "actor_user_id" && row.on_delete === "SET NULL"));
+  applyMigrations("0015_score_images.sql", "0016_diagnostic_reports.sql");
+  executeD1({ command: `
+    INSERT INTO scores (id, choir_id, file_name, file_name_key, created_at, updated_at)
+      VALUES ('preserved-score', 'choir', '保留.pdf', '保留.pdf', 1, 1);
+    INSERT INTO annotation_layers(id, choir_id, score_id, kind, default_slot, name, default_color)
+      VALUES ('preserved-layer', 'choir', 'preserved-score', 'shared', 'E', 'Ensemble', '#a12652');
+    INSERT INTO annotation_objects(id, choir_id, score_id, layer_id, version, deleted, payload_json, created_by_display_name, updated_by_display_name, created_at, updated_at)
+      VALUES ('preserved-object', 'choir', 'preserved-score', 'preserved-layer', 3, 0, '{}', '作者', '作者', 1, 1);
+    INSERT INTO annotation_sync_operations(op_id, choir_id, score_id, layer_id, annotation_id, actor_user_id, base_version, operation_type, payload_hash, status, resulting_version, created_at)
+      VALUES ('preserved-op', 'choir', 'preserved-score', 'preserved-layer', 'preserved-object', 'user', 2, 'upsert', '', 'accepted', 3, 1);
+    INSERT INTO user_drive_layer_preferences(user_id, choir_id, slot, subscribed, color_override) VALUES ('user', 'choir', 'E', 0, '#123456');
+    INSERT INTO user_score_layer_preferences(user_id, choir_id, score_id, slot, subscribed_override) VALUES ('user', 'choir', 'preserved-score', 'E', 1);
+    INSERT INTO shared_layer_edit_grants(id, choir_id, slot, membership_id) VALUES ('preserved-grant', 'choir', 'E', 'membership');
+    UPDATE sqlite_sequence SET seq = 2000 WHERE name = 'annotation_sync_operations';
+  `, targetArgs });
+  const preservedQueries = {
+    objects: "SELECT * FROM annotation_objects",
+    operations: "SELECT * FROM annotation_sync_operations",
+    grants: "SELECT * FROM shared_layer_edit_grants",
+    drivePreferences: "SELECT * FROM user_drive_layer_preferences",
+    scorePreferences: "SELECT * FROM user_score_layer_preferences",
+    sequence: "SELECT seq FROM sqlite_sequence WHERE name = 'annotation_sync_operations'",
+  };
+  const preserved = queryNamed(preservedQueries);
+  applyMigrations("0017_configurable_and_published_layers.sql");
+  assert.deepEqual(queryNamed(preservedQueries), preserved);
+  assert.deepEqual(query("PRAGMA foreign_key_check"), []);
+  assert.deepEqual(query("SELECT id, sharing FROM annotation_layers"), [{ id: "preserved-layer", sharing: 0 }]);
+  executeD1({ command: "INSERT INTO choir_shared_layer_settings(choir_id, slot, name, default_color) VALUES ('choir', 'custom-piano', '钢琴', '#123456')", targetArgs });
+  assert.equal(query("SELECT name FROM choir_shared_layer_settings WHERE slot = 'custom-piano'")[0].name, "钢琴");
   process.stdout.write("Verified legacy score schema migration.\n");
 } finally {
   rmSync(persistencePath, { recursive: true, force: true });
@@ -180,11 +210,7 @@ function queryNamed(commands) {
 }
 
 function applyMigrations(...names) {
-  const command = names.map((name) => readFileSync(
-    join(repositoryRoot, "migrations", name),
-    "utf8",
-  )).join("\n");
-  executeD1({ command, targetArgs });
+  for (const name of names) executeD1({ file: join(repositoryRoot, "migrations", name), targetArgs });
 }
 
 function legacyFixtureSql() {

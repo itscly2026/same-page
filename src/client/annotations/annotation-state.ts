@@ -47,29 +47,36 @@ export interface DraftInput {
   deleted?: boolean;
 }
 
-export async function cacheAnnotationLayers(
-  workspace: LocalWorkspace,
-  layers: AnnotationLayerSummary[],
-) {
-  await assertLocalWorkspaceActive(workspace);
-  await localDatabase.transaction(
-    "rw",
-    [localDatabase.system, localDatabase.annotationLayers],
-    async () => {
-      await assertLocalWorkspaceActive(workspace);
-      await localDatabase.annotationLayers
-        .where("scopeKey")
-        .equals(workspace.scopeKey)
-        .delete();
-      await localDatabase.annotationLayers.bulkPut(
-        layers.map((layer) => ({
-          ...layer,
-          key: localWorkspaceRecordKey(workspace, layer.id),
-          ...workspace,
-        })),
-      );
-    },
-  );
+export async function cacheAnnotationLayers(workspace: LocalWorkspace, layers: AnnotationLayerSummary[]) {
+  await withLocalWorkspaceTransaction(workspace, "rw", [localDatabase.annotationLayers,
+    localDatabase.annotations, localDatabase.annotationSyncCursors, localDatabase.offlineScores], async () => {
+    const previous = await localDatabase.annotationLayers.where("scopeKey").equals(workspace.scopeKey).toArray();
+    const ids = new Set(layers.map(layer => layer.id));
+    if (layers.some(layer => !previous.some(entry => entry.id === layer.id))) {
+      await localDatabase.annotationSyncCursors.delete(workspace.scopeKey);
+    }
+    const offlineRecords = await localDatabase.offlineScores.where("scopeKey").equals(workspace.scopeKey).toArray();
+    const previousLayers = [...previous, ...offlineRecords.flatMap(record => record.annotationSnapshot.layers)];
+    const revoked = new Set(previousLayers.filter(layer => layer.kind === "personal" && !layer.canEdit && !ids.has(layer.id)).map(layer => layer.id));
+    await localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey)
+      .filter(annotation => revoked.has(annotation.layerId)).delete();
+    // Metadata is authoritative for every saved PDF version too. Keep paused shared
+    // notes in the main annotation store, but snapshots contain only readable layers.
+    for (const record of offlineRecords) {
+      record.annotationSnapshot.layers = layers.map(layer => ({ ...layer,
+        key: localWorkspaceRecordKey(workspace, layer.id), ...workspace }));
+      record.annotationSnapshot.annotations = record.annotationSnapshot.annotations.filter(annotation => ids.has(annotation.layerId));
+    }
+    await localDatabase.offlineScores.bulkPut(offlineRecords);
+    await localDatabase.annotationLayers.where("scopeKey").equals(workspace.scopeKey).delete();
+    await localDatabase.annotationLayers.bulkPut(layers.map(layer => ({ ...layer,
+      key: localWorkspaceRecordKey(workspace, layer.id), ...workspace })));
+  });
+}
+
+export async function removeCachedPublications(workspace: LocalWorkspace) {
+  const layers = await readAnnotationLayers(workspace);
+  await cacheAnnotationLayers(workspace, layers.filter(layer => layer.kind !== "personal" || layer.canEdit));
 }
 
 export async function updateCachedLayer(
@@ -292,6 +299,7 @@ export async function applyPulledAnnotations(
   workspace: LocalWorkspace,
   cursor: number,
   objects: AnnotationObjectRecord[],
+  layerIds?: string[],
 ) {
   await assertLocalWorkspaceActive(workspace);
   await localDatabase.transaction(
@@ -307,7 +315,7 @@ export async function applyPulledAnnotations(
         if (existing && (existing.state !== "synced" || existing.version > object.version)) continue;
         await localDatabase.annotations.put(fromCanonical(workspace, object));
       }
-      await localDatabase.annotationSyncCursors.put({ ...workspace, cursor });
+      await localDatabase.annotationSyncCursors.put({ ...workspace, cursor, layerIds });
     },
   );
 }
@@ -778,7 +786,7 @@ export async function restoreOfflineAnnotationSnapshot(
 ) {
   await assertLocalWorkspaceActive(workspace);
   if (record.scopeKey !== workspace.scopeKey) return;
-  const snapshot = record.annotationSnapshot;
+  const snapshot = (await localDatabase.offlineScores.get(record.key))?.annotationSnapshot ?? record.annotationSnapshot;
   if (!snapshot) return;
   for (const layer of snapshot.layers) annotationLayerSummarySchema.parse(layer);
   for (const annotation of snapshot.annotations) {

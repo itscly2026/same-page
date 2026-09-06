@@ -255,7 +255,7 @@ export function resolveFixtureRequest({
     return json({
       layers: layers.map((entry) => ({
         ...entry,
-        ...(entry.defaultSlot === "B"
+        ...(entry.sharedSlot === "B"
           ? {
               subscribed: false,
               subscriptionSource: "score",
@@ -263,7 +263,7 @@ export function resolveFixtureRequest({
               scoreSubscriptionOverride: false,
             }
           : {}),
-        ...(entry.defaultSlot === "E" && scenarioId.startsWith("reader-edit-unsubscribed")
+        ...(entry.sharedSlot === "E" && scenarioId.startsWith("reader-edit-unsubscribed")
           ? {
               subscribed: false,
               subscriptionSource: "drive",
@@ -281,13 +281,13 @@ export function resolveFixtureRequest({
     return json({
       drive: { id: choir.id, name: choir.name },
       layers: layers.filter((entry) => entry.kind === "shared").map((entry) => ({
-        slot: entry.defaultSlot,
+        slot: entry.sharedSlot,
         name: entry.name,
-        subscribed: entry.defaultSlot !== "B",
-        colorOverride: entry.defaultSlot === "E" ? "#7c3aed" : null,
+        subscribed: entry.sharedSlot !== "B",
+        colorOverride: entry.sharedSlot === "E" ? "#7c3aed" : null,
         adminDefaultColor: entry.adminDefaultColor,
-        displayColor: entry.defaultSlot === "E" ? "#7c3aed" : entry.displayColor,
-        colorSource: entry.defaultSlot === "E" ? "drive" : "admin",
+        displayColor: entry.sharedSlot === "E" ? "#7c3aed" : entry.displayColor,
+        colorSource: entry.sharedSlot === "E" ? "drive" : "admin",
       })),
     });
   }
@@ -296,10 +296,10 @@ export function resolveFixtureRequest({
     return json({
       drive: { id: choir.id, name: choir.name },
       layers: layers.filter((entry) => entry.kind === "shared").map((entry, index) => ({
-        slot: entry.defaultSlot,
+        slot: entry.sharedSlot,
         name: entry.name,
         defaultColor: entry.adminDefaultColor,
-        grantedMemberCount: [2, 1, 0, 1, 0][index],
+        grantedMemberCount: [2, 1, 0, 1, 0][index], sortOrder: index, active: true,
       })),
     });
   }
@@ -334,11 +334,11 @@ export const visualFixture = Object.freeze({
   samplePdfSha256,
 });
 
-function layer(id, kind, defaultSlot, name, sortOrder, defaultColor, canEdit = false) {
+function layer(id, kind, sharedSlot, name, sortOrder, defaultColor, canEdit = false) {
   return {
     id,
     kind,
-    defaultSlot,
+    sharedSlot,
     name,
     sortOrder,
     subscribed: true,
@@ -564,8 +564,8 @@ export function createVisualFixtureSession(scenario = {}) {
       if (pathname.endsWith("/grants") && payload.members) payload.members = payload.members.map((member) => ({ ...member, granted: grants.get(`${slot}:${member.id}`) ?? member.granted }));
       if (pathname.endsWith("/layers") && payload.layers) payload.layers = payload.layers.map((entry) => {
         if (entry.kind === "personal") return entry;
-        const drivePreference = preferences.get(entry.defaultSlot);
-        const preference = scorePreferences.get(entry.defaultSlot);
+        const drivePreference = preferences.get(entry.sharedSlot);
+        const preference = scorePreferences.get(entry.sharedSlot);
         const driveSubscribed = drivePreference?.subscribed ?? entry.driveSubscribed;
         const scoreSubscriptionOverride = preference ? preference.subscribed : entry.scoreSubscriptionOverride;
         return { ...entry, driveSubscribed, scoreSubscriptionOverride,

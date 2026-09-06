@@ -39,7 +39,7 @@ const layers: AnnotationLayerSummary[] = [
   {
     id: activeLayerId,
     kind: "shared",
-    defaultSlot: "E",
+    sharedSlot: "E",
     name: "Ensemble",
     sortOrder: 0,
     subscribed: false,
@@ -55,7 +55,7 @@ const layers: AnnotationLayerSummary[] = [
   {
     id: otherLayerId,
     kind: "shared",
-    defaultSlot: "B",
+    sharedSlot: "B",
     name: "B",
     sortOrder: 4,
     subscribed: true,

@@ -50,7 +50,10 @@ export async function startStorageFixture({ authenticated = false, script = "pre
         await DB.batch([
           ["E", "Ensemble", "#a12652"], ["S", "Soprano", "#3566a6"],
           ["A", "Alto", "#8a5a13"], ["T", "Tenor", "#52763a"], ["B", "Bass", "#75529b"],
-        ].map(([slot, name, color], order) => DB.prepare("INSERT INTO annotation_layers (id, choir_id, score_id, kind, default_slot, name, sort_order, default_color) VALUES (?, ?, ?, 'shared', ?, ?, ?, ?)").bind(randomUUID(), choirId, scoreId, slot, name, order, color)));
+        ].flatMap(([slot, name, color], order) => [
+          DB.prepare("INSERT INTO choir_shared_layer_settings (choir_id, slot, name, sort_order, default_color) VALUES (?, ?, ?, ?, ?)").bind(choirId, slot, name, order, color),
+          DB.prepare("INSERT INTO annotation_layers (id, choir_id, score_id, kind, default_slot, name, sort_order, default_color) VALUES (?, ?, ?, 'shared', ?, ?, ?, ?)").bind(randomUUID(), choirId, scoreId, slot, name, order, color),
+        ]));
       } finally { await platform.dispose(); }
     },
   });

@@ -202,7 +202,7 @@ export const sharedLayerEditGrants = sqliteTable(
     choirId: text("choir_id")
       .notNull()
       .references(() => choirs.id, { onDelete: "cascade" }),
-    slot: text("slot", { enum: ["E", "S", "A", "T", "B"] }).notNull(),
+    slot: text("slot").notNull(),
     membershipId: text("membership_id")
       .notNull()
       .references(() => memberships.id, { onDelete: "cascade" }),
@@ -225,7 +225,10 @@ export const choirSharedLayerSettings = sqliteTable(
     choirId: text("choir_id")
       .notNull()
       .references(() => choirs.id, { onDelete: "cascade" }),
-    slot: text("slot", { enum: ["E", "S", "A", "T", "B"] }).notNull(),
+    slot: text("slot").notNull(),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
     defaultColor: text("default_color").notNull(),
     updatedByMembershipId: text("updated_by_membership_id").references(
       () => memberships.id,
@@ -241,7 +244,7 @@ export const userDriveLayerPreferences = sqliteTable(
   {
     userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
     choirId: text("choir_id").notNull().references(() => choirs.id, { onDelete: "cascade" }),
-    slot: text("slot", { enum: ["E", "S", "A", "T", "B"] }).notNull(),
+    slot: text("slot").notNull(),
     subscribed: integer("subscribed", { mode: "boolean" }).notNull().default(true),
     colorOverride: text("color_override"),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
@@ -255,7 +258,7 @@ export const userScoreLayerPreferences = sqliteTable(
     userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
     choirId: text("choir_id").notNull().references(() => choirs.id, { onDelete: "cascade" }),
     scoreId: text("score_id").notNull().references(() => scores.id, { onDelete: "cascade" }),
-    slot: text("slot", { enum: ["E", "S", "A", "T", "B"] }).notNull(),
+    slot: text("slot").notNull(),
     subscribedOverride: integer("subscribed_override", { mode: "boolean" }),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
@@ -288,7 +291,8 @@ export const annotationLayers = sqliteTable(
     scoreId: text("score_id").notNull(),
     kind: text("kind", { enum: ["shared", "personal"] }).notNull(),
     ownerUserId: text("owner_user_id"),
-    defaultSlot: text("default_slot", { enum: ["E", "S", "A", "T", "B"] }),
+    sharing: integer("sharing", { mode: "boolean" }).notNull().default(false),
+    sharedSlot: text("default_slot"),
     name: text("name").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
     defaultColor: text("default_color").notNull(),
@@ -304,12 +308,12 @@ export const annotationLayers = sqliteTable(
       table.createdAt,
     ),
     uniqueIndex("annotation_layers_default_slot_uidx")
-      .on(table.scoreId, table.defaultSlot)
-      .where(sql`${table.defaultSlot} is not null`),
+      .on(table.scoreId, table.sharedSlot)
+      .where(sql`${table.sharedSlot} is not null`),
     check(
       "annotation_layers_fixed_kind_valid",
-      sql`(${table.kind} = 'shared' and ${table.ownerUserId} is null and ${table.defaultSlot} is not null)
-        or (${table.kind} = 'personal' and ${table.ownerUserId} is not null and ${table.defaultSlot} is null)`,
+      sql`(${table.kind} = 'shared' and ${table.ownerUserId} is null and ${table.sharedSlot} is not null)
+        or (${table.kind} = 'personal' and ${table.ownerUserId} is not null and ${table.sharedSlot} is null)`,
     ),
   ],
 );
@@ -374,3 +378,8 @@ export const diagnosticReports = sqliteTable("diagnostic_reports", {
   index("diagnostic_reports_status_created_idx").on(table.status, table.createdAt),
   index("diagnostic_reports_build_created_idx").on(table.clientBuild, table.createdAt),
 ]);
+
+export const personalLayerSubscriptions = sqliteTable("personal_layer_subscriptions", {
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  layerId: text("layer_id").notNull().references(() => annotationLayers.id, { onDelete: "cascade" }),
+}, table => [uniqueIndex("personal_layer_subscriptions_uidx").on(table.userId, table.layerId)]);

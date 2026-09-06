@@ -42,7 +42,7 @@ describe("logout local privacy", () => {
       ...workspace,
       id: "shared-layer",
       kind: "shared" as const,
-      defaultSlot: null,
+      sharedSlot: null,
       name: "指挥",
       sortOrder: 0,
       subscribed: false,

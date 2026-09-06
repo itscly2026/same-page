@@ -22,10 +22,7 @@ import {
 } from "react-aria-components";
 import { Link, useParams } from "react-router-dom";
 
-import {
-  defaultSharedLayerSlots,
-  type AnnotationLayerSummary,
-} from "../../shared/annotations";
+import type { AnnotationLayerSummary } from "../../shared/annotations";
 import type {
   AnnotationOverlayInteraction,
   AnnotationTool,
@@ -890,13 +887,6 @@ function clamp(value: number, minimum: number, maximum: number) {
 
 function compareLayers(left: AnnotationLayerSummary, right: AnnotationLayerSummary) {
   if (left.kind !== right.kind) return left.kind === "shared" ? -1 : 1;
-  const leftDefault = left.defaultSlot
-    ? defaultSharedLayerSlots.indexOf(left.defaultSlot)
-    : Number.POSITIVE_INFINITY;
-  const rightDefault = right.defaultSlot
-    ? defaultSharedLayerSlots.indexOf(right.defaultSlot)
-    : Number.POSITIVE_INFINITY;
-  if (leftDefault !== rightDefault) return leftDefault - rightDefault;
   return left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, "zh-CN");
 }
 

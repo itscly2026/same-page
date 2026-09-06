@@ -108,6 +108,7 @@ export interface AnnotationSyncCursorRecord {
   choirId: string;
   scoreId: string;
   cursor: number;
+  layerIds?: string[];
 }
 
 export interface GuestLayerPreferenceRecord {
@@ -238,6 +239,16 @@ export class SamePageDatabase extends Dexie {
     this.version(8).stores({
       annotationOutbox: "&opId,ownerKey,scopeKey,[ownerKey+scopeKey],[scopeKey+annotationId],createdAt",
     });
+    this.version(9).stores({}).upgrade(async transaction => {
+      const renameSlot = (layer: Record<string, unknown>) => {
+        layer.sharedSlot = layer.defaultSlot;
+        delete layer.defaultSlot;
+      };
+      await transaction.table("annotationLayers").toCollection().modify(renameSlot);
+      await transaction.table("offlineScores").toCollection().modify((record: OfflineScoreRecord) => {
+        for (const layer of record.annotationSnapshot?.layers ?? []) renameSlot(layer as unknown as Record<string, unknown>);
+      });
+    });
   }
 }
 
@@ -310,7 +321,7 @@ export async function activateVerifiedOfflineScore(
 ) {
   await localDatabase.transaction(
     "rw",
-    [localDatabase.system, localDatabase.offlineScores],
+    [localDatabase.system, localDatabase.offlineScores, localDatabase.annotationLayers, localDatabase.annotations, localDatabase.annotationSyncCursors],
     async () => {
       const activeOwner = await localDatabase.system.get(ACTIVE_LOCAL_OWNER_KEY);
       const guestOwner = record.ownerKey.startsWith("guest:")
@@ -330,11 +341,23 @@ export async function activateVerifiedOfflineScore(
         if (existing.some((entry) => entry.active === 1 && entry.key === record.key)) return;
         throw new Error("offline_copy_changed_during_download");
       }
+      // A download can be verified while another sync revokes layer access.
+      // Capture metadata and notes under the same transaction that activates the
+      // bytes; an older in-memory candidate must never restore that access.
+      const layers = await localDatabase.annotationLayers.where("scopeKey").equals(record.scopeKey).toArray();
+      const layerIds = new Set(layers.map(layer => layer.id));
+      const annotations = await localDatabase.annotations.where("scopeKey").equals(record.scopeKey)
+        .filter(annotation => layerIds.has(annotation.layerId)).toArray();
+      const annotationSnapshot: OfflineAnnotationSnapshot = {
+        layers, annotations, cursor: (await localDatabase.annotationSyncCursors.get(record.scopeKey))?.cursor ?? 0,
+        verifiedAt: Date.now(),
+      };
       // Blob values already read by another session remain valid after deleting
       // the IndexedDB reference. Annotation tables are deliberately untouched.
       await localDatabase.offlineScores.bulkDelete(existing.map((entry) => entry.key));
       await localDatabase.offlineScores.put({
         ...record,
+        annotationSnapshot,
         active: 1,
         verifiedAt: Date.now(),
       });

@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0014
+---
+
 # Fix the annotation model to ESATB and Personal
 
 Every score contains exactly five shared layers: E · Ensemble, S · Soprano,

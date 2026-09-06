@@ -30,7 +30,7 @@ beforeEach(async () => {
   score = { id:"score", choirId:"drive", fileName:"练声.pdf", updatedAt:1,
     currentVersion:{id:"v1",versionNumber:1,sizeBytes:bytes.byteLength,sha256:await sha256Hex(bytes.buffer as ArrayBuffer),etag:"v1",pageCount:1,createdAt:1} };
   layers = (["E","S","A","T","B"] as const).map((slot,index) => ({
-    id:`00000000-0000-4000-8000-00000000000${index}`,kind:"shared",defaultSlot:slot,name:slot,sortOrder:index,
+    id:`00000000-0000-4000-8000-00000000000${index}`,kind:"shared",sharedSlot:slot,name:slot,sortOrder:index,
     subscribed:true,subscriptionSource:"product",displayColor:"#a12652",colorSource:"product",adminDefaultColor:"#a12652",driveSubscribed:null,driveColorOverride:null,scoreSubscriptionOverride:null,canEdit:false,
   }));
   vi.mocked(loadPdfDocument).mockImplementation(() => ({

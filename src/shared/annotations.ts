@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 export const defaultSharedLayerSlots = ["E", "S", "A", "T", "B"] as const;
-export const defaultSharedLayerSlotSchema = z.enum(defaultSharedLayerSlots);
-export type DefaultSharedLayerSlot = z.infer<typeof defaultSharedLayerSlotSchema>;
+export const sharedLayerSlotSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
+export type SharedLayerSlot = z.infer<typeof sharedLayerSlotSchema>;
 
 export const defaultSharedLayers: ReadonlyArray<{
-  slot: DefaultSharedLayerSlot;
+  slot: SharedLayerSlot;
   name: string;
   defaultColor: string;
   sortOrder: number;
@@ -16,6 +16,15 @@ export const defaultSharedLayers: ReadonlyArray<{
   { slot: "T", name: "Tenor", defaultColor: "#0f766e", sortOrder: 3 },
   { slot: "B", name: "Bass", defaultColor: "#3157a4", sortOrder: 4 },
 ];
+
+export function sharedLayerPrefix(slot: string | null | undefined) {
+  return defaultSharedLayers.some(layer => layer.slot === slot) ? slot! : "";
+}
+
+export function sharedLayerLabel(slot: string | null | undefined, name: string, separator = " · ") {
+  const prefix = sharedLayerPrefix(slot);
+  return prefix ? `${prefix}${separator}${name}` : name;
+}
 
 export const normalizedCoordinateSchema = z.number().finite().min(0).max(1);
 
@@ -102,8 +111,16 @@ export const scoreLayerPreferenceUpdateSchema = z
   .strict();
 
 export const sharedLayerSettingUpdateSchema = z.object({
+  defaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  name: z.string().trim().min(1).max(60).optional(),
+  sortOrder: z.number().int().min(0).max(10000).optional(),
+  active: z.boolean().optional(),
+}).strict().refine(value => Object.keys(value).length > 0);
+
+export const sharedLayerCreateSchema = z.object({
+  name: z.string().trim().min(1).max(60),
   defaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-});
+}).strict();
 
 export interface ResolvedSharedLayerPreference {
   subscribed: boolean;
@@ -142,7 +159,7 @@ export function resolveSharedLayerPreference(input: {
 export interface AnnotationLayerSummary {
   id: string;
   kind: "shared" | "personal";
-  defaultSlot: DefaultSharedLayerSlot | null;
+  sharedSlot: SharedLayerSlot | null;
   name: string;
   sortOrder: number;
   subscribed: boolean;
@@ -154,6 +171,8 @@ export interface AnnotationLayerSummary {
   driveColorOverride: string | null;
   scoreSubscriptionOverride: boolean | null;
   canEdit: boolean;
+  sharing?: boolean;
+  canShare?: boolean;
 }
 
 export interface AnnotationObjectRecord {
@@ -170,7 +189,7 @@ export interface AnnotationObjectRecord {
 export const annotationLayerSummarySchema = z.object({
   id: z.uuid(),
   kind: z.enum(["shared", "personal"]),
-  defaultSlot: defaultSharedLayerSlotSchema.nullable(),
+  sharedSlot: sharedLayerSlotSchema.nullable(),
   name: z.string(),
   sortOrder: z.number().int(),
   subscribed: z.boolean(),
@@ -182,6 +201,8 @@ export const annotationLayerSummarySchema = z.object({
   driveColorOverride: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
   scoreSubscriptionOverride: z.boolean().nullable(),
   canEdit: z.boolean(),
+  sharing: z.boolean().optional(),
+  canShare: z.boolean().optional(),
 });
 
 export const annotationObjectRecordSchema = z.object({
@@ -196,6 +217,7 @@ export const annotationObjectRecordSchema = z.object({
 });
 
 export const annotationPullResponseSchema = z.object({
+  hasMore: z.boolean().optional(),
   cursor: z.number().int().nonnegative(),
   objects: z.array(annotationObjectRecordSchema),
 });
@@ -219,7 +241,7 @@ const driveIdentitySchema = z.object({
 });
 
 export const driveLayerPreferenceSummarySchema = z.object({
-  slot: defaultSharedLayerSlotSchema,
+  slot: sharedLayerSlotSchema,
   name: z.string(),
   subscribed: z.boolean(),
   colorOverride: colorOverrideSchema,
@@ -238,10 +260,12 @@ export const driveLayerPreferencesResponseSchema = z.object({
 });
 
 export const sharedLayerManagementSummarySchema = z.object({
-  slot: defaultSharedLayerSlotSchema,
+  slot: sharedLayerSlotSchema,
   name: z.string(),
   defaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   grantedMemberCount: z.number().int().nonnegative(),
+  sortOrder: z.number().int(),
+  active: z.boolean(),
 });
 
 export type SharedLayerManagementSummary = z.infer<

@@ -278,7 +278,7 @@ describe("AppRoutes", () => {
           slot: "E",
           name: "Ensemble",
           defaultColor: "#a12652",
-          grantedMemberCount: 2,
+          grantedMemberCount: 2, sortOrder: 0, active: true,
         },
       ],
     })));
@@ -305,7 +305,7 @@ describe("AppRoutes", () => {
       if (input === "/api/choirs/choir-1/shared-layers" && !init?.method) {
         return Promise.resolve(Response.json({
           drive: { id: "choir-1", name: "小红花云盘" },
-          layers: [{ slot: "E", name: "Ensemble", defaultColor: "#a12652", grantedMemberCount: 0 }],
+          layers: [{ slot: "E", name: "Ensemble", defaultColor: "#a12652", grantedMemberCount: 0, sortOrder: 0, active: true }],
         }));
       }
       if (input === "/api/choirs/choir-1/shared-layers/E/grants" && !init?.method) {
@@ -1469,7 +1469,7 @@ describe("AppRoutes", () => {
       ...localWorkspace,
       id: "personal-layer",
       kind: "personal",
-      defaultSlot: null,
+      sharedSlot: null,
       name: "我的批注",
       sortOrder: 10_000,
       subscribed: true,

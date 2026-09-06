@@ -1,5 +1,5 @@
+import { createSharedLayerInstances } from "../annotations/shared-layer-instances";
 import type { Env } from "../env";
-import { defaultSharedLayers } from "../../src/shared/annotations";
 
 export const PDF_CANDIDATE_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
@@ -81,25 +81,7 @@ export async function createScoreVersion(options: {
         options.membershipId,
         now,
       ),
-      ...defaultSharedLayers.map((layer) =>
-        options.env.DB.prepare(
-          `INSERT INTO annotation_layers
-            (id, choir_id, score_id, kind, owner_user_id, default_slot, name,
-             sort_order, default_color, created_by_membership_id, created_at, updated_at)
-           VALUES (?, ?, ?, 'shared', NULL, ?, ?, ?, ?, ?, ?, ?)`,
-        ).bind(
-          crypto.randomUUID(),
-          options.choirId,
-          scoreId,
-          layer.slot,
-          layer.name,
-          layer.sortOrder,
-          layer.defaultColor,
-          options.membershipId,
-          now,
-          now,
-        ),
-      ),
+      createSharedLayerInstances(options.env.DB, { choirId: options.choirId, scoreId, membershipId: options.membershipId }),
     ]);
   } catch (error) {
     throw classifyReservationError(error);
