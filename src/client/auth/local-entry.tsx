@@ -1,7 +1,8 @@
 import "./local-entry.css";
 import { Link } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
-import { LocalLibrary } from "../score-library/local-library";
+import { MembershipList } from "../score-library/membership-list";
+import { useLocation } from "react-router-dom";
 import type { ApplicationIdentity } from "./application-identity";
 
 export function IdentityNotice({ identity }: { identity: ApplicationIdentity }) {
@@ -15,9 +16,10 @@ export function IdentityNotice({ identity }: { identity: ApplicationIdentity }) 
 }
 
 export function LocalEntry({ identity, choirId }: { identity: ApplicationIdentity; choirId?: string }) {
-  return <div className="app-page local-entry"><AppHeader /><main className="page-shell">
-    <h1>本机内容</h1><IdentityNotice identity={identity} />
-    {identity.localUserId ? <LocalLibrary userId={identity.localUserId} choirId={choirId} />
+  const location = useLocation();
+  return <div className="app-page"><AppHeader /><main className="page-shell">
+    <h1>我已加入的云盘</h1><IdentityNotice identity={identity} />
+    {identity.localUserId ? <MembershipList userId={identity.localUserId} currentChoirId={choirId} localOnly autoEnter={!location.search && !location.hash} />
       : <p>{identity.restoring || identity.onlineState === "checking" ? "正在恢复本机内容…" : "本机没有可恢复的用户内容，请联网后重试。"}</p>}
   </main></div>;
 }

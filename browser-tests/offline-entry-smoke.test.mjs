@@ -59,6 +59,16 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     assert.equal(await offline.getByRole("heading", { name: "Harmony begins on the Same Page" }).count(), 0);
     await mkdir("artifacts/verification/offline-entry", { recursive: true });
     await offline.screenshot({ path: `artifacts/verification/offline-entry/${engineName}-home.png` });
+    assert.equal(new URL(offline.url()).pathname, `/choirs/${fixture.choirId}`);
+    await offline.getByRole("searchbox", { name: "搜索乐谱" }).waitFor();
+    await offline.getByRole("combobox", { name: "乐谱排序" }).selectOption("updated");
+    await offline.reload();
+    await offline.getByRole("link").filter({ hasText: fixture.fileName }).waitFor();
+    assert.equal(await offline.getByRole("combobox", { name: "乐谱排序" }).inputValue(), "updated");
+    assert.equal(await offline.getByRole("heading", { name: "本机内容" }).count(), 0);
+    await offline.getByRole("button", { name: "打开云盘菜单" }).click();
+    await offline.getByRole("button", { name: "切换云盘", exact: true }).click();
+    await offline.getByRole("link").filter({ hasText: "本地链路云盘" }).click();
     await offline.goto(drive);
     await offline.getByRole("heading", { name: "本地链路云盘" }).waitFor();
     await offline.getByRole("link").filter({ hasText: fixture.fileName }).click();

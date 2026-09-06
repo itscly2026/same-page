@@ -321,7 +321,7 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
       {!session.isPending && userId ? (
         <main className="page-shell my-drives-page">
           <div className="my-drives-heading"><div><h1>我已加入的云盘</h1><p>选择云盘，继续排练。</p></div><Button className="secondary-button" onPress={() => setJoinOpen(true)}>加入新云盘</Button></div>
-          <MembershipList userId={userId} showContinue autoEnter={!joinOpen && searchParams.size === 0} />
+          <MembershipList userId={userId} autoEnter={!joinOpen && searchParams.size === 0} />
           {pageMessage ? <p role="alert">{pageMessage}</p> : null}
         </main>
       ) : session.isPending ? <main className="page-shell"><p role="status">正在加载…</p></main> : <main className="marketing-content">

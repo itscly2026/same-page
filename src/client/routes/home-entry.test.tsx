@@ -27,6 +27,7 @@ function expectPath(path: string) { expect(screen.getByLabelText("当前位置")
 beforeEach(() => {
   clearDriveLibraryCache();
   sessionStorage.clear();
+  window.localStorage.clear();
   memberships = [membership("one")];
   session("user-a");
   vi.stubGlobal("fetch", vi.fn(async (input: string) => {
@@ -109,7 +110,7 @@ it("hides unresolved identity and ignores a previous user's late membership resp
   await screen.findByText("正在加载已加入的云盘…");
   session("user-a", true);
   view.rerender(tree());
-  expect(screen.queryByText("我已加入的云盘")).not.toBeInTheDocument();
+  expect(screen.queryByText(/private-a/)).not.toBeInTheDocument();
   session("user-b");
   memberships = [];
   vi.mocked(fetch).mockImplementation(original);
@@ -146,4 +147,31 @@ it("continues a completed email login through the default entry without retainin
   fireEvent.click(screen.getByRole("button", { name: "返回测试" }));
   await screen.findByRole("heading", { name: "隐私政策" });
   expectPath("/privacy");
+});
+
+it("restores the last visited drive after leaving without opening a score", async () => {
+  memberships = [membership("one"), membership("two")];
+  const view = render(tree(["/choirs/two"]));
+  await screen.findByRole("heading", { name: "云盘 two" });
+  view.unmount();
+  render(tree());
+  await waitFor(() => expectPath("/choirs/two"));
+  expect(screen.queryByText("继续上次阅读")).not.toBeInTheDocument();
+});
+
+it("keeps the drive shell and search when the online session cannot be reached after reload", async () => {
+  const { activateAuthenticatedLocalOwner, authenticatedLocalOwnerKey } = await import("../platform/local-workspace");
+  const { localDatabase } = await import("../platform/local-database");
+  await localDatabase.open();
+  await activateAuthenticatedLocalOwner("user-a");
+  await localDatabase.driveDirectories.put({ key: JSON.stringify(["user:user-a", "one"]), ownerKey: authenticatedLocalOwnerKey("user-a"), choirId: "one", choir: membership("one").choir, scores: [] });
+  session(null);
+  vi.mocked(authClient.useSession).mockReturnValue({ data: null, isPending: false, error: { status: 503 }, refetch: vi.fn() } as unknown as ReturnType<typeof authClient.useSession>);
+  vi.mocked(fetch).mockRejectedValue(new TypeError("network unavailable"));
+  render(tree(["/choirs/one"]));
+  await screen.findByRole("heading", { name: "云盘 one" });
+  expect(screen.getByRole("searchbox", { name: "搜索乐谱" })).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "乐谱排序" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "本机内容" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "登录或注册" })).not.toBeInTheDocument();
 });

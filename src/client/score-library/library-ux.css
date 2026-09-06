@@ -48,11 +48,6 @@
 .saved-score-links p { color: var(--muted); line-height: 1.6; }
 .saved-score-links .membership-row { overflow-wrap: anywhere; }
 
-.continue-reading { max-width: 42rem; margin: 1.5rem 0; padding: 1rem 1.25rem; border: 1px solid var(--line); border-radius: 1rem; background: white; }
-.continue-reading h2 { margin: 0 0 .5rem; font-size: .85rem; color: var(--muted); font-weight: 500; }
-.continue-reading a { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 44px; text-decoration: none; color: var(--ink); }
-.continue-reading strong { display: block; overflow-wrap: anywhere; }
-.continue-reading small { display: block; margin-top: .25rem; color: var(--muted); }
 
 .drive-header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: .5rem; width: min(calc(100% - 2rem), 72rem); margin: 0 auto; padding: max(.75rem, env(safe-area-inset-top)) .25rem .75rem; background: var(--canvas); }
 .drive-header .icon-button { flex: 0 0 44px; }

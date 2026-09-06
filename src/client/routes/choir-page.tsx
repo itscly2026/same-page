@@ -1,6 +1,11 @@
+import { ScoreLink } from "../score-library/score-link";
+import { useNetworkStatus } from "../platform/use-network-status";
+import { DriveSettingsDialog } from "../score-library/drive-settings-dialog";
+import { rememberLastDrive, forgetLastDrive } from "../score-library/last-drive";
 import { LocalLibrary } from "../score-library/local-library";
 import { useApplicationIdentity } from "../auth/application-identity";
-import { LocalEntry } from "../auth/local-entry";
+import { IdentityNotice } from "../auth/local-entry";
+import type { ApplicationIdentity } from "../auth/application-identity";
 import { ChevronDown, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -18,7 +23,6 @@ import { Link, useParams } from "react-router-dom";
 
 import { isInternalAuthEmail } from "../../shared/auth";
 import type { ScoreSummary } from "../../shared/scores";
-import { authClient } from "../auth/auth-client";
 import { AppHeader } from "../components/app-header";
 import {
   completeLoadingJourney,
@@ -49,17 +53,19 @@ import { OfflineScoreControl } from "../score-library/offline-score-control";
 export default function ChoirPage() {
   const { choirId = "" } = useParams();
   const identity = useApplicationIdentity();
-  const { session } = identity;
-  if (identity.showLocalEntry) return <LocalEntry identity={identity} choirId={choirId} />;
-  const cacheOwner = driveCacheOwnerKey(identity.authenticatedUserId, choirId);
-  return <ChoirLibrary key={`${choirId}:${cacheOwner}`} choirId={choirId} session={session} cacheOwner={cacheOwner} />;
+  const cacheOwner = driveCacheOwnerKey(identity.localUserId, choirId);
+  return <ChoirLibrary key={`${choirId}:${cacheOwner}`} choirId={choirId} identity={identity} cacheOwner={cacheOwner} />;
 }
 
-function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; session: ReturnType<typeof authClient.useSession>; cacheOwner: DriveCacheOwnerKey }) {
-  const userId = session.data?.user.id;
-  const { library, snapshot } = useDriveLibrary(cacheOwner, choirId, Boolean(userId));
+function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; identity: ApplicationIdentity; cacheOwner: DriveCacheOwnerKey }) {
+  const { session } = identity;
+  const userId = identity.localUserId ?? undefined;
+  const online = useNetworkStatus();
+  const { library, snapshot } = useDriveLibrary(cacheOwner, choirId, Boolean(identity.authenticatedUserId) && online);
   const { access, view: { search, sort }, scores: visibleScores, refreshMessage: searchMessage, joining: busy } = snapshot;
   const [openAdmissionDisplayName, setOpenAdmissionDisplayName] = useState("");
+  const [settingsField, setSettingsField] = useState<"name" | "display-name" | null>(null);
+  const [avatarRevision, setAvatarRevision] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [inviteManagementOpen, setInviteManagementOpen] = useState(false);
@@ -71,6 +77,12 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
   const refreshAfterMutation = library.changed;
   const updateSearch = library.setSearch;
   const updateSort = library.setSort;
+
+  useEffect(() => {
+    if (!userId) return;
+    if (access.kind === "opened" && (access.isMember || access.local)) rememberLastDrive(userId, choirId);
+    if (access.kind === "denied" || access.kind === "not-found") forgetLastDrive(userId, choirId);
+  }, [access, userId, choirId]);
 
   useEffect(() => {
     if (!isLoadingJourneyActive("exit-score")) {
@@ -211,7 +223,7 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
   if (access.kind === "loading") {
     return (
       <div className="app-page drive-page">
-        <DriveHeader choirId={choirId} choirName={access.choir?.name ?? "云盘"} userId={userId} search={search} onSearch={updateSearch} onRefresh={() => void refresh()} />
+        <DriveHeader choirId={choirId} choirName={access.choir?.name ?? "云盘"} userId={userId} resolvingIdentity={identity.restoring || identity.onlineState === "checking"} search={search} onSearch={updateSearch} onRefresh={() => void refresh()} />
         <main className="page-shell file-library">{access.choir && <h1 className="visually-hidden">{access.choir.name}</h1>}<p className="route-loading" role="status">正在加载乐谱…</p></main>
       </div>
     );
@@ -222,15 +234,17 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
 
   return (
     <div className="app-page drive-page">
-      <DriveHeader choirId={choirId} choirName={choir.name} userId={userId} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
+      <DriveHeader choirId={choirId} choirName={choir.name} userId={userId} localOnly={Boolean(access.local)} avatarRevision={avatarRevision} onEditDisplayName={access.isMember && !access.local ? () => setSettingsField("display-name") : undefined} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
         management={result.permissions.canManage ? close => <section className="drive-drawer-management">
           <h3>云盘管理</h3>
           <Menu aria-label="管理员菜单" onAction={key => {
             close();
+            if (key === "name") setSettingsField("name");
             if (key === "trash") setTrashOpen(true);
             if (key === "invite") setInviteManagementOpen(true);
           }}>
-            <MenuItem href={`/choirs/${choirId}/memberships`}>成员与权限</MenuItem>
+            <MenuItem id="name">云盘名称</MenuItem>
+            <MenuItem href={`/choirs/${choirId}/memberships`}>成员与管理员</MenuItem>
             <MenuItem href={`/choirs/${choirId}/shared-layers`}>共享层</MenuItem>
             <MenuItem id="trash">回收站</MenuItem>
             {choir.guestAdmissionMode === "invite" && <MenuItem id="invite">邀请码</MenuItem>}
@@ -240,6 +254,9 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
       />
       <main className="page-shell file-library">
         <h1 className="visually-hidden">{choir.name}</h1>
+        <IdentityNotice identity={identity} />
+        {!online && <p role="status">当前离线，已下载的乐谱可继续使用。</p>}
+        {access.local && <p role="status">显示本机目录，搜索仅限本机记录；已下载的乐谱可继续使用，最新内容需联网确认。</p>}
         <section className="library-workspace" aria-labelledby="library-content-title">
           <div className="library-toolbar">
             <div className="library-controls">
@@ -278,10 +295,8 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
             <section className="file-list" aria-label="PDF 文件">
               {visibleScores.map((score) => (
                 <article className="file-row" key={score.id}>
-                  <Link
-                    className="file-row__open"
-                    to={`/choirs/${choirId}/scores/${score.id}`}
-                    onClick={() =>
+                  <ScoreLink userId={userId} choirId={choirId} scoreId={score.id} local={Boolean(access.local)}
+                    onOpen={() =>
                       {
                         startLoadingJourney(
                           "open-score",
@@ -294,8 +309,8 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
                   >
                     <span className="pdf-file-icon" aria-hidden="true">PDF</span>
                     <span className="file-row__name" title={score.fileName}>{score.fileName}</span>
-                  </Link>
-                  <div className="file-row__offline"><OfflineScoreControl score={score} authenticatedUserId={userId ?? null} disabled={session.isPending} /></div>
+                  </ScoreLink>
+                  <div className="file-row__offline"><OfflineScoreControl score={score} authenticatedUserId={userId ?? null} disabled={session.isPending || access.local} /></div>
                   <MenuTrigger>
                       <Button className="file-menu-button" aria-label={`${score.fileName} 更多操作`}>
                         ···
@@ -319,11 +334,12 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
               ))}
             </section>
           ) : (
-            <div className="library-empty-state">{search.trim() ? <><p>没有找到包含「{search}」的乐谱。</p><Button className="secondary-button" onPress={() => updateSearch("")}>清除搜索</Button></> : <><p>这个云盘还没有乐谱。</p><p>{result.permissions.canManage ? "上传第一份 PDF，开始准备排练。" : access.isMember ? "管理员上传乐谱后，会显示在这里。" : "暂时没有可浏览的乐谱，请稍后再来。"}</p>{result.permissions.canManage ? <Button className="secondary-button" onPress={() => setUploadOpen(true)}>上传第一份 PDF</Button> : null}</>}</div>
+            <div className="library-empty-state">{search.trim() ? <><p>没有找到包含「{search}」的乐谱。</p><Button className="secondary-button" onPress={() => updateSearch("")}>清除搜索</Button></> : <><p>{access.local ? "本机尚未保存这个云盘的目录或乐谱，请联网后下载。" : "这个云盘还没有乐谱。"}</p><p>{result.permissions.canManage ? "上传第一份 PDF，开始准备排练。" : access.isMember ? "管理员上传乐谱后，会显示在这里。" : "暂时没有可浏览的乐谱，请稍后再来。"}</p>{result.permissions.canManage ? <Button className="secondary-button" onPress={() => setUploadOpen(true)}>上传第一份 PDF</Button> : null}</>}</div>
           )}
         </section>
       </main>
 
+      {settingsField && !access.local && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async () => { await refreshAfterMutation(); setAvatarRevision(value => value + 1); setMessage("已保存。"); }} />}
       {result.permissions.canManage && <UploadFab onPress={() => setUploadOpen(true)} />}
 
       {inviteManagementOpen && result.permissions.canManage ? (
