@@ -1,11 +1,13 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import { readDisplayPreference } from "../reader/display-preferences";
 import { OfflineScoreControl } from "./offline-score-control";
 import { useOfflineScore } from "../offline/use-offline-score";
 import { prepareOfflineScore } from "../offline/offline-score";
 import { authenticatedLocalOwnerKey, createLocalWorkspace } from "../platform/local-workspace";
 import type { OfflineScoreRecord } from "../platform/local-database";
 
+vi.mock("../reader/display-preferences", () => ({ readDisplayPreference: vi.fn(() => "pdf") }));
 vi.mock("dexie-react-hooks", () => ({ useLiveQuery: () => "user:user" }));
 vi.mock("../offline/use-offline-score", async (original) => ({
   ...await original<typeof import("../offline/use-offline-score")>(), useOfflineScore: vi.fn(),
@@ -26,7 +28,7 @@ function verified(versionId = "v2"): OfflineScoreRecord {
 function state(record: OfflineScoreRecord | null, invalid = false) {
   vi.mocked(useOfflineScore).mockReturnValue({ scopeKey: workspace.scopeKey, record, invalid });
 }
-beforeEach(() => { vi.clearAllMocks(); state(null); vi.mocked(prepareOfflineScore).mockResolvedValue(verified()); });
+beforeEach(() => { vi.clearAllMocks(); vi.mocked(readDisplayPreference).mockReturnValue("pdf"); state(null); vi.mocked(prepareOfflineScore).mockResolvedValue(verified()); });
 
 it("downloads once and does not claim offline availability before verified data arrives", async () => {
   let finish!: () => void;
@@ -72,4 +74,14 @@ it("exposes download failure and allows retry inside the details", async () => {
   await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("下载未完成"));
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "重试下载" }));
   await waitFor(() => expect(prepareOfflineScore).toHaveBeenCalledTimes(2));
+});
+
+it("offers the current display mode download without claiming its copy is ready", async () => {
+  state(verified());
+  vi.mocked(readDisplayPreference).mockReturnValue("images");
+  const { container } = render(<OfflineScoreControl score={score} authenticatedUserId="user" />);
+  expect(container.querySelector('[data-state="ready"]')).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /下载离线副本：.*当前显示方式尚未下载/ }));
+  await waitFor(() => expect(prepareOfflineScore).toHaveBeenCalledTimes(1));
+  expect(screen.queryByText("已保存在这台设备上，断网也能打开。")).not.toBeInTheDocument();
 });

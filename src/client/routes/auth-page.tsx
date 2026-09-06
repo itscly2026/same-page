@@ -318,14 +318,14 @@ export default function AuthPage() {
     }
     const guestResponse = await diagnosticFetch("/api/guest/session").catch(() => null);
     if (!guestResponse?.ok) {
-      await navigate("/");
+      await navigate("/", { replace: true });
       return;
     }
     const guest = guestSessionResponseSchema.safeParse(
       await guestResponse.json(),
     );
     if (!guest.success) {
-      await navigate("/");
+      await navigate("/", { replace: true });
       return;
     }
     if (guest.data.entryKind === "preview") {

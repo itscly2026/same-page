@@ -79,8 +79,8 @@ for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {
       const actionSizes = await page.locator(".upload-list button").evaluateAll((buttons) => buttons.map((button) => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height })));
       assert.ok(actionSizes.every((size) => size.width >= 44 && size.height >= 44));
       await page.getByRole("button", { name: "核对 b.pdf" }).click();
-      await page.getByRole("searchbox", { name: "搜索文件名" }).waitFor();
-      assert.equal(await page.getByRole("searchbox", { name: "搜索文件名" }).inputValue(), "b.pdf");
+      await page.getByRole("searchbox", { name: "搜索乐谱" }).waitFor();
+      assert.equal(await page.getByRole("searchbox", { name: "搜索乐谱" }).inputValue(), "b.pdf");
       await page.getByText(/请核对同名文件/).waitFor();
       await page.getByRole("link", { name: /b\.pdf/ }).waitFor();
       assert.equal(files.length, 3);

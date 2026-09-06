@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "react-aria-components";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 
 import {
   choirMembershipsResponseSchema,
@@ -9,6 +9,7 @@ import {
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
 import { startLoadingJourney } from "../performance/loading-performance";
 import { driveCacheOwnerKey, rememberDriveSummary } from "./drive-library-cache";
+import { SavedScoreLinks } from "./saved-score-links";
 import "./library-ux.css";
 
 type MembershipState =
@@ -19,10 +20,12 @@ export function MembershipList({
   userId,
   currentChoirId,
   onSelect,
+  autoEnter = false,
 }: {
   userId: string;
   currentChoirId?: string;
   onSelect?: () => void;
+  autoEnter?: boolean;
 }) {
   const [state, setState] = useState<MembershipState>({ userId, kind: "loading" });
   const [retry, setRetry] = useState(0);
@@ -53,20 +56,26 @@ export function MembershipList({
   }
   if (state.kind !== "loaded") {
     return (
+      <>
       <div role="alert">
         <p>暂时无法加载已加入的云盘。</p>
         <Button className="secondary-button" onPress={() => setRetry((value) => value + 1)}>
           重试
         </Button>
       </div>
+      <SavedScoreLinks key={userId} userId={userId} />
+      </>
     );
   }
   if (!state.memberships.length) {
     return (
       <p className="membership-empty">
-        还没有已加入的云盘。使用管理员提供的邀请码加入，或先访问公开体验云盘。
+        还没有已加入的云盘。请使用管理员提供的邀请码加入。
       </p>
     );
+  }
+  if (autoEnter && state.memberships.length === 1) {
+    return <Navigate to={`/choirs/${state.memberships[0].choir.id}`} replace />;
   }
   return (
     <div className="membership-list">
@@ -84,7 +93,7 @@ export function MembershipList({
           <span>
             <strong>{membership.choir.name}</strong>
             <small>
-              {membership.displayName}
+              {membership.role === "admin" ? "管理员" : "成员"}
               {membership.choir.id === currentChoirId ? " · 当前云盘" : ""}
             </small>
           </span>
