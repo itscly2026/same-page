@@ -1,0 +1,28 @@
+name: WebKit edit diagnosis
+on:
+  push:
+    branches: [codex/webkit-edit-visibility]
+permissions:
+  contents: read
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --prefer-offline --no-audit --no-fund
+      - run: npx playwright install --with-deps webkit
+      - name: Repeat original WebKit edit assertion with evidence
+        env:
+          WEBKIT_EDIT_REPEATS: '20'
+        run: node --test --test-name-pattern='webkit: continuous editing' visual-report/reader-immersive.test.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: webkit-edit-diagnosis-${{ github.sha }}
+          path: artifacts/verification/webkit-edit-probe/
+          retention-days: 7

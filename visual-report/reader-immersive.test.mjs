@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import path from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -45,10 +46,19 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
  });
 }
 for (const [engineName, engine] of Object.entries({chromium, webkit})) {
- test(`${engineName}: continuous editing locks one page without changing its scale or position`, async (context) => {
+ for (let iteration = 0; iteration < Number(process.env.WEBKIT_EDIT_REPEATS ?? 1); iteration++) {
+ test(`${engineName}: continuous editing locks one page without changing its scale or position / ${iteration}`, async (context) => {
   const browser = await engine.launch({headless:true});
   context.after(() => browser.close());
   const page = await openMemberReader(browser, {width:834,height:700});
+  const probing = process.env.WEBKIT_EDIT_REPEATS !== undefined;
+  if (probing) await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
+  const evidence = `artifacts/verification/webkit-edit-probe/${engineName}-${iteration}`;
+  context.after(async () => {
+    if (!probing) return;
+    await mkdir(path.dirname(evidence), { recursive: true });
+    await page.context().tracing.stop({ path: `${evidence}.zip` });
+  });
   await showReaderChrome(page);
   await page.getByRole("button", {name:"更多",exact:true}).click();
   await page.getByRole("button", {name:"连续滚动",exact:true}).click();
@@ -66,6 +76,29 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
   const focused = await page.locator('.annotated-pdf-page:visible').evaluateAll(elements => elements.map(element => {
    const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
   }));
+  if (probing) {
+    const snapshot = () => page.evaluate(() => ({
+      readyState: document.readyState,
+      editing: document.querySelector('.continuous-reader')?.getAttribute('data-editing'),
+      button: document.querySelector('[aria-label="完成编辑"]')?.getAttribute('aria-pressed'),
+      pages: [...document.querySelectorAll('.annotated-pdf-page')].map(e => ({
+        visibility: getComputedStyle(e).visibility, display: getComputedStyle(e).display,
+        rect: e.getBoundingClientRect().toJSON(),
+        ancestor: e.parentElement?.outerHTML.slice(0, 260),
+        ancestorVisibility: getComputedStyle(e.parentElement).visibility,
+      })),
+      rules: [...document.styleSheets].flatMap(sheet => { try { return [...sheet.cssRules].filter(rule => rule.cssText.includes('data-edit-hidden')).map(rule => rule.cssText); } catch { return []; } }),
+    }));
+    const immediate = await snapshot();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const settled = await snapshot();
+    await mkdir(path.dirname(evidence), { recursive: true });
+    await writeFile(`${evidence}.json`, JSON.stringify({ focused, immediate, settled }, null, 2));
+    if (focused.length !== 1) {
+      console.log('[DEBUG-webkit-edit]', JSON.stringify({ focused, immediate, settled }));
+      await page.screenshot({ path: `${evidence}.png`, fullPage: true });
+    }
+  }
   assert.equal(focused.length,1);
   assertView(focused[0], before);
   await page.mouse.move(400,450);
@@ -76,6 +109,7 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
   await page.getByRole("button", {name:"完成编辑",exact:true}).click();
   assertView(await read(), before);
  });
+ }
 }
 
 test("fullscreen entry, browser exit and portalled controls stay usable", async (context) => {
