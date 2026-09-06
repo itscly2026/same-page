@@ -29,9 +29,11 @@ export async function captureOfflineAnnotationSnapshot(
         .where("scopeKey")
         .equals(workspace.scopeKey)
         .toArray();
+      const layerIds = new Set(layers.map(layer => layer.id));
       const annotations = await localDatabase.annotations
         .where("scopeKey")
         .equals(workspace.scopeKey)
+        .filter(annotation => layerIds.has(annotation.layerId))
         .toArray();
       for (const layer of layers) annotationLayerSummarySchema.parse(layer);
       for (const annotation of annotations) {

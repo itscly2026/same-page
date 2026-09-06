@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import { cacheAnnotationLayers, readAnnotationLayers, readScoreAnnotationState, restoreOfflineAnnotationSnapshot, saveAnnotationDraft } from "../annotations/annotation-state";
+import { findVerifiedOfflineScore, sha256Hex, verifyOfflineScore } from "../offline/offline-score-verification";
 import { syncAnnotations } from "../annotations/sync";
 import { captureOfflineAnnotationSnapshot } from "../annotations/offline-snapshot";
 import { localDatabase, type OfflineScoreRecord } from "../platform/local-database";
@@ -99,12 +100,14 @@ it("loads older notes on a newly shared layer and removes revoked notes from off
   expect(cursors).toEqual([0, 100, 0]);
   expect((await readScoreAnnotationState(workspace)).annotations).toEqual([expect.objectContaining({ layerId: published.id })]);
   const staleRecord: OfflineScoreRecord = {
-    ...workspace, key: "offline-test", versionId: "version", fileName: "谱.pdf", sha256: "test", pageCount: 1,
+    ...workspace, key: "offline-test", versionId: "version", fileName: "谱.pdf", sha256: await sha256Hex(new TextEncoder().encode("test").buffer), pageCount: 1,
     blob: new Blob(["test"]), active: 1, verifiedAt: 1, annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace),
   };
+  expect(await verifyOfflineScore(staleRecord)).toBe(true);
   await localDatabase.offlineScores.put(staleRecord);
   serverLayers = [{ ...own }];
   await syncAnnotations(workspace, { pull: true });
+  expect(await findVerifiedOfflineScore(workspace)).not.toBeNull();
   await restoreOfflineAnnotationSnapshot(workspace, staleRecord);
   expect((await readScoreAnnotationState(workspace)).annotations).toEqual([]);
   expect((await readAnnotationLayers(workspace)).some(layer => layer.id === published.id)).toBe(false);
@@ -118,12 +121,14 @@ it("keeps paused shared notes but does not restore their layer from an older off
   await saveAnnotationDraft(workspace, { id: crypto.randomUUID(), layerId: shared.id,
     payload: { kind: "text", pageNumber: 1, x: .2, y: .3, fontScale: .024, text: "保留的伴奏笔记" } });
   const staleRecord: OfflineScoreRecord = {
-    ...workspace, key: "paused-offline-test", versionId: "version", fileName: "谱.pdf", sha256: "test", pageCount: 1,
+    ...workspace, key: "paused-offline-test", versionId: "version", fileName: "谱.pdf", sha256: await sha256Hex(new TextEncoder().encode("test").buffer), pageCount: 1,
     blob: new Blob(["test"]), active: 1, verifiedAt: 1, annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace),
   };
+  expect(await verifyOfflineScore(staleRecord)).toBe(true);
   await localDatabase.offlineScores.put(staleRecord);
   serverLayers = [{ ...own }];
   await syncAnnotations(workspace, { pull: true });
+  expect(await findVerifiedOfflineScore(workspace)).not.toBeNull();
   await restoreOfflineAnnotationSnapshot(workspace, staleRecord);
   expect((await readAnnotationLayers(workspace)).some(layer => layer.id === shared.id)).toBe(false);
   expect((await readScoreAnnotationState(workspace)).annotations).toEqual([expect.objectContaining({ layerId: shared.id })]);

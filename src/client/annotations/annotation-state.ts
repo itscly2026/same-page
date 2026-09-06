@@ -61,11 +61,11 @@ export async function cacheAnnotationLayers(workspace: LocalWorkspace, layers: A
     await localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey)
       .filter(annotation => revoked.has(annotation.layerId)).delete();
     // Metadata is authoritative for every saved PDF version too. Keep paused shared
-    // notes, but never restore a paused layer or stale publication/edit permission.
+    // notes in the main annotation store, but snapshots contain only readable layers.
     for (const record of offlineRecords) {
       record.annotationSnapshot.layers = layers.map(layer => ({ ...layer,
         key: localWorkspaceRecordKey(workspace, layer.id), ...workspace }));
-      record.annotationSnapshot.annotations = record.annotationSnapshot.annotations.filter(annotation => !revoked.has(annotation.layerId));
+      record.annotationSnapshot.annotations = record.annotationSnapshot.annotations.filter(annotation => ids.has(annotation.layerId));
     }
     await localDatabase.offlineScores.bulkPut(offlineRecords);
     await localDatabase.annotationLayers.where("scopeKey").equals(workspace.scopeKey).delete();
