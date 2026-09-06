@@ -4,7 +4,7 @@ import { readdirSync } from "node:fs";
 // The library group follows the audited ChoirPage presentation consumers in
 // ci-scope.mjs. Entry/identity/offline reopening still use real Worker storage.
 const library = {
-  visual: ["drive-settings", "drive-navigation", "drive-entry-library", "drive-library-lifecycle", "upload-queue", "responsive-navigation", "ux-refinement"],
+  visual: ["drive-settings", "drive-navigation", "drive-library-lifecycle", "upload-queue", "responsive-navigation", "ux-refinement"],
   smoke: ["storage-smoke", "offline-entry-smoke"],
 };
 const [suite, group = "all"] = process.argv.slice(2);

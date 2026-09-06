@@ -1,28 +1,36 @@
 # 测试深度清理 #174
 
-实施基线：`fc0717b28a2e95d111dd2a55e98bfc344ee1a469`，独立 worktree。产品代码、迁移文件、发布产物封存和 renderer 部署协议均未修改。
+基线：`fc0717b28a2e95d111dd2a55e98bfc344ee1a469`；独立 worktree，PR #175。第一轮 `9257ec4` 没有减少测试数量，反而增加 setup 分组和审计代码；完整 CI 也没有稳定提速。因此第二轮以删除重复保护和无效证明为主，撤回收益不足的环境白名单。
 
 ## 风险去向
 
-| 原覆盖 / 成本 | 处理与理由 | 保留位置 |
-| --- | --- | --- |
-| layer-preferences 每个宽度重复导航偏好、颜色、reader、管理页 | 每个页面/弹层只打开一次，依次改变原有视口；等待 ResizeObserver 完成后测量。两个引擎仍各执行完整失败/重试、颜色恢复、订阅与编辑隔离 | 原文件；原视口集合与 44px/越界断言保留 |
-| reader-status 两宽度完整保存失败、草稿、同步恢复 | 390 完整执行一次，每个原截图状态都原地检查 390/834 的无溢出与弹窗裁切 | 原文件；保留未完成编辑、QuotaExceededError、零离线 push、同步失败/恢复、下载失败和显示回滚 |
-| homepage 强制 flex/grid | 删除 CSS 机制断言；保留原宽度、两个 WebKit iPad 预设、200% 文字，以及实际文字/插图阅读顺序、内容裁切 | homepage-responsive |
-| drive-navigation 834/1440 空搜索结果无溢出 | 保留独有 320 极窄空结果；公共 390/834/1194/1440 长文件名、搜索/清空/排序、44px 矩阵由 drive-entry-library 负责 | drive-navigation 保留菜单焦点恢复、滚动上传入口、键盘和空结果交互；drive-entry-library 两引擎完整保留 |
-| auth-methods / reader-status 成功截图 | 默认不写截图；`LAYOUT_CAPTURE_DIR=artifacts/verification/report` 显式指定报告目录。截图没有差异判定，行为/几何仍每次断言 | 原文件；reader-status 新增每个状态的尺寸测量 |
-| 所有客户端文件加载 React、IndexedDB 和数据库删除 | DOM 无存储清单只加载 DOM cleanup；数据库逻辑只加载 fake IndexedDB + 每用例删除；其余 DOM/数据库测试保持单个 hook 先 React cleanup 再删数据库，避免 afterEach 注册顺序导致卸载晚于清库。未审计的新文件默认带数据库隔离 | vitest.client.config.ts、src/test/setup{,-database}.ts |
-| invite-link、session-fetch、loading-performance | 3 文件/6 项迁到 Node，无产品兼容代码、断言删除或 mock 增加 | 同目录 *.node.test.ts；原生 URL/Response/性能记录接口 |
-| 每个迁移文件启动 Wrangler | 同一 applyMigrations 调用内合并 SQL 文件，保留顺序和 PRAGMA；原数据插入/观测点不移动 | verify-score-schema-migration；真实 D1、旧记录、外键、文件名 backfill 幂等检查全部保留 |
-| storage/offline-entry 仅 canvas 可见 | 增加 PDF 本身的深色谱面与浅色底色像素证明，不计批注或 UI 像素；透明、全白、全黑均不通过 | browser-tests/pdf-content.mjs；访客离线进程重启、成员重启、WebKit API 故障仍分别执行 |
+| 删除 / 合并项 | 理由与最终覆盖位置 |
+| --- | --- |
+| app 的偏好编辑成功、固定层列表两项整路由用例 | layer-preferences 实际浏览器覆盖偏好、管理和编辑；app 的重叠请求失败回滚仍保留 |
+| app 的多成员和零成员入口两项 | home-entry 使用实际 AppRoutes 覆盖 0/2 成员及邀请入口；保留成员与管理员链接 |
+| app 的缓存恢复、搜索竞态两项 | DriveLibrary 状态边界、useDriveLibrary 和 drive-library-lifecycle 的真实历史返回/滚动恢复；app 仍验证成员文件名搜索不发网络查询 |
+| app 的逐文件上传一项 | upload-dialog 保留非法文本、PDF 错误、重名、FIFO、失败重试、身份切换和丢失响应；upload-queue 浏览器保留路由入口 |
+| join-code-field 的“键盘删除”一项 | 原测试只 fireEvent.change 写入值，没有模拟键盘；规范化和完整输入行为仍保留 |
+| reader-layout-canvas 两项及伪造 paged/continuous HTML 用例 | mock 自己规定宽度后再比较 style 不能证明渲染正确；reader-immersive 两引擎实际 PDF canvas、批注 overlay、页面四边对齐，覆盖分页 fit/zoom 和连续 zoom；原有横竖屏与缩放流程保留 |
+| 整个 drive-entry-library 文件（两引擎） | 成员数量转交 home-entry；搜索/排序、长文件名 100 行、44px 和键盘文件信息并入 responsive-navigation；真实缓存、重启、失败恢复由 lifecycle/offline 控件及 storage/offline-entry smoke 保留 |
+| ux-refinement 的完成编辑流程 | layer-preferences、reader-immersive、reader-mobile-editing 已覆盖进入/退出、缩放保留及重新打开页面导航；层排序与显式保存用例仍保留 |
+| diagnostics 的无效 JSON 浏览器循环 | diagnostics.node 的真实解码和 ReaderPage 错误 UI 已覆盖；保留实际 PDF.js HTTP 403 及网络中断到私密诊断报告的两种链路，mock 异常不足以替代 PDF.js 实际错误分类 |
+| 五项文字缩放用例 | 一个共享 WebKit 页面运行短文本、小字号、中文、显式换行、长 URL 矩阵；保留原有行数/内容边界断言，中文规范比例断言；独立 44px 热区及 pinch/commit 等价性保留 |
+| 客户端 setup 项目拆分、两份额外 setup、文件白名单 | 撤回第一轮复杂度；一个 jsdom setup 先卸载 React 再删数据库。三份真正不依赖 DOM 的文件仍移到 Node（invite-link、session-fetch、loading-performance） |
+| layer-preferences 各宽度重复导航 | 每个页面/弹层只打开一次再遍历原视口；两个引擎仍完整执行失败/重试、颜色恢复与隔离 |
+| reader-status 两宽度完整恢复流程 | 390 执行保存失败/草稿/离线同步恢复；每个状态原地检查 390/834 裁切与溢出 |
+| homepage flex/grid、云盘固定间距断言 | 保留实际阅读顺序、溢出、触控目标、焦点和键盘交互；responsive-navigation 同页调整 320/390/600/768/834/1194/1440 |
+| auth-methods / reader-status 成功截图 | 默认不写，无差异判定的截图仅在 LAYOUT_CAPTURE_DIR 显式报告模式生成；行为和几何断言仍执行 |
+| 每个迁移文件单独启动 Wrangler | 同一数据检查点之间合并执行；真实 D1、旧数据、外键、文件名 backfill 幂等断言全部保留 |
+| storage/offline-entry 仅 canvas 可见 | 增加实际 PDF 深色谱面与浅色底色像素证明，排除 UI/批注及透明、全白、全黑 |
 
-没有按数量删除测试；Node 与客户端合计仍 437 项。没有新增 skip/todo、重试或加宽超时。其余身份、个人层、OCC/outbox、真实 D1/R2、codec、图片离线、PWA、发布门禁测试保留。
+没有改产品代码，没有新增 skip/todo、重试或加宽超时。身份隔离、个人层、OCC/outbox、版本/会话竞态、真实 D1/R2、codec、图片离线、PWA、发布产物门禁保留。减少测试声明数不等于减少风险覆盖：文字矩阵等仍执行所有有意义的数据边界。
 
 ## 模块与 CI 选择
 
 精确审计的展示模块只有 `drive-settings-dialog.tsx`、`drive-header.tsx`、`upload-fab.tsx`；它们的产品消费者为 `routes/choir-page.tsx`。不是按目录名将整个 score-library 判为低风险：该目录内的缓存、useDriveLibrary、下载、上传和 reader 来源选择仍走全部组。只有这些展示模块（可混合文档）变更才选择 library：
 
-- visual：drive-settings、drive-navigation、drive-entry-library、drive-library-lifecycle、upload-queue、responsive-navigation、ux-refinement。
+- visual：drive-settings、drive-navigation、drive-library-lifecycle、upload-queue、responsive-navigation、ux-refinement。
 - smoke：storage-smoke、offline-entry-smoke，保留真实访客/成员的入口与离线存储消费者。
 - client/build/deploy 保留，performance 不选；renderer/codec 的独立浏览器流程不选。
 
@@ -34,62 +42,45 @@ Linux renderer 继续在每个发布产物封存前实际构建和验证。最�
 
 ## 验证与测量
 
-同产品基线的完整成功 CI：[34041415382](https://github.com/itscly2026/same-page/actions/runs/34041415382)。包括客户端、Worker、迁移、完整 visual/smoke、PWA、performance 与 Linux renderer。
+同产品、全范围成功 Actions 样本（秒）：
 
-本机统一使用 Node 24。默认 Node 25 的 localStorage 环境错误不计入基线。初次改后客户端与基线浏览器同时运行出现等待超时，停止资源竞争后原样重跑通过；没有放宽等待。局部重构最初测到旧视口宽度，已用布局条件等待修正。
+| 阶段 / 运行 | runner 合计 | 关键路径 | client | migration | visual | smoke |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 原基线 [34041072554](https://github.com/itscly2026/same-page/actions/runs/34041072554) | 851 | 342 | 96 | 76 | 136 | 145 |
+| 原 main [34041415382](https://github.com/itscly2026/same-page/actions/runs/34041415382) | 862* | 305 | 95 | 75 | 200 | 131 |
+| 第一轮 [34042495545](https://github.com/itscly2026/same-page/actions/runs/34042495545) | 782 | 310 | 70 | 48 | 190 | 124 |
+| 第一轮最终 [34042898831](https://github.com/itscly2026/same-page/actions/runs/34042898831) | 880 | 345 | 87 | 59 | 201 | 149 |
 
-- 基线 Node 72/18 文件，client 365/49 文件；client 12.66 秒，setup 累计 9.58 秒。
-- 改后 Node 78/21 文件，client 359/46 文件；独立 client 11.49 秒，setup 累计 6.71 秒。累计指标不是可直接相减的墙钟收益。
-- 基线完整 visual 46/46，105.43 秒。最终全套及 CI 数据见后续验证记录。
+*main 扣除仅 main 执行的 seal/upload/identity 6 秒，排除 deploy。原基线两个 commit 树相同。首轮均值 runner 831 秒对比原 856.5 秒仅约 3%，分布重叠，关键路径没有稳定改善。浏览器安装及 runner 速度有混杂，不将波动归因于清理；不拿 library 子集冒充完整测试收益，也不为凑样本空跑旧 CI。最终第二轮完整 CI 数据放在 PR #175 描述，避免为了记录 CI 而不断触发下一轮 CI。
 
-自动化 WebKit API 故障与浏览器重启不等于 iOS PWA 实机断网重启验收。
+原基线及第一轮：Node/客户端合计 437，Worker 95，visual 46，smoke 11；scope 从 16 增至 19。第一轮最终本机 check:full 全部通过，visual 78.91 秒；原本机 visual 105.43 秒。第二轮本机统一 Node 24，Python renderer 环境齐备。Node/客户端 427（78+349），Worker 95，visual 38；scope 19 与真实 smoke 11 保留。测试与执行代码相对原 main 净减 591 行，相对首轮最终净减 754 行，均不计文档。
 
-### 本地完整检查与审查修正
+错误注入证明（临时修改已恢复）：library 漏选 smoke 会使范围回归失败；真实 storage smoke 离线重开的 PDF canvas 涂白会使像素证明失败。实际批注层横移 8px 时新对齐断言失败，恢复后 reader-immersive 与 diagnostics 共 8 项通过。Spec 审查要求恢复实际 PDF.js 网络中断分类，已修复复核；两轴无未解决发现。
 
-`check:full` 已执行：原生 renderer、PWA、lint/typecheck、19 项范围/门禁、437 项 Node/客户端、95 项 Worker、46 项 visual、迁移与 build/precache 均通过。visual 81.73 秒（同机基线 105.43 秒，单样本不宣称稳定降幅）。smoke 9/11 通过；annotations 与 diagnostics 在多核 macOS 同时启动多个 Vite 优化器时失败，包含 `kill EPERM` 清理错误。原样串行重验两项均通过（21.34 秒），其后的加载预算也通过。
+浏览器模拟与 WebKit API 故障不等于 iOS PWA 实机断网重启验收；本 PR 不部署产品。
 
-npm 与 CI 现统一使用同一浏览器入口；有状态 smoke 明确串行，visual 仍为 2，并未提高并行度。完整 Linux CI 作为最终全范围证据。本机拆分后的最终客户端 359/46 通过，11.50 秒。审查发现的卸载/数据库删除顺序已由单个 hook 修正；CI 主文档也已同步，两轴复核无未解决发现。
+### Job 与独立步骤基线（秒）
 
-临时错误注入：
-
-1. 令 library 选择漏掉 smoke：`audited library leaves` 回归失败，恢复后通过。
-2. 在真实 storage smoke 离线重开后将 PDF canvas 全部涂白：新增内容断言明确失败；恢复原 helper 后 storage smoke 通过（5.52 秒）。未提交故意错误。
-
-另找到 [34041072554](https://github.com/itscly2026/same-page/actions/runs/34041072554) 的成功 PR 基线，`7e39172` 与实施基线的树完全相同，完整测试范围一致，可用于第二个优化前样本。没有第三个相同树的成功样本，不为补数量重跑旧 CI。
-
-### 完整成功 CI 对比（秒）
-
-| 指标 | 改前 PR 34041072554 | 改前 main 34041415382 | 改后 PR 34042495545 |
+| Job / step | 原 PR | 原 main | 首轮最终 |
 | --- | ---: | ---: | ---: |
-| 验证关键路径 | 342 | 305 | 310 |
-| 验证 runner 合计 | 851 | 868 | 782 |
-| scope job | 7 | 7 | 7 |
-| checks job | 281 | 287 | 210 |
-| visual job | 233 | 281 | 268 |
-| integration job | 327 | 290 | 294 |
+| scope job | 7 | 7 | 9 |
+| checks job | 281 | 287 | 254 |
+| checks / Lint | 14 | 14 | 13 |
+| checks / Type check | 14 | 14 | 13 |
+| checks / Worker tests | 57 | 61 | 59 |
+| checks / Install dependencies | 17 | 18 | 15 |
+| visual job | 233 | 281 | 286 |
+| visual / Install dependencies | 11 | 14 | 17 |
+| visual / Install Playwright Chromium and WebKit | 70 | 57 | 54 |
+| integration job | 327 | 290 | 328 |
+| integration / Install dependencies | 17 | 14 | 18 |
+| integration / Install Playwright Chromium and WebKit | 44 | 42 | 43 |
+| integration / Verify and package the Linux renderer | 18 | 18 | 20 |
+| integration / PWA update handover | 51 | 36 | 46 |
+| integration / Production build | 19 | 15 | 21 |
+| integration / Loading performance feedback loop | 13 | 11 | 13 |
 | verify job | 3 | 3 | 3 |
-| Lint | 14 | 14 | 10 |
-| Typecheck | 14 | 14 | 11 |
-| Client | 96 | 95 | 70 |
-| Worker | 57 | 61 | 47 |
-| 迁移 | 76 | 75 | 48 |
-| Visual 安装浏览器 | 70 | 57 | 52 |
-| Visual 测试 | 136 | 200 | 190 |
-| Integration 安装浏览器 | 44 | 42 | 52 |
-| Linux renderer 打包验证 | 18 | 18 | 20 |
-| PWA | 51 | 36 | 39 |
-| Build | 19 | 15 | 15 |
-| Performance | 13 | 11 | 11 |
-| Smoke | 145 | 131 | 124 |
 
-各验证 job 在 scope 完成后的启动等待（checks / visual / integration）：34041072554: 4/3/2 秒；34041415382: 3/3/2 秒；34042495545: 3/3/3 秒。这些间隔包含调度与启动开销，不推断具体 runner 调度原因。
+Scope 完成到 checks/visual/integration 启动间隔：原 PR 4/3/2 秒，原 main 3/3/2 秒，首轮最终 2/3/2 秒；间隔包含调度与启动开销。其余主要测试步骤见上表。
 
-[优化后完整成功运行](https://github.com/itscly2026/same-page/actions/runs/34042495545)，[机器可读 job/step 数据](test-audit-174/evidence.json)。三个运行均选择全部测试组，包含 Linux renderer/PWA/迁移；没有拿 library 子集作为降本样本。改前与改后分别是 16/19 项 scope；Node+client 均 437 项，Worker 均 95 项，visual 均 46 项，smoke 均 11 项。
-
-runner 合计减少 69–86 秒（8.1%–9.9%）。main 基线包含 PR 不做的 seal/upload/identity，共 6 秒；扣除后为 862 秒，下降 80 秒（9.3%）。未计部署 job 111 秒，不将 runner 秒直接换算账单分钟。关键路径 310 秒，相对两基线一快一慢，不能宣称稳定缩短等待。Worker 未改变却也更快、visual 在 136–200 秒间波动，说明 runner 速度有混杂；不能将每个差值都归因于清理。
-
-优化前只有 2 个同树成功样本，优化后此表只有 1 个完整成功样本，尚无稳定分布证据。后续最终提交 CI 见 PR #175 checks；不为凑三次无意义触发。当前剩余瓶颈是浏览器安装、完整 smoke 和视觉流程；renderer 打包仅约 20 秒。浏览器安装本轮为 52/52 秒，相对基线 70/44、57/42 并无稳定下降，因此没有宣称缓存收益。
-
-最终本机 `npm run check:full` 退出 0：437 项 Node/客户端、95 项 Worker、46 项 visual、11 项 smoke，以及 renderer、PWA、lint/typecheck、范围门禁、真实迁移、build/precache 和加载预算全部通过。最终完整 visual 78.91 秒。没有产品部署或实机验收声明。
-
-截图报告目录统一后，显式报告模式下 auth-methods 与 reader-status 3/3 通过，30 张报告图片写入指定目录；lint 通过。默认运行仍不生成这些成功截图。
+第二轮本机 check:full：renderer、PWA、lint/typecheck、Node/client、Worker、38 项 visual（65.41 秒）、迁移与 build/precache 通过；11 项 smoke 中 10 项通过，图片 Chromium 在 teardown 遇到已有的 kill EPERM，完整命令因此退出 1。图片两引擎原样单独复验 2/2 通过（21.49 秒），后续加载预算及最终 lint 通过。PDF 网络分类恢复后的浏览器复验通过，不把该本机拆分验证描述为一次完整成功运行；最终完整 Linux CI 见 PR。
