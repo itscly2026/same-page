@@ -2208,7 +2208,15 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     expect(screen.getByLabelText("阅读器控制")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "页面位置" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "图层" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "更多" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "更多" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    expect(screen.queryByRole("button", { name: "连续滚动" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "故障诊断" }));
+    const report = screen.getByLabelText<HTMLTextAreaElement>("可发送给支持人员的诊断内容");
+    expect(JSON.parse(report.value).reader.interactionMode).toBe("editing");
+    fireEvent.click(within(screen.getByRole("dialog", { name: "故障诊断" })).getByRole("button", { name: "关闭" }));
+    expect(editButton).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "下一页" })).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "ArrowRight" });

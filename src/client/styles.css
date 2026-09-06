@@ -3245,3 +3245,33 @@ h1 {
 .page-with-footer { min-height: 100dvh; display: flex; flex-direction: column; }
 .page-with-footer > :first-child { flex: 1; min-height: 0; }
 .app-footer nav { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; }
+
+.diagnostic-report-form { min-width: 0; }
+.diagnostic-report-form textarea {
+  display: block; width: 100%; box-sizing: border-box; max-width: 100%;
+  margin: 0.5rem 0 1rem; padding: 0.75rem; border: 1px solid var(--line);
+  border-radius: 0.5rem; background: white; color: var(--ink); font: inherit;
+}
+.diagnostic-report-form summary { cursor: pointer; padding: 0.75rem 0; min-height: 44px; box-sizing: border-box; }
+.diagnostic-report-form .diagnostic-hint { color: var(--muted); font-size: 0.875rem; }
+.diagnostics-actions .diagnostic-send { background: var(--ink); color: white; }
+.diagnostics-actions button:disabled { opacity: 0.55; cursor: default; }
+.diagnostic-receipt code { overflow-wrap: anywhere; }
+.diagnostic-overlay {
+  position: fixed; inset: 0; z-index: 200; background: rgb(0 0 0 / 25%);
+  display: flex; align-items: center; justify-content: center; padding: 1rem; box-sizing: border-box;
+}
+.diagnostic-modal {
+  width: min(38rem, 100%); max-height: calc(100dvh - 2rem); overflow-y: auto;
+  box-sizing: border-box; padding: 1.5rem; background: white; color: var(--ink); border-radius: 1rem;
+  line-height: 1.6; overflow-wrap: anywhere;
+}
+.diagnostic-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.diagnostic-dialog-heading h2 { margin: 0; }
+@media (max-width: 600px) {
+  .diagnostic-overlay { align-items: flex-end; padding: 0; }
+  .diagnostic-modal { max-height: 90dvh; padding: 1rem; padding-bottom: max(1rem, env(safe-area-inset-bottom)); border-radius: 1rem 1rem 0 0; }
+}
+.diagnostics-document { padding-top: 2rem; }
+.diagnostic-help { margin: 1rem 0; }
+.diagnostic-help summary { min-height: 44px; cursor: pointer; }

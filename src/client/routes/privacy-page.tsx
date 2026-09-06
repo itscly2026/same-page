@@ -12,7 +12,7 @@ export default function PrivacyPage() {
         <header className="privacy-document__header">
           <p className="eyebrow">合谱 · Same Page</p>
           <h1 id="privacy-title">隐私政策</h1>
-          <p className="privacy-document__updated">最后更新：2026 年 9 月 4 日</p>
+          <p className="privacy-document__updated">最后更新：2026 年 9 月 6 日</p>
           <p className="privacy-document__lead">
             合谱（Same Page）是为合唱排练设计的乐谱云盘。本政策说明我们在你使用服务时处理哪些信息、为什么处理，以及你可以如何联系我们。
           </p>
@@ -132,8 +132,10 @@ export default function PrivacyPage() {
 
         <section aria-labelledby="privacy-diagnostics">
           <h2 id="privacy-diagnostics">故障诊断</h2>
-          <p>客户端只在当前页面会话内保留最近 30 分钟、最多 50 条诊断，刷新或切换身份即清空；不会自动上传。你可以在<Link to="/diagnostics">故障诊断</Link>页面查看、复制或清空，再自行决定是否发送给支持人员。</p>
-          <p>应用诊断只包含错误编号、版本、操作类别、阶段及可重试性，不记录乐谱或批注正文、文件名、邮箱、IP、凭据或完整 URL。服务端诊断由获授权的运维人员通过 Cloudflare 查看，按现有套餐保留 3 或 7 天；云盘管理员不能因此访问这些日志。基础设施提供方自身的数据处理另受其政策约束。</p>
+          <p>客户端只在当前页面会话内保留最近 30 分钟、最多 50 条错误记录，刷新或切换身份即清空。你可以在<Link to="/diagnostics">故障诊断</Link>页面或阅读器诊断面板查看、复制、清空或主动发送诊断；未点击发送时不会上传。待发报告与选填描述只保留在当前会话，刷新、关闭网页或切换身份后清空。</p>
+          <p>主动发送的诊断包含错误编号、时间、次数、版本、操作类别、阶段及可重试性，以及浏览器与系统版本、窗口尺寸、网络提示、PWA 状态；从阅读器发送时还包含谱面显示方式、阅读或编辑状态、待同步与冲突数量。系统不会自动收集乐谱或批注正文、截图、文件名、邮箱、原始 IP、凭据、完整网址或原始异常。你填写的问题描述会随报告发送，请勿包含私人内容、密码、验证码或邀请码。</p>
+          <p>报告通过合谱服务保存于 Cloudflare D1，仅获授权的维护人员可查看和标记处理状态；反馈编号不授予读取权限，云盘管理员不能因此访问报告。报告保留 30 天，到期后不再通过收件箱提供访问，并由每小时任务删除；清空本机诊断不会撤回已发送报告。报告不与用户、云盘或乐谱建立关联，不自动发布到 GitHub 或发送给第三方支持平台。</p>
+          <p>接口使用短期限流标识防止滥用，不保存原始 IP 或登录凭据到报告。服务端结构化运行日志仍按 Cloudflare 套餐保留 3 或 7 天，不写入报告描述。基础设施提供方自身的数据处理（包括备份与安全日志）另受其政策约束。</p>
         </section>
 
         <section aria-labelledby="privacy-rights">

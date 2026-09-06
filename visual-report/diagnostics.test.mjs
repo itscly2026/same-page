@@ -27,7 +27,8 @@ test("real reader reports PDF permission, network and malformed bootstrap failur
       await page.goto(`${server.origin}/choirs/visual-choir/scores/visual-score`, { waitUntil: "domcontentloaded" });
       await page.getByRole("alert").waitFor();
       if (scenario === "bad-bootstrap") assert.match(await page.getByRole("alert").innerText(), /服务暂时不可用或返回内容异常/);
-      await page.getByRole("link", { name: "故障诊断", exact: true }).click();
+      await page.getByRole("button", { name: "故障诊断", exact: true }).click();
+      await page.getByText("查看诊断内容", { exact: true }).click();
       const textbox = page.getByRole("textbox", { name: "可发送给支持人员的诊断内容" });
       await textbox.waitFor();
       const report = await textbox.inputValue();
