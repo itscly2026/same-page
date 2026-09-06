@@ -139,7 +139,7 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
         <p>断网设备在重新联网确认层状态后停止上传，本机未同步草稿会保留。</p>
         <div className="dialog-actions">
           <Button className="secondary-button" isDisabled={pending} onPress={() => setDeleting(null)}>取消</Button>
-          <Button className="danger-button" isDisabled={pending} onPress={() => {
+          <Button className="primary-button" isDisabled={pending} onPress={() => {
             if (deleting) void change(`/${deleting.slot}/lifecycle`, "POST", { action: "delete", expectedRevision: deleting.revision }, "共享层已删除，可在已删除层入口查看并恢复。");
           }}>{pending ? "正在删除…" : "删除整个共享层"}</Button>
         </div>
