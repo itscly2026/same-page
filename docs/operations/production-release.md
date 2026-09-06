@@ -20,9 +20,9 @@
 - 邮件发件人：`Same Page <login@samepage.clyapps.com>`
 - Resend 发信域：`samepage.clyapps.com`，与根域真人邮件/Webmail 信誉隔离
 - Resend key：Same Page 独立、Sending access、只允许 `samepage.clyapps.com`
-- CI Cloudflare token：Same Page 独立，只包含 Workers Scripts Write、D1 Write、
-  Workers R2 Storage Write、Account Settings Read，以及 `clyapps.com` 的 Workers
-  Routes Write
+- CI Cloudflare token：Same Page 独立，包含 Workers Scripts Write、D1 Write、
+  Workers R2 Storage Write、Account Settings Read、Containers Edit、Workers Queues Write，以及
+  `clyapps.com` 的 Workers Routes Write。账户须已启用 Workers Paid / Containers。
 
 生产 Secret 只存在于 Resend、Cloudflare Worker 和 GitHub Actions 的 secret store。
 不得写入仓库、Issue、PR、日志、终端历史或发布记录。
@@ -137,6 +137,15 @@ deploy job 在生产锁内核对发布顺序，记录发布尝试，在汇总 ve
 真实 Safari、PWA 存储驱逐、手写笔和大陆网络表现不能由桌面自动化或 WebKit 模拟替代。
 
 ## 发布失败与显式回滚
+
+Containers 发布前先用同一 CI token 只读访问 `/accounts/{account_id}/containers/me`。
+这是 Wrangler 在镜像推送前使用的接口；检查放在 D1 恢复点、migration 和 Worker 上传之前。
+`401/403` 时核对实际 token 的 Containers Edit 权限、账户范围和套餐状态；
+仅凭 `Authentication error` 不能区分缺权限与未启用服务。预检通过只证明读取权限，
+镜像推送与容器发布仍必须成功。不要用重建镜像、重跑测试或跳过容器发布来掩盖认证错误。
+权限名称见 [Cloudflare API token permissions](https://developers.cloudflare.com/fundamentals/api/reference/permissions/)。
+Wrangler 的 Worker 上传与容器发布不具备事务性，见 [Deploy Containers](https://developers.cloudflare.com/containers/guides/deploy/)。
+
 
 1. 先在 Actions 确定失败阶段。准入跳过表示已有更新的发布尝试；历史不可达、分叉、GitHub 记录不可用或 artifact 校验失败都在生产写入前停止。不要通过删除发布记录或修改 expected SHA 绕过。
 2. 下载失败或 artifact 过期：重跑包含 integration、verify 和 deploy 的完整工作流。相同 SHA 允许重试；不允许在部署阶段临时构建一份新产物。`npm run deploy` 仅供已获授权的手工恢复，要求 `SAME_PAGE_RELEASE_SHA` 与已校验的 release.json 一致，不构建、不迁移，也不替代完整发布流程；执行时须停止并发 CI 发布并单独记录。
