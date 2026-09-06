@@ -86,11 +86,20 @@ export class ReaderSession {
   private readonly identity: string;
 
   constructor(readonly workspace: LocalWorkspace, private authenticatedUserId: string | null) {
-    this.identity = authenticatedUserId ?? "guest";
+    this.identity = workspace.ownerKey.startsWith("user:") ? workspace.ownerKey.slice(5) : "guest";
     const score = peekReaderScore(this.identity, workspace.choirId, workspace.scoreId);
     this.confirmedVersion = score?.currentVersion.id ?? null;
     this.state = { mode: readDisplayPreference(workspace), modeMessage: null, score, document: null, offline: null, cloudState: "checking", capability: "preparing", status: "loading", error: null, downloading: false, downloadMessage: null };
   }
+  setAuthenticatedUser = (userId: string | null) => {
+    if (this.authenticatedUserId === userId) return;
+    this.authenticatedUserId = userId;
+    this.layerAbort.abort();
+    this.downloadAbort?.abort();
+    this.layerAbort = new AbortController();
+    if (this.started) void Promise.resolve(this.layerTask).then(() => this.refresh());
+  };
+  private layerAbort = new AbortController();
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private publish(patch: Partial<ReaderSessionSnapshot>) {
@@ -152,7 +161,7 @@ export class ReaderSession {
     this.refreshTask ??= this.confirmCloud().finally(() => { this.refreshTask = null; });
     return this.refreshTask;
   };
-  private localMatches() { return !!this.state.offline && (!this.confirmedVersion ? this.cloudSettled : this.confirmedVersion === this.state.offline.versionId) && (this.state.offline.imageManifest ? "images" : "pdf") === this.state.mode; }
+  private localMatches() { return !!this.state.offline && (!this.confirmedVersion || this.confirmedVersion === this.state.offline.versionId) && (this.state.offline.imageManifest ? "images" : "pdf") === this.state.mode; }
   private async confirmCloud() {
     const sequence = ++this.lookupSequence;
     const lookup = await lookupScore(this.workspace, this.abort.signal);
@@ -276,7 +285,7 @@ export class ReaderSession {
     try {
       if (this.workspace.ownerKey.startsWith("user:") && this.workspace.ownerKey !== `user:${this.authenticatedUserId ?? ""}`) throw new Error("layer_identity_mismatch");
       await syncAnnotations(this.workspace, {
-        pull: true, freshLayers: false, signal: this.abort.signal,
+        pull: true, freshLayers: false, signal: AbortSignal.any([this.abort.signal, this.layerAbort.signal]),
         onLayersApplied: layers => {
           if (this.disposed || this.state.cloudState === "trashed") return;
           layersApplied = true;
@@ -288,8 +297,11 @@ export class ReaderSession {
       this.publish({ capability: this.state.offline ? (this.state.offline.annotationSnapshot.layers.some((layer) => layer.canEdit) ? "ready" : "read-only") : "failed" });
     }
   }
+  private canPrepareOffline() {
+    return !this.workspace.ownerKey.startsWith("user:") || this.workspace.ownerKey === `user:${this.authenticatedUserId}`;
+  }
   private prepareAutomaticOfflineCopy() {
-    if (!this.started || !this.localSettled || this.state.cloudState !== "active" ||
+    if (!this.canPrepareOffline() || !this.started || !this.localSettled || this.state.cloudState !== "active" ||
         !this.displayPrepared || !navigator.onLine || this.disposed || this.state.downloading || this.localMatches()) return;
     const key = JSON.stringify([this.confirmedVersion, this.state.mode]);
     if (this.offlineAttempts.has(key)) return;
@@ -297,7 +309,7 @@ export class ReaderSession {
     void this.download();
   }
   download = async () => {
-    if (this.disposed || !this.state.score || this.state.downloading || this.state.cloudState !== "active") return;
+    if (!this.canPrepareOffline() || this.disposed || !this.state.score || this.state.downloading || this.state.cloudState !== "active") return;
     const mode = this.state.mode;
     const score = this.state.score;
     this.offlineAttempts.add(JSON.stringify([score.currentVersion.id, mode]));

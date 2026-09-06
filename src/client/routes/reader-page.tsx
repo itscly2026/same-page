@@ -40,7 +40,8 @@ import { requestOutboxRecovery } from "../annotations/outbox-recovery";
 import { getAnnotationSyncActivity, subscribeAnnotationSync, syncAnnotations } from "../annotations/sync";
 import { useAnnotationEditor } from "../annotations/use-annotation-editor";
 import type { AnnotationEditor } from "../annotations/annotation-editor";
-import { authClient } from "../auth/auth-client";
+import { useApplicationIdentity } from "../auth/application-identity";
+import { IdentityNotice } from "../auth/local-entry";
 import {
   ensureLoadingJourney,
   startLoadingJourney,
@@ -89,13 +90,13 @@ const ReaderLayerPanel = lazy(() =>
 
 export default function ReaderPage() {
   const { choirId, scoreId } = useParams();
-  const session = authClient.useSession();
-  return <ReaderPageContent key={`${session.data?.user.id ?? "guest"}:${choirId}:${scoreId}`} />;
+  const identity = useApplicationIdentity();
+  return <ReaderPageContent key={`${identity.localUserId ?? "guest"}:${choirId}:${scoreId}`} />;
 }
 
 function ReaderPageContent() {
   const { choirId = "", scoreId = "" } = useParams();
-  const session = authClient.useSession();
+  const identity = useApplicationIdentity();
   const [resolvedWorkspace, setResolvedWorkspace] =
     useState<LocalWorkspace | null>(null);
   const [workspaceAttempt, setWorkspaceAttempt] = useState(0);
@@ -139,9 +140,11 @@ function ReaderPageContent() {
   useEffect(() => {
     ensureLoadingJourney("open-score", "direct");
   }, []);
+  const waitingForIdentity = identity.restoring || (!identity.localUserId && identity.onlineState === "checking");
   useEffect(() => {
     if (workspaceError) return;
     let active = true;
+    const controller = new AbortController();
     const fail = (message: string) => {
       if (!active) return;
       active = false;
@@ -149,9 +152,10 @@ function ReaderPageContent() {
       setWorkspaceError(message);
     };
     const timer = setTimeout(() => fail("打开本机工作区用时较长，可以重试或返回云盘。"), 45_000);
-    if (session.isPending) return () => { active = false; clearTimeout(timer); };
+    if (waitingForIdentity) return () => { active = false; clearTimeout(timer); };
     void resolveLocalWorkspace({
-      authenticatedUserId: session.data?.user.id ?? null,
+      authenticatedUserId: identity.localUserId,
+      signal: controller.signal,
       choirId,
       scoreId,
     }).then(async (resolved) => {
@@ -169,13 +173,14 @@ function ReaderPageContent() {
     }).catch(() => fail("本机工作区暂时无法打开，请重试；已保存的内容仍然保留。"));
     return () => {
       active = false;
+      controller.abort();
       clearTimeout(timer);
     };
-  }, [choirId, scoreId, session.data?.user.id, session.isPending, workspaceAttempt, workspaceError]);
+  }, [choirId, scoreId, identity.localUserId, waitingForIdentity, workspaceAttempt, workspaceError]);
 
   const workspace =
     resolvedWorkspace &&
-    (!session.data?.user.id || resolvedWorkspace.ownerKey === `user:${session.data.user.id}`) &&
+    (!identity.localUserId || resolvedWorkspace.ownerKey === `user:${identity.localUserId}`) &&
     workspaceIsActive &&
     resolvedWorkspace.choirId === choirId &&
     resolvedWorkspace.scoreId === scoreId
@@ -185,7 +190,7 @@ function ReaderPageContent() {
   const editing = editor !== null && editor === editingEditor;
   const [visibleDisplay, setVisibleDisplay] = useState<ScoreDocument | null>(null);
   const [failedDisplay, setFailedDisplay] = useState<ScoreDocument | null>(null);
-  const reader = useReaderSession(workspace, session.data?.user.id ?? null);
+  const reader = useReaderSession(workspace, identity.authenticatedUserId);
   const { score, document, offline: loadedOffline, cloudState, downloading, downloadMessage } = reader.snapshot;
   const documentScopeKey = document ? workspace?.scopeKey ?? null : null;
   const offlineStatus = useOfflineScore(workspace);
@@ -195,7 +200,7 @@ function ReaderPageContent() {
     if (document && workspace && documentScopeKey === workspace.scopeKey) {
       recordScoreOpened(driveCacheOwnerKey(workspace.ownerKey.startsWith("user:") ? workspace.ownerKey.slice(5) : null, choirId), choirId, scoreId);
     }
-  }, [document, documentScopeKey, workspace, choirId, scoreId, session.data?.user.id]);
+  }, [document, documentScopeKey, workspace, choirId, scoreId, identity.authenticatedUserId]);
   const annotationState = useLiveQuery(
     () => workspace ? readScoreAnnotationState(workspace).catch(() => null) : null,
     [workspace?.scopeKey], null,
@@ -211,7 +216,7 @@ function ReaderPageContent() {
   const { layout, currentPage, setLayout, setCurrentPage } =
     useReaderPreferences({
       pageCount: document?.numPages,
-      identity: session.data?.user.id ?? "guest",
+      identity: identity.localUserId ?? "guest",
       choirId,
       scoreId,
     });
@@ -308,7 +313,7 @@ function ReaderPageContent() {
       setSyncOutcome("none");
       return;
     }
-    if (!navigator.onLine) {
+    if (!navigator.onLine || !identity.authenticatedUserId) {
       setSyncOutcome("local-saved");
       return;
     }
@@ -332,6 +337,12 @@ function ReaderPageContent() {
     if (cloudState === "trashed") {
       setSyncOutcome("trash-preserved");
       return;
+    }
+    if (!identity.authenticatedUserId) {
+      // A manual retry must also recover a missed connectivity notification.
+      await identity.session.refetch();
+      setSyncOutcome("local-saved");
+      return; // The identity observer resumes queued work after confirmation.
     }
     setSyncing(true);
     requestOutboxRecovery();
@@ -360,7 +371,7 @@ function ReaderPageContent() {
     }
     await reapplyAnnotationConflict(workspace, opId, strategy === "keep-both");
     await queueScoreDrafts(workspace);
-    if (!navigator.onLine) {
+    if (!navigator.onLine || !identity.authenticatedUserId) {
       setSyncOutcome("local-saved");
       return;
     }
@@ -609,6 +620,7 @@ function ReaderPageContent() {
           {moreOpen ? (
             <Popover triggerRef={moreTrigger} isOpen={moreOpen} onOpenChange={setMoreOpen} isNonModal placement="bottom end" className="reader-more-popover">
             <Dialog className="reader-more-menu" aria-label="更多阅读选项">
+              <IdentityNotice identity={identity} />
               <header className="reader-menu-heading"><strong>阅读选项</strong><Button aria-label="关闭更多阅读选项" onPress={() => setMoreOpen(false)}>关闭</Button></header>
               {!editing && <>
               <section aria-label="全屏显示"><h2>全屏显示</h2>
@@ -749,7 +761,7 @@ function ReaderPageContent() {
                   key={workspace.scopeKey}
                   workspace={workspace}
                   layers={layers}
-                  signedIn={Boolean(session.data?.user.id)}
+                  signedIn={Boolean(identity.authenticatedUserId)}
                 />
               </Suspense>
             </Dialog>

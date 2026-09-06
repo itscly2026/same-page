@@ -1,3 +1,6 @@
+import { LocalLibrary } from "../score-library/local-library";
+import { useApplicationIdentity } from "../auth/application-identity";
+import { LocalEntry } from "../auth/local-entry";
 import { ChevronDown, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -26,7 +29,7 @@ import {
 import { rememberReaderScore } from "../reader/reader-score-cache";
 import { classifyReaderOpen } from "../reader/reader-reopen-tracker";
 import { scheduleReaderRuntimePreload } from "../reader/reader-runtime";
-import { driveCacheOwnerKey, readReturningDriveCacheOwner, type DriveCacheOwnerKey } from "../score-library/drive-library-cache";
+import { driveCacheOwnerKey, type DriveCacheOwnerKey } from "../score-library/drive-library-cache";
 import { useDriveLibrary } from "../score-library/use-drive-library";
 import {
   ScoreActionDialog,
@@ -45,10 +48,10 @@ import { OfflineScoreControl } from "../score-library/offline-score-control";
 
 export default function ChoirPage() {
   const { choirId = "" } = useParams();
-  const session = authClient.useSession();
-  const cacheOwner = session.isPending
-    ? readReturningDriveCacheOwner(choirId) ?? driveCacheOwnerKey(null, choirId)
-    : driveCacheOwnerKey(session.data?.user.id ?? null, choirId);
+  const identity = useApplicationIdentity();
+  const { session } = identity;
+  if (identity.showLocalEntry) return <LocalEntry identity={identity} choirId={choirId} />;
+  const cacheOwner = driveCacheOwnerKey(identity.authenticatedUserId, choirId);
   return <ChoirLibrary key={`${choirId}:${cacheOwner}`} choirId={choirId} session={session} cacheOwner={cacheOwner} />;
 }
 
@@ -167,6 +170,7 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
           <h1>无法访问这个云盘</h1>
           <p className="hero__copy">请返回首页输入当前邀请码，或使用有成员关系的邮箱登录。</p>
           <Link className="primary-link" to="/">返回首页</Link>
+          {userId && <LocalLibrary userId={userId} choirId={choirId} />}
         </main>
       </div>
     );
@@ -181,6 +185,7 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
           <h1>这个云盘不存在</h1>
           <p className="hero__copy">链接可能已经失效，请返回首页重新选择云盘。</p>
           <Link className="primary-link" to="/">返回首页</Link>
+          {userId && <LocalLibrary userId={userId} choirId={choirId} />}
         </main>
       </div>
     );
@@ -194,6 +199,7 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
           <p className="eyebrow">云盘</p>
           <h1>暂时无法打开云盘</h1>
           <p className="hero__copy">网络或服务暂时不可用，请稍后重试。</p>
+          {userId && <LocalLibrary userId={userId} choirId={choirId} />}
           <Button className="primary-button" onPress={() => void refresh()}>
             重试
           </Button>

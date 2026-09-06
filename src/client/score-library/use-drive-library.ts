@@ -1,12 +1,28 @@
+import { captureLocalWorkspaceSession, createLocalWorkspace, authenticatedLocalOwnerKey } from "../platform/local-workspace";
+import { rememberLocalDriveDirectory } from "./local-drive-directory";
 import { useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { DriveLibrary } from "./drive-library";
 import { type DriveCacheOwnerKey } from "./drive-library-cache";
 import { driveLibraryTransport } from "./drive-library-transport";
 
 export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, signedIn: boolean) {
-  const library = useMemo(() => new DriveLibrary(
-    ownerKey, choirId, driveLibraryTransport(choirId, signedIn),
-  ), [ownerKey, choirId, signedIn]);
+  const library = useMemo(() => {
+    const transport = driveLibraryTransport(choirId, signedIn);
+    return new DriveLibrary(ownerKey, choirId, {
+      ...transport,
+      async load(signal, allowAdmission) {
+        const workspace = signedIn && ownerKey.startsWith("user:")
+          ? captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey(ownerKey.slice(5)), choirId, "")).catch(() => null)
+          : Promise.resolve(null);
+        const access = await transport.load(signal, allowAdmission);
+        const captured = await workspace;
+        if (captured && access.kind === "opened") {
+          await rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal).catch(() => undefined);
+        }
+        return access;
+      },
+    });
+  }, [ownerKey, choirId, signedIn]);
   const snapshot = useSyncExternalStore(library.subscribe, library.getSnapshot);
 
   useEffect(() => {

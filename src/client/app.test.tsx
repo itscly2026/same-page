@@ -43,7 +43,6 @@ describe("AppRoutes", () => {
     clearDriveLibraryCache();
     window.sessionStorage.clear();
     await localDatabase.open();
-    await activateAuthenticatedLocalOwner("user-1");
     vi.mocked(authClient.useSession).mockReturnValue({
       data: null,
       isPending: false,
@@ -83,7 +82,7 @@ describe("AppRoutes", () => {
     vi.unstubAllGlobals();
   });
 
-  it("opens with the cloud-drive entry and keeps invitation admission focused", () => {
+  it("opens with the cloud-drive entry and keeps invitation admission focused", async () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <AppRoutes />
@@ -91,7 +90,7 @@ describe("AppRoutes", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Harmony begins on the Same Page" }),
+      await screen.findByRole("heading", { name: "Harmony begins on the Same Page" }),
     ).toHaveAttribute("lang", "en");
     expect(screen.getByText("你的笔记我的谱")).toHaveAttribute("lang", "zh-CN");
     expect(
@@ -109,7 +108,7 @@ describe("AppRoutes", () => {
     );
     expect(screen.queryByLabelText("邀请码")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "进入云盘" }));
+    fireEvent.click(await screen.findByRole("button", { name: "进入云盘" }));
 
     expect(screen.getByRole("dialog", { name: "进入云盘" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "我已加入的云盘" })).toBeInTheDocument();
@@ -120,7 +119,7 @@ describe("AppRoutes", () => {
     expect(
       screen.getByRole("heading", { name: "使用邀请码进入新的云盘" }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("邀请码")).toBeInTheDocument();
+    expect(await screen.findByLabelText("邀请码")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "进入" })).toBeDisabled();
     expect(screen.queryByText("无需注册，也可以访客身份只读访问。")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
@@ -368,7 +367,7 @@ describe("AppRoutes", () => {
       await screen.findByRole("link", { name: "先看示例" }),
     ).toHaveAttribute("href", "/choirs/preview-choir");
 
-    fireEvent.click(screen.getByRole("button", { name: "进入云盘" }));
+    fireEvent.click(await screen.findByRole("button", { name: "进入云盘" }));
     expect(screen.queryByText("公开体验云盘")).not.toBeInTheDocument();
   });
 
@@ -447,7 +446,7 @@ describe("AppRoutes", () => {
   it("keeps a malformed invitation available for manual correction", async () => {
     render(<MemoryRouter initialEntries={["/?join=1#invite=bad"]}><AppRoutes /></MemoryRouter>);
     expect(await screen.findByText("邀请链接无效，请输入当前邀请码。")).toBeInTheDocument();
-    expect(screen.getByLabelText("邀请码")).toHaveValue("");
+    expect(await screen.findByLabelText("邀请码")).toHaveValue("");
     expect(vi.mocked(fetch).mock.calls.filter(([url, init]) => url === "/api/guest/session" && init?.method === "POST")).toHaveLength(0);
   });
 
@@ -458,11 +457,11 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "进入云盘" }));
-    fireEvent.change(screen.getByLabelText("邀请码"), {
+    fireEvent.click(await screen.findByRole("button", { name: "进入云盘" }));
+    fireEvent.change(await screen.findByLabelText("邀请码"), {
       target: { value: "abcd-efgh" },
     });
-    expect(screen.getByLabelText("邀请码")).toHaveValue("ABCD-EFGH");
+    expect(await screen.findByLabelText("邀请码")).toHaveValue("ABCD-EFGH");
     expect(document.querySelectorAll(".join-code-slot")).toHaveLength(8);
     fireEvent.click(screen.getByRole("button", { name: "进入" }));
 
@@ -493,8 +492,8 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "进入云盘" }));
-    fireEvent.change(screen.getByLabelText("邀请码"), {
+    fireEvent.click(await screen.findByRole("button", { name: "进入云盘" }));
+    fireEvent.change(await screen.findByLabelText("邀请码"), {
       target: { value: "AAAAAAAA" },
     });
     fireEvent.click(screen.getByRole("button", { name: "进入" }));
@@ -522,8 +521,8 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "进入云盘" }));
-    fireEvent.change(screen.getByLabelText("邀请码"), {
+    fireEvent.click(await screen.findByRole("button", { name: "进入云盘" }));
+    fireEvent.change(await screen.findByLabelText("邀请码"), {
       target: { value: "ABCDEFGH" },
     });
     fireEvent.click(screen.getByRole("button", { name: "进入" }));
@@ -602,7 +601,7 @@ describe("AppRoutes", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "加入新云盘" }));
     expect(await screen.findByText(/还没有已加入的云盘。/)).toBeInTheDocument();
-    expect(screen.getByLabelText("邀请码")).toBeInTheDocument();
+    expect(await screen.findByLabelText("邀请码")).toBeInTheDocument();
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
   });
 
@@ -645,7 +644,7 @@ describe("AppRoutes", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "加入新云盘" }));
-    fireEvent.change(screen.getByLabelText("邀请码"), {
+    fireEvent.change(await screen.findByLabelText("邀请码"), {
       target: { value: "ABCDEFGH" },
     });
     fireEvent.click(screen.getByRole("button", { name: "进入" }));
@@ -711,7 +710,7 @@ describe("AppRoutes", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "加入新云盘" }));
-    fireEvent.change(screen.getByLabelText("邀请码"), {
+    fireEvent.change(await screen.findByLabelText("邀请码"), {
       target: { value: "ABCDEFGH" },
     });
     fireEvent.click(screen.getByRole("button", { name: "进入" }));
@@ -724,7 +723,7 @@ describe("AppRoutes", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("button", { name: "加入新云盘" }));
-    fireEvent.change(screen.getByLabelText("邀请码"), {
+    fireEvent.change(await screen.findByLabelText("邀请码"), {
       target: { value: "ABCDEFGH" },
     });
     expect(screen.getByRole("button", { name: "正在验证…" })).toBeDisabled();
@@ -787,7 +786,7 @@ describe("AppRoutes", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "加入新云盘" }));
-    fireEvent.change(screen.getByLabelText("邀请码"), {
+    fireEvent.change(await screen.findByLabelText("邀请码"), {
       target: { value: "ABCDEFGH" },
     });
     fireEvent.click(screen.getByRole("button", { name: "进入" }));
@@ -1430,6 +1429,7 @@ describe("AppRoutes", () => {
   });
 
   it("requires explicit confirmation before logout discards pending work", async () => {
+    await activateAuthenticatedLocalOwner("user-1");
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "user-1", email: "member@example.test" } },
       isPending: false,
@@ -1467,6 +1467,7 @@ describe("AppRoutes", () => {
   });
 
   it("keeps local data when the server rejects logout", async () => {
+    await activateAuthenticatedLocalOwner("user-1");
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "user-1", email: "member@example.test" } },
       isPending: false,

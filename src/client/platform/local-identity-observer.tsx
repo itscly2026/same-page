@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { OutboxRecoveryCoordinator } from "../annotations/outbox-recovery-coordinator";
-import { authClient } from "../auth/auth-client";
+import { useApplicationIdentity } from "../auth/application-identity";
 import {
   activateAuthenticatedLocalOwner,
   type LocalWorkspaceOwnerKey,
@@ -10,9 +10,25 @@ import { notifyReaderIdentityChange } from "../reader/reader-cache-events";
 import { clearDiagnostics } from "../diagnostics/diagnostics";
 
 export function LocalIdentityObserver() {
-  const session = authClient.useSession();
-  const userId = session.data?.user.id;
-  const readerIdentity = useRef(userId);
+  const identity = useApplicationIdentity();
+  const userId = identity.authenticatedUserId ?? undefined;
+  const refetch = identity.session.refetch;
+  useEffect(() => {
+    let running = false;
+    const reconnect = () => {
+      if (running) return;
+      running = true;
+      void refetch?.().finally(() => { running = false; });
+    };
+    const foreground = () => { if (document.visibilityState === "visible") reconnect(); };
+    window.addEventListener("online", reconnect);
+    document.addEventListener("visibilitychange", foreground);
+    return () => {
+      window.removeEventListener("online", reconnect);
+      document.removeEventListener("visibilitychange", foreground);
+    };
+  }, [refetch]);
+  const readerIdentity = useRef(identity.localUserId);
   const [identityState, setIdentityState] = useState<{
     observedUserId: string | undefined;
     activation: number;
@@ -20,29 +36,27 @@ export function LocalIdentityObserver() {
   }>({ observedUserId: userId, activation: 0, recoveryOwner: null });
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
     if (!userId) return;
     const activation = identityState.activation;
-    void activateAuthenticatedLocalOwner(userId).then((ownerKey) => {
-      if (!active) return;
+    void activateAuthenticatedLocalOwner(userId, controller.signal).then((ownerKey) => {
+      if (controller.signal.aborted) return;
       setIdentityState((current) =>
         current.observedUserId === userId &&
         current.activation === activation
           ? { ...current, recoveryOwner: ownerKey }
           : current,
       );
-    });
-    return () => {
-      active = false;
-    };
+    }).catch(() => { /* Local storage failure must not turn a valid online session into a logout. */ });
+    return () => controller.abort();
   }, [identityState.activation, userId]);
 
   useEffect(() => {
-    if (readerIdentity.current === userId) return;
-    readerIdentity.current = userId;
+    if (readerIdentity.current === identity.localUserId) return;
+    readerIdentity.current = identity.localUserId;
     clearDiagnostics();
     notifyReaderIdentityChange();
-  }, [userId]);
+  }, [identity.localUserId]);
 
   if (identityState.observedUserId !== userId) {
     setIdentityState({

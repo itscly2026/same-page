@@ -42,6 +42,7 @@ export async function clearPrivateLocalDataAfterLogout() {
     "rw",
     [
       localDatabase.system,
+      localDatabase.driveDirectories,
       localDatabase.annotationLayers,
       localDatabase.annotations,
       localDatabase.annotationOutbox,
@@ -51,6 +52,7 @@ export async function clearPrivateLocalDataAfterLogout() {
       localDatabase.offlineScores,
     ],
     async () => {
+      await localDatabase.driveDirectories.where("ownerKey").equals(ownerKey).delete();
       const offlineScores = await localDatabase.offlineScores
         .where("ownerKey")
         .equals(ownerKey)
