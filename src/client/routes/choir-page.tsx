@@ -371,6 +371,7 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
         <InviteCodeDialog
           key={`${choirId}:${userId}`}
           choirId={choirId}
+          choirName={choir.name}
           onClose={() => setInviteManagementOpen(false)}
         />
       ) : null}

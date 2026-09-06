@@ -3292,3 +3292,13 @@ h1 {
 
 .layer-definition-form input { border: 1px solid var(--line); border-radius: .6rem; padding: .6rem .75rem; background: var(--surface); color: var(--ink); }
 .reader-sharing-control input, .reader-layer-toggle input { accent-color: var(--brand); }
+
+.invite-sharing-dialog { display: grid; gap: 14px; }
+.invite-card { display: block; width: 100%; max-width: 300px; height: auto; margin: 0 auto; }
+.invite-share-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.invite-share-actions button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 10px 8px; }
+.invite-manual-code { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border, #e0e6e4); }
+.invite-manual-code p { margin: 0 0 6px; font-size: 12px; color: #657572; }
+.invite-manual-code output { font-family: ui-monospace, monospace; font-size: 20px; letter-spacing: 3px; color: #014653; }
+.invite-sharing-dialog > .drive-management-copy { margin: 0; font-size: 12px; }
+@media (max-width: 380px) { .invite-share-actions { grid-template-columns: 1fr; } }
