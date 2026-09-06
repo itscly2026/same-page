@@ -11,7 +11,7 @@
 | homepage 强制 flex/grid | 删除 CSS 机制断言；保留原宽度、两个 WebKit iPad 预设、200% 文字，以及实际文字/插图阅读顺序、内容裁切 | homepage-responsive |
 | drive-navigation 834/1440 空搜索结果无溢出 | 保留独有 320 极窄空结果；公共 390/834/1194/1440 长文件名、搜索/清空/排序、44px 矩阵由 drive-entry-library 负责 | drive-navigation 保留菜单焦点恢复、滚动上传入口、键盘和空结果交互；drive-entry-library 两引擎完整保留 |
 | auth-methods / reader-status 成功截图 | 默认不写截图；`LAYOUT_CAPTURE_DIR=1` 显式报告模式保留原 artifacts 路径。截图没有差异判定，行为/几何仍每次断言 | 原文件；reader-status 新增每个状态的尺寸测量 |
-| 所有客户端文件加载 React、IndexedDB 和数据库删除 | DOM 无存储清单只加载 DOM cleanup；数据库逻辑只加载 fake IndexedDB + 每用例删除；其余 DOM/数据库测试保持两者。未审计的新文件默认带数据库隔离 | vitest.client.config.ts、src/test/setup{,-database}.ts |
+| 所有客户端文件加载 React、IndexedDB 和数据库删除 | DOM 无存储清单只加载 DOM cleanup；数据库逻辑只加载 fake IndexedDB + 每用例删除；其余 DOM/数据库测试保持单个 hook 先 React cleanup 再删数据库，避免 afterEach 注册顺序导致卸载晚于清库。未审计的新文件默认带数据库隔离 | vitest.client.config.ts、src/test/setup{,-database}.ts |
 | invite-link、session-fetch、loading-performance | 3 文件/6 项迁到 Node，无产品兼容代码、断言删除或 mock 增加 | 同目录 *.node.test.ts；原生 URL/Response/性能记录接口 |
 | 每个迁移文件启动 Wrangler | 同一 applyMigrations 调用内合并 SQL 文件，保留顺序和 PRAGMA；原数据插入/观测点不移动 | verify-score-schema-migration；真实 D1、旧记录、外键、文件名 backfill 幂等检查全部保留 |
 | storage/offline-entry 仅 canvas 可见 | 增加 PDF 本身的深色谱面与浅色底色像素证明，不计批注或 UI 像素；透明、全白、全黑均不通过 | browser-tests/pdf-content.mjs；访客离线进程重启、成员重启、WebKit API 故障仍分别执行 |
@@ -43,3 +43,16 @@ Linux renderer 继续在每个发布产物封存前实际构建和验证。最�
 - 基线完整 visual 46/46，105.43 秒。最终全套及 CI 数据见后续验证记录。
 
 自动化 WebKit API 故障与浏览器重启不等于 iOS PWA 实机断网重启验收。
+
+### 本地完整检查与审查修正
+
+`check:full` 已执行：原生 renderer、PWA、lint/typecheck、19 项范围/门禁、437 项 Node/客户端、95 项 Worker、46 项 visual、迁移与 build/precache 均通过。visual 81.73 秒（同机基线 105.43 秒，单样本不宣称稳定降幅）。smoke 9/11 通过；annotations 与 diagnostics 在多核 macOS 同时启动多个 Vite 优化器时失败，包含 `kill EPERM` 清理错误。原样串行重验两项均通过（21.34 秒），其后的加载预算也通过。
+
+npm 与 CI 现统一使用同一浏览器入口；有状态 smoke 明确串行，visual 仍为 2，并未提高并行度。完整 Linux CI 作为最终全范围证据。本机拆分后的最终客户端 359/46 通过，11.50 秒。审查发现的卸载/数据库删除顺序已由单个 hook 修正；CI 主文档也已同步，两轴复核无未解决发现。
+
+临时错误注入：
+
+1. 令 library 选择漏掉 smoke：`audited library leaves` 回归失败，恢复后通过。
+2. 在真实 storage smoke 离线重开后将 PDF canvas 全部涂白：新增内容断言明确失败；恢复原 helper 后 storage smoke 通过（5.52 秒）。未提交故意错误。
+
+另找到 [34041072554](https://github.com/itscly2026/same-page/actions/runs/34041072554) 的成功 PR 基线，`7e39172` 与实施基线的树完全相同，完整测试范围一致，可用于第二个优化前样本。没有第三个相同树的成功样本，不为补数量重跑旧 CI。

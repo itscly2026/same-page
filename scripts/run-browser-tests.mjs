@@ -18,6 +18,7 @@ const files = group === "all"
 if (!files.length) throw new Error("No browser tests selected");
 const args = ["--test", "--test-reporter=tap"];
 if (suite === "visual") args.push("--test-global-setup=./visual-report/setup.mjs", "--test-concurrency=2");
+else args.push("--test-concurrency=1"); // Stateful workerd fixtures must not compete for Vite dependency optimization.
 console.log(`Browser suite ${suite}/${group}: ${files.join(", ")}`);
 const result = spawnSync(process.execPath, [...args, ...files.map(file => `${directory}/${file}`)], { stdio: "inherit" });
 if (result.error) throw result.error;

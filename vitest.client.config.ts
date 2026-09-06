@@ -26,7 +26,7 @@ export default defineConfig({
       { extends: true, test: { name: "dom", environment: "jsdom", include: domOnly, setupFiles: ["./src/test/setup.ts"] } },
       { extends: true, test: {
         name: "database-dom", environment: "jsdom", include: ["src/client/**/*.test.tsx"], exclude: domOnly,
-        setupFiles: ["./src/test/setup.ts", "./src/test/setup-database.ts"],
+        setupFiles: ["./src/test/setup-database-dom.ts"],
       } },
       { extends: true, test: {
         name: "database-logic", environment: "jsdom", include: ["src/client/**/*.test.ts"],
