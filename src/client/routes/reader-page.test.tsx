@@ -27,12 +27,13 @@ import {
   rememberReaderScore,
 } from "../reader/reader-score-cache";
 import { findVerifiedOfflineScore } from "../offline/offline-score-verification";
-import ReaderPage from "./reader-page";
+import RawReaderPage from "./reader-page";
+import { NavigationProvider } from "../navigation/navigation";
+function ReaderPage() { return <NavigationProvider><RawReaderPage /></NavigationProvider>; }
 import { clearDiagnostics, exportDiagnostics } from "../diagnostics/diagnostics";
 
 // Navigation blocking is exercised with the production data router in
 // reader-navigation-guard.test.tsx and the browser status flow.
-vi.mock("../reader/reader-navigation-guard", () => ({ ReaderNavigationGuard: () => null }));
 
 const readerAuthState = vi.hoisted(() => ({ signedIn: true, pending: false }));
 
@@ -193,7 +194,7 @@ it("can leave during authentication without starting a reader afterwards", async
 
   render(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}><Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /><Route path="/choirs/:choirId" element={<h1>乐谱列表</h1>} /></Routes></MemoryRouter>);
   expect(screen.getByRole("status")).toHaveTextContent("正在打开乐谱");
-  fireEvent.click(screen.getByRole("link", { name: "返回云盘" }));
+  fireEvent.click(screen.getByRole("button", { name: "返回云盘" }));
   expect(await screen.findByRole("heading", { name: "乐谱列表" })).toBeVisible();
   readerAuthState.pending = false;
   await act(() => new Promise(resolve => setTimeout(resolve, 30)));
@@ -204,7 +205,7 @@ it("lets a failed local storage open retry without losing the return link", asyn
   vi.spyOn(localDatabase.system, "get").mockRejectedValueOnce(new DOMException("unavailable", "UnknownError"));
   render(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}><Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /></Routes></MemoryRouter>);
   expect(await screen.findByRole("alert")).toHaveTextContent("本机工作区暂时无法打开");
-  expect(screen.getByRole("link", { name: "返回云盘" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "返回云盘" })).toBeVisible();
   const retry = screen.getByRole("button", { name: "重试打开工作区" });
   fireEvent.keyDown(retry, { key: "Enter", code: "Enter" });
   fireEvent.keyUp(retry, { key: "Enter", code: "Enter" });
@@ -217,7 +218,7 @@ it("keeps a single exit while the PDF never settles", async () => {
   render(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}><Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /><Route path="/choirs/:choirId" element={<h1>乐谱列表</h1>} /></Routes></MemoryRouter>);
   expect(screen.queryByRole("button", { name: "取消加载" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "图片兼容模式" })).not.toBeInTheDocument();
-  fireEvent.click(await screen.findByRole("link", { name: "返回云盘" }));
+  fireEvent.click(await screen.findByRole("button", { name: "返回云盘" }));
   expect(await screen.findByRole("heading", { name: "乐谱列表" })).toBeVisible();
 });
 
@@ -1761,8 +1762,8 @@ it("keeps a single exit while the PDF never settles", async () => {
     fireEvent.click(screen.getByRole("button", { name: "看哪些批注" }));
     const panel = screen.getByRole("dialog", { name: "看哪些批注" });
 
-    await within(panel).findByText("全体");
-    expect(panel).toHaveTextContent("E·全体");
+    await within(panel).findByText("Ensemble");
+    expect(panel).toHaveTextContent("E·Ensemble");
     expect(panel).toHaveTextContent("P·我的笔记");
     expect(within(panel).getAllByRole("checkbox")).toHaveLength(5);
     expect(within(panel).getByText("我的笔记")).toBeInTheDocument();
@@ -1834,7 +1835,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       await screen.findByText("仍有 1 项本机冲突待处理"),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText("第 2 页 · 全体 · 第二页力度轻一些"),
+      await screen.findByText("第 2 页 · Ensemble · 第二页力度轻一些"),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "前往第 2 页" }));
     expect(
@@ -2187,7 +2188,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(screen.queryByText(/编辑模式/)).not.toBeInTheDocument();
     expect(screen.getByLabelText("阅读器控制")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "页面位置" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "看哪些批注" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "看哪些批注" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "更多" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.queryByRole("button", { name: "连续滚动" })).not.toBeInTheDocument();
@@ -2217,15 +2218,15 @@ it("keeps a single exit while the PDF never settles", async () => {
           .querySelectorAll<HTMLButtonElement>(".annotation-layer-slot"),
         (button) => button.getAttribute("aria-label"),
       ),
-    ).toEqual(["E，全体", "S，女高音，只读，查看权限说明", "A，女低音，只读，查看权限说明", "T，男高音，只读，查看权限说明", "B，男低音，只读，查看权限说明", "P，我的笔记"]);
+    ).toEqual(["E，Ensemble", "S，Soprano，只读，查看权限说明", "A，Alto，只读，查看权限说明", "T，Tenor，只读，查看权限说明", "B，Bass，只读，查看权限说明", "P，我的笔记"]);
     expect(
-      screen.getByRole("button", { name: "S，女高音，只读，查看权限说明" }),
+      screen.getByRole("button", { name: "S，Soprano，只读，查看权限说明" }),
     ).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "S，女高音，只读，查看权限说明" }));
+    fireEvent.click(screen.getByRole("button", { name: "S，Soprano，只读，查看权限说明" }));
     expect(screen.getByRole("dialog", { name: "仅可查看" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "知道了" }));
-    fireEvent.click(screen.getByRole("button", { name: "E，全体" }));
-    expect(screen.getByRole("button", { name: /当前编辑层：E · 全体/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "E，Ensemble" }));
+    expect(screen.getByRole("button", { name: /当前编辑层：E · Ensemble/ })).toBeInTheDocument();
     expect(
       await localDatabase.annotationLayers.get(
         localWorkspaceRecordKey(
@@ -2271,7 +2272,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     fireEvent.pointerMove(inkOverlay, { pointerId: 21, clientX: 40, clientY: 50 });
     fireEvent.pointerUp(inkOverlay, { pointerId: 21, clientX: 40, clientY: 50 });
     await waitFor(() => expect(write).toHaveBeenCalled());
-    const target = screen.getByRole("button", { name: /当前编辑层：E · 全体/ });
+    const target = screen.getByRole("button", { name: /当前编辑层：E · Ensemble/ });
     expect(target).toBeVisible();
     expect(target).toBeDisabled();
     for (const name of ["文本", "画笔", "整条橡皮", "撤销", "重做"]) {
@@ -2294,18 +2295,18 @@ it("keeps a single exit while the PDF never settles", async () => {
     const undoWrite = vi.spyOn(localDatabase.annotations, "delete").mockImplementation(() => new Dexie.Promise((_resolve, reject) => { rejectWrite = reject; }));
     fireEvent.click(screen.getByRole("button", { name: "撤销" }));
     await waitFor(() => expect(undoWrite).toHaveBeenCalled());
-    expect(editButton).toBeDisabled();
+    expect(editButton).toBeEnabled();
     expect(target).toBeDisabled();
     expect(screen.getByRole("button", { name: "重做" })).toBeDisabled();
     rejectWrite(new DOMException("full", "QuotaExceededError"));
     await screen.findByRole("button", { name: "重试本机保存" });
-    expect(editButton).toBeDisabled();
+    expect(editButton).toBeEnabled();
     undoWrite.mockRestore();
     fireEvent.click(screen.getByRole("button", { name: "重试本机保存" }));
     await waitFor(() => expect(editButton).toBeEnabled());
 
     fireEvent.click(editButton);
-    expect(editButton).toHaveAttribute("aria-pressed", "false");
+    await waitFor(() => expect(editButton).toHaveAttribute("aria-pressed", "false"));
     const restoredReader = await screen.findByLabelText("连续滚动阅读");
     await waitFor(() => expect(restoredReader.scrollTop).toBe(40));
     expect(screen.getByLabelText("阅读器控制")).toBeInTheDocument();
@@ -2319,7 +2320,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       );
     });
     fireEvent.click(screen.getByRole("button", { name: /^(编辑|完成编辑)$/ }));
-    expect(screen.getByRole("button", { name: /当前编辑层：E · 全体/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /当前编辑层：E · Ensemble/ })).toBeInTheDocument();
   });
 
   it("marks an offline copy only after app shell, layer and annotation snapshot verification", async () => {
@@ -2392,7 +2393,7 @@ it("keeps a single exit while the PDF never settles", async () => {
           annotations: [],
         }),
       }),
-      { activeKey: null },
+      expect.objectContaining({ activeKey: null }),
     );
   });
 

@@ -1,3 +1,4 @@
+import { NavigationProvider } from "./navigation/navigation";
 import { RouteContent } from "./components/route-content";
 import { lazy, useLayoutEffect, useState } from "react";
 import { createBrowserRouter, RouterProvider, Outlet, Route, Routes, useLocation } from "react-router-dom";
@@ -22,12 +23,14 @@ const SharedLayerManagementPage = lazy(
 const SharedLayerGrantsPage = lazy(
   () => import("./routes/shared-layer-grants-page"),
 );
+const LocalStoragePage = lazy(() => import("./routes/local-storage-page"));
 const PrivacyPage = lazy(() => import("./routes/privacy-page"));
 const DiagnosticsPage = lazy(() => import("./diagnostics/diagnostics-page"));
 
 export function AppRoutes() {
   return (
     <>
+      <NavigationProvider>
       <RouteScrollReset />
 
         <Routes>
@@ -36,6 +39,7 @@ export function AppRoutes() {
             <Route path="/user" element={<RouteContent><UserLifecyclePage /></RouteContent>} />
             <Route path="/choirs/:choirId/memberships" element={<RouteContent><MembershipManagementPage /></RouteContent>} />
             <Route path="/login" element={<RouteContent><AuthPage /></RouteContent>} />
+            <Route path="/storage" element={<RouteContent><LocalStoragePage /></RouteContent>} />
             <Route path="/privacy" element={<RouteContent><PrivacyPage /></RouteContent>} />
             <Route path="/diagnostics" element={<RouteContent><DiagnosticsPage /></RouteContent>} />
             <Route path="/choirs/:choirId" element={<RouteContent><ChoirPage /></RouteContent>} />
@@ -57,13 +61,14 @@ export function AppRoutes() {
             element={<RouteContent><ReaderPage /></RouteContent>}
           />
         </Routes>
+      </NavigationProvider>
 
     </>
   );
 }
 
 function PageWithFooter() {
-  return <div className="page-with-footer"><Outlet /><AppFooter /></div>;
+  return <div className="page-with-footer"><Outlet />{useLocation().pathname === "/" && <AppFooter />}</div>;
 }
 
 function RouteScrollReset() {

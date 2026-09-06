@@ -1,3 +1,4 @@
+import { offlineFileFenceKeys } from "../offline/offline-file-fence";
 import type { ChoirSummary } from "../../shared/choirs";
 import type { ScoreSummary } from "../../shared/scores";
 import Dexie, { type EntityTable, type Table, type Transaction } from "dexie";
@@ -329,7 +330,7 @@ export const localDatabase = new SamePageDatabase();
 
 export async function activateVerifiedOfflineScore(
   record: Omit<OfflineScoreRecord, "active" | "verifiedAt"> & { sessionEpoch?: string },
-  expected?: { activeKey: string | null },
+  expected?: { activeKey: string | null; fileFence?: string },
 ) {
   await localDatabase.transaction(
     "rw",
@@ -345,6 +346,10 @@ export async function activateVerifiedOfflineScore(
           guestOwner?.value === record.ownerKey;
       const epoch = (await localDatabase.system.get("local-workspace:epoch"))?.value ?? "";
       if (!ownerIsActive || (record.sessionEpoch !== undefined && record.sessionEpoch !== epoch)) throw new Error("local_workspace_owner_changed");
+      if (expected?.fileFence !== undefined) {
+        const current = JSON.stringify((await localDatabase.system.bulkGet(offlineFileFenceKeys(record))).map(row => row?.value ?? ""));
+        if (current !== expected.fileFence) throw new Error("offline_files_cleared");
+      }
       const existing = await localDatabase.offlineScores
         .where("[ownerKey+choirId+scoreId]")
         .equals([record.ownerKey, record.choirId, record.scoreId])

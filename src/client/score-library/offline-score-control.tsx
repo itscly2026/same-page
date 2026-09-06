@@ -1,7 +1,8 @@
-import { readDisplayPreference } from "../reader/display-preferences";
+import { captureOfflineFileFence } from "../offline/local-files";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Dialog, Heading, Popover, Tooltip, TooltipTrigger } from "react-aria-components";
+import { Button,  Heading, Popover, Tooltip, TooltipTrigger } from "react-aria-components";
+import { Dialog } from "../navigation/overlays";
 import { CircleAlert, Download, HardDriveDownload, LoaderCircle, RefreshCw, HardDrive, Check } from "lucide-react";
 import type { ScoreSummary } from "../../shared/scores";
 import { ACTIVE_LOCAL_OWNER_KEY, guestOwnerSystemKey, localDatabase } from "../platform/local-database";
@@ -34,7 +35,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, disabled = fal
   const inspected = Boolean(workspace && offline?.scopeKey === workspace.scopeKey);
   const record = offline?.scopeKey === workspace?.scopeKey ? offline?.record ?? null : null;
   const invalid = offline?.scopeKey === workspace?.scopeKey && offline?.invalid;
-  const label = offlineScoreLabel(record, score.currentVersion.id, invalid, workspace ? readDisplayPreference(workspace) : undefined);
+  const label = offlineScoreLabel(record, score.currentVersion.id, invalid, undefined);
   const prepare = async () => {
     if (running.current) return;
     running.current = true;
@@ -46,9 +47,10 @@ export function OfflineScoreControl({ score, authenticatedUserId, disabled = fal
         setAttempt({ identity, phase: "failed", message: "请先登录，再准备新的离线副本。现有副本仍可使用。" });
         return;
       }
+      const fileFence = await captureOfflineFileFence(target);
       const { prepareOfflineScore } = await import("../offline/offline-score");
       if (currentIdentity.current !== identity) return;
-      await prepareOfflineScore(target, score);
+      await prepareOfflineScore(target, score, "pdf", undefined, undefined, fileFence);
       if (currentIdentity.current === identity) setAttempt({ identity, phase: "ready" });
     } catch {
       if (currentIdentity.current === identity) setAttempt({ identity, phase: "failed" });
@@ -59,10 +61,9 @@ export function OfflineScoreControl({ score, authenticatedUserId, disabled = fal
   const downloading = phase === "downloading";
   const failed = phase === "failed";
   const stale = Boolean(record && record.versionId !== score.currentVersion.id);
-  const modeMissing = workspace && record && (record.imageManifest ? "images" : "pdf") !== readDisplayPreference(workspace);
-  const needsDownload = !record || invalid || stale || failed || modeMissing;
-  const state = downloading ? "downloading" : failed || invalid ? "error" : stale ? "stale" : modeMissing ? "missing" : record ? "ready" : "missing";
-  const description = downloading ? "正在下载并校验…" : failed ? attempt?.message ?? (inspected ? offlineDownloadFailure(record, score.currentVersion.id, invalid, workspace ? readDisplayPreference(workspace) : undefined) : "离线下载未完成，尚未确认本机副本，请重试校验。") : label;
+  const needsDownload = !record || invalid || stale || failed;
+  const state = downloading ? "downloading" : failed || invalid ? "error" : stale ? "stale" : record ? "ready" : "missing";
+  const description = downloading ? "正在下载并校验…" : failed ? attempt?.message ?? (inspected ? offlineDownloadFailure(record, score.currentVersion.id, invalid, undefined) : "离线下载未完成，尚未确认本机副本，请重试校验。") : label;
   const actionLabel = failed ? "重试下载" : stale ? "下载新版离线副本" : "下载离线副本";
   const Icon = state === "downloading" ? LoaderCircle : state === "error" ? CircleAlert : state === "stale" ? RefreshCw : state === "ready" ? HardDrive : Download;
 

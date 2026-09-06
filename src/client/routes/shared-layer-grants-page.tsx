@@ -1,8 +1,9 @@
+import { BackButton } from "../navigation/back-button";
 import { SharedLayerDetailsForm } from "../settings/shared-layer-details-form";
 import { sharedLayerLabel } from "../../shared/annotations";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
 import {
   sharedLayerSlotSchema,
@@ -105,9 +106,9 @@ function SharedLayerGrants({ choirId, slotParam }: { choirId: string; slotParam:
   return (
     <div className="app-page">
       <AppHeader actions={(
-        <Link className="header-action" to={`/choirs/${choirId}/shared-layers`}>
+        <BackButton className="header-action" to={`/choirs/${choirId}/shared-layers`}>
           返回共享层管理
-        </Link>
+        </BackButton>
       )} />
       <main className="page-shell settings-page settings-ux">
         <header className="settings-heading">

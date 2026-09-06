@@ -1,6 +1,6 @@
+import { captureOfflineFileFence } from "./local-files";
 import { imageManifestSchema, pageImagePath, scoreImagesPath, type ScoreDisplayMode, type ImageManifest } from "../../shared/score-images";
 import { prepareImageManifest } from "../reader/image-document";
-import { readDisplayPreference } from "../reader/display-preferences";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import type { ScoreSummary } from "../../shared/scores";
 import { captureOfflineAnnotationSnapshot, ensureOfflineAppShell } from "../annotations/offline-snapshot";
@@ -13,8 +13,9 @@ import { findVerifiedOfflineScore, sha256Hex, verifyOfflineScore } from "./offli
 // Both entry points use the same verified replacement path. A failed attempt never
 // activates the new PDF or removes the previous copy or local drafts. Confirmed
 // publication revocations still scrub inaccessible notes, even on failure.
-export async function prepareOfflineScore(workspace: LocalWorkspace, score: ScoreSummary, mode: ScoreDisplayMode = readDisplayPreference(workspace), signal = new AbortController().signal, pdfData?: Uint8Array) {
+export async function prepareOfflineScore(workspace: LocalWorkspace, score: ScoreSummary, mode: ScoreDisplayMode = "pdf", signal = new AbortController().signal, pdfData?: Uint8Array, fileFence?: string) {
   signal.throwIfAborted();
+  fileFence ??= await captureOfflineFileFence(workspace);
   workspace = await captureLocalWorkspaceSession(workspace);
   if (workspace.choirId !== score.choirId || workspace.scoreId !== score.id) throw new Error("offline_score_scope_mismatch");
   const previous = await findActiveOfflineScore(workspace.ownerKey, workspace.choirId, workspace.scoreId);
@@ -68,7 +69,7 @@ export async function prepareOfflineScore(workspace: LocalWorkspace, score: Scor
   };
   if (!(await verifyOfflineScore({ ...record, active: 1, verifiedAt: Date.now() }))) throw new Error("offline_annotation_snapshot_incomplete");
   signal.throwIfAborted();
-  await activateVerifiedOfflineScore(record, { activeKey: previous?.key ?? null });
+  await activateVerifiedOfflineScore(record, { activeKey: previous?.key ?? null, fileFence });
   const verified = await findVerifiedOfflineScore(workspace);
   if (!verified) throw new Error("offline_copy_unavailable");
   return verified;

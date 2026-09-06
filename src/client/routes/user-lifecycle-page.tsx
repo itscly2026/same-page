@@ -1,3 +1,4 @@
+import { BackButton } from "../navigation/back-button";
 import { lifecycleError } from "../auth/lifecycle-error";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "react-aria-components";
@@ -84,7 +85,7 @@ export default function UserLifecyclePage() {
     </> : <Link className="secondary-link" to="/login">登录或恢复用户</Link>}
     {message ? <p role="status">{message}</p> : null}
     <Button className="secondary-button" isDisabled={busy} onPress={() => void reload()}>重新读取状态</Button>
-    <Link className="secondary-link" to="/">返回首页</Link>
+    <BackButton className="secondary-link" to="/">返回首页</BackButton>
   </main></div>;
 }
 function methodName(method: string) { return method === "credential" ? "邮箱与密码" : method === "google" ? "Google" : "微信"; }

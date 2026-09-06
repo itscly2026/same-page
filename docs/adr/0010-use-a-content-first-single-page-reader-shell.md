@@ -4,4 +4,6 @@ Same Page will use an iPad-first reader in which the score is the sole primary c
 
 Entering or leaving editing preserves the current page's scale and viewport position. In continuous reading, editing hides and disables neighbouring pages while retaining the existing page geometry and scroll container; rebuilding a fitted single-page layout would lose the user's place. Finishing reveals the same reading layout without a scale conversion or scroll restoration.
 
-A user-triggered system-fullscreen control is available in the reading options, with unsupported/rejected requests handled without interrupting reading. The background fills the viewport but the score fitting area and controls respect all four device safe areas. Browser and installed-app policies retain authority over system status bars; fullscreen support is not an installation or reading requirement.
+Reading is immersive by hiding application controls; normal options do not expose system fullscreen. The background fills the viewport, while score fitting and controls respect all four device safe areas. Browser and installed-app policies retain authority over system status bars.
+
+Module loading, local identity preparation, document loading and first paint share the content-first paper shell. Retry and diagnostics appear only on failure. Returning first closes the top overlay, then commits composing text and awaits durable local editing before leaving editing; an explicit internal link continues to its destination after these steps. Cloud synchronization does not hold navigation.

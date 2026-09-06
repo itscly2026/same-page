@@ -1,4 +1,5 @@
-import { Button, Dialog, DialogTrigger, Heading, Modal, ModalOverlay } from "react-aria-components";
+import { Button,  DialogTrigger, Heading, Modal, ModalOverlay } from "react-aria-components";
+import { Dialog } from "../navigation/overlays";
 import type { DiagnosticReader } from "../../shared/diagnostic-report";
 import { DiagnosticReportForm } from "./diagnostic-report-form";
 

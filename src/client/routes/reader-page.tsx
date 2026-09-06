@@ -1,5 +1,6 @@
-import { useReaderFullscreen } from "../reader/use-reader-fullscreen";
-import { ReaderNavigationGuard } from "../reader/reader-navigation-guard";
+import { BackButton } from "../navigation/back-button";
+import { ReaderLoading } from "../navigation/reader-loading";
+import { useAppNavigation, useExitLayer } from "../navigation/navigation-context";
 import { DisplayRecovery } from "../reader/display-recovery";
 import type { ScoreDocument } from "../reader/image-document";
 import "../reader/reader-ux.css";
@@ -7,7 +8,7 @@ import { useReaderSession } from "../reader/use-reader-session";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   ArrowLeft, Download, Ellipsis, Layers, Maximize2, Minus, Pencil, Plus, BookOpen,
-  RefreshCw, Rows3, Expand, Shrink, Check,
+  RefreshCw, Rows3, Check,
 } from "lucide-react";
 import {
   useEffect,
@@ -18,8 +19,9 @@ import {
   Suspense,
 } from "react";
 import {
-  Button, Dialog, Modal, ModalOverlay, Popover,
+  Button,  Modal, ModalOverlay, Popover,
 } from "react-aria-components";
+import { Dialog } from "../navigation/overlays";
 import { Link, useParams } from "react-router-dom";
 
 import { sharedLayerDisplayName } from "../../shared/annotations";
@@ -108,7 +110,7 @@ function ReaderPageContent() {
     [resolvedWorkspace?.scopeKey],
     false,
   );
-  const fullscreen = useReaderFullscreen();
+  const navigation = useAppNavigation();
   const [zoom, setZoom] = useState(1);
   const [editingEditor, setEditingEditor] = useState<AnnotationEditor | null>(null);
   const [annotationInteraction, setAnnotationInteraction] =
@@ -304,33 +306,17 @@ function ReaderPageContent() {
   };
 
   const finishEditing = async () => {
-    if (!workspace || !editor?.finish()) return;
+    if (!workspace || !editor || !await editor.prepareFinish()) return false;
+    try { await queueScoreDrafts(workspace); }
+    catch { setSyncOutcome("failed"); return false; }
+    if (!editor.finish()) return false;
     setEditingEditor(null);
-    let queued: number;
-    try { queued = await queueScoreDrafts(workspace); }
-    catch { setSyncOutcome("failed"); return; }
-    if (queued === 0) {
-      setSyncOutcome("none");
-      return;
-    }
-    if (!navigator.onLine || !identity.authenticatedUserId) {
-      setSyncOutcome("local-saved");
-      return;
-    }
-    if (cloudState !== "active") {
-      setSyncOutcome("local-saved");
-      return;
-    }
-    setSyncing(true);
-    try {
-      await syncAnnotations(workspace, { pull: false });
-      setSyncOutcome("synced");
-    } catch {
-      setSyncOutcome("local-saved");
-    } finally {
-      setSyncing(false);
-    }
+    setSyncOutcome("local-saved");
+    requestOutboxRecovery();
+    return true;
   };
+  useExitLayer(editing, "editing", finishEditing);
+  useExitLayer(readerPanel === "pages", "overlay", () => { setReaderPanel(null); return true; });
 
   const manualSync = async () => {
     if (!workspace) return;
@@ -391,28 +377,20 @@ function ReaderPageContent() {
   };
   const diagnosticDialog = <DiagnosticReportDialog reader={diagnosticReader} />;
 
-  const loadingScreen = <main className="reader-loading" aria-label="正在加载乐谱">
-    <Link className="reader-loading__back icon-button" to={`/choirs/${choirId}`} aria-label="返回云盘"><ArrowLeft size={22} aria-hidden="true" /></Link>
-    <div className="reader-loading__paper" aria-hidden="true" />
-    <div className="reader-loading__label" role="status">{score && <strong>{score.fileName}</strong>}<span>正在打开乐谱…</span></div>
-  </main>;
+  const loadingScreen = <ReaderLoading choirId={choirId} fileName={score?.fileName} />;
 
   if (!workspace) {
     if (!workspaceError) return loadingScreen;
     return <main className="page-shell compact-page">
       <h1>无法打开</h1>
       <p role="alert">{workspaceError}</p>
-      <Link className="primary-link" to={`/choirs/${choirId}`}>返回云盘</Link>
+      <BackButton className="primary-link" to={`/choirs/${choirId}`}>返回云盘</BackButton>
       <Button className="secondary-button" onPress={() => { setWorkspaceError(null); setWorkspaceAttempt(value => value + 1); }}>重试打开工作区</Button>
       <details><summary>更多帮助</summary>{diagnosticDialog}</details>
     </main>;
   }
 
-  const displayChoices = <div className="reader-display-choices" aria-label="谱面显示方式">
-    <Button isDisabled={annotationInteraction === "composing-text" || persistence !== "idle"} className="secondary-button" aria-pressed={reader.snapshot.mode === "pdf"} onPress={() => reader.selectMode("pdf")}>PDF 阅读</Button>
-    <Button isDisabled={annotationInteraction === "composing-text" || persistence !== "idle"} className="secondary-button" aria-pressed={reader.snapshot.mode === "images"} onPress={() => reader.selectMode("images")}>图片兼容模式</Button>
-    {reader.snapshot.modeMessage && <p role="status">{reader.snapshot.modeMessage}</p>}
-  </div>;
+  const displayChoices = <Button className="secondary-button" onPress={reader.retry}>重试 PDF 阅读</Button>;
   const loadError = reader.snapshot.error;
   if (loadError) {
     return (
@@ -503,12 +481,7 @@ function ReaderPageContent() {
         if (!editing) reader.recoverDisplay(reason);
       },
     }}>
-    <main className="reader-shell" data-chrome-visible={chromeVisible || undefined}
-      onClickCapture={event => {
-        // All in-reader navigation follows the editing lock, including recovery links.
-        if (editing && event.target instanceof Element && event.target.closest("a")) event.preventDefault();
-      }}>
-      <ReaderNavigationGuard editing={editing} />
+    <main className="reader-shell" data-chrome-visible={chromeVisible || undefined}>
       <DiagnosticReportModal
         reader={diagnosticReader}
         isOpen={diagnosticOpen}
@@ -524,32 +497,16 @@ function ReaderPageContent() {
           乐谱已移入回收站。本机离线副本和未同步批注仍保留，恢复后可继续同步。
         </aside>
       ) : null}
-      {visibleDisplay !== document || failedDisplay === document ? <div className="reader-display-recovery" role="status">
-        <span>{failedDisplay === document ? "页面显示失败，可重试本页或切换显示方式。" : "正在显示首屏…"}</span>
-        <Link className="primary-link" aria-disabled={editing || undefined} to={`/choirs/${choirId}`} onClick={event => { if (editing) event.preventDefault(); }}>返回云盘</Link>
-        {editing && <span>请先完成或取消当前编辑，再返回云盘。</span>}
-        {failedDisplay === document && <Button isDisabled={editing} onPress={reader.retry}>重新加载谱面</Button>}
-        {failedDisplay === document && diagnosticDialog}
-        {displayChoices}
+      {visibleDisplay !== document && failedDisplay !== document ? <ReaderLoading choirId={choirId} fileName={score.fileName} /> : null}
+      {failedDisplay === document ? <div className="reader-display-recovery" role="alert">
+        <span>页面显示失败，本机草稿仍保留。</span>{displayChoices}{diagnosticDialog}
       </div> : null}
       {reader.snapshot.modeMessage ? <p className="reader-display-notice" role="status">{reader.snapshot.modeMessage}</p> : null}
       {chromeVisible ? (
       <header className="reader-chrome" aria-label="阅读器控制">
-          <Link
-            aria-label="返回云盘"
-            aria-disabled={editing || undefined}
-            className="reader-chrome__back reader-icon-button"
-            to={`/choirs/${choirId}`}
-            onClick={(event) => {
-              if (editing) {
-                event.preventDefault();
-                return;
-              }
-              startLoadingJourney("exit-score", "warm");
-            }}
-          >
+          <Button aria-label="返回云盘" className="reader-chrome__back reader-icon-button" onPress={() => { startLoadingJourney("exit-score", "warm"); navigation.back(`/choirs/${choirId}`); }}>
             <ArrowLeft aria-hidden="true" size={21} />
-          </Link>
+          </Button>
           <strong className="reader-chrome__title">{readerTitle}</strong>
           <div className="reader-chrome__actions-stack">
             <div className="reader-chrome__actions">
@@ -563,8 +520,7 @@ function ReaderPageContent() {
                 isDisabled={
                   editAvailability === "preparing" ||
                   editAvailability === "read-only" ||
-                  editAvailability === "trashed" ||
-                  (editing && (annotationInteraction === "composing-text" || persistence !== "idle"))
+                  editAvailability === "trashed"
                 }
                 onPress={() => editing ? void finishEditing() : requestEditing()}
               >
@@ -574,8 +530,7 @@ function ReaderPageContent() {
                 aria-label="看哪些批注"
                 aria-expanded={readerPanel === "layers"}
                 className="reader-icon-button"
-                isDisabled={editing}
-                onPress={() => openReaderPanel("layers")}
+                onPress={() => { if (editing) navigation.afterEditing(() => openReaderPanel("layers")); else openReaderPanel("layers"); }}
               >
                 <Layers aria-hidden="true" size={21} />
               </Button>
@@ -624,13 +579,6 @@ function ReaderPageContent() {
               <IdentityNotice identity={identity} />
               <header className="reader-menu-heading"><strong>阅读选项</strong><Button aria-label="关闭更多阅读选项" onPress={() => setMoreOpen(false)}>关闭</Button></header>
               {!editing && <>
-              <section aria-label="全屏显示"><h2>全屏显示</h2>
-                <Button isDisabled={fullscreen.pending} onPress={() => void fullscreen.toggle()}>
-                  {fullscreen.active ? <Shrink aria-hidden="true" size={18} /> : <Expand aria-hidden="true" size={18} />}
-                  {fullscreen.active ? "退出全屏" : "进入全屏"}
-                </Button>
-                {fullscreen.message && <p role="status">{fullscreen.message}</p>}
-              </section>
               <section aria-label="页面布局与缩放"><h2>页面布局与缩放</h2>
               <div className="segmented-control" aria-label="页面布局">
                 <Button
@@ -668,13 +616,7 @@ function ReaderPageContent() {
                 </Button>
               </div>
               </section>
-              <section aria-label="谱面显示方式"><h2>谱面显示方式</h2>
-              {displayChoices}
-              <details className="reader-display-defaults"><summary>本机显示偏好</summary>
-              <Button onPress={() => reader.setDefaultMode(reader.snapshot.mode)}>本机默认使用当前显示方式</Button>
-              <Button onPress={reader.resetMode}>本谱跟随本机默认</Button>
-              <Button onPress={() => reader.setDefaultMode(null)}>恢复本机默认 PDF 阅读</Button>
-              </details>
+              <section aria-label="原文件"><h2>原文件</h2>
               <a href={`/api/choirs/${encodeURIComponent(choirId)}/scores/${encodeURIComponent(scoreId)}/versions/${encodeURIComponent(score.currentVersion.id)}/pdf`} download>下载原 PDF</a>
               </section>
               <section aria-label="本机离线副本"><h2>本机离线副本 · {reader.snapshot.mode === "pdf" ? "PDF" : "图片"}</h2>

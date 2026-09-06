@@ -34,11 +34,8 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     const base = `${fixture.origin}/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/versions/${fixture.versionId}/images`;
     await page.goto(fixture.origin);
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
+    await context.route("**/assets/pdf-*.js", route => route.fulfill({ contentType: "application/javascript", body: 'throw new ReferenceError("Iterator unavailable in test engine");' }));
     await page.goto(`${fixture.origin}/choirs/${fixture.choirId}/scores/${fixture.scoreId}`);
-    await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
-    await page.locator(".page-reader__viewport").click({ position: { x: 510, y: 300 } });
-    await page.getByRole("button", { name: "更多", exact: true }).click();
-    await page.getByRole("button", { name: "图片兼容模式", exact: true }).click();
     let conversion;
     await expect.poll(async () => {
       conversion = await (await context.request.get(base)).json();
@@ -51,7 +48,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     // preparation and painting; an existing canvas may still be the old PDF.
     await expect(page.locator(".reader-display-notice")).toHaveCount(0, { timeout: 30_000 });
     await expect(page.locator(".reader-display-recovery")).toHaveCount(0, { timeout: 30_000 });
-    await expect(page.getByRole("button", { name: "图片兼容模式", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".reader-shell")).toBeVisible();
     await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
     if (!await page.getByRole("button", { name: "更多", exact: true }).isVisible()) await page.locator(".page-reader__viewport").click({ position: { x: 510, y: 300 } });
     if (!await page.getByRole("dialog", { name: "更多阅读选项" }).isVisible()) await page.getByRole("button", { name: "更多", exact: true }).click();
@@ -80,8 +77,6 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     await expect(page.locator('.page-reader__sheet[data-page-turn-current]')).toHaveAttribute("data-page-number", "2");
     await page.locator(".page-reader__viewport").click({ position: { x: 510, y: 300 } });
     await page.getByRole("button", { name: "更多", exact: true }).click();
-    await page.getByRole("button", { name: "PDF 阅读", exact: true }).click();
-    await expect(page.getByRole("status").filter({ hasText: "本机没有PDF离线副本" }).first()).toBeVisible();
     await page.getByRole("button", { name: "更多", exact: true }).click();
     await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
     await page.getByRole("button", { name: "文本", exact: true }).click();
@@ -101,7 +96,8 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
       await page.getByRole("button", { name: "立即同步", exact: true }).click();
       const annotations = `${fixture.origin}/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/annotations`;
       await expect.poll(async () => (await (await context.request.get(annotations)).json()).objects.some(o => o.payload?.text === "图片离线批注")).toBe(true);
-      await page.getByRole("button", { name: "PDF 阅读", exact: true }).click();
+      await page.reload();
+      await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
       await expect(page.locator('.page-reader__sheet[data-page-turn-current]')).toHaveAttribute("data-page-number", "2");
       await expect(page.getByText("图片离线批注", { exact: true })).toBeVisible();
     }

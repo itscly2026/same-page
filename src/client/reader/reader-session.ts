@@ -1,3 +1,5 @@
+import { liveQuery } from "dexie";
+import { captureOfflineFileFence } from "../offline/local-files";
 import { DiagnosticResponseError, diagnosticFetch, parseDiagnosticResponse, pdfFailureCategory, pdfFailureReason, pdfEngineVersion, recordFailure } from "../diagnostics/diagnostics";
 import { readerScoreBootstrapSchema, type ScoreSummary } from "../../shared/scores";
 import { restoreOfflineAnnotationSnapshot } from "../annotations/annotation-state";
@@ -9,7 +11,6 @@ import { markLoadingJourneyMilestone } from "../performance/loading-performance"
 import { acquireReaderDocument, confirmReaderDocumentVersion, invalidateReaderDocument, ReaderDocumentVersionMismatchError, type ReaderDocumentLease } from "./reader-document-cache";
 import { peekReaderScore, rememberReaderScore, forgetReaderScore } from "./reader-score-cache";
 import { ImageDocument, prepareImageManifest, type ScoreDocument } from "./image-document";
-import { readDisplayPreference, writeDisplayPreference } from "./display-preferences";
 import { scoreImagesPath, type ScoreDisplayMode } from "../../shared/score-images";
 
 type CloudLookup = { state: "active"; score: ScoreSummary } | { state: "trashed" | "permission-denied" | "missing" | "network-unavailable" | "service-unavailable" };
@@ -66,7 +67,6 @@ export class ReaderSession {
     this.retained = null;
     this.displayPrepared = true;
     this.pdfFailed = false;
-    writeDisplayPreference(this.workspace, previous.mode, "score");
     this.publish({ document: previous.document, mode: previous.mode, status: "ready", error: null, modeMessage: "显示切换未完成，已保留原谱面。可在更多中重试显示方式。" });
     return true;
   }
@@ -84,12 +84,17 @@ export class ReaderSession {
   private offlineAttempts = new Set<string>();
   private downloadAbort: AbortController | null = null;
   private readonly identity: string;
+  private fileFence: Promise<string>;
+  private filesCleared = false;
+  private fileWatcher?: { unsubscribe(): void };
 
   constructor(readonly workspace: LocalWorkspace, private authenticatedUserId: string | null) {
+    this.fileFence = captureOfflineFileFence(workspace);
+    void this.fileFence.catch(() => undefined);
     this.identity = workspace.ownerKey.startsWith("user:") ? workspace.ownerKey.slice(5) : "guest";
     const score = peekReaderScore(this.identity, workspace.choirId, workspace.scoreId);
     this.confirmedVersion = score?.currentVersion.id ?? null;
-    this.state = { mode: readDisplayPreference(workspace), modeMessage: null, score, document: null, offline: null, cloudState: "checking", capability: "preparing", status: "loading", error: null, downloading: false, downloadMessage: null };
+    this.state = { mode: "pdf", modeMessage: null, score, document: null, offline: null, cloudState: "checking", capability: "preparing", status: "loading", error: null, downloading: false, downloadMessage: null };
   }
   setAuthenticatedUser = (userId: string | null) => {
     if (this.authenticatedUserId === userId) return;
@@ -111,6 +116,14 @@ export class ReaderSession {
   open() {
     if (this.started || this.disposed) return;
     this.started = true;
+    this.fileWatcher = liveQuery(() => captureOfflineFileFence(this.workspace)).subscribe({ next: current => {
+      void this.fileFence.then(initial => {
+        if (current === initial || this.disposed) return;
+        this.filesCleared = true;
+        this.downloadAbort?.abort();
+        this.publish({ offline: null, downloadMessage: "本机谱面文件已清理。当前谱面可继续阅读，再次打开时可重新下载。" });
+      }).catch(() => undefined);
+    }, error: () => undefined });
     this.armDeadline();
     this.publish({});
     // Give a verified local copy first choice without letting slow local storage
@@ -124,6 +137,7 @@ export class ReaderSession {
       this.publish({ offline });
       this.localSettled = true;
       if (offline) {
+        if (!navigator.onLine && offline.imageManifest) this.publish({ mode: "images" });
         if (this.localMatches() && (!this.state.document || this.state.cloudState !== "active")) await this.openOffline(offline);
         await restoreOfflineAnnotationSnapshot(this.workspace, offline).catch(() => undefined);
         if (!await this.current()) return;
@@ -260,7 +274,7 @@ export class ReaderSession {
         this.openSource({ kind: "cloud", versionId: error.expectedVersionId });
         return;
       }
-      if (error instanceof Error && error.name === "PdfEngineUnavailableError" && this.recoverDisplay(error)) return;
+      if (this.recoverDisplay(error)) return;
       if (this.restoreDisplay()) return;
       this.pdfFailed = true;
       this.resolveFailure();
@@ -301,7 +315,7 @@ export class ReaderSession {
     return !this.workspace.ownerKey.startsWith("user:") || this.workspace.ownerKey === `user:${this.authenticatedUserId}`;
   }
   private prepareAutomaticOfflineCopy() {
-    if (!this.canPrepareOffline() || !this.started || !this.localSettled || this.state.cloudState !== "active" ||
+    if (this.filesCleared || !this.canPrepareOffline() || !this.started || !this.localSettled || this.state.cloudState !== "active" ||
         !this.displayPrepared || !navigator.onLine || this.disposed || this.state.downloading || this.localMatches()) return;
     const key = JSON.stringify([this.confirmedVersion, this.state.mode]);
     if (this.offlineAttempts.has(key)) return;
@@ -309,7 +323,7 @@ export class ReaderSession {
     void this.download();
   }
   download = async () => {
-    if (!this.canPrepareOffline() || this.disposed || !this.state.score || this.state.downloading || this.state.cloudState !== "active") return;
+    if (this.filesCleared || !this.canPrepareOffline() || this.disposed || !this.state.score || this.state.downloading || this.state.cloudState !== "active") return;
     const mode = this.state.mode;
     const score = this.state.score;
     this.offlineAttempts.add(JSON.stringify([score.currentVersion.id, mode]));
@@ -324,7 +338,7 @@ export class ReaderSession {
       const pdfData = mode === "pdf" && this.displayPrepared && this.source?.versionId === score.currentVersion.id && document && "getData" in document
         ? await document.getData() : undefined;
       signal.throwIfAborted();
-      const offline = await prepareOfflineScore(this.workspace, score, mode, signal, pdfData);
+      const offline = await prepareOfflineScore(this.workspace, score, mode, signal, pdfData, await this.fileFence);
       if (!await this.current()) return;
       const current = this.state.mode === mode && this.state.score?.currentVersion.id === score.currentVersion.id;
       this.publish({ offline, downloadMessage: current
@@ -342,17 +356,15 @@ export class ReaderSession {
   };
   recoverDisplay = (error: unknown) => {
     if (!this.disposed && this.restoreDisplay()) return true;
-    if (this.disposed || this.state.mode !== "pdf" || this.automaticRecoveryUsed || !navigator.onLine || pdfFailureCategory(error) !== "internal" || (error instanceof Error && error.name === "TimeoutError")) return false;
+    if (this.disposed || this.state.mode !== "pdf" || this.automaticRecoveryUsed || !navigator.onLine || !isRecoverablePdfFailure(error)) return false;
     this.automaticRecoveryUsed = true;
-    if (!this.changeMode("images", false)) return false;
+    if (!this.changeMode("images")) return false;
     this.publish({ modeMessage: "PDF 显示失败，已尝试图片兼容模式。你仍可切回 PDF 阅读。" });
     return true;
   };
-  selectMode = (mode: ScoreDisplayMode) => { this.changeMode(mode, true); };
-  private changeMode(mode: ScoreDisplayMode, persist: boolean) {
+  private changeMode(mode: ScoreDisplayMode) {
     if (this.disposed) return false;
     if (mode === this.state.mode) {
-      if (persist) writeDisplayPreference(this.workspace, mode, "score");
       return false;
     }
     if ((!navigator.onLine || this.lookup?.state === "network-unavailable") && (!this.state.offline || (this.state.offline.imageManifest ? "images" : "pdf") !== mode)) {
@@ -362,7 +374,6 @@ export class ReaderSession {
     this.retainDisplay();
     this.downloadAbort?.abort();
     this.displayPrepared = false;
-    if (persist) writeDisplayPreference(this.workspace, mode, "score");
     this.displayAbort.abort();
     this.generation++;
     this.lease?.release();
@@ -377,11 +388,6 @@ export class ReaderSession {
     this.prepareAutomaticOfflineCopy();
     return true;
   }
-  setDefaultMode = (mode: ScoreDisplayMode | null) => writeDisplayPreference(this.workspace, mode, "default");
-  resetMode = () => {
-    writeDisplayPreference(this.workspace, null, "score");
-    this.changeMode(readDisplayPreference(this.workspace), false);
-  };
   cancel = () => {
     this.publish({ status: "error", error: "加载已取消，本机草稿仍然保留。" });
     invalidateReaderDocument({ ...this.workspace });
@@ -389,6 +395,7 @@ export class ReaderSession {
   };
   dispose() {
     this.disposed = true;
+    this.fileWatcher?.unsubscribe();
     if (this.deadline) clearTimeout(this.deadline);
     if (this.localPriorityTimer) clearTimeout(this.localPriorityTimer);
     this.abort.abort();
@@ -417,4 +424,8 @@ function failureMessage(state: Exclude<CloudLookup["state"], "active">) {
 }
 function scoreFromOffline(record: OfflineScoreRecord): ScoreSummary {
   return { id: record.scoreId, choirId: record.choirId, fileName: record.fileName, updatedAt: record.verifiedAt, currentVersion: { id: record.versionId, versionNumber: 1, sizeBytes: record.blob.size, sha256: record.imageManifest?.sourceSha256 ?? record.sha256, etag: "offline", pageCount: record.pageCount, createdAt: record.verifiedAt } };
+}
+
+export function isRecoverablePdfFailure(error: unknown) {
+  return pdfFailureCategory(error) !== "network" && error instanceof Error && ["PdfEngineUnavailableError", "InvalidPDFException", "FormatError", "UnknownErrorException", "PdfPageRenderError"].includes(error.name);
 }

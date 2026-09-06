@@ -153,7 +153,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     const beforeEditing = writes.length;
     await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
     await page.getByRole("button", { name: /当前编辑层/ }).click();
-    await page.getByRole("button", { name: "S，女高音，只读，查看权限说明" }).click();
+    await page.getByRole("button", { name: "S，Soprano，只读，查看权限说明" }).click();
     await page.getByRole("dialog", { name: "仅可查看" }).waitFor();
     await capture(page, `${engineName}-permission`);
     await page.getByRole("button", { name: "知道了" }).click();

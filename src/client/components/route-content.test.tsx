@@ -10,7 +10,7 @@ it("keeps route-specific navigation reachable while preferences load", () => {
   expect(screen.getByRole("heading", { name: "阅读偏好" })).toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("正在加载阅读偏好");
   expect(screen.getByRole("link", { name: "返回云盘" })).toHaveAttribute("href", "/choirs/drive");
-  expect(screen.getByRole("button", { name: "重新加载页面" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "重新加载页面" })).not.toBeInTheDocument();
   expect(screen.queryByText("正在打开乐谱…")).not.toBeInTheDocument();
 });
 
@@ -23,4 +23,13 @@ it("offers exit and retry when the route module rejects", async () => {
     expect(screen.getByRole("link", { name: "返回云盘" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重新加载页面" })).toBeInTheDocument();
   } finally { error.mockRestore(); }
+});
+
+it("shows only the content-first reader shell while the module loads", () => {
+  const Pending = lazy(() => new Promise<{ default: () => null }>(() => {}));
+  render(<MemoryRouter initialEntries={["/choirs/drive/scores/score"]}><RouteContent><Pending /></RouteContent></MemoryRouter>);
+  expect(screen.getByRole("status")).toHaveTextContent("正在打开乐谱");
+  expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+  expect(screen.queryByText("重新加载页面")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "返回云盘" })).toBeInTheDocument();
 });

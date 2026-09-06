@@ -1,3 +1,4 @@
+import { BackButton } from "../navigation/back-button";
 import { ScoreLink } from "../score-library/score-link";
 import { useNetworkStatus } from "../platform/use-network-status";
 import { DriveSettingsDialog } from "../score-library/drive-settings-dialog";
@@ -13,12 +14,13 @@ import {
   Form,
   Input,
   Label,
-  Menu,
+
   MenuItem,
   MenuTrigger,
   Popover,
   TextField,
 } from "react-aria-components";
+import { Menu } from "../navigation/overlays";
 import { Link, useParams } from "react-router-dom";
 
 import { isInternalAuthEmail } from "../../shared/auth";
@@ -181,7 +183,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           <p className="eyebrow">云盘</p>
           <h1>无法访问这个云盘</h1>
           <p className="hero__copy">请返回首页输入当前邀请码，或使用有成员关系的邮箱登录。</p>
-          <Link className="primary-link" to="/">返回首页</Link>
+          <BackButton className="primary-link" to="/">返回首页</BackButton>
           {userId && <LocalLibrary userId={userId} choirId={choirId} />}
         </main>
       </div>
@@ -196,7 +198,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           <p className="eyebrow">云盘</p>
           <h1>这个云盘不存在</h1>
           <p className="hero__copy">链接可能已经失效，请返回首页重新选择云盘。</p>
-          <Link className="primary-link" to="/">返回首页</Link>
+          <BackButton className="primary-link" to="/">返回首页</BackButton>
           {userId && <LocalLibrary userId={userId} choirId={choirId} />}
         </main>
       </div>

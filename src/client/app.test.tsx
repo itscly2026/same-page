@@ -166,16 +166,16 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(await screen.findByRole("checkbox", { name: "E · 全体 默认显示" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "S · 女高音 默认显示" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "E · Ensemble 默认显示" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "S · Soprano 默认显示" }));
     releaseEnsemble(new Response(null, { status: 500 }));
     releaseSoprano(Response.json({ preference: { subscribed: false } }));
 
     await waitFor(() => {
-      expect(screen.getByRole("checkbox", { name: "E · 全体 默认显示" })).toBeChecked();
-      expect(screen.getByRole("checkbox", { name: "S · 女高音 默认显示" })).not.toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "E · Ensemble 默认显示" })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "S · Soprano 默认显示" })).not.toBeChecked();
       expect(screen.getByRole("alert")).toHaveTextContent("保存失败，原设置已保留。");
-      expect(screen.getByRole("button", { name: "重试 E · 全体" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "重试 E · Ensemble" })).toBeInTheDocument();
     });
   });
 
@@ -195,29 +195,29 @@ describe("AppRoutes", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<MemoryRouter initialEntries={["/choirs/choir-1/preferences"]}><AppRoutes /></MemoryRouter>);
-    expect(await screen.findByRole("checkbox", { name: "E · 全体 默认显示" })).not.toBeChecked();
-    expect(screen.queryByLabelText("E · 全体 批注颜色")).not.toBeInTheDocument();
+    expect(await screen.findByRole("checkbox", { name: "E · Ensemble 默认显示" })).not.toBeChecked();
+    expect(screen.queryByLabelText("E · Ensemble 批注颜色")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("link", { name: "批注颜色" }));
     expect(screen.getByRole("heading", { name: "批注颜色" })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    const color = screen.getByLabelText("E · 全体 批注颜色");
+    const color = screen.getByLabelText("E · Ensemble 批注颜色");
     expect(screen.queryByRole("button", { name: /恢复默认颜色/ })).not.toBeInTheDocument();
     fireEvent.change(color, { target: { value: "#123456" } });
     expect(await screen.findByRole("alert")).toHaveTextContent("保存失败，原设置已保留。");
     expect(color).toHaveValue("#a12652");
     expect(screen.queryByText("已保存")).not.toBeInTheDocument();
     fail = false;
-    fireEvent.click(screen.getByRole("button", { name: "重试 E · 全体" }));
+    fireEvent.click(screen.getByRole("button", { name: "重试 E · Ensemble" }));
     await waitFor(() => expect(color).toHaveValue("#123456"));
     expect(screen.getByText("自定义")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenLastCalledWith("/api/choirs/choir-1/shared-layers/E/preference",
       expect.objectContaining({ body: JSON.stringify({ colorOverride: "#123456" }) }));
-    fireEvent.click(screen.getByRole("button", { name: "E · 全体 恢复默认颜色" }));
+    fireEvent.click(screen.getByRole("button", { name: "E · Ensemble 恢复默认颜色" }));
     await waitFor(() => expect(color).toHaveValue("#a12652"));
     expect(screen.getByText("云盘默认")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /恢复默认颜色/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("link", { name: "返回阅读偏好" }));
-    expect(screen.getByRole("checkbox", { name: "E · 全体 默认显示" })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "返回阅读偏好" }));
+    expect(screen.getByRole("checkbox", { name: "E · Ensemble 默认显示" })).not.toBeChecked();
   });
 
   it.each([false, true])("applies management deletion to offline caches and recovers the original layer (lost response: %s)", async loseResponse => {
@@ -297,7 +297,7 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "E · 全体" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "E · Ensemble" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "管理员 管理员" })).toBeDisabled();
     const member = screen.getByRole("checkbox", { name: "小林" });
     expect(member).not.toBeChecked();

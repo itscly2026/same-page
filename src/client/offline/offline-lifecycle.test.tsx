@@ -140,3 +140,29 @@ it("an image bundle is usable only when its whole manifest and every page hash m
   expect(await verifyOfflineScore({ ...imageCopy, pageCount: 2 })).toBe(false);
   expect(await verifyOfflineScore({ ...imageCopy, versionId: "another-version" })).toBe(false);
 });
+
+it("clearing files preserves the held document and annotations but fences a late download even with no active copy", async () => {
+  const { captureOfflineFileFence, clearLocalFiles, listLocalFiles } = await import("./local-files");
+  const record = await recordFor();
+  const fence = await captureOfflineFileFence(record);
+  await activateVerifiedOfflineScore(record);
+  const held = (await listLocalFiles())[0].blob;
+  await clearLocalFiles({ ownerKey: record.ownerKey, choirId: record.choirId });
+  expect(await listLocalFiles()).toEqual([]);
+  expect((await held.arrayBuffer()).byteLength).toBe(1024 * 1024);
+  expect(await localDatabase.annotationLayers.where("scopeKey").equals(record.scopeKey).count()).toBe(5);
+  await expect(activateVerifiedOfflineScore(record, { activeKey: null, fileFence: fence })).rejects.toThrow("offline_files_cleared");
+  // A new explicit open captures the new fence and may download again.
+  await activateVerifiedOfflineScore(record, { activeKey: null, fileFence: await captureOfflineFileFence(record) });
+  expect(await listLocalFiles()).toHaveLength(1);
+});
+
+it("cannot list or clear another user's files and keeps the drive directory", async () => {
+  const { clearLocalFiles, listLocalFiles } = await import("./local-files");
+  const guest = await recordFor();
+  await activateVerifiedOfflineScore(guest);
+  await activateAuthenticatedLocalOwner("different-user");
+  expect(await listLocalFiles()).toEqual([]);
+  await expect(clearLocalFiles({ ownerKey: guest.ownerKey, choirId: guest.choirId })).rejects.toThrow("local_workspace_owner_changed");
+  expect(await localDatabase.offlineScores.count()).toBe(1);
+});

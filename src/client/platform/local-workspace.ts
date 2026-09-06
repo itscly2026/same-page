@@ -36,6 +36,8 @@ export function authenticatedLocalOwnerKey(
 export async function activateAuthenticatedLocalOwner(userId: string, signal?: AbortSignal) {
   const ownerKey = authenticatedLocalOwnerKey(userId);
   await localDatabase.transaction("rw", localDatabase.system, async () => {
+    const fence = await localDatabase.system.get("auth:explicit-logout");
+    if (fence && JSON.parse(fence.value).userId === userId) throw new LocalWorkspaceOwnerChangedError();
     const currentOwner = await currentLocalOwnerKey();
     signal?.throwIfAborted();
     if (currentOwner !== ownerKey) {

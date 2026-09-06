@@ -1,6 +1,8 @@
 import { captureLocalWorkspaceSession, resolveLocalWorkspace, type LocalWorkspace } from "../platform/local-workspace";
 import { applySharedLayerAvailability } from "../annotations/annotation-state";
-import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
+import { Button, Heading, Modal, ModalOverlay } from "react-aria-components";
+import { Dialog } from "../navigation/overlays";
+import { BackButton } from "../navigation/back-button";
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
@@ -86,7 +88,7 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
   };
 
   return <div className="app-page">
-    <AppHeader actions={<Link className="header-action" to={`/choirs/${choirId}`}>返回云盘</Link>} />
+    <AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回云盘</BackButton>} />
     <main className="page-shell settings-page settings-ux">
       <header className="settings-heading">
         <p className="eyebrow">云盘管理 · {driveName}</p><h1>共享层管理</h1>

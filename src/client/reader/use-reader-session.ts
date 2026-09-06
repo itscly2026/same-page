@@ -1,4 +1,3 @@
-import { writeDisplayPreference } from "./display-preferences";
 import { useEffect, useState, useRef } from "react";
 import type { LocalWorkspace } from "../platform/local-workspace";
 import { ReaderSession, type ReaderSessionSnapshot } from "./reader-session";
@@ -34,11 +33,5 @@ export function useReaderSession(workspace: LocalWorkspace | null, userId: strin
     current?.session.setAuthenticatedUser(userId);
   }, [current?.session, userId]);
   const active = current?.session.workspace.scopeKey === workspace?.scopeKey ? current : null;
-  return { confirmDisplay: (document: import("./image-document").ScoreDocument) => active?.session.confirmDisplay(document), recoverDisplay: (error: unknown) => active?.session.recoverDisplay(error), selectMode: (mode: "pdf" | "images") => {
-    if (!active) return;
-    if (active.snapshot.status === "error") {
-      writeDisplayPreference(active.session.workspace, mode, "score");
-      setAttempt(value => value + 1);
-    } else active.session.selectMode(mode);
-  }, setDefaultMode: (mode: "pdf" | "images" | null) => active?.session.setDefaultMode(mode), resetMode: () => active?.session.resetMode(), retry: () => setAttempt(value => value + 1), snapshot: active?.snapshot ?? initial, download: () => active?.session.download(), retryLayers: () => active?.session.retryLayers() };
+  return { confirmDisplay: (document: import("./image-document").ScoreDocument) => active?.session.confirmDisplay(document), recoverDisplay: (error: unknown) => active?.session.recoverDisplay(error), retry: () => setAttempt(value => value + 1), snapshot: active?.snapshot ?? initial, download: () => active?.session.download(), retryLayers: () => active?.session.retryLayers() };
 }

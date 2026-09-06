@@ -1,5 +1,5 @@
 // Cold-start requests have a bound, and an auth mutation invalidates earlier responses.
-export function createSessionFetch(transport: typeof fetch): typeof fetch {
+export function createSessionFetch(transport: typeof fetch, acceptSession: (response: Response) => Promise<Response> = async response => response.clone()): typeof fetch {
   let generation = 0;
   let latest: { generation: number; url: string; result: Promise<Response> } | null = null;
   const fetchSession: typeof fetch = async (input, init) => {
@@ -18,7 +18,7 @@ export function createSessionFetch(transport: typeof fetch): typeof fetch {
     latest = { generation: started, url, result: request };
     try {
       const response = await request;
-      if (generation === started && latest?.result === request) return response.clone();
+      if (generation === started && latest?.result === request) return acceptSession(response);
     } catch (error) {
       if (generation === started && latest?.result === request) throw error;
     }
@@ -27,7 +27,7 @@ export function createSessionFetch(transport: typeof fetch): typeof fetch {
       const current: { generation: number; url: string; result: Promise<Response> } = latest;
       try {
         const response = await current.result;
-        if (current === latest && current.generation === generation) return response.clone();
+        if (current === latest && current.generation === generation) return acceptSession(response);
       } catch (error) {
         if (current === latest && current.generation === generation) throw error;
       }

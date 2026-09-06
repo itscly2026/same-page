@@ -2,7 +2,7 @@ import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { type FormEvent, lazy, Suspense, useState } from "react";
 import {
   Button,
-  Dialog,
+
   Form,
   Heading,
   Input,
@@ -11,6 +11,7 @@ import {
   ModalOverlay,
   TextField,
 } from "react-aria-components";
+import { Dialog } from "../navigation/overlays";
 
 import type { ScoreSummary } from "../../shared/scores";
 import { LibraryDialogHeading } from "./library-dialog-heading";

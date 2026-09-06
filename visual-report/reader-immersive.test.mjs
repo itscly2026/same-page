@@ -92,21 +92,6 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
  });
 }
 
-test("fullscreen entry, browser exit and portalled controls stay usable", async (context) => {
- const browser = await chromium.launch({headless:true}); context.after(() => browser.close());
- const page = await openMemberReader(browser, {width:834,height:1000});
- await showReaderChrome(page);
- await page.getByRole("button", {name:"更多",exact:true}).click();
- await page.getByRole("button", {name:"进入全屏",exact:true}).click();
- await page.waitForFunction(() => document.fullscreenElement === document.documentElement);
- await page.getByRole("button", {name:"退出全屏",exact:true}).waitFor();
- await page.evaluate(() => document.exitFullscreen());
- await page.getByRole("button", {name:"进入全屏",exact:true}).waitFor();
- await page.getByRole("button", {name:"进入全屏",exact:true}).click();
- await page.waitForFunction(() => !!document.fullscreenElement);
- await page.getByRole("button", {name:"退出全屏",exact:true}).click();
- await page.waitForFunction(() => !document.fullscreenElement);
-});
 for (const [engineName, engine] of Object.entries({chromium, webkit})) {
  test(`${engineName}: fitted score respects all four safe area edges`, async (context) => {
   const browser = await engine.launch({headless:true}); context.after(() => browser.close());
