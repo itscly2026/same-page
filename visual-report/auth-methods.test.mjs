@@ -48,7 +48,7 @@ for (const [name, engine, viewport] of [
     });
     await page.goto(`${server.origin}/login`);
     await page.getByLabel("邮箱", { exact: true }).fill("singer@example.test");
-    await page.getByRole("button", { name: "登录或注册", exact: true }).click();
+    await page.getByRole("button", { name: "继续", exact: true }).click();
     await expect(page.getByText("你此前通过 Google 登录，尚未设置合谱密码")).toBeVisible();
     await expect(page.getByRole("button", { name: "使用 Google 继续" })).toBeVisible();
     const googleBounds = await page.getByRole("button", { name: "使用 Google 继续" }).boundingBox();
@@ -75,7 +75,7 @@ for (const [name, engine, viewport] of [
     flow = "sign-in";
     await page.goto(`${server.origin}/login`);
     await page.getByLabel("邮箱", { exact: true }).fill("singer@example.test");
-    await page.getByRole("button", { name: "登录或注册", exact: true }).click();
+    await page.getByRole("button", { name: "继续", exact: true }).click();
     await expect(page.getByLabel("密码", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "使用 Google 继续" })).toBeVisible();
     await screenshot(page, name, "sign-in");

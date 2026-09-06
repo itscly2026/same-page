@@ -21,9 +21,16 @@ export function sharedLayerPrefix(slot: string | null | undefined) {
   return defaultSharedLayers.some(layer => layer.slot === slot) ? slot! : "";
 }
 
+export function sharedLayerDisplayName(slot: string | null | undefined, name: string) {
+  const names = { E: "全体", S: "女高音", A: "女低音", T: "男高音", B: "男低音" };
+  const original = defaultSharedLayers.find(layer => layer.slot === slot && layer.name === name);
+  return original ? names[original.slot as keyof typeof names] : name;
+}
+
 export function sharedLayerLabel(slot: string | null | undefined, name: string, separator = " · ") {
   const prefix = sharedLayerPrefix(slot);
-  return prefix ? `${prefix}${separator}${name}` : name;
+  const displayName = sharedLayerDisplayName(slot, name);
+  return prefix ? `${prefix}${separator}${displayName}` : displayName;
 }
 
 export const normalizedCoordinateSchema = z.number().finite().min(0).max(1);
@@ -289,3 +296,5 @@ export type SharedLayerGrantMember = z.infer<typeof sharedLayerGrantMemberSchema
 export const sharedLayerGrantListResponseSchema = z.object({
   members: z.array(sharedLayerGrantMemberSchema),
 });
+
+export const sharedLayerOrderUpdateSchema = z.object({ direction: z.enum(["up", "down"]) });

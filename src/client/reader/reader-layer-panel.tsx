@@ -1,4 +1,4 @@
-import { sharedLayerLabel, sharedLayerPrefix } from "../../shared/annotations";
+import { sharedLayerLabel, sharedLayerDisplayName, sharedLayerPrefix } from "../../shared/annotations";
 import { useEffect, useRef, useState } from "react";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { Button } from "react-aria-components";
@@ -85,7 +85,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
   };
 
   return (
-    <section className="reader-layer-panel" aria-label="显示哪些批注" aria-busy={pending}>
+    <section className="reader-layer-panel" aria-label="看哪些批注" aria-busy={pending}>
       <p className="reader-layer-help">仅用于这份乐谱。</p>
       <div className="layer-section">
         <div className="layer-section__heading">
@@ -96,7 +96,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
               <Button className="layer-section__restore" isDisabled={pending}
                 aria-description="将这份乐谱的所有共享层恢复为我的云盘默认显示设置"
                 onPress={() => void save(overriddenLayers.map((layer) => ({ layer, subscribed: null })))}>
-                恢复默认显示
+                使用云盘默认
               </Button>
             ) : null}
           </div>
@@ -116,7 +116,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
                   <span aria-label={`${sharedLayerLabel(layer.sharedSlot, layer.name)} 当前颜色`} className="layer-color-preview" style={{ background: layer.displayColor }} />
                   <span className="layer-card__identity"><strong>
                     <span className="layer-card__slot">{sharedLayerPrefix(layer.sharedSlot) ? layer.sharedSlot : ""}</span>
-                    {sharedLayerPrefix(layer.sharedSlot) ? <span aria-hidden="true" className="layer-card__separator">·</span> : null}{layer.name}
+                    {sharedLayerPrefix(layer.sharedSlot) ? <span aria-hidden="true" className="layer-card__separator">·</span> : null}{sharedLayerDisplayName(layer.sharedSlot, layer.name)}
                   </strong></span>
                   {layer.scoreSubscriptionOverride !== null ? <span className="layer-card__score-override">本谱</span> : null}
                 </label>
@@ -129,7 +129,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
         <article className="layer-card"><div className="layer-card__main">
           <span className="layer-color-preview" style={{ background: personalLayer.displayColor }} />
           <div className="layer-card__identity"><strong><span className="layer-card__slot">P</span>
-            <span aria-hidden="true" className="layer-card__separator">·</span>Personal</strong></div>
+            <span aria-hidden="true" className="layer-card__separator">·</span>我的笔记</strong></div>
           <span className="reader-layer-help">始终显示<br />{personalLayer.sharing ? "云盘成员可见" : "仅自己可见"}</span>
         </div>
         {personalLayer.canShare ? <div className="reader-sharing-control">

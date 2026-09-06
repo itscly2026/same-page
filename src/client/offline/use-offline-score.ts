@@ -27,3 +27,12 @@ export function offlineScoreLabel(record: OfflineScoreRecord | null, currentVers
   if (mode && (record.imageManifest ? "images" : "pdf") !== mode) return `当前显示方式尚未下载 · ${record.imageManifest ? "图片" : "PDF"}副本可离线使用`;
   return record.versionId === currentVersionId ? "可离线使用" : "旧版可离线使用 · 新版待下载";
 }
+
+export function offlineDownloadFailure(record: OfflineScoreRecord | null, currentVersionId: string, invalid = false, mode?: "pdf" | "images") {
+  const prefix = "离线下载未完成。";
+  if (invalid || !record) return `${prefix}当前乐谱尚不可离线使用，请联网重试。`;
+  const format = record.imageManifest ? "图片" : "PDF";
+  if (record.versionId !== currentVersionId) return `${prefix}旧版 ${format} 仍可离线使用，当前版本尚未准备好。`;
+  if (mode && (record.imageManifest ? "images" : "pdf") !== mode) return `${prefix}${format} 副本仍可离线使用，当前显示方式尚未准备好。`;
+  return `${prefix}当前 ${format} 仍可离线使用，现有副本不受影响。`;
+}

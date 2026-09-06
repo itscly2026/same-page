@@ -122,8 +122,8 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
           </Button>
           <Popover className="file-menu-popover account-menu-popover">
             <Menu aria-label="用户菜单">
-              <MenuItem href={`/choirs/${choirId}/preferences`}>我的偏好</MenuItem>
-              <MenuItem href="/user">用户与成员关系</MenuItem>
+              <MenuItem href={`/choirs/${choirId}/preferences`}>阅读偏好</MenuItem>
+              <MenuItem href="/user">个人设置</MenuItem>
             </Menu>
           </Popover>
         </MenuTrigger>
@@ -251,6 +251,7 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
                       if (key === "invite") setInviteManagementOpen(true);
                     }}
                   >
+                    <MenuItem href={`/choirs/${choirId}/memberships`}>成员与权限</MenuItem>
                     <MenuItem href={`/choirs/${choirId}/shared-layers`}>
                       共享层
                     </MenuItem>

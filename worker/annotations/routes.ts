@@ -12,6 +12,7 @@ import {
   scoreLayerPreferenceUpdateSchema,
   sharedLayerSettingUpdateSchema,
   sharedLayerCreateSchema,
+  sharedLayerOrderUpdateSchema,
   type AnnotationObjectRecord,
 } from "../../src/shared/annotations";
 import {
@@ -171,6 +172,31 @@ annotationRoutes.post("/choirs/:choirId/shared-layers", async context => {
   ]);
   if (!results[0].meta.changes) return context.json({ error: "membership_changed" }, 409);
   return context.json({ slot }, 201);
+});
+
+// A single statement orders against one snapshot, including equal legacy sort values.
+annotationRoutes.put("/choirs/:choirId/shared-layers/:slot/order", async context => {
+  const choirId = context.req.param("choirId");
+  const membership = await requireChoirAdmin(createDatabase(context.env.DB), await resolveContextPrincipal(context), choirId);
+  const slot = sharedLayerSlotSchema.safeParse(context.req.param("slot"));
+  const parsed = sharedLayerOrderUpdateSchema.safeParse(await context.req.json().catch(() => null));
+  if (!slot.success || !parsed.success) return context.json({ error: "invalid_layer_order" }, 400);
+  const offset = parsed.data.direction === "up" ? -1 : 1;
+  const result = await context.env.DB.prepare(`WITH ordered AS MATERIALIZED (
+      SELECT slot, ROW_NUMBER() OVER (ORDER BY sort_order, slot) - 1 AS ordinal
+      FROM choir_shared_layer_settings WHERE choir_id = ?
+    ), target AS (SELECT ordinal FROM ordered WHERE slot = ?),
+    neighbor AS (SELECT ordinal FROM ordered WHERE ordinal = (SELECT ordinal FROM target) + ?)
+    UPDATE choir_shared_layer_settings SET sort_order = (
+      SELECT CASE WHEN ordinal = (SELECT ordinal FROM target) THEN COALESCE((SELECT ordinal FROM neighbor), ordinal)
+        WHEN ordinal = (SELECT ordinal FROM neighbor) THEN (SELECT ordinal FROM target) ELSE ordinal END
+      FROM ordered WHERE ordered.slot = choir_shared_layer_settings.slot
+    ), updated_by_membership_id = ?, updated_at = ?
+    WHERE choir_id = ? AND EXISTS (SELECT 1 FROM target)
+      AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND role = 'admin' AND lifecycle_revision = ?)`)
+    .bind(choirId, slot.data, offset, membership.id, Date.now(), choirId, membership.id, membership.lifecycleRevision).run();
+  if (!result.meta.changes) return context.json({ error: "layer_not_found" }, 404);
+  return context.json({ reordered: true });
 });
 
 annotationRoutes.put("/choirs/:choirId/shared-layers/:slot/settings", async (context) => {

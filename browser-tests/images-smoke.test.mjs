@@ -72,7 +72,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     await page.getByRole("button", { name: "PDF 阅读", exact: true }).click();
     await expect(page.getByRole("status").filter({ hasText: "本机没有PDF离线副本" }).first()).toBeVisible();
     await page.getByRole("button", { name: "更多", exact: true }).click();
-    await page.getByRole("button", { name: "编辑", exact: true }).click();
+    await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
     await page.getByRole("button", { name: "文本", exact: true }).click();
     await page.locator(".annotation-overlay svg").evaluate(element => {
       const bounds = element.getBoundingClientRect();
@@ -81,7 +81,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     });
     await page.getByRole("textbox", { name: "批注文本", exact: true }).fill("图片离线批注");
     await page.getByRole("button", { name: "完成", exact: true }).click();
-    await page.getByRole("button", { name: "编辑", exact: true }).click();
+    await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
     await expect(page.getByText("图片离线批注", { exact: true })).toBeVisible();
     assert.equal(resources.some(url => /\/assets\/pdf-[A-Za-z0-9_-]{8}\.js/.test(url)), false, "image reopen must not load the PDF.js module");
     if (engineName === "chromium") {

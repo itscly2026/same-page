@@ -7,7 +7,7 @@ import { useReaderSession } from "../reader/use-reader-session";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   ArrowLeft, Download, Ellipsis, Layers, Maximize2, Minus, Pencil, Plus, BookOpen,
-  RefreshCw, Rows3, Expand, Shrink,
+  RefreshCw, Rows3, Expand, Shrink, Check,
 } from "lucide-react";
 import {
   useEffect,
@@ -22,6 +22,7 @@ import {
 } from "react-aria-components";
 import { Link, useParams } from "react-router-dom";
 
+import { sharedLayerDisplayName } from "../../shared/annotations";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import type {
   AnnotationOverlayInteraction,
@@ -52,7 +53,7 @@ import {
   resolveLocalWorkspace,
   type LocalWorkspace,
 } from "../platform/local-workspace";
-import { offlineScoreLabel, useOfflineScore } from "../offline/use-offline-score";
+import { offlineScoreLabel, offlineDownloadFailure, useOfflineScore } from "../offline/use-offline-score";
 import { driveCacheOwnerKey } from "../score-library/drive-library-cache";
 import { recordScoreOpened } from "../score-library/library-view-state";
 import {
@@ -553,13 +554,13 @@ function ReaderPageContent() {
           >
             <ArrowLeft aria-hidden="true" size={21} />
           </Link>
-          <strong className="reader-chrome__title">{readerTitle}{editing ? <span className="reader-editing-hint">编辑中 · 点铅笔完成</span> : null}</strong>
+          <strong className="reader-chrome__title">{readerTitle}</strong>
           <div className="reader-chrome__actions-stack">
             <div className="reader-chrome__actions">
               <Button
                 aria-describedby={editAvailability === "ready" ? undefined : "reader-edit-status"}
-                aria-label="编辑"
-                aria-description={editing ? "再次点按退出编辑，恢复阅读；编辑期间锁定当前页" : "进入当前页编辑"}
+                aria-label={editing ? "完成编辑" : "编辑"}
+                aria-description={editing ? "完成后恢复阅读和翻页" : "进入当前页编辑"}
                 className="reader-icon-button"
                 data-state={editAvailability}
                 aria-pressed={editing}
@@ -571,10 +572,10 @@ function ReaderPageContent() {
                 }
                 onPress={() => editing ? void finishEditing() : requestEditing()}
               >
-                <Pencil aria-hidden="true" size={21} />
+                {editing ? <Check aria-hidden="true" size={21} /> : <Pencil aria-hidden="true" size={21} />}
               </Button>
               <Button
-                aria-label="图层"
+                aria-label="看哪些批注"
                 aria-expanded={readerPanel === "layers"}
                 className="reader-icon-button"
                 isDisabled={editing}
@@ -600,10 +601,9 @@ function ReaderPageContent() {
               onPress={() => openReaderPanel("pages")}
             >
               <span>{currentPage} / {document.numPages}</span>
-              {editing ? <span className="reader-edit-finish-hint">点铅笔完成</span> : null}
             </Button>
             {editing && annotationInteraction !== "composing-text" && <span className="reader-save-feedback" role="status">
-              {persistence === "saving" ? "正在保存到本机…" : persistence === "failed" ? "本机保存失败" : annotations.some(annotation => annotation.state === "draft") ? "已保存在本机" : "编辑中 · 点铅笔完成"}
+              {persistence === "saving" ? "正在保存到本机…" : persistence === "failed" ? "本机保存失败" : annotations.some(annotation => annotation.state === "draft") ? "已保存在本机" : "正在编辑当前页"}
             </span>}
             {editAvailability !== "ready" ? (
               <p
@@ -682,7 +682,7 @@ function ReaderPageContent() {
               </section>
               <section aria-label="本机离线副本"><h2>本机离线副本 · {reader.snapshot.mode === "pdf" ? "PDF" : "图片"}</h2>
               <p className="reader-more-menu__status" role="status">
-                {downloading ? "正在下载并校验…" : !offlineStatus ? "正在校验本机副本…" : offlineScoreLabel(offline, score.currentVersion.id, offlineStatus.invalid, reader.snapshot.mode)}
+                {downloading ? "正在下载并校验…" : downloadMessage?.includes("未完成") ? (!offlineStatus ? "离线下载未完成，尚未确认本机副本，请重试校验。" : offlineDownloadFailure(offline, score.currentVersion.id, offlineStatus.invalid, reader.snapshot.mode)) : !offlineStatus ? "正在校验本机副本…" : offlineScoreLabel(offline, score.currentVersion.id, offlineStatus.invalid, reader.snapshot.mode)}
               </p>
               <Button
                 isDisabled={downloading || cloudState === "trashed"}
@@ -691,9 +691,9 @@ function ReaderPageContent() {
                 <Download aria-hidden="true" size={18} />
                 {downloading ? "正在下载并校验…" : downloadMessage?.includes("未完成") ? "重试下载离线副本" : hasNewOfflineVersion ? "下载新版离线副本" : "下载离线副本"}
               </Button>
-              {downloadMessage && <p className="reader-more-menu__status" role="status">{downloadMessage}</p>}
+              {downloadMessage && !downloadMessage.includes("未完成") && <p className="reader-more-menu__status" role="status">{downloadMessage}</p>}
               </section>
-              <section aria-label="保存与同步"><h2>保存与同步</h2>
+              <section aria-label="批注保存与同步"><h2>批注保存与同步</h2>
                 <p className="reader-more-menu__status" data-kind={syncStatus.kind} role="status">{syncStatus.message}</p>
                 <Button className="reader-sync-action" isDisabled={syncing || syncActivity === "running" || cloudState === "trashed"} onPress={() => void manualSync()}>
                   <RefreshCw aria-hidden="true" size={18} />
@@ -702,7 +702,7 @@ function ReaderPageContent() {
               </section>
               </>}
               <section aria-label="阅读帮助"><h2>帮助</h2>
-                <p className="reader-more-menu__status">轻点中央显示工具；点按两侧或左右滑动翻页。编辑时锁定当前页，再点铅笔完成。批注同步与离线副本分别准备。</p>
+                <p className="reader-more-menu__status">轻点中央显示工具；点按两侧或左右滑动翻页。编辑时锁定当前页，点勾号完成后继续翻页。批注同步与离线副本分别准备。</p>
                 <Button onPress={() => { setMoreOpen(false); setDiagnosticOpen(true); }}>故障诊断</Button>
               </section>
             </Dialog>
@@ -753,9 +753,9 @@ function ReaderPageContent() {
         <ModalOverlay className="reader-panel-backdrop" isOpen isDismissable
           onOpenChange={(open) => { if (!open) setReaderPanel(null); }}>
           <Modal className="reader-panel reader-layers-dialog">
-            <Dialog aria-label="显示哪些批注" className="reader-layers-content">
+            <Dialog aria-label="看哪些批注" className="reader-layers-content">
               <header className="reader-panel__header">
-                <strong>显示哪些批注</strong>
+                <strong>看哪些批注</strong>
                 <Button aria-label="关闭批注显示" onPress={() => setReaderPanel(null)}>
                   关闭
                 </Button>
@@ -778,9 +778,11 @@ function ReaderPageContent() {
           <strong>仍有 {conflicts.length} 项本机冲突待处理</strong>
           <p>同一批注的云端版本已经变化；以下是保留在这台设备上的版本。</p>
           {conflicts.map((conflict) => {
+            const layer = layers.find(layer => layer.id === conflict.layerId);
+            const layerName = layer ? (layer.kind === "personal" && layer.canEdit ? "我的笔记" : sharedLayerDisplayName(layer.sharedSlot, layer.name)) : "未知图层";
             const detail = describeAnnotationConflict(
               conflict,
-              layers.find((layer) => layer.id === conflict.layerId)?.name ?? "未知图层",
+              layerName,
             );
             return (
               <div className="annotation-conflict-item" key={conflict.opId}>

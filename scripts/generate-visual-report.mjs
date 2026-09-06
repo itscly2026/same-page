@@ -80,6 +80,12 @@ try {
     });
     await context.addInitScript(() => {
       localStorage.setItem("reader-gesture-hint-seen", "true");
+      localStorage.setItem("reader-edit-hint-seen", "true");
+    });
+
+    if (scenario.seedContinue) await context.addInitScript(() => {
+      localStorage.setItem('same-page:recent-scores:["user:visual-user-member","visual-choir"]', JSON.stringify({ "visual-score": Date.now() }));
+      localStorage.setItem("reader-preferences:visual-user-member:visual-choir:visual-score", JSON.stringify({ layout: "page", page: 2 }));
     });
 
     if (scenario.pwa === "failure" || scenario.pwa === "retry") {

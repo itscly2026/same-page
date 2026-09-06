@@ -60,7 +60,7 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
     assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= 901);
     await page.screenshot({ path: `${output}/${width}-menu.png` });
     await page.getByRole("button", { name: "关闭更多阅读选项" }).click();
-    await page.getByRole("button", { name: "编辑", exact: true }).click();
+    await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
     await page.locator(".annotation-controls").waitFor();
     await page.screenshot({ path: `${output}/${width}-editing.png` });
     await page.evaluate(() => { window.fixtureOnline = false; window.dispatchEvent(new Event("offline")); });
@@ -87,7 +87,7 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
     await page.evaluate(() => { window.fixtureStorageFailed = false; });
     await page.getByRole("button", { name: "完成", exact: true }).click();
     await page.getByRole("form", { name: "文字输入" }).waitFor({ state: "hidden" });
-    await page.getByRole("button", { name: "编辑", exact: true }).click();
+    await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
     await page.getByRole("button", { name: "更多", exact: true }).click();
     await page.getByText("已保存在本机 · 等待联网", { exact: true }).waitFor();
     assert.equal(pushes, 0);
@@ -106,7 +106,7 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
     // The blocked service worker makes automatic offline preparation fail.
     // Retry that failure; PDF bytes can now be reused without another request.
     await page.getByRole("button", { name: "重试下载离线副本", exact: true }).click();
-    await page.getByText("离线下载未完成，仍可在线阅读，现有离线版本没有切换。请重试。", { exact: true }).waitFor();
+    await page.getByText("离线下载未完成。当前乐谱尚不可离线使用，请联网重试。", { exact: true }).waitFor();
     await page.getByRole("button", { name: "重试下载离线副本" }).waitFor();
     await page.getByRole("button", { name: "重试下载离线副本" }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${output}/${width}-download-failed.png` });

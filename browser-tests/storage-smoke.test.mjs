@@ -19,7 +19,7 @@ test("real Worker D1/R2 score survives a browser restart offline via IndexedDB",
   try {
     await page.goto(fixture.origin);
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
-    await page.getByRole("link", { name: "访问公开体验云盘", exact: true }).click();
+    await page.getByRole("link", { name: "先看示例", exact: true }).click();
     await page.getByRole("link").filter({ hasText: fixture.fileName }).waitFor();
     stage = "verified download";
     await page.getByRole("button", { name: /^下载离线副本：/ }).click();

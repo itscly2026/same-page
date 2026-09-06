@@ -86,3 +86,9 @@ export function clearLibraryDeviceState() {
     } catch { /* Storage can be unavailable in private browsing. */ }
   }
 }
+
+export function readLastOpenedScore(owner: DriveCacheOwnerKey, choirIds: string[]) {
+  return choirIds.flatMap(choirId => Object.entries(readRecentlyOpened(owner, choirId))
+    .map(([scoreId, openedAt]) => ({ choirId, scoreId, openedAt })))
+    .sort((a, b) => b.openedAt - a.openedAt)[0] ?? null;
+}

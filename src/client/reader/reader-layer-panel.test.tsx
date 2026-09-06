@@ -78,7 +78,7 @@ it("subscribes to a member's notes without offering their layer as an editing ta
   expect(requests).toEqual([{ url: `/api/choirs/drive/scores/score/personal-layers/${published.id}/subscription`, body: { subscribed: true } }]);
   fireEvent.click(screen.getByRole("button", { name: /当前编辑层/ }));
   expect(screen.queryByRole("button", { name: /声部长的笔记/ })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "P，Personal" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "P，我的笔记" })).toBeEnabled();
 });
 
 

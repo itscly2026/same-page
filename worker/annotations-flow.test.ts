@@ -62,6 +62,20 @@ beforeEach(async () => {
 afterEach(() => network.resetHandlers());
 
 describe("annotation layers and object synchronization", () => {
+  it("moves a shared layer one position atomically and denies non-admin reordering", async () => {
+    const fixture = await createFixture();
+    const member = await createMember(fixture.joinCode!, "order-member@example.test", "成员");
+    const base = `/api/choirs/${fixture.choirId}/shared-layers`;
+    const move = (cookie: string, slot: string, direction: string) => callWorker(`${base}/${slot}/order`, { ...jsonRequest(cookie, { direction }), method: "PUT" });
+    expect((await move(member.cookie, "T", "up")).status).toBe(403);
+    expect((await move(fixture.adminCookie, "T", "up")).status).toBe(200);
+    const response = await callWorker(base, { headers: { cookie: fixture.adminCookie } });
+    const body = await response.json() as { layers: { slot: string }[] };
+    expect(body.layers.map(layer => layer.slot)).toEqual(["E", "S", "T", "A", "B"]);
+    expect((await move(fixture.adminCookie, "E", "up")).status).toBe(200);
+    expect((await move(fixture.adminCookie, "missing", "down")).status).toBe(404);
+  });
+
   it("configures a stable shared layer across existing and future scores and pauses its writes", async () => {
     const fixture = await createFixture();
     const member = await createMember(fixture.joinCode!, "custom-member@example.test", "成员");

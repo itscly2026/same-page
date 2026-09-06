@@ -138,7 +138,7 @@ it("continues a completed email login through the default entry without retainin
   });
   render(tree(["/privacy", "/login"]));
   fireEvent.change(await screen.findByLabelText("邮箱"), { target: { value: "singer@example.test" } });
-  fireEvent.click(screen.getByRole("button", { name: "登录或注册" }));
+  fireEvent.click(screen.getByRole("button", { name: "继续" }));
   fireEvent.change(await screen.findByLabelText("密码"), { target: { value: "test-password" } });
   fireEvent.click(screen.getByRole("button", { name: "登录" }));
   await screen.findByRole("heading", { name: "云盘 one" });

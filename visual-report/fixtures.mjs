@@ -388,9 +388,9 @@ function json(body, status = 200) {
   };
 }
 
-export function createSampleScorePdf() {
-  const pageOne = scorePageContent("SAME PAGE VISUAL FIXTURE", "Rehearsal score - page 1", 1);
-  const pageTwo = scorePageContent("SAME PAGE VISUAL FIXTURE", "Rehearsal score - page 2", 2);
+export function createSampleScorePdf(title = "SAME PAGE VISUAL FIXTURE") {
+  const pageOne = scorePageContent(title, "Rehearsal score - page 1", 1);
+  const pageTwo = scorePageContent(title, "Rehearsal score - page 2", 2);
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>",
@@ -490,6 +490,8 @@ export function createVisualFixtureSession(scenario = {}) {
   const preferences = new Map();
   const scorePreferences = new Map();
   const colors = new Map();
+  const definitions = new Map();
+  let order = ["E", "S", "A", "T", "B"];
   const grants = new Map();
   let loadFailures = 0;
   let uploadCount = 0;
@@ -530,10 +532,17 @@ export function createVisualFixtureSession(scenario = {}) {
           map.set(slot, { ...previous, ...body });
           return json({ preference: map.get(slot) });
         }
+        if (pathname.endsWith("/order")) {
+          if (request.identity !== "admin") return failure(403, "forbidden");
+          const from = order.indexOf(slot), to = from + (body.direction === "up" ? -1 : 1);
+          if (from >= 0 && to >= 0 && to < order.length) [order[from], order[to]] = [order[to], order[from]];
+          return json({ reordered: true });
+        }
         if (pathname.endsWith("/settings")) {
           if (request.identity !== "admin") return failure(403, "forbidden");
-          colors.set(slot, body.defaultColor);
-          return json({ setting: { slot, defaultColor: body.defaultColor } });
+          definitions.set(slot, { ...definitions.get(slot), ...body });
+          if (body.defaultColor) colors.set(slot, body.defaultColor);
+          return json({ setting: { slot, ...body } });
         }
         if (pathname.includes("/grants/")) {
           if (request.identity !== "admin") return failure(403, "forbidden");
@@ -560,7 +569,7 @@ export function createVisualFixtureSession(scenario = {}) {
         const adminDefaultColor = colors.get(entry.slot) ?? entry.adminDefaultColor;
         return { ...entry, ...preference, adminDefaultColor, displayColor: preference.colorOverride ?? adminDefaultColor, colorSource: preference.colorOverride ? "drive" : "admin" };
       });
-      if (pathname.endsWith("/shared-layers") && payload.layers) payload.layers = payload.layers.map((entry) => ({ ...entry, defaultColor: colors.get(entry.slot) ?? entry.defaultColor }));
+      if (pathname.endsWith("/shared-layers") && payload.layers) payload.layers = payload.layers.map((entry) => ({ ...entry, ...definitions.get(entry.slot), sortOrder: order.indexOf(entry.slot), defaultColor: colors.get(entry.slot) ?? entry.defaultColor })).sort((a, b) => a.sortOrder - b.sortOrder);
       if (pathname.endsWith("/grants") && payload.members) payload.members = payload.members.map((member) => ({ ...member, granted: grants.get(`${slot}:${member.id}`) ?? member.granted }));
       if (pathname.endsWith("/layers") && payload.layers) payload.layers = payload.layers.map((entry) => {
         if (entry.kind === "personal") return entry;

@@ -1576,8 +1576,8 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     fireEvent.keyDown(window, { key: "ArrowRight" });
     await finishPageTurn();
     expect(currentRenderedPage()).toBe("3");
-    fireEvent.click(screen.getByRole("button", { name: "图层" }));
-    expect(screen.getByRole("dialog", { name: "显示哪些批注" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "看哪些批注" }));
+    expect(screen.getByRole("dialog", { name: "看哪些批注" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭批注显示" }));
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.queryByText("尚未同步批注")).not.toBeInTheDocument();
@@ -1641,7 +1641,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
 
     await screen.findByLabelText("翻页阅读");
     toggleChrome();
-    const editButton = await screen.findByRole("button", { name: "编辑" });
+    const editButton = await screen.findByRole("button", { name: /^(编辑|完成编辑)$/ });
     expect(editButton).toHaveAttribute("data-state", "failed");
     expect(exportDiagnostics()).toContain('"operation": "layers"');
     expect(screen.getByText("编辑准备失败，点按铅笔重试")).toHaveAttribute(
@@ -1653,7 +1653,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
         document.querySelectorAll<HTMLButtonElement>(".reader-chrome__actions button"),
         (button) => button.getAttribute("aria-label"),
       ),
-    ).toEqual(["编辑", "图层", "更多"]);
+    ).toEqual(["编辑", "看哪些批注", "更多"]);
 
     fireEvent.click(editButton);
     await waitFor(() => {
@@ -1691,12 +1691,12 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
 
     await screen.findByLabelText("翻页阅读");
     toggleChrome();
-    expect(screen.getByRole("button", { name: "编辑" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: /^(编辑|完成编辑)$/ })).toHaveAttribute(
       "data-state",
       "preparing",
     );
     expect(screen.getByText("正在准备编辑…")).toHaveAttribute("role", "status");
-    expect(screen.getByRole("button", { name: "编辑" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^(编辑|完成编辑)$/ })).toBeDisabled();
 
     await act(async () => {
       resolveLayers(Response.json({
@@ -1705,12 +1705,12 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
       }));
     });
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "编辑" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: /^(编辑|完成编辑)$/ })).toHaveAttribute(
         "data-state",
         "read-only",
       );
     });
-    expect(screen.getByRole("button", { name: "编辑" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^(编辑|完成编辑)$/ })).toBeDisabled();
     expect(screen.getByText("此乐谱为只读状态")).toHaveAttribute("role", "status");
   });
 
@@ -1768,16 +1768,16 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
 
     await screen.findByLabelText("翻页阅读");
     toggleChrome();
-    fireEvent.click(screen.getByRole("button", { name: "图层" }));
-    const panel = screen.getByRole("dialog", { name: "显示哪些批注" });
+    fireEvent.click(screen.getByRole("button", { name: "看哪些批注" }));
+    const panel = screen.getByRole("dialog", { name: "看哪些批注" });
 
-    await within(panel).findByText("Ensemble");
-    expect(panel).toHaveTextContent("E·Ensemble");
-    expect(panel).toHaveTextContent("P·Personal");
+    await within(panel).findByText("全体");
+    expect(panel).toHaveTextContent("E·全体");
+    expect(panel).toHaveTextContent("P·我的笔记");
     expect(within(panel).getAllByRole("checkbox")).toHaveLength(5);
-    expect(within(panel).getByText("Personal")).toBeInTheDocument();
+    expect(within(panel).getByText("我的笔记")).toBeInTheDocument();
     expect(within(panel).getByText("本谱")).toBeInTheDocument();
-    expect(within(panel).getByRole("button", { name: "恢复默认显示" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "使用云盘默认" })).toBeInTheDocument();
     expect(within(panel).getByText(/始终显示/)).toBeInTheDocument();
     expect(within(panel).queryByText("Preferences")).not.toBeInTheDocument();
     expect(within(panel).queryByRole("button", { name: /只读/ })).not.toBeInTheDocument();
@@ -1844,7 +1844,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
       await screen.findByText("仍有 1 项本机冲突待处理"),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText("第 2 页 · Ensemble · 第二页力度轻一些"),
+      await screen.findByText("第 2 页 · 全体 · 第二页力度轻一些"),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "前往第 2 页" }));
     expect(
@@ -1883,7 +1883,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     await screen.findByLabelText("翻页阅读");
     openMoreMenu();
     expect(
-      await screen.findByText("离线下载未完成，仍可在线阅读，现有离线版本没有切换。请重试。"),
+      await screen.findByText("离线下载未完成，尚未确认本机副本，请重试校验。"),
     ).toBeInTheDocument();
     expect(activateVerifiedOfflineScore).not.toHaveBeenCalled();
   });
@@ -2190,14 +2190,14 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     });
     continuousReader.scrollTop = 40;
     fireEvent.scroll(continuousReader);
-    const editButton = await screen.findByRole("button", { name: "编辑" });
+    const editButton = await screen.findByRole("button", { name: /^(编辑|完成编辑)$/ });
     await waitFor(() => expect(editButton).toHaveAttribute("data-state", "ready"));
     fireEvent.click(editButton);
     expect(editButton).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText(/编辑模式/)).not.toBeInTheDocument();
     expect(screen.getByLabelText("阅读器控制")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "页面位置" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "图层" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "看哪些批注" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "更多" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.queryByRole("button", { name: "连续滚动" })).not.toBeInTheDocument();
@@ -2216,7 +2216,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
       "true",
     );
     fireEvent.click(screen.getByRole("button", { name: /当前编辑层/ }));
-    expect(screen.getByRole("button", { name: "P，Personal" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "P，我的笔记" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -2227,15 +2227,15 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
           .querySelectorAll<HTMLButtonElement>(".annotation-layer-slot"),
         (button) => button.getAttribute("aria-label"),
       ),
-    ).toEqual(["E，Ensemble", "S，Soprano，只读，查看权限说明", "A，Alto，只读，查看权限说明", "T，Tenor，只读，查看权限说明", "B，Bass，只读，查看权限说明", "P，Personal"]);
+    ).toEqual(["E，全体", "S，女高音，只读，查看权限说明", "A，女低音，只读，查看权限说明", "T，男高音，只读，查看权限说明", "B，男低音，只读，查看权限说明", "P，我的笔记"]);
     expect(
-      screen.getByRole("button", { name: "S，Soprano，只读，查看权限说明" }),
+      screen.getByRole("button", { name: "S，女高音，只读，查看权限说明" }),
     ).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "S，Soprano，只读，查看权限说明" }));
+    fireEvent.click(screen.getByRole("button", { name: "S，女高音，只读，查看权限说明" }));
     expect(screen.getByRole("dialog", { name: "仅可查看" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "知道了" }));
-    fireEvent.click(screen.getByRole("button", { name: "E，Ensemble" }));
-    expect(screen.getByRole("button", { name: /当前编辑层：E · Ensemble/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "E，全体" }));
+    expect(screen.getByRole("button", { name: /当前编辑层：E · 全体/ })).toBeInTheDocument();
     expect(
       await localDatabase.annotationLayers.get(
         localWorkspaceRecordKey(
@@ -2281,7 +2281,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     fireEvent.pointerMove(inkOverlay, { pointerId: 21, clientX: 40, clientY: 50 });
     fireEvent.pointerUp(inkOverlay, { pointerId: 21, clientX: 40, clientY: 50 });
     await waitFor(() => expect(write).toHaveBeenCalled());
-    const target = screen.getByRole("button", { name: /当前编辑层：E · Ensemble/ });
+    const target = screen.getByRole("button", { name: /当前编辑层：E · 全体/ });
     expect(target).toBeVisible();
     expect(target).toBeDisabled();
     for (const name of ["文本", "画笔", "整条橡皮", "撤销", "重做"]) {
@@ -2304,13 +2304,13 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     expect(screen.getByText("200%")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "编辑" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: /^(编辑|完成编辑)$/ })).toHaveAttribute(
         "data-state",
         "ready",
       );
     });
-    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-    expect(screen.getByRole("button", { name: /当前编辑层：E · Ensemble/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^(编辑|完成编辑)$/ }));
+    expect(screen.getByRole("button", { name: /当前编辑层：E · 全体/ })).toBeInTheDocument();
   });
 
   it("marks an offline copy only after app shell, layer and annotation snapshot verification", async () => {
@@ -2437,7 +2437,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     await screen.findByLabelText("翻页阅读");
     expect(screen.getByText("离线练声曲.pdf")).toBeInTheDocument();
     toggleChrome();
-    const editButton = await screen.findByRole("button", { name: "编辑" });
+    const editButton = await screen.findByRole("button", { name: /^(编辑|完成编辑)$/ });
     await waitFor(() => expect(editButton).toHaveAttribute("data-state", "ready"));
     fireEvent.click(editButton);
     expect(editButton).toHaveAttribute("aria-pressed", "true");
@@ -2557,11 +2557,11 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
       "本机离线副本和未同步批注仍保留，恢复后可继续同步",
     );
     toggleChrome();
-    expect(screen.getByRole("button", { name: "编辑" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: /^(编辑|完成编辑)$/ })).toHaveAttribute(
       "data-state",
       "trashed",
     );
-    expect(screen.getByRole("button", { name: "编辑" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^(编辑|完成编辑)$/ })).toBeDisabled();
     expect(screen.getByText("乐谱在回收站中，恢复后可编辑")).toHaveAttribute(
       "role",
       "status",

@@ -7,8 +7,8 @@ import { RouteContent } from "./route-content";
 it("keeps route-specific navigation reachable while preferences load", () => {
   const Pending = lazy(() => new Promise<{ default: () => null }>(() => {}));
   render(<MemoryRouter initialEntries={["/choirs/drive/preferences"]}><RouteContent><Pending /></RouteContent></MemoryRouter>);
-  expect(screen.getByRole("heading", { name: "我的偏好" })).toBeInTheDocument();
-  expect(screen.getByRole("status")).toHaveTextContent("正在加载我的偏好");
+  expect(screen.getByRole("heading", { name: "阅读偏好" })).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("正在加载阅读偏好");
   expect(screen.getByRole("link", { name: "返回云盘" })).toHaveAttribute("href", "/choirs/drive");
   expect(screen.getByRole("button", { name: "重新加载页面" })).toBeInTheDocument();
   expect(screen.queryByText("正在打开乐谱…")).not.toBeInTheDocument();

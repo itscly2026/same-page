@@ -21,6 +21,7 @@ import {
   type ChoirSummary,
 } from "../../shared/choirs";
 import { authClient } from "../auth/auth-client";
+import readerPreview from "../assets/home/reader-preview.png";
 import sharedLayersIllustration from "../assets/home/shared-layers.webp";
 import personalLayerIllustration from "../assets/home/personal-layer.webp";
 import replacePdfIllustration from "../assets/home/replace-pdf.webp";
@@ -63,7 +64,7 @@ const productFeatures = [
     title: "共享批注按需看，个人笔记自己留",
     illustration: personalLayerIllustration,
     description:
-      "选择需要查看的声部批注，也能在个人层记下自己的提醒，只有你能看到。",
+      "选择需要查看的声部批注，也能在个人层记下自己的提醒，默认仅自己可见。",
   },
   {
     title: "替换乐谱，保留批注",
@@ -297,7 +298,7 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
               {!isInternalAuthEmail(session.data.user.email) ? (
                 <span className="account-email">{session.data.user.email}</span>
               ) : null}
-              <Link className="header-action" to="/user">用户设置</Link>
+              <Link className="header-action" to="/user">个人设置</Link>
               <Button
                 className="header-action"
                 onPress={() => void getLogoutLocalSummary().then(setLogoutSummary)}
@@ -316,7 +317,7 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
       {!session.isPending && userId ? (
         <main className="page-shell my-drives-page">
           <div className="my-drives-heading"><div><h1>我已加入的云盘</h1><p>选择云盘，继续排练。</p></div><Button className="secondary-button" onPress={() => setJoinOpen(true)}>加入新云盘</Button></div>
-          <MembershipList userId={userId} autoEnter={!joinOpen && searchParams.size === 0} />
+          <MembershipList userId={userId} showContinue autoEnter={!joinOpen && searchParams.size === 0} />
           {pageMessage ? <p role="alert">{pageMessage}</p> : null}
         </main>
       ) : session.isPending ? <main className="page-shell"><p role="status">正在加载…</p></main> : <main className="marketing-content">
@@ -343,13 +344,14 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
               >
                 进入云盘
               </Button>
+              <span className="hero-invite-hint">使用邀请码</span>
               {previewChoir ? (
                 <Link
                   className="hero-preview-link"
                   to={`/choirs/${previewChoir.id}`}
                   onClick={() => startLoadingJourney("enter-drive", "warm")}
                 >
-                  访问公开体验云盘
+                  先看示例
                 </Link>
               ) : null}
             </div>
@@ -359,6 +361,10 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
               </p>
             ) : null}
           </div>
+          <figure className="hero-reader-preview">
+            <img src={readerPreview} alt="乐谱批注示例：全体排练要求与个人换气提醒显示在同一份谱上" width={720} height={920} fetchPriority="high" />
+            <figcaption><span>全体排练要求</span><span>我的换气提醒</span></figcaption>
+          </figure>
           <a className="marketing-more-features" href="#features">
             了解更多功能 <span aria-hidden="true">↓</span>
           </a>

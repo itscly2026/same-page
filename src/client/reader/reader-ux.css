@@ -1,5 +1,4 @@
 /* Reader overlays never participate in the score's layout or zoom geometry. */
-.reader-editing-hint { display: block; margin-top: 0.2rem; font-size: 0.72rem; font-weight: 400; }
 .reader-shell .annotation-controls { gap: 0.25rem; padding: 0.35rem; overflow: visible; touch-action: auto; }
 .reader-shell .annotation-control-group { padding: 0; }
 .reader-shell .annotation-control-group + .annotation-control-group { margin-left: 0; }
@@ -44,11 +43,9 @@
 
 .layer-permission-popover { z-index: 80; }
 
-.reader-edit-finish-hint { display: none; font-size: 0.65rem; line-height: 1.25; }
 
 .reader-edit-layer-popover .annotation-layer-slot { border: 1px solid #ddd; border-radius: 0.65rem; color: #111; background: #f6f6f4; font-weight: 600; }
 
-@media (max-width: 36rem) { .reader-edit-finish-hint { display: block; } }
 
 .reader-display-recovery,
 .reader-display-notice {
@@ -148,3 +145,8 @@ body:has(.reader-edit-layer-popover) .annotation-text-hint { display: none; }
 .page-reader__viewport[data-editing],
 .continuous-reader[data-editing] { overflow: hidden; }
 .continuous-reader__page[data-edit-hidden] { visibility: hidden; }
+
+.reader-edit-first-hint { position: absolute; bottom: calc(100% + .5rem); left: 0; right: 0; display: flex; align-items: center; padding: .5rem .75rem; border-radius: .75rem; background: white; color: #333; box-shadow: 0 2px 12px #0002; font-size: .8rem; line-height: 1.5; }
+.reader-edit-first-hint button { flex-shrink: 0; min-width: 44px; min-height: 44px; border: 0; background: transparent; }
+
+.reader-shell:has(.reader-edit-first-hint) .annotation-text-hint { display: none; }

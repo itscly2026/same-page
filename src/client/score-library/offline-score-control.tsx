@@ -6,7 +6,7 @@ import { CircleAlert, Download, HardDriveDownload, LoaderCircle, RefreshCw, Hard
 import type { ScoreSummary } from "../../shared/scores";
 import { ACTIVE_LOCAL_OWNER_KEY, guestOwnerSystemKey, localDatabase } from "../platform/local-database";
 import { authenticatedLocalOwnerKey, createLocalWorkspace, resolveLocalWorkspace, type LocalWorkspaceOwnerKey } from "../platform/local-workspace";
-import { offlineScoreLabel, useOfflineScore } from "../offline/use-offline-score";
+import { offlineScoreLabel, offlineDownloadFailure, useOfflineScore } from "../offline/use-offline-score";
 import "./offline-score-control.css";
 
 export function OfflineScoreControl({ score, authenticatedUserId, disabled = false }: {
@@ -61,7 +61,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, disabled = fal
   const modeMissing = workspace && record && (record.imageManifest ? "images" : "pdf") !== readDisplayPreference(workspace);
   const needsDownload = !record || invalid || stale || failed || modeMissing;
   const state = downloading ? "downloading" : failed || invalid ? "error" : stale ? "stale" : modeMissing ? "missing" : record ? "ready" : "missing";
-  const description = downloading ? "正在下载并校验…" : failed ? `${attempt?.message ?? "下载未完成，请重试。"} ${label}` : label;
+  const description = downloading ? "正在下载并校验…" : failed ? attempt?.message ?? offlineDownloadFailure(record, score.currentVersion.id, invalid, workspace ? readDisplayPreference(workspace) : undefined) : label;
   const actionLabel = failed ? "重试下载" : stale ? "下载新版离线副本" : "下载离线副本";
   const Icon = state === "downloading" ? LoaderCircle : state === "error" ? CircleAlert : state === "stale" ? RefreshCw : state === "ready" ? HardDrive : Download;
 
@@ -90,6 +90,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, disabled = fal
       <Dialog id={detailsId} className="offline-score-details">
         <Heading slot="title"><HardDriveDownload aria-hidden="true" size={18} />离线副本</Heading>
         <p role="status">{description}</p>
+        <p>保存在合谱中，供这台设备离线使用。</p>
         {state === "ready" && <p>已保存在这台设备上，断网也能打开。</p>}
         {needsDownload && <Button className="secondary-button" isDisabled={disabled || downloading} onPress={() => void prepare()}>{downloading ? "正在下载…" : actionLabel}</Button>}
         <Button className="text-button" onPress={() => setDetailsOpen(false)}>关闭</Button>
