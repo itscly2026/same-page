@@ -27,7 +27,7 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
   ["chromium", chromium, "member", "guest"],
   ["webkit", webkit, "admin", "member"],
 ]) {
-  test(`${engineName}: library uses left-aligned compact search and right-aligned sort`, async (t) => {
+  test(`${engineName}: library gives header space to search and keeps sorting above the list`, async (t) => {
     const browser = await engine.launch({ headless: true });
     t.after(() => browser.close());
     const page = await openPage(browser, libraryIdentity);
@@ -40,12 +40,12 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
       const toolbar = await page.locator(".library-toolbar").boundingBox();
       const search = await page.getByPlaceholder("搜索乐谱").boundingBox();
       const sort = await page.getByRole("combobox", { name: "乐谱排序" }).boundingBox();
-      assert.ok(Math.abs(search.x - toolbar.x - 16) < 2, `${width}: search belongs at toolbar left`);
+      const menu = await page.getByRole("button", { name: "打开云盘菜单" }).boundingBox();
+      const avatar = await page.getByRole("button", { name: "用户菜单" }).boundingBox();
+      assert.ok(menu.x + menu.width <= search.x && search.x + search.width <= avatar.x, `${width}: search sits between navigation and avatar`);
+      assert.ok(Math.abs(search.y + search.height / 2 - avatar.y - avatar.height / 2) < 2, `${width}: header controls share a row`);
+      assert.ok(avatar.x - search.x - search.width <= 16, `${width}: search uses available header space`);
       assert.ok(Math.abs(sort.x + sort.width - toolbar.x - toolbar.width + 16) < 2, `${width}: sort belongs at toolbar right`);
-      if (width >= 768) {
-        assert.ok(Math.abs(search.y + search.height / 2 - sort.y - sort.height / 2) < 2, `${width}: search and sort must share a row`);
-        assert.ok(search.width <= 320, `${width}: search should not stretch across the toolbar`);
-      }
       assert.ok(search.height >= 44 && sort.height >= 44, "search and sort have touch-sized controls");
       assert.ok(search.y + search.height <= sort.y || search.x + search.width <= sort.x, "controls do not overlap");
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
