@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -214,7 +214,11 @@ function queryNamed(commands) {
 }
 
 function applyMigrations(...names) {
-  for (const name of names) executeD1({ file: join(repositoryRoot, "migrations", name), targetArgs });
+  // Calls are the data-observation boundaries above. Preserve SQL order and
+  // per-migration PRAGMAs while avoiding a Wrangler process for each file.
+  const file = join(persistencePath, "migration-batch.sql");
+  writeFileSync(file, names.map(name => readFileSync(join(repositoryRoot, "migrations", name), "utf8")).join("\n;\n"));
+  executeD1({ file, targetArgs });
 }
 
 function legacyFixtureSql() {

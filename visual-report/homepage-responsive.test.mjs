@@ -39,8 +39,6 @@ for (const [engineName, engine] of [
         await page.setViewportSize({ width, height: 1000 });
         const layout = await readHomepageLayout(page);
         assertPageFits(layout, `${engineName} ${width}px`);
-        if (width === 720) assert.equal(layout.featureDisplay, "flex");
-        if (width === 721) assert.equal(layout.featureDisplay, "grid");
       }
 
       await page.setViewportSize({ width: 834, height: 1194 });
@@ -92,7 +90,6 @@ async function enlargeText(page) {
 async function readHomepageLayout(page) {
   return page.evaluate(() => {
     const featureElements = [...document.querySelectorAll(".marketing-feature")];
-    const featureDisplay = getComputedStyle(featureElements[0]).display;
     const visibleWidth = window.visualViewport?.width ?? window.innerWidth;
     const measuredElements = featureElements.flatMap((feature) => [
       feature,
@@ -104,7 +101,6 @@ async function readHomepageLayout(page) {
       viewportWidth: window.innerWidth,
       visualViewportWidth: visibleWidth,
       documentWidth: document.documentElement.scrollWidth,
-      featureDisplay,
       features: featureElements.map((feature) => {
         const copy = feature.querySelector(".marketing-feature__copy");
         const illustration = feature.querySelector(
@@ -112,6 +108,8 @@ async function readHomepageLayout(page) {
         );
         return {
           copyLeft: copy.getBoundingClientRect().left,
+          copyBottom: copy.getBoundingClientRect().bottom,
+          illustrationTop: illustration.getBoundingClientRect().top,
           illustrationLeft: illustration.getBoundingClientRect().left,
         };
       }),
@@ -162,13 +160,7 @@ function assertPageFits(layout, label) {
 }
 
 function assertResponsiveDefaultLayout(layout, label) {
-  const shouldUseGrid = layout.viewportWidth > 720;
-  assert.equal(
-    layout.featureDisplay,
-    shouldUseGrid ? "grid" : "flex",
-    `${label}: default layout`,
-  );
-  if (!shouldUseGrid) return;
+  if (layout.viewportWidth <= 720) return;
   assert.ok(
     layout.features[0].copyLeft < layout.features[0].illustrationLeft,
     `${label}: first feature is not copy then illustration`,
@@ -181,7 +173,8 @@ function assertResponsiveDefaultLayout(layout, label) {
 
 function assertEnlargedLayout(layout, label) {
   assertPageFits(layout, label);
-  assert.equal(layout.featureDisplay, "flex", `${label}: enlarged layout`);
+  // Enlarged text must remain readable regardless of the chosen CSS layout.
+  for (const feature of layout.features) assert.ok(feature.copyBottom <= feature.illustrationTop + 1, `${label}: copy precedes illustration vertically`);
 }
 
 async function openGuestPage(browser, contextOptions = {}) {

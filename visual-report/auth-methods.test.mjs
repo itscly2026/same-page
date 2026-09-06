@@ -85,5 +85,5 @@ for (const [name, engine, viewport] of [
 async function screenshot(page, device, step) {
   const dimensions = await page.evaluate(() => ({ viewport: innerWidth, content: document.documentElement.scrollWidth }));
   assert.ok(dimensions.content <= dimensions.viewport, `${device}/${step} must not overflow`);
-  await page.screenshot({ path: path.join(repositoryRoot, `artifacts/verification/auth-138/${device}-${step}.png`), fullPage: true });
+  if (process.env.LAYOUT_CAPTURE_DIR) await page.screenshot({ path: path.join(repositoryRoot, `artifacts/verification/auth-138/${device}-${step}.png`), fullPage: true });
 }

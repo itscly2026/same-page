@@ -169,7 +169,7 @@ test("the workflow entrypoint emits scope and rejects whitespace errors in docs"
   assert.equal(run().status, 0);
   assert.equal(
     readFileSync(output, "utf8"),
-    "full=false\nclient=false\nworker=false\nvisual=false\npwa=false\nperformance=false\nmigration=false\nbuild=false\ndeploy=false\nsmoke=false\nrenderer=false\n",
+    "full=false\nclient=false\nworker=false\nvisual=false\npwa=false\nperformance=false\nmigration=false\nbuild=false\ndeploy=false\nsmoke=false\nrenderer=false\nbrowserGroup=all\n",
   );
   rmSync(output);
   repo.put("docs/change.md", "bad whitespace \t\n");
@@ -217,4 +217,56 @@ test("native changes validate packaging and runtime consumers without unrelated 
   const scope = repo.scope();
   for (const check of ["renderer", "build", "smoke", "deploy"]) assert.equal(scope[check], true, check);
   for (const check of ["client", "worker", "visual", "pwa", "migration"]) assert.equal(scope[check], false, check);
+});
+
+
+test("audited library leaves select entry/storage consumers; mixed shared changes widen to all", t => {
+  const repo = repository(t);
+  repo.put("src/client/score-library/drive-settings-dialog.tsx"); repo.commit();
+  assert.equal(repo.scope().browserGroup, "library");
+  assert.equal(repo.scope().performance, false);
+  for (const key of ["client", "visual", "smoke", "build", "deploy"]) assert.equal(repo.scope()[key], true);
+  for (const file of ["src/client/reader/reader-session.ts", "src/client/auth/application-identity.tsx", "src/client/offline/offline-score.ts", "src/client/styles.css", "new-path", "package-lock.json"]) {
+    repo.put(file); repo.commit();
+    assert.equal(repo.scope().browserGroup, "all", file);
+    assert.equal(repo.scope().smoke, true, file);
+  }
+  assert.equal(repo.scope("push", {}).browserGroup, "all");
+});
+
+test("changes to the selector itself receive full verification", t => {
+  const repo = repository(t);
+  repo.put("scripts/ci-scope.mjs"); repo.commit();
+  for (const key of ["client", "worker", "visual", "smoke", "renderer", "pwa", "migration", "performance", "build"]) assert.equal(repo.scope()[key], true, key);
+});
+
+test("the workflow gate rejects failure, cancellation and unexpected skips of selected jobs", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  const script = workflow.match(/node --input-type=module <<'JS'\n([\s\S]*?)\n\s*JS/)[1];
+  // Execute the actual gate body in-process; dozens of Node startups would
+  // make this safety check itself an avoidable CI cost.
+  const gate = new Function("assert", "process", script.replace(/import assert from 'node:assert\/strict';/, ""));
+  const run = jobs => {
+    try { gate(assert, { env: { RESULTS: JSON.stringify(jobs) } }); return 0; }
+    catch { return 1; }
+  };
+  for (const outputs of [
+    { full: "false" },
+    { full: "true", client: "true" },
+    { full: "true", visual: "true", smoke: "true", build: "true", browserGroup: "library" },
+    { full: "true", visual: "true", renderer: "true", pwa: "true", browserGroup: "all" },
+  ]) {
+    const jobs = {
+      scope: { result: "success", outputs },
+      checks: { result: outputs.full === "true" ? "success" : "skipped" },
+      visual: { result: outputs.visual === "true" ? "success" : "skipped" },
+      integration: { result: outputs.smoke || outputs.renderer ? "success" : "skipped" },
+    };
+    assert.equal(run(jobs), 0);
+    for (const [name, job] of Object.entries(jobs)) {
+      for (const result of ["failure", "cancelled", job.result === "success" ? "skipped" : "success"]) {
+        assert.notEqual(run({ ...jobs, [name]: { ...job, result } }), 0, `${name}/${result}`);
+      }
+    }
+  }
 });

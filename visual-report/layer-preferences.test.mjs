@@ -49,37 +49,41 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     const viewports = engineName === "chromium"
       ? [[320, 740], [740, 320], [1440, 1000]]
       : [[834, 1194], [1194, 834]];
-    for (const [width, height] of viewports) {
-      await page.setViewportSize({ width, height });
-      await page.goto(`${origin}${drive}/preferences`);
-      const checkbox = page.getByRole("checkbox", { name: "E · 全体 默认显示" });
-      await checkbox.waitFor();
-      assert.equal(await page.locator('input[type="color"]').count(), 0);
-      await layout(page, ".preference-display-toggle");
-      await capture(page, `${engineName}-${width}-preferences`);
-      await page.getByRole("link", { name: "批注颜色", exact: true }).click();
-      await page.getByRole("heading", { name: "批注颜色", exact: true }).waitFor();
-      assert.equal(await page.getByRole("checkbox").count(), 0);
-      await layout(page, ".settings-color-control input");
-      await capture(page, `${engineName}-${width}-colors`);
-      await page.getByRole("link", { name: "返回阅读偏好" }).click();
-      await page.goto(`${origin}${drive}/scores/visual-score`);
-      await showReader(page);
-      await page.getByRole("button", { name: "看哪些批注", exact: true }).click();
-      await page.getByRole("checkbox", { name: "显示 E · 全体" }).waitFor();
-      assert.equal(await page.getByRole("checkbox").count(), 5);
-      await page.locator(".layer-section--personal").scrollIntoViewIfNeeded();
-      await layout(page, ".reader-layer-toggle");
-      await capture(page, `${engineName}-${width}-display`);
-      await page.getByRole("button", { name: "关闭批注显示" }).click();
-      await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
-      await page.getByRole("button", { name: /当前编辑层/ }).click();
-      await page.getByRole("dialog", { name: "写到哪里" }).waitFor();
-      await page.getByRole("button", { name: "P，我的笔记", exact: true }).scrollIntoViewIfNeeded();
-      await layout(page, ".annotation-layer-slot");
-      await capture(page, `${engineName}-${width}-target`);
-      await page.getByRole("button", { name: "关闭写入目标" }).click();
-    }
+    const geometry = async (selector, name, sizes = viewports) => {
+      for (const [width, height] of sizes) {
+        await page.setViewportSize({ width, height });
+        // Reader width follows ResizeObserver; wait for the resized sheet before
+        // measuring controls rather than reading the previous viewport's bitmap.
+        await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
+        await layout(page, selector);
+        await capture(page, `${engineName}-${width}-${name}`);
+      }
+    };
+
+    await page.goto(`${origin}${drive}/preferences`);
+    const checkbox = page.getByRole("checkbox", { name: "E · 全体 默认显示" });
+    await checkbox.waitFor();
+    assert.equal(await page.locator('input[type="color"]').count(), 0);
+    await geometry(".preference-display-toggle", "preferences");
+    await page.getByRole("link", { name: "批注颜色", exact: true }).click();
+    await page.getByRole("heading", { name: "批注颜色", exact: true }).waitFor();
+    assert.equal(await page.getByRole("checkbox").count(), 0);
+    await geometry(".settings-color-control input", "colors");
+    await page.getByRole("link", { name: "返回阅读偏好" }).click();
+    await page.goto(`${origin}${drive}/scores/visual-score`);
+    await showReader(page);
+    await page.getByRole("button", { name: "看哪些批注", exact: true }).click();
+    await page.getByRole("checkbox", { name: "显示 E · 全体" }).waitFor();
+    assert.equal(await page.getByRole("checkbox").count(), 5);
+    await page.locator(".layer-section--personal").scrollIntoViewIfNeeded();
+    await geometry(".reader-layer-toggle", "display");
+    await page.getByRole("button", { name: "关闭批注显示" }).click();
+    await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
+    await page.getByRole("button", { name: /当前编辑层/ }).click();
+    await page.getByRole("dialog", { name: "写到哪里" }).waitFor();
+    await page.getByRole("button", { name: "P，我的笔记", exact: true }).scrollIntoViewIfNeeded();
+    await geometry(".annotation-layer-slot", "target");
+    await page.getByRole("button", { name: "关闭写入目标" }).click();
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${origin}${drive}/preferences`);
@@ -148,17 +152,13 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     assert.equal(writes.length, beforeEditing, "editing never writes a subscription");
 
     identity = "admin";
-    for (const [width, height] of viewports.filter(([, height]) => height > 320)) {
-      await page.setViewportSize({ width, height });
-      await page.goto(`${origin}${drive}/shared-layers`);
-      await page.getByRole("link", { name: /E · 全体.*已授权/ }).waitFor();
-      await layout(page, ".settings-layer-link, .layer-create-form input[type=text]");
-      await capture(page, `${engineName}-${width}-management`);
-      await page.getByRole("link", { name: /E · 全体.*已授权/ }).click();
-      await page.getByRole("heading", { name: "E · 全体" }).waitFor();
-      await layout(page, ".settings-member-row, .layer-details-form input[type=text]");
-      await capture(page, `${engineName}-${width}-grants`);
-    }
+    await page.goto(`${origin}${drive}/shared-layers`);
+    await page.getByRole("link", { name: /E · 全体.*已授权/ }).waitFor();
+    const managementSizes = viewports.filter(([, height]) => height > 320);
+    await geometry(".settings-layer-link, .layer-create-form input[type=text]", "management", managementSizes);
+    await page.getByRole("link", { name: /E · 全体.*已授权/ }).click();
+    await page.getByRole("heading", { name: "E · 全体" }).waitFor();
+    await geometry(".settings-member-row, .layer-details-form input[type=text]", "grants", managementSizes);
     if (process.env.LAYOUT_CAPTURE_DIR) await writeFile(path.join(process.env.LAYOUT_CAPTURE_DIR, `${engineName}-interactions.json`), JSON.stringify({ writes, checks: ["drive defaults", "score override and restore", "save failure and retry", "custom color and restore", "permission explanation", "edit hidden layer without subscribing", "exit restores reading"] }, null, 2));
     await context.close();
   });

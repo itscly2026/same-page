@@ -5,6 +5,7 @@ import test from "node:test";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { chromium } from "@playwright/test";
+import { expectSampleScoreContent } from "./pdf-content.mjs";
 import { startStorageFixture } from "./storage-fixture.mjs";
 
 test("real Worker D1/R2 score survives a browser restart offline via IndexedDB", { timeout: 90_000 }, async (t) => {
@@ -36,7 +37,7 @@ test("real Worker D1/R2 score survives a browser restart offline via IndexedDB",
     await context.setOffline(true);
     const offlinePage = await context.newPage();
     await offlinePage.goto(`${fixture.origin}/choirs/${fixture.choirId}/scores/${fixture.scoreId}`);
-    await offlinePage.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
+    await expectSampleScoreContent(offlinePage);
     // Storage is exercised through product download/reopen, never preloaded or mocked.
     assert.equal(await offlinePage.evaluate(async () => {
       try { await fetch("/api/health"); return false; } catch { return true; }
