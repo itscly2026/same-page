@@ -1,3 +1,4 @@
+import { Blob as NodeBlob } from "node:buffer";
 import { useLiveQuery } from "dexie-react-hooks";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -30,6 +31,7 @@ function Reader() {
 }
 
 beforeEach(async () => {
+  vi.stubGlobal("Blob", NodeBlob);
   await localDatabase.open();
   await activateAuthenticatedLocalOwner("reader");
   await localDatabase.annotationOutbox.clear();
