@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { test } from "node:test";
 import { chromium } from "playwright";
-import { startViteServer } from "../scripts/vite-server.mjs";
+import { startVisualServer } from "./setup.mjs";
 import { resolveFixtureRequest } from "./fixtures.mjs";
 
 // Real client, IndexedDB, PDF canvas and outbox; API fixtures and network events
 // are simulated. This is not physical-device or airplane-mode acceptance.
 test("reader menu, durable offline draft, reconnect and recovery evidence", async (t) => {
-  const app = await startViteServer({ script: "dev" });
+  const app = await startVisualServer({ script: "dev" });
   const browser = await chromium.launch();
   t.after(async () => { await browser.close(); await app.stop(); });
   const output = "artifacts/verification/issue-142";

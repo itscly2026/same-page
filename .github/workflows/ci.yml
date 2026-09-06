@@ -15,49 +15,126 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  verify:
+  scope:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 2
     outputs:
+      full: ${{ steps.scope.outputs.full }}
+      client: ${{ steps.scope.outputs.client }}
+      worker: ${{ steps.scope.outputs.worker }}
+      visual: ${{ steps.scope.outputs.visual }}
+      pwa: ${{ steps.scope.outputs.pwa }}
+      performance: ${{ steps.scope.outputs.performance }}
+      migration: ${{ steps.scope.outputs.migration }}
+      build: ${{ steps.scope.outputs.build }}
       deploy: ${{ steps.scope.outputs.deploy }}
+      smoke: ${{ steps.scope.outputs.smoke }}
+      renderer: ${{ steps.scope.outputs.renderer }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
       - name: CI scope regression tests
         run: node --test scripts/ci-scope.test.mjs
-
       - name: Determine verification scope
         id: scope
         run: node scripts/ci-scope.mjs
 
+  checks:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
       - name: Use Node.js 24
-        if: steps.scope.outputs.full == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
-
       - name: Install dependencies
-        if: steps.scope.outputs.full == 'true'
         run: npm ci --prefer-offline --no-audit --no-fund
+      - name: Lint
+        if: needs.scope.outputs.full == 'true'
+        run: npm run lint
+      - name: Type check
+        if: needs.scope.outputs.full == 'true'
+        run: npm run typecheck
+      - name: Client tests
+        if: needs.scope.outputs.client == 'true'
+        run: npm run test
+      - name: Worker tests
+        if: needs.scope.outputs.worker == 'true'
+        run: npm run test:worker
+      - name: Migration tests
+        if: needs.scope.outputs.migration == 'true'
+        run: npm run test:migrations
 
-      - name: Use Python for native PDF regression
-        if: steps.scope.outputs.full == 'true'
+  visual:
+    needs: scope
+    if: needs.scope.outputs.visual == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit --no-fund
+      - name: Install Playwright Chromium and WebKit
+        run: npx playwright install --with-deps chromium webkit
+      - name: Browser layout and interaction regressions
+        run: npm run test:visual-report
+      - name: Preserve synthetic test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-${{ github.sha }}-${{ github.run_attempt }}
+          path: artifacts/verification/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  integration:
+    needs: scope
+    if: >-
+      needs.scope.outputs.build == 'true' ||
+      needs.scope.outputs.pwa == 'true' ||
+      needs.scope.outputs.performance == 'true' ||
+      needs.scope.outputs.smoke == 'true' ||
+      needs.scope.outputs.renderer == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit --no-fund
+      - name: Use Python for native PDF runtime
+        if: needs.scope.outputs.smoke == 'true' || needs.scope.outputs.renderer == 'true'
         uses: actions/setup-python@v6
         with:
           python-version: '3.14'
-
-      - name: Install and verify native renderer
-        if: steps.scope.outputs.full == 'true'
-        run: |
-          python -m pip install -r renderer/requirements.txt
-          python renderer/verify.py
-
+          cache: pip
+          cache-dependency-path: renderer/requirements.txt
+      - name: Install native PDF runtime
+        if: needs.scope.outputs.smoke == 'true' || needs.scope.outputs.renderer == 'true'
+        run: python -m pip install -r renderer/requirements.txt
+      - name: Verify native renderer
+        if: needs.scope.outputs.renderer == 'true'
+        run: python renderer/verify.py
       - name: Verify packaged Linux renderer without network access
-        if: steps.scope.outputs.full == 'true'
+        if: needs.scope.outputs.renderer == 'true'
         run: |
           docker build --tag same-page-renderer:verify renderer
           docker run --rm --network none --memory 1g --cpus 1 \
@@ -65,65 +142,34 @@ jobs:
             --mount type=bind,src="$PWD/renderer/verify.py",dst=/app/verify.py,readonly \
             --tmpfs /artifacts:uid=10001,gid=10001,size=64m \
             same-page-renderer:verify python /app/verify.py
-
-      - name: Lint
-        if: steps.scope.outputs.full == 'true'
-        run: npm run lint
-
-      - name: Type check
-        if: steps.scope.outputs.full == 'true'
-        run: npm run typecheck
-
-      - name: Client tests
-        if: steps.scope.outputs.client == 'true'
-        run: npm run test
-
-      - name: Worker tests
-        if: steps.scope.outputs.worker == 'true'
-        run: npm run test:worker
-
       - name: Install Playwright Chromium and WebKit
         if: >-
-          steps.scope.outputs.visual == 'true' ||
-          steps.scope.outputs.pwa == 'true' ||
-          steps.scope.outputs.performance == 'true' ||
-          steps.scope.outputs.smoke == 'true'
+          needs.scope.outputs.pwa == 'true' ||
+          needs.scope.outputs.performance == 'true' ||
+          needs.scope.outputs.smoke == 'true'
         run: npx playwright install --with-deps chromium webkit
-
       - name: PWA update handover
-        if: steps.scope.outputs.pwa == 'true'
+        if: needs.scope.outputs.pwa == 'true'
         run: npm run test:pwa-update
 
       # PWA handover builds two synthetic versions; overwrite them with the
       # current commit before measuring production assets.
       - name: Production build
-        if: steps.scope.outputs.build == 'true'
+        if: needs.scope.outputs.build == 'true'
         run: npm run build
-
       - name: Loading performance feedback loop
-        if: steps.scope.outputs.performance == 'true'
+        if: needs.scope.outputs.performance == 'true'
         run: node scripts/measure-loading-performance.mjs
-
-      - name: Visual report tests
-        if: steps.scope.outputs.visual == 'true'
-        run: npm run test:visual-report
-
-      - name: Migration tests
-        if: steps.scope.outputs.migration == 'true'
-        run: npm run test:migrations
-
       - name: Real browser Worker storage smoke
-        if: steps.scope.outputs.smoke == 'true'
+        if: needs.scope.outputs.smoke == 'true'
         run: npm run test:smoke
-
       - name: Seal verified release
-        if: steps.scope.outputs.build == 'true'
+        if: github.event_name == 'push' && needs.scope.outputs.deploy == 'true'
         run: |
           node scripts/release-artifact.mjs seal "$GITHUB_SHA"
           tar -cf release.tar dist migrations renderer wrangler.jsonc package-lock.json release.json
-
       - name: Upload verified release
-        if: steps.scope.outputs.build == 'true'
+        if: github.event_name == 'push' && needs.scope.outputs.deploy == 'true'
         id: artifact
         uses: actions/upload-artifact@v4
         with:
@@ -132,23 +178,50 @@ jobs:
           path: release.tar
           retention-days: 14
           if-no-files-found: error
-
       - name: Record verification identity
-        if: steps.scope.outputs.build == 'true'
+        if: github.event_name == 'push' && needs.scope.outputs.deploy == 'true'
         run: |
           echo "Source: $GITHUB_SHA; artifact: $ARTIFACT_URL; digest: $ARTIFACT_DIGEST" >> "$GITHUB_STEP_SUMMARY"
         env:
           ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
           ARTIFACT_DIGEST: ${{ steps.artifact.outputs.artifact-digest }}
-
       - name: Preserve synthetic test evidence
-        if: always() && steps.scope.outputs.full == 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: verification-${{ github.sha }}-${{ github.run_attempt }}
+          name: integration-${{ github.sha }}-${{ github.run_attempt }}
           path: artifacts/verification/
           if-no-files-found: ignore
           retention-days: 14
+
+  # Keep the existing required check name. Skipped work is allowed only when
+  # the successful scope job explicitly did not select it.
+  verify:
+    if: always()
+    needs: [scope, checks, visual, integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      deploy: ${{ needs.scope.outputs.deploy }}
+    steps:
+      - name: Require every selected verification job
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          const jobs = JSON.parse(process.env.RESULTS);
+          assert.equal(jobs.scope.result, 'success', 'scope must succeed');
+          const scope = jobs.scope.outputs;
+          const expected = {
+            checks: scope.full === 'true',
+            visual: scope.visual === 'true',
+            integration: ['build', 'pwa', 'performance', 'smoke', 'renderer'].some(key => scope[key] === 'true'),
+          };
+          for (const [name, selected] of Object.entries(expected)) {
+            assert.equal(jobs[name].result, selected ? 'success' : 'skipped', name);
+          }
+          JS
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify.outputs.deploy == 'true'

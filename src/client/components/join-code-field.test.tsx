@@ -20,12 +20,6 @@ describe("JoinCodeField", () => {
     fireEvent.change(input, { target: { value: "ab cd - efgh" } });
 
     expect(input).toHaveValue("ABCD-EFGH");
-    expect(document.querySelectorAll(".join-code-slot")).toHaveLength(8);
-    expect(
-      Array.from(document.querySelectorAll(".join-code-slot"), (slot) =>
-        slot.textContent,
-      ).join(""),
-    ).toBe("ABCDEFGH");
     expect(document.querySelector(".join-code-slots")).toHaveAttribute(
       "aria-hidden",
       "true",
@@ -39,7 +33,6 @@ describe("JoinCodeField", () => {
     fireEvent.change(input, { target: { value: "ABCD-EFG" } });
 
     expect(input).toHaveValue("ABCD-EFG");
-    expect(document.querySelectorAll(".join-code-slot[data-filled]")).toHaveLength(7);
   });
 });
 

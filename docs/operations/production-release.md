@@ -94,7 +94,7 @@ authorization code、token、完整 profile 或 Secret。
 | 中国大陆网络下 Google 超时 | 记录网络、设备和时间，将 Google 判为该场景不可用；确认邮箱入口始终可见可用。不要通过放宽 OAuth 校验或增加代理回调规避。 |
 
 后续 `main` 发布必须先通过 CI 根据变更范围选择的门禁；无法识别范围时运行完整门禁，只有影响生产产物或 migration 的变更才进入 deploy job。正式发布或 migration 前，本地运行全量超集 `npm run check:full`；先运行 `npm ci` 和 `npx playwright install chromium webkit`（Linux/CI 使用 `--with-deps`）。`npm run check` 不包含 PWA 更新交接及加载性能，不能作为发布前的完整集合。
-deploy job 在生产锁内核对发布顺序，记录发布尝试，下载 verify 的原始产物并校验完整清单，再执行 D1 恢复点记录、migrations、迁移后聚合/结构核查、Wrangler deploy 与线上机器验证。迁移或验证失败时 workflow 失败，不能记为发布成功。部署阶段不重新构建。
+deploy job 在生产锁内核对发布顺序，记录发布尝试，在汇总 verify 通过后，下载 integration 封存的原始产物并校验完整清单，再执行 D1 恢复点记录、migrations、迁移后聚合/结构核查、Wrangler deploy 与线上机器验证。迁移或验证失败时 workflow 失败，不能记为发布成功。部署阶段不重新构建。
 
 构建身份、HTML meta、Worker 须匹配显式 expected SHA；实际脚本逐个核对已验证发布包 `dist/client/build.json` 中的 SHA256（包括入口、共享与延迟加载脚本及 PDF Worker）。独立验收需下载对应 artifact；CLI 第三个参数可指定该清单路径，不能使用另一版本的本地构建。全部返回同一个旧版本仍失败。验收最多 12 次、每次请求超时 15 秒、间隔 3 秒，超过传播窗口则保留失败。成功记录只能在这些检查全部完成后写入。迁移后的失败尝试仍推进发布边界；旧作业不能在它之后部署旧 Worker。
 
@@ -139,7 +139,7 @@ deploy job 在生产锁内核对发布顺序，记录发布尝试，下载 verif
 ## 发布失败与显式回滚
 
 1. 先在 Actions 确定失败阶段。准入跳过表示已有更新的发布尝试；历史不可达、分叉、GitHub 记录不可用或 artifact 校验失败都在生产写入前停止。不要通过删除发布记录或修改 expected SHA 绕过。
-2. 下载失败或 artifact 过期：重跑 verify 和 deploy。相同 SHA 允许重试；不允许在部署阶段临时构建一份新产物。`npm run deploy` 仅供已获授权的手工恢复，要求 `SAME_PAGE_RELEASE_SHA` 与已校验的 release.json 一致，不构建、不迁移，也不替代完整发布流程；执行时须停止并发 CI 发布并单独记录。
+2. 下载失败或 artifact 过期：重跑包含 integration、verify 和 deploy 的完整工作流。相同 SHA 允许重试；不允许在部署阶段临时构建一份新产物。`npm run deploy` 仅供已获授权的手工恢复，要求 `SAME_PAGE_RELEASE_SHA` 与已校验的 release.json 一致，不构建、不迁移，也不替代完整发布流程；执行时须停止并发 CI 发布并单独记录。
 3. 迁移失败：使用本次步骤记录的 D1 Time Travel 恢复点和迁移前聚合结果，先确定哪些迁移已应用。保留非取消的部署锁，不要在迁移过程中启动另一次写入。修复幂等迁移后重试同 SHA 或发布后继修复。
 4. Worker/静态资源上传或线上身份验收失败：检查 expected SHA、上传 artifact、线上 health/build.json/HTML/脚本各自版本与 Actions 原始错误。传播超时不能写成功；可重试同 SHA 的 deploy，仍须重新执行恢复点和迁移核查。
 5. 代码回滚采用新的 `git revert` 提交，经过完整验证和同一发布链路向前发布，使发布顺序仍单调。先核对回滚代码与当前 schema 是否兼容；迁移不兼容时先设计明确的数据恢复/前向修复，不能直接用旧 Worker 覆盖新 schema。恢复 D1 是单独、明确授权的生产操作，应说明可能丢失恢复点之后的数据并核查 R2 一致性；本工作流不会自动恢复数据库。

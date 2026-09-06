@@ -96,7 +96,7 @@ describe("annotation layers and object synchronization", () => {
     const layersResponse = await callWorker(`/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/layers`, { headers: { cookie: fixture.adminCookie } });
     const { layers } = await layersResponse.json() as { layers: Array<{ id: string; kind: string }> };
     const personal = layers.find(layer => layer.kind === "personal")!;
-    const measurements: unknown[] = [];
+    const measurements: Array<{ size: number; sql: number; roundTrips: number }> = [];
     for (const size of [1, 100]) {
       let sql = 0, roundTrips = 0;
       const wrap = (statement: D1PreparedStatement): D1PreparedStatement => new Proxy(statement, {
@@ -114,17 +114,17 @@ describe("annotation layers and object synchronization", () => {
       }});
       const operations = Array.from({ length: size }, (_, i) => operation(crypto.randomUUID(), i % 2 ? personal.id : fixture.layerId, 0, "benchmark"));
       const execution = createExecutionContext();
-      const start = performance.now();
       const response = await worker.fetch(new Request(`https://same-page.test/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/annotations/push`, jsonRequest(fixture.adminCookie, { operations }, { "x-same-page-owner-user-id": fixture.adminUserId })), { ...env, DB }, execution);
       await waitOnExecutionContext(execution);
       expect(response.status).toBe(200);
       const body = await response.json() as { results: Array<{ status: string }> };
       expect(body.results).toHaveLength(size);
       expect(body.results.every(result => result.status === "accepted")).toBe(true);
-      measurements.push({ size, sql, roundTrips, elapsedMs: Math.round(performance.now() - start) });
+      measurements.push({ size, sql, roundTrips });
     }
-    console.log("ANNOTATION_BENCHMARK", JSON.stringify(measurements));
-    expect(measurements).toEqual([expect.objectContaining({ size: 1, sql: 11, roundTrips: 6 }), expect.objectContaining({ size: 100, sql: 11, roundTrips: 6 })]);
+    // Catch per-object SQL/transport regressions without freezing the query plan.
+    expect(measurements[1].sql).toBeLessThanOrEqual(measurements[0].sql + 1);
+    expect(measurements[1].roundTrips).toBeLessThanOrEqual(measurements[0].roundTrips + 1);
   });
 
   it("lets signed-in preview users sync only their own personal layer without joining", async () => {

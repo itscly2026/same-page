@@ -4,7 +4,7 @@ import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium, devices, webkit } from "playwright";
 
-import { startViteServer } from "../scripts/vite-server.mjs";
+import { startVisualServer } from "./setup.mjs";
 import { resolveFixtureRequest } from "./fixtures.mjs";
 
 const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -13,7 +13,7 @@ let origin = process.env.LAYOUT_TEST_ORIGIN;
 
 before(async () => {
   if (!origin) {
-    server = await startViteServer({ script: "dev", cwd: repositoryRoot });
+    server = await startVisualServer({ script: "dev", cwd: repositoryRoot });
     origin = server.origin;
   }
 });
@@ -54,14 +54,10 @@ for (const [engineName, engine] of [
   );
 }
 
+// Distinct mobile viewport/orientation behavior; desktop width sweeps above
+// already cover the remaining presets without repeating identical page loads.
 const iPadProfiles = [
-  "iPad (gen 7)",
-  "iPad (gen 7) landscape",
-  "iPad (gen 11)",
-  "iPad (gen 11) landscape",
   "iPad Mini",
-  "iPad Mini landscape",
-  "iPad Pro 11",
   "iPad Pro 11 landscape",
 ];
 

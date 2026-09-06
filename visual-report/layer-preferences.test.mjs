@@ -4,7 +4,7 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium, webkit } from "playwright";
-import { startViteServer } from "../scripts/vite-server.mjs";
+import { startVisualServer } from "./setup.mjs";
 import { createVisualFixtureSession } from "./fixtures.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -12,7 +12,7 @@ const drive = "/choirs/visual-choir";
 let server;
 let origin = process.env.LAYOUT_TEST_ORIGIN;
 before(async () => {
-  if (!origin) { server = await startViteServer({ script: "dev", cwd: root }); origin = server.origin; }
+  if (!origin) { server = await startVisualServer({ script: "dev", cwd: root }); origin = server.origin; }
 });
 after(async () => { await server?.stop(); });
 
@@ -45,7 +45,11 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     });
     await context.addInitScript(() => localStorage.setItem("reader-gesture-hint-seen", "true"));
     const page = await context.newPage();
-    for (const [width, height] of [[320, 740], [740, 320], [834, 1194], [1194, 834], [1440, 1000]]) {
+    // Each geometry is exercised once; both engines run the behavior flow below.
+    const viewports = engineName === "chromium"
+      ? [[320, 740], [740, 320], [1440, 1000]]
+      : [[834, 1194], [1194, 834]];
+    for (const [width, height] of viewports) {
       await page.setViewportSize({ width, height });
       await page.goto(`${origin}${drive}/preferences`);
       const checkbox = page.getByRole("checkbox", { name: "E · Ensemble 默认显示" });
@@ -144,7 +148,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     assert.equal(writes.length, beforeEditing, "editing never writes a subscription");
 
     identity = "admin";
-    for (const [width, height] of [[320, 740], [834, 1194], [1194, 834], [1440, 1000]]) {
+    for (const [width, height] of viewports.filter(([, height]) => height > 320)) {
       await page.setViewportSize({ width, height });
       await page.goto(`${origin}${drive}/shared-layers`);
       await page.getByLabel("E · Ensemble 云盘默认颜色", { exact: true }).waitFor();

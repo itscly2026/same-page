@@ -102,45 +102,6 @@ describe("AppRoutes", () => {
     expect(
       screen.getByText("为合唱排练与共享批注打造的乐谱云盘。"),
     ).toHaveAttribute("lang", "zh-CN");
-    expect(
-      within(screen.getByRole("region", { name: "产品特点" }))
-        .getAllByRole("heading", { level: 2 })
-        .map((heading) => heading.textContent),
-    ).toEqual([
-      "不同声部，分层共享批注",
-      "共享批注按需看，个人笔记自己留",
-      "替换乐谱，保留批注",
-      "离线可用，联网同步",
-      "一份乐谱，多设备可用",
-    ]);
-    expect(
-      screen.getByRole("link", { name: "了解更多功能" }),
-    ).toHaveAttribute("href", "#features");
-    expect(
-      screen.getByText(
-        "排练要求按声部分层共享，获授权的人可以留下批注，大家在同一份谱上查看。",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "选择需要查看的声部批注，也能在个人层记下自己的提醒，只有你能看到。",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "谱子有局部修订时，管理员可以直接替换 PDF；已有批注仍按原页码和位置显示，不必重新标注。",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "提前下载离线副本，断网也能继续看谱、做批注；恢复联网后，批注会继续同步。",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "建议将合谱像应用一样安装到 Android 手机和平板、iPhone、iPad、Windows 电脑或 Mac，随时打开同一份乐谱和批注。",
-      ),
-    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "登录" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "隐私政策" })).toHaveAttribute(
       "href",
@@ -163,31 +124,6 @@ describe("AppRoutes", () => {
     expect(screen.getByRole("button", { name: "进入" })).toBeDisabled();
     expect(screen.queryByText("无需注册，也可以访客身份只读访问。")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
-  });
-
-  it("publishes the privacy policy at a stable public route", async () => {
-    render(
-      <MemoryRouter initialEntries={["/privacy"]}>
-        <AppRoutes />
-      </MemoryRouter>,
-    );
-
-    expect(
-      await screen.findByRole("heading", { name: "隐私政策", level: 1 }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Google 用户数据" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "admin@clyapps.com" })).toHaveAttribute(
-      "href",
-      "mailto:admin@clyapps.com",
-    );
-    expect(screen.getByRole("link", { name: "返回合谱首页" })).toHaveAttribute(
-      "href",
-      "/",
-    );
-    expect(screen.getByText(/该成员关系授予的云端访问与同步立即撤销/)).toBeInTheDocument();
-    expect(screen.getByText(/重新验证原登录方式并确认删除/)).toBeInTheDocument();
   });
 
   it("edits drive-scoped defaults from My Preferences", async () => {

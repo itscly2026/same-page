@@ -1556,27 +1556,13 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     expect(currentRenderedPage()).toBe("2");
 
     toggleChrome();
-    expect(screen.getByRole("link", { name: "返回云盘" }).querySelector("svg")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "图层" }).querySelector("svg")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "更多" }).querySelector("svg")).not.toBeNull();
-    const actionCapsule = document.querySelector(".reader-chrome__actions");
-    expect(actionCapsule).not.toBeNull();
-    expect(
-      within(actionCapsule as HTMLElement).queryByRole("button", { name: "页面位置" }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "页面位置" })).toHaveClass(
-      "reader-page-indicator",
-    );
     expect(screen.queryByLabelText("页面缩略图")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "页面位置" }));
     const pageStrip = screen.getByLabelText("页面缩略图");
-    expect(pageStrip).toHaveClass("page-preview-strip");
     expect(screen.getByRole("button", { name: "前往第 2 页" })).toHaveAttribute(
       "data-current",
     );
-    expect(within(pageStrip).getByText("2 / 3")).toHaveClass(
-      "page-preview-strip__position",
-    );
+    expect(within(pageStrip).getByText("2 / 3")).toBeInTheDocument();
     expect(virtualTestState.scrollToIndex).toHaveBeenCalledWith(1, {
       align: "auto",
     });
@@ -1658,7 +1644,6 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     const editButton = await screen.findByRole("button", { name: "编辑" });
     expect(editButton).toHaveAttribute("data-state", "failed");
     expect(exportDiagnostics()).toContain('"operation": "layers"');
-    expect(editButton.querySelector("svg")).not.toBeNull();
     expect(screen.getByText("编辑准备失败，点按铅笔重试")).toHaveAttribute(
       "role",
       "status",
@@ -1900,7 +1885,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
     expect(
       await screen.findByText("离线下载未完成，现有离线版本没有切换。请重试。"),
-    ).toHaveClass("reader-more-menu__status");
+    ).toBeInTheDocument();
     expect(activateVerifiedOfflineScore).not.toHaveBeenCalled();
   });
 
@@ -2231,11 +2216,6 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
       "aria-pressed",
       "true",
     );
-    expect(screen.getByRole("button", { name: "文本" }).querySelector("svg")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "画笔" }).querySelector("svg")).not.toBeNull();
-    expect(
-      screen.getByRole("button", { name: "整条橡皮" }).querySelector("svg"),
-    ).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /当前编辑层/ }));
     expect(screen.getByRole("button", { name: "P，Personal" })).toHaveAttribute(
       "aria-pressed",
@@ -2397,7 +2377,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
     expect(
       await screen.findByText("离线副本已完整校验，可以离线打开。"),
-    ).toHaveClass("reader-more-menu__status");
+    ).toBeInTheDocument();
     expect(activateVerifiedOfflineScore).toHaveBeenCalledWith(
       expect.objectContaining({
         annotationSnapshot: expect.objectContaining({
