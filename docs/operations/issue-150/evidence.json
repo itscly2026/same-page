@@ -46,8 +46,8 @@
     "node": "24.20.0"
   },
   "clientTests": {
-    "passed": 295,
-    "files": 38,
+    "passed": 297,
+    "files": 39,
     "workers": 2
   },
   "unitTests": {
@@ -57,5 +57,11 @@
   "review": {
     "standardsFindings": 0,
     "specFindings": 0
+  },
+  "lifecycleRegressions": {
+    "navigationLayoutReset": "passed deterministic regression",
+    "identityObserverTransition": "passed real observer guest-to-user transition",
+    "chromiumCpuThrottle": 4,
+    "repeatedBrowserRunsPassed": 5
   }
 }

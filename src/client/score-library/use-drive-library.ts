@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { DriveLibrary } from "./drive-library";
 import { type DriveCacheOwnerKey } from "./drive-library-cache";
 import { driveLibraryTransport } from "./drive-library-transport";
@@ -14,15 +14,22 @@ export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, s
     const refresh = () => {
       if (document.visibilityState === "visible" && library.getSnapshot().access.kind === "opened") void library.refresh();
     };
-    const save = () => library.rememberScroll(window.scrollY);
     window.addEventListener("online", refresh);
     window.addEventListener("focus", refresh);
-    window.addEventListener("scroll", save, { passive: true });
-    window.addEventListener("pagehide", save);
     return () => {
       library.stop();
       window.removeEventListener("online", refresh);
       window.removeEventListener("focus", refresh);
+    };
+  }, [library]);
+
+  // Detach before the next route resets scroll in its layout effects. Keep
+  // network startup passive so identity observers clear the previous owner first.
+  useLayoutEffect(() => {
+    const save = () => library.rememberScroll(window.scrollY);
+    window.addEventListener("scroll", save, { passive: true });
+    window.addEventListener("pagehide", save);
+    return () => {
       window.removeEventListener("scroll", save);
       window.removeEventListener("pagehide", save);
     };
