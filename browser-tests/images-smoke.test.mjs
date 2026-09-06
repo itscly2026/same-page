@@ -36,7 +36,11 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     const failures = [...fixture.logs.join("").matchAll(/\{"event":"score_image_conversion_failed","stage":"[a-z-]+","reason":"[a-z-]+"\}/g)].map(match => JSON.parse(match[0]));
     assert.equal(conversion.state, "ready", JSON.stringify({ failure: conversion.failure, phases: failures }));
     const manifest = conversion.manifest;
-    await expect(page.locator(".reader-display-recovery")).toHaveCount(0);
+    // Backend readiness can precede the browser's next manifest poll. Wait for
+    // preparation and painting; an existing canvas may still be the old PDF.
+    await expect(page.locator(".reader-display-notice")).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.locator(".reader-display-recovery")).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByRole("button", { name: "图片兼容模式", exact: true })).toHaveAttribute("aria-pressed", "true");
     await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
     if (!await page.getByRole("button", { name: "更多", exact: true }).isVisible()) await page.locator(".page-reader__viewport").click({ position: { x: 510, y: 300 } });
     if (!await page.getByRole("button", { name: "下载离线副本", exact: true }).isVisible()) await page.getByRole("button", { name: "更多", exact: true }).click();
