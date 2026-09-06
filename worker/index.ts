@@ -1,3 +1,4 @@
+import { driveSettingsRoutes } from "./choirs/settings";
 import { convertScoreImages } from "./images/conversion";
 import { imageRoutes } from "./images/routes";
 import { cleanupLifecycles } from "./lifecycle/cleanup";
@@ -45,6 +46,7 @@ app.on(["GET", "POST"], "/api/auth/*", handleAuthRequest);
 app.route("/api", diagnosticReportRoutes);
 app.route("/api", lifecycleRoutes);
 app.route("/api", choirRoutes);
+app.route("/api", driveSettingsRoutes);
 app.route("/api", scoreRoutes);
 app.route("/api", imageRoutes);
 app.route("/api", annotationRoutes);

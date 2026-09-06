@@ -189,3 +189,45 @@ describe("user and membership lifecycle", () => {
     expect(await pull.json()).toMatchObject({ objects: [{ id: objectId, createdByDisplayName: "成员乙" }] });
   });
 });
+
+it("updates only the caller's drive display name and guards administrator renaming with revisions", async () => {
+  const admin = await person("rename-admin@example.test");
+  const member = await person("rename-member@example.test");
+  const choirId = await drive(admin, member);
+  const otherId = await drive(admin, member);
+  const settings = async (id: string, cookie: string) => (await callWorker(`/api/choirs/${id}/settings`, { headers: { cookie } })).json() as Promise<{ name: string; nameRevision: number; displayName: string; membershipRevision: number }>;
+  const before = await settings(choirId, member.cookie);
+  expect(before.displayName).toBe("成员乙");
+  const patch = (path: string, cookie: string, body: unknown) => callWorker(path, { method: "PATCH", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) });
+  const path = `/api/choirs/${choirId}`;
+  expect((await patch(`${path}/display-name`, member.cookie, { displayName: " 新名字 ", expectedRevision: before.membershipRevision })).status).toBe(200);
+  expect((await settings(choirId, member.cookie)).displayName).toBe("新名字");
+  expect((await settings(otherId, member.cookie)).displayName).toBe("成员乙");
+  expect((await settings(choirId, admin.cookie)).displayName).toBe("管理员甲");
+  expect((await patch(`${path}/display-name`, member.cookie, { displayName: "过期写入", expectedRevision: before.membershipRevision })).status).toBe(409);
+  expect((await patch(`${path}/name`, member.cookie, { name: "越权", expectedRevision: before.nameRevision })).status).toBe(403);
+  const results = await Promise.all(["新云盘", "另一名称"].map(name => patch(`${path}/name`, admin.cookie, { name, expectedRevision: before.nameRevision })));
+  expect(results.map(result => result.status).sort()).toEqual([200, 409]);
+  const after = await settings(choirId, admin.cookie);
+  expect(after.nameRevision).toBe(before.nameRevision + 1);
+  expect(["新云盘", "另一名称"]).toContain(after.name);
+  expect((await patch(`${path}/name`, admin.cookie, { name: "  ", expectedRevision: after.nameRevision })).status).toBe(400);
+});
+
+it("retains an administrator through concurrent demotions and supports handoff", async () => {
+  const a = await person("handoff-a@example.test");
+  const b = await person("handoff-b@example.test");
+  const choirId = await drive(a, b);
+  const membershipA = (await state(a.cookie)).memberships[0];
+  const membershipB = (await state(b.cookie)).memberships[0];
+  const route = (id: string) => `/api/choirs/${choirId}/memberships/${id}`;
+  expect((await post(route(membershipA.id), a.cookie, { action: "demote", expectedRevision: 0 })).status).toBe(409);
+  expect((await post(route(membershipB.id), a.cookie, { action: "promote", expectedRevision: 0 })).status).toBe(204);
+  const results = await Promise.all([
+    post(route(membershipA.id), a.cookie, { action: "demote", expectedRevision: 0 }),
+    post(route(membershipB.id), b.cookie, { action: "demote", expectedRevision: 1 }),
+  ]);
+  expect(results.map(response => response.status).sort()).toEqual([204, 409]);
+  const current = [...(await state(a.cookie)).memberships, ...(await state(b.cookie)).memberships];
+  expect(current.filter(member => member.role === "admin" && member.status === "active")).toHaveLength(1);
+});

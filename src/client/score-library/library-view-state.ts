@@ -75,7 +75,7 @@ export function selectLibraryScores(
 // across that transition. Call this only after an explicit logout succeeds.
 export function clearLibraryDeviceState() {
   for (const [storageName, ownedPrefix] of [
-    ["sessionStorage", prefix], ["localStorage", recentPrefix],
+    ["sessionStorage", prefix], ["localStorage", recentPrefix], ["localStorage", "same-page:last-drive:"],
   ] as const) {
     try {
       const storage = window[storageName];
@@ -85,10 +85,4 @@ export function clearLibraryDeviceState() {
       }
     } catch { /* Storage can be unavailable in private browsing. */ }
   }
-}
-
-export function readLastOpenedScore(owner: DriveCacheOwnerKey, choirIds: string[]) {
-  return choirIds.flatMap(choirId => Object.entries(readRecentlyOpened(owner, choirId))
-    .map(([scoreId, openedAt]) => ({ choirId, scoreId, openedAt })))
-    .sort((a, b) => b.openedAt - a.openedAt)[0] ?? null;
 }

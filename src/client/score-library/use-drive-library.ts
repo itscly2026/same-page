@@ -1,23 +1,38 @@
 import { captureLocalWorkspaceSession, createLocalWorkspace, authenticatedLocalOwnerKey } from "../platform/local-workspace";
-import { rememberLocalDriveDirectory } from "./local-drive-directory";
+import { readLocalDriveDirectories, rememberLocalDriveDirectory, renameLocalDriveDirectory } from "./local-drive-directory";
 import { useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { DriveLibrary } from "./drive-library";
-import { type DriveCacheOwnerKey } from "./drive-library-cache";
+import { readDriveSummary, type DriveCacheOwnerKey } from "./drive-library-cache";
 import { driveLibraryTransport } from "./drive-library-transport";
 
 export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, signedIn: boolean) {
   const library = useMemo(() => {
     const transport = driveLibraryTransport(choirId, signedIn);
+    const readLocal = async (signal: AbortSignal) => {
+      if (!ownerKey.startsWith("user:")) return null;
+      const directory = (await readLocalDriveDirectories(ownerKey.slice(5))).find(entry => entry.choirId === choirId);
+      signal.throwIfAborted();
+      return { kind: "opened" as const, local: true, isMember: false, rememberedMembership: directory?.membership ?? false, managementVisible: directory?.canManage ?? false,
+        choir: directory?.choir ?? readDriveSummary(ownerKey, choirId) ?? { id: choirId, name: "云盘", guestAdmissionMode: "invite" as const },
+        result: { scores: directory?.scores ?? [], storage: directory?.storage ?? { usedBytes: 0, limitBytes: 1 }, permissions: { canManage: false } } };
+    };
     return new DriveLibrary(ownerKey, choirId, {
       ...transport,
+      readLocal,
+      async rememberName(name, signal) {
+        if (!ownerKey.startsWith("user:")) return;
+        const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey(ownerKey.slice(5)), choirId, ""));
+        await renameLocalDriveDirectory(workspace, name, signal);
+      },
       async load(signal, allowAdmission) {
+        if (!signedIn && ownerKey.startsWith("user:")) return (await readLocal(signal))!;
         const workspace = signedIn && ownerKey.startsWith("user:")
           ? captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey(ownerKey.slice(5)), choirId, "")).catch(() => null)
           : Promise.resolve(null);
         const access = await transport.load(signal, allowAdmission);
         const captured = await workspace;
         if (captured && access.kind === "opened") {
-          await rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal).catch(() => undefined);
+          await rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal, access.isMember && !access.choir.isPreviewEntry, access.result.permissions.canManage, access.result.storage).catch(() => undefined);
         }
         return access;
       },
@@ -28,7 +43,7 @@ export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, s
   useEffect(() => {
     library.start();
     const refresh = () => {
-      if (document.visibilityState === "visible" && library.getSnapshot().access.kind === "opened") void library.refresh();
+      if (document.visibilityState === "visible") void library.refresh();
     };
     window.addEventListener("online", refresh);
     window.addEventListener("focus", refresh);

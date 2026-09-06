@@ -8,7 +8,7 @@ import { startStorageFixture } from "./storage-fixture.mjs";
 
 for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]]) {
   test(`${engineName}: ${engineName === "chromium" ? "offline browser restart" : "API outage on a new page"} restores home, drive and reader`, { timeout: 120_000 }, async t => {
-    const fixture = await startStorageFixture({ authenticated: true });
+    const fixture = await startStorageFixture({ authenticated: true, previewEntry: false });
     const profile = await mkdtemp(path.join(tmpdir(), "same-page-offline-entry-"));
     let context = await engine.launchPersistentContext(profile, { headless: true, serviceWorkers: "allow", viewport: { width: 390, height: 844 } });
     t.after(async () => { await context.close(); await fixture.stop(); await rm(profile, { recursive: true, force: true }); });
@@ -37,6 +37,9 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
       await page.evaluate(async () => {
         for (const registration of await navigator.serviceWorker.getRegistrations()) await registration.unregister();
       });
+      await context.addInitScript(() => {
+        navigator.serviceWorker.register = async () => { throw new Error("Service worker disabled for API-outage fixture"); };
+      });
       await page.close();
     }
     if (engineName === "chromium") await context.setOffline(true);
@@ -59,6 +62,16 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     assert.equal(await offline.getByRole("heading", { name: "Harmony begins on the Same Page" }).count(), 0);
     await mkdir("artifacts/verification/offline-entry", { recursive: true });
     await offline.screenshot({ path: `artifacts/verification/offline-entry/${engineName}-home.png` });
+    assert.equal(new URL(offline.url()).pathname, `/choirs/${fixture.choirId}`);
+    await offline.getByRole("searchbox", { name: "搜索乐谱" }).waitFor();
+    await offline.getByRole("combobox", { name: "乐谱排序" }).selectOption("updated");
+    await offline.reload();
+    await offline.getByRole("link").filter({ hasText: fixture.fileName }).waitFor();
+    assert.equal(await offline.getByRole("combobox", { name: "乐谱排序" }).inputValue(), "updated");
+    assert.equal(await offline.getByRole("heading", { name: "本机内容" }).count(), 0);
+    await offline.getByRole("button", { name: "打开云盘菜单" }).click();
+    await offline.getByRole("button", { name: "切换云盘", exact: true }).click();
+    await offline.getByRole("link").filter({ hasText: "本地链路云盘" }).click();
     await offline.goto(drive);
     await offline.getByRole("heading", { name: "本地链路云盘" }).waitFor();
     await offline.getByRole("link").filter({ hasText: fixture.fileName }).click();

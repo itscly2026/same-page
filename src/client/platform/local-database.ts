@@ -142,6 +142,9 @@ export interface LocalAnnotationLayerRecord extends AnnotationLayerSummary {
 }
 
 export interface LocalDriveDirectory {
+  storage?: { usedBytes: number; limitBytes: number };
+  membership?: boolean;
+  canManage?: boolean;
   key: string;
   ownerKey: LocalWorkspaceOwnerKey;
   choirId: string;

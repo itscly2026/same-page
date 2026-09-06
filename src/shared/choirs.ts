@@ -43,6 +43,7 @@ export const currentJoinCodeResponseSchema = z.object({
 });
 
 export const choirSummarySchema = z.object({
+  isPreviewEntry: z.literal(true).optional(),
   id: z.string(),
   name: z.string(),
   guestAdmissionMode: guestAdmissionModeSchema,
@@ -85,3 +86,10 @@ export type GuestAdmissionRequest = z.infer<
 >;
 export type ChoirSummary = z.infer<typeof choirSummarySchema>;
 export type GuestSessionResponse = z.infer<typeof guestSessionResponseSchema>;
+
+export const driveNameSchema = z.string().trim().min(1).max(100);
+export const driveNameRequestSchema = z.object({ name: driveNameSchema, expectedRevision: z.number().int().nonnegative() }).strict();
+export const memberDisplayNameRequestSchema = z.object({ displayName: displayNameSchema, expectedRevision: z.number().int().nonnegative() }).strict();
+export const driveSettingsSchema = z.object({
+  name: z.string(), nameRevision: z.number().int(), displayName: z.string(), membershipRevision: z.number().int(), canManage: z.boolean(),
+});

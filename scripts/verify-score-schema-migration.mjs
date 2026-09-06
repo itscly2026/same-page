@@ -126,6 +126,10 @@ try {
   };
   const preserved = queryNamed(preservedQueries);
   applyMigrations("0017_configurable_and_published_layers.sql");
+  const driveNames = query("SELECT id, name FROM choirs");
+  applyMigrations("0018_drive_name_revision.sql");
+  assert.deepEqual(query("SELECT id, name FROM choirs"), driveNames);
+  assert(query("SELECT name_revision FROM choirs").every(row => row.name_revision === 0));
   assert.deepEqual(queryNamed(preservedQueries), preserved);
   assert.deepEqual(query("PRAGMA foreign_key_check"), []);
   assert.deepEqual(query("SELECT id, sharing FROM annotation_layers"), [{ id: "preserved-layer", sharing: 0 }]);

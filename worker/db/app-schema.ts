@@ -15,6 +15,7 @@ export const choirs = sqliteTable(
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
+    nameRevision: integer("name_revision").notNull().default(0),
     guestAdmissionMode: text("guest_admission_mode", {
       enum: ["invite", "open"],
     })

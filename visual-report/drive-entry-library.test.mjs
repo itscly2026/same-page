@@ -96,7 +96,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.getByText("管理员上传乐谱后，会显示在这里。", { exact: true }).waitFor();
     await capture(page, `${name}-empty-library`);
     driveCount = 2;
-    await page.goto(server.origin);
+    await page.goto(`${server.origin}/?drives=1`);
     await page.locator(".membership-row").nth(1).waitFor();
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

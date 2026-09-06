@@ -29,6 +29,7 @@ export class DriveLibrary {
   private request: { controller: AbortController; done: Promise<void> } | null = null;
   private joinController: AbortController | null = null;
   private restorePending = true;
+  private localController: AbortController | null = null;
 
   constructor(
     private ownerKey: DriveCacheOwnerKey,
@@ -55,14 +56,21 @@ export class DriveLibrary {
     const cached = readDriveLibrary(this.ownerKey, this.choirId);
     this.publish({
       access: cached
-        ? { kind: "opened", choir: cached.choir, result: { ...cached.result, permissions: { canManage: false } }, isMember: false }
+        ? { kind: "opened", choir: cached.choir, result: { ...cached.result, permissions: { canManage: false } }, isMember: false, local: true, managementVisible: cached.result.permissions.canManage }
         : { kind: "loading", choir: readDriveSummary(this.ownerKey, this.choirId) ?? undefined },
     });
+    this.localController = new AbortController();
+    const signal = AbortSignal.any([this.ownerSignal, this.localController.signal]);
+    void this.transport.readLocal?.(signal).then(access => {
+      if (signal.aborted || !access || !["loading", "failed"].includes(this.snapshot.access.kind)) return;
+      this.publish({ access });
+    }).catch(() => undefined);
     void this.load(true);
   };
 
   stop = () => {
     this.active = false;
+    this.localController?.abort();
     this.request?.controller.abort();
     this.request = null;
     this.joinController?.abort();
@@ -77,6 +85,16 @@ export class DriveLibrary {
     this.request?.controller.abort();
     this.request = null;
     return this.load(false);
+  };
+
+  confirmName = async (name: string) => {
+    if (!this.isActive() || this.snapshot.access.kind !== "opened") return;
+    this.request?.controller.abort();
+    this.request = null;
+    const access = { ...this.snapshot.access, choir: { ...this.snapshot.access.choir, name } };
+    rememberDriveLibrary(this.ownerKey, this.choirId, access);
+    this.publish({ access });
+    await this.transport.rememberName?.(name, this.ownerSignal);
   };
 
   setSearch = (search: string) => this.updateView({ search, scrollTop: 0 });
@@ -138,7 +156,7 @@ export class DriveLibrary {
           return;
         }
         if (access.kind === "opened") {
-          rememberDriveLibrary(this.ownerKey, this.choirId, access);
+          if (!access.local) rememberDriveLibrary(this.ownerKey, this.choirId, access);
         } else {
           invalidateDriveLibrary(this.ownerKey, this.choirId);
         }
@@ -153,7 +171,7 @@ export class DriveLibrary {
 
   private failed() {
     this.publish(this.snapshot.access.kind === "opened"
-      ? { refreshMessage: refreshFailed }
+      ? { access: { ...this.snapshot.access, local: true, managementVisible: this.snapshot.access.managementVisible || this.snapshot.access.result.permissions.canManage, result: { ...this.snapshot.access.result, permissions: { canManage: false } } }, refreshMessage: refreshFailed }
       : { access: { kind: "failed" }, refreshMessage: null });
   }
 

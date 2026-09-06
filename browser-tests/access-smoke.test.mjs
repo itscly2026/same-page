@@ -38,6 +38,19 @@ test("literal search, verified offline read and failed/successful immutable PDF 
   await page.goto(`${fixture.origin}/choirs/${fixture.choirId}`);
   await page.getByRole("status").filter({ hasText: /旧版可离线使用/ }).waitFor();
   await context.setOffline(true);
+  await expect(page.getByRole("button", { name: /^下载新版离线副本：/ })).toBeDisabled();
+  await context.setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByRole("button", { name: /^下载新版离线副本：/ })).toBeEnabled();
+  // Fail just this download after submission, while retaining the real offline
+  // browser refresh above and all subsequent storage/checksum verification.
+  await page.evaluate(() => {
+    const original = window.fetch;
+    window.fetch = (...args) => {
+      if (String(args[0]).endsWith("/pdf")) { window.fetch = original; return Promise.reject(new TypeError("injected download failure")); }
+      return original(...args);
+    };
+  });
   await page.getByRole("button", { name: /^下载新版离线副本：/ }).click();
   await page.getByRole("status").filter({ hasText: /下载未完成/ }).waitFor();
   await expect(page.getByRole("status").filter({ hasText: /下载未完成/ })).toContainText("旧版 PDF 仍可离线使用");

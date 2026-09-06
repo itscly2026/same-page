@@ -1,3 +1,5 @@
+import { Blob as NodeBlob } from "node:buffer";
+import { sha256Hex } from "../offline/offline-score-verification";
 import { LocalIdentityObserver } from "../platform/local-identity-observer";
 import { clearPrivateLocalDataAfterLogout } from "./logout-local-data";
 import { render, screen, waitFor, act } from "@testing-library/react";
@@ -10,6 +12,7 @@ import { activateAuthenticatedLocalOwner, authenticatedLocalOwnerKey, createLoca
 import { clearDriveLibraryCache } from "../score-library/drive-library-cache";
 
 beforeEach(async () => {
+  vi.stubGlobal("Blob", NodeBlob);
   await localDatabase.open();
   clearDriveLibraryCache();
   authClient.$store.atoms.session.set({ ...authClient.$store.atoms.session.get(), data: null, error: null, isPending: true, isRefetching: false });
@@ -17,9 +20,12 @@ beforeEach(async () => {
 afterEach(() => vi.unstubAllGlobals());
 async function saved(userId = "a") {
   await activateAuthenticatedLocalOwner(userId);
-  await localDatabase.offlineScores.put({ key: userId, ...createLocalWorkspace(authenticatedLocalOwnerKey(userId), "drive", "score"),
-    versionId: "version", fileName: `${userId}.pdf`, sha256: "verify-on-open", pageCount: 1, blob: new Blob(["verify-on-open"]), active: 1, verifiedAt: 1,
-    annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 } });
+  const workspace = createLocalWorkspace(authenticatedLocalOwnerKey(userId), "drive", "score");
+  const blob = new Blob(["verified test PDF"]);
+  await localDatabase.driveDirectories.put({ key: JSON.stringify([workspace.ownerKey, "drive"]), ownerKey: workspace.ownerKey, choirId: "drive", choir: { id: "drive", name: "排练云盘", guestAdmissionMode: "invite" }, scores: [], membership: true });
+  await localDatabase.offlineScores.put({ key: userId, ...workspace,
+    versionId: "version", fileName: `${userId}.pdf`, sha256: await sha256Hex(await blob.arrayBuffer()), pageCount: 1, blob, active: 1, verifiedAt: 1,
+    annotationSnapshot: { layers: [{ ...workspace, key: "personal", id: "00000000-0000-4000-8000-000000000001", kind: "personal", sharedSlot: null, name: "我的笔记", sortOrder: 0, subscribed: true, subscriptionSource: "personal", displayColor: "#000000", colorSource: "personal", adminDefaultColor: null, driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }], annotations: [], cursor: 0, verifiedAt: 1 } });
 }
 function open(path = "/") {
   const view = render(<MemoryRouter initialEntries={[path]}><LocalIdentityObserver /><AppRoutes /></MemoryRouter>);
@@ -63,7 +69,8 @@ it("retains navigation metadata across a cold start without claiming cloud files
     return Response.json({});
   }));
   const view = open("/choirs/drive");
-  await screen.findByRole("heading", { name: "排练云盘" });
+  await screen.findByRole("link", { name: /cloud.pdf/ });
+  await screen.findByRole("button", { name: "上传 PDF" });
   view.unmount();
   clearDriveLibraryCache();
   vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
@@ -71,7 +78,7 @@ it("retains navigation metadata across a cold start without claiming cloud files
   open("/choirs/drive");
   await screen.findByText("cloud.pdf");
   expect(screen.queryByRole("link", { name: /cloud.pdf/ })).not.toBeInTheDocument();
-  expect(screen.getByText("需联网下载")).toBeInTheDocument();
+  expect(await screen.findByText("需联网下载")).toBeInTheDocument();
   expect(await screen.findByRole("link", { name: /a.pdf/ })).toBeInTheDocument();
 });
 
@@ -97,7 +104,7 @@ it("rechecks the same user on reconnect and keeps the drive route", async () => 
   act(() => window.dispatchEvent(new Event("offline")));
   act(() => window.dispatchEvent(new Event("online")));
   await screen.findByRole("heading", { name: "排练云盘" });
-  expect(screen.getByRole("link", { name: /cloud.pdf/ })).toHaveAttribute("href", "/choirs/drive/scores/remote");
+  expect(await screen.findByRole("link", { name: /cloud.pdf/ })).toHaveAttribute("href", "/choirs/drive/scores/remote");
 });
 
 it("does not reveal the former user's saved list when another user authenticates", async () => {
@@ -107,7 +114,7 @@ it("does not reveal the former user's saved list when another user authenticates
   await screen.findByRole("link", { name: /a.pdf/ });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).includes("get-session") ? authenticatedResponse("b") : Response.json({ memberships: [] })));
   await act(async () => { await authClient.$store.atoms.session.get().refetch(); });
-  await screen.findByText(/还没有已加入的云盘/);
+  await screen.findByText(/本机尚未保存/);
   expect(screen.queryByText("a.pdf")).not.toBeInTheDocument();
   vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
   await act(async () => { await authClient.$store.atoms.session.get().refetch(); });

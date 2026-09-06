@@ -10,7 +10,7 @@ import { startViteServer } from "../scripts/vite-server.mjs";
 
 // Each call owns a fresh local Worker store. Bindings are disposed before Vite
 // opens them, so the seed and server never contend for the same SQLite files.
-export async function startStorageFixture({ authenticated = false, script = "preview", expired = false, rendererOrigin, pdf = createSampleScorePdf() } = {}) {
+export async function startStorageFixture({ authenticated = false, previewEntry = true, script = "preview", expired = false, rendererOrigin, pdf = createSampleScorePdf() } = {}) {
   const accounts = authenticated ? [0, 1].map(() => ({ id: randomUUID(), email: `${randomUUID()}@example.test`, password: randomBytes(24).toString("hex") })) : [];
   const choirId = randomUUID(), scoreId = randomUUID(), versionId = randomUUID();
   const fileName = "本地链路测试.pdf";
@@ -30,7 +30,7 @@ export async function startStorageFixture({ authenticated = false, script = "pre
         const objectKey = `${choirId}/${scoreId}/${versionId}.pdf`;
         const object = await SCORES_BUCKET.put(objectKey, pdf, { httpMetadata: { contentType: "application/pdf" } });
         await DB.batch([
-          DB.prepare("INSERT INTO choirs (id, name, guest_admission_mode, is_preview_entry, storage_used_bytes) VALUES (?, '本地链路云盘', 'open', 1, ?)").bind(choirId, pdf.length),
+          DB.prepare("INSERT INTO choirs (id, name, guest_admission_mode, is_preview_entry, storage_used_bytes) VALUES (?, '本地链路云盘', 'open', ?, ?)").bind(choirId, previewEntry ? 1 : 0, pdf.length),
           DB.prepare("INSERT INTO scores (id, choir_id, file_name, file_name_key, current_version_id) VALUES (?, ?, ?, ?, ?)").bind(scoreId, choirId, fileName, fileName, versionId),
           DB.prepare("INSERT INTO score_versions (id, choir_id, score_id, version_number, object_key, size_bytes, sha256, etag, page_count, state) VALUES (?, ?, ?, 1, ?, ?, ?, ?, 2, 'ready')").bind(versionId, choirId, scoreId, objectKey, pdf.length, hash, object.etag),
         ]);

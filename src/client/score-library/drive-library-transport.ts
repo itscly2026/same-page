@@ -4,7 +4,7 @@ import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnos
 
 export type DriveLibraryAccess =
   | { kind: "loading"; choir?: ChoirSummary }
-  | { kind: "opened"; choir: ChoirSummary; result: ScoreListResponse; isMember: boolean }
+  | { kind: "opened"; choir: ChoirSummary; result: ScoreListResponse; isMember: boolean; local?: boolean; rememberedMembership?: boolean; managementVisible?: boolean }
   | { kind: "join-required"; choir: ChoirSummary }
   | { kind: "denied" }
   | { kind: "not-found" }
@@ -13,6 +13,8 @@ export type DriveLibraryAccess =
 type LoadedAccess = Exclude<DriveLibraryAccess, { kind: "loading" }>;
 
 export interface DriveLibraryTransport {
+  rememberName?(name: string, signal: AbortSignal): Promise<void>;
+  readLocal?(signal: AbortSignal): Promise<LoadedAccess | null>;
   load(signal: AbortSignal, allowAdmission: boolean): Promise<LoadedAccess>;
   join(displayName: string, signal: AbortSignal): Promise<string | null>;
 }

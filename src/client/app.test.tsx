@@ -1228,7 +1228,8 @@ describe("AppRoutes", () => {
     expect(
       await screen.findByText("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。"),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /排练 10\.pdf/ })).toBeInTheDocument();
+    expect(screen.getByText("排练 10.pdf")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /排练 10\.pdf/ })).not.toBeInTheDocument();
 
   });
 
@@ -1332,7 +1333,9 @@ describe("AppRoutes", () => {
     expect(
       await screen.findByRole("heading", { name: "已知云盘名称" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("正在加载乐谱…")).toBeInTheDocument();
+    // Let the real local-directory read finish while bootstrap is still pending.
+    await screen.findByText("本机尚未保存这个云盘的目录或乐谱，请联网后下载。");
+    expect(screen.getByRole("heading", { name: "已知云盘名称" })).toBeInTheDocument();
     expect(fetchMock.mock.calls.map(([input]) => input).filter(input => input !== "/api/choirs")).toEqual([
       "/api/choirs/choir-1/bootstrap",
     ]);
