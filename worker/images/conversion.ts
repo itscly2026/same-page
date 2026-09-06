@@ -1,4 +1,4 @@
-import { getContainer } from "@cloudflare/containers";
+import { openRenderer, type RendererFrames } from "./renderer";
 import { z } from "zod";
 import { imageEdges, imageManifestSchema, imageOutputSpec, type ImageManifest } from "../../src/shared/score-images";
 import type { Env } from "../env";
@@ -22,30 +22,25 @@ export async function convertScoreImages(env: Env, job: { versionId: string; gen
   await env.DB.prepare("DELETE FROM score_image_objects WHERE version_id = ? AND generation <> ?").bind(versionId, generation).run();
   const signal = AbortSignal.timeout(180_000);
   let stage = "source";
+  let frames: RendererFrames | undefined;
   try {
     const pdf = await env.SCORES_BUCKET.get(source.object_key);
-    if (!pdf || pdf.size > 50 * 1024 * 1024 || source.page_count > 200) throw new Error("source-limit");
+    if (!pdf || pdf.size > 20 * 1024 * 1024 || source.page_count > 200) throw new Error("source-limit");
     const bytes = await pdf.arrayBuffer();
     if (await sha256(bytes) !== source.sha256) throw new Error("source-checksum");
-    const renderer = getContainer(env.PDF_RENDERER, "serial-renderer");
-    const request = (path: string) => renderer.fetch(new Request(`http://renderer${path}`, {
-      method: "POST", body: bytes, signal, headers: { "Content-Type": "application/pdf" },
-    }));
     stage = "inspect";
-    const inspected = await request("/inspect");
-    if (!inspected.ok) throw new Error("render-failed");
-    const geometry = geometrySchema.parse(await inspected.json());
+    frames = await openRenderer(env, bytes, source.sha256, signal);
+    const geometry = geometrySchema.parse(JSON.parse(new TextDecoder().decode(await frames.frame(256 * 1024))));
     if (geometry.pages.length !== source.page_count) throw new Error("page-count");
     const pages: ImageManifest["pages"] = [];
     let totalBytes = 0;
-    for (const page of geometry.pages) {
+    for (const [index, page] of geometry.pages.entries()) {
+      if (page.pageNumber !== index + 1) throw new Error("page-count");
       signal.throwIfAborted();
       const assets: ImageManifest["pages"][number]["assets"] = [];
       for (const edge of imageEdges) {
         stage = "render";
-        const response = await request(`/render?page=${page.pageNumber}&edge=${edge}`);
-        if (!response.ok) throw new Error("render-failed");
-        const data = await response.arrayBuffer();
+        const data = await frames.frame(32 * 1024 * 1024);
         if (data.byteLength < 24 || data.byteLength > 32 * 1024 * 1024) throw new Error("image-size");
         const header = new DataView(data);
         if (header.getUint32(0) !== 0x89504e47 || header.getUint32(4) !== 0x0d0a1a0a) throw new Error("image-format");
@@ -68,6 +63,7 @@ export async function convertScoreImages(env: Env, job: { versionId: string; gen
       }
       pages.push({ ...page, assets });
     }
+    await frames.finish();
     stage = "manifest";
     const manifest = imageManifestSchema.parse({ versionId, sourceSha256: source.sha256, generation, spec: imageOutputSpec, engine: geometry.engine, pages });
     await env.DB.prepare("UPDATE score_image_jobs SET state = 'ready', manifest = ?, updated_at = ? WHERE version_id = ? AND generation = ? AND state = 'preparing'")
@@ -80,6 +76,8 @@ export async function convertScoreImages(env: Env, job: { versionId: string; gen
     await env.DB.prepare("DELETE FROM score_image_objects WHERE version_id = ? AND generation = ?").bind(versionId, generation).run();
     await env.DB.prepare("UPDATE score_image_jobs SET state = 'failed', failure = 'conversion-failed', updated_at = ? WHERE version_id = ? AND generation = ?")
       .bind(Date.now(), versionId, generation).run();
+  } finally {
+    await frames?.close();
   }
 }
 async function sha256(data: ArrayBuffer) {

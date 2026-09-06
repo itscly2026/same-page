@@ -1,4 +1,3 @@
-export { PdfRenderer } from "./images/container";
 import { convertScoreImages } from "./images/conversion";
 import { imageRoutes } from "./images/routes";
 import { cleanupLifecycles } from "./lifecycle/cleanup";

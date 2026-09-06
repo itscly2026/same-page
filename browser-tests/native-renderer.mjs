@@ -4,6 +4,7 @@ import { detachedProcessGroup, stopChildProcessTree } from "../scripts/process-l
 
 export async function startNativeRenderer() {
   const child = spawn(process.env.SAME_PAGE_RENDERER_PYTHON ?? "python3", [path.resolve("renderer/server.py"), "0"], {
+    env: { ...process.env, PDF_RENDERER_SECRET: "same-page-native-renderer-test-secret-only" },
     detached: detachedProcessGroup(), stdio: ["ignore", "pipe", "pipe"],
   });
   const stop = () => stopChildProcessTree(child);

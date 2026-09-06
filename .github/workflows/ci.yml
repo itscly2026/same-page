@@ -132,16 +132,23 @@ jobs:
         run: python -m pip install -r renderer/requirements.txt
       - name: Verify native renderer
         if: needs.scope.outputs.renderer == 'true'
-        run: python renderer/verify.py
-      - name: Verify packaged Linux renderer without network access
-        if: needs.scope.outputs.renderer == 'true'
+        run: |
+          python renderer/verify.py
+          python renderer/test_transport.py
+      - name: Verify and package the Linux renderer
+        if: needs.scope.outputs.renderer == 'true' || needs.scope.outputs.deploy == 'true'
         run: |
           docker build --tag same-page-renderer:verify renderer
           docker run --rm --network none --memory 1g --cpus 1 \
             --mount type=bind,src="$PWD/renderer/fixtures",dst=/app/fixtures,readonly \
             --mount type=bind,src="$PWD/renderer/verify.py",dst=/app/verify.py,readonly \
             --tmpfs /artifacts:uid=10001,gid=10001,size=64m \
-            same-page-renderer:verify python /app/verify.py
+            same-page-renderer:verify python /app/verify.py > renderer/verified-output.json
+          docker run --rm --network none --memory 1g --cpus 1 \
+            --mount type=bind,src="$PWD/renderer/fixtures",dst=/app/fixtures,readonly \
+            --mount type=bind,src="$PWD/renderer/test_transport.py",dst=/app/test_transport.py,readonly \
+            same-page-renderer:verify python /app/test_transport.py
+          docker save --output renderer/image.tar same-page-renderer:verify
       - name: Install Playwright Chromium and WebKit
         if: >-
           needs.scope.outputs.pwa == 'true' ||
@@ -235,6 +242,7 @@ jobs:
     permissions:
       contents: read
       deployments: write
+      id-token: write
     env:
       GITHUB_TOKEN: ${{ github.token }}
     steps:
@@ -269,6 +277,24 @@ jobs:
       - name: Install dependencies
         if: steps.admission.outputs.proceed == 'true'
         run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Authenticate Google Cloud deployment
+        if: steps.admission.outputs.proceed == 'true'
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: same-page-clyapps
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Use Google Cloud SDK
+        if: steps.admission.outputs.proceed == 'true'
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Deploy and verify the sealed renderer image
+        if: steps.admission.outputs.proceed == 'true'
+        run: bash renderer/deploy.sh
+        env:
+          PDF_RENDERER_SECRET: ${{ secrets.PDF_RENDERER_SECRET }}
 
       - name: Record production recovery point and aggregate state
         if: steps.admission.outputs.proceed == 'true'

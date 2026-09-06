@@ -10,3 +10,8 @@ artifacts/verification/
 release.json
 release.tar
 renderer/**/__pycache__/
+
+# Built OCI release artifact; sealed and uploaded by CI.
+renderer/image.tar
+gha-creds-*.json
+renderer/verified-output.json

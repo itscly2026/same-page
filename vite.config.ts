@@ -56,7 +56,6 @@ export default defineConfig(({ isPreview }) => ({
     },
     react(),
     cloudflare(testState ? {
-      ...(process.env.SAME_PAGE_TEST_AUX_CONFIG ? { auxiliaryWorkers: [{ configPath: process.env.SAME_PAGE_TEST_AUX_CONFIG }] } : {}),
       persistState: { path: testState }, inspectorPort: false, remoteBindings: false,
     } : {}),
     VitePWA({
