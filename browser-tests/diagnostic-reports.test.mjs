@@ -11,9 +11,11 @@ test("diagnostic feedback survives lost receipts and preserves reader editing in
   await mkdir("artifacts/verification", { recursive: true });
   for (const [name, engine, width, height] of [["chromium", chromium, 320, 740], ["webkit", webkit, 768, 1024]]) {
     const browser = await engine.launch({ headless: true });
+    let activePage;
     try {
       const context = await browser.newContext({ viewport: { width, height }, serviceWorkers: "block" });
       const page = await context.newPage();
+      activePage = page;
       await page.goto(`${fixture.origin}/diagnostics`);
       await expect(page.getByRole("button", { name: "发送诊断", exact: true })).toBeEnabled();
       assert.equal(await page.locator("details").getAttribute("open"), null);
@@ -57,7 +59,9 @@ test("diagnostic feedback survives lost receipts and preserves reader editing in
       assert.equal(login.status(), 200);
       await page.goto(`${fixture.origin}/choirs/${fixture.choirId}/scores/${fixture.scoreId}`);
       await page.locator("canvas[data-pdf-canvas-active]").first().waitFor();
-      await page.locator(".page-reader__viewport").click({ position: { x: 100, y: 150 } });
+      const viewport = page.locator(".page-reader__viewport");
+      const bounds = await viewport.boundingBox();
+      await viewport.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
       await page.getByRole("button", { name: "编辑", exact: true }).click();
       await expect(page.getByRole("button", { name: "编辑", exact: true })).toHaveAttribute("aria-pressed", "true");
       await page.getByRole("button", { name: "更多", exact: true }).click();
@@ -82,6 +86,9 @@ test("diagnostic feedback survives lost receipts and preserves reader editing in
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       await writeFile(`artifacts/verification/diagnostic-${name}.json`, JSON.stringify({ engine: name, viewport: { width, height }, realWorkerD1: true, receiptLostAfterPersistence: true, retainedEditing: true, realDevice: false }, null, 2));
       await context.close();
+    } catch (error) {
+      await activePage?.screenshot({ path: `artifacts/verification/diagnostic-${name}-failure.png`, fullPage: true });
+      throw error;
     } finally { await browser.close(); }
   }
 });

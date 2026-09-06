@@ -3307,3 +3307,6 @@ h1 {
   .diagnostic-overlay { align-items: flex-end; padding: 0; }
   .diagnostic-modal { max-height: 90dvh; padding: 1rem; padding-bottom: max(1rem, env(safe-area-inset-bottom)); border-radius: 1rem 1rem 0 0; }
 }
+.diagnostics-document { padding-top: 2rem; }
+.diagnostic-help { margin: 1rem 0; }
+.diagnostic-help summary { min-height: 44px; cursor: pointer; }
