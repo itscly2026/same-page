@@ -40,7 +40,7 @@ test("literal search, verified offline read and failed/successful immutable PDF 
   await context.setOffline(true);
   await page.getByRole("button", { name: /^下载新版离线副本：/ }).click();
   await page.getByRole("status").filter({ hasText: /下载未完成/ }).waitFor();
-  await expect(page.getByRole("status").filter({ hasText: /下载未完成/ })).toContainText("旧版可离线使用");
+  await expect(page.getByRole("status").filter({ hasText: /下载未完成/ })).toContainText("旧版 PDF 仍可离线使用");
   await context.setOffline(false);
   await page.getByRole("button", { name: "重试下载", exact: true }).click();
   await page.getByRole("status").filter({ hasText: /^可离线使用$/ }).waitFor();

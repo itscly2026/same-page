@@ -523,7 +523,7 @@ export function createVisualFixtureSession(scenario = {}) {
       if (scenario.id === "preferences-load-failure" && pathname.endsWith("/shared-layer-preferences")) return failure(503, "injected_preferences_unavailable");
       if (scenario.id === "settings-permission-denied" && pathname.includes("/shared-layers")) return failure(403, "forbidden");
       if (scenario.id === "reader-layer-save-failure" && method === "PUT" && pathname.includes("/shared-layers/")) return failure(503, "injected_preference_save_failure");
-      if (scenario.id === "reader-offline-failure" && failuresArmed && pathname.includes("/versions/") && pathname.endsWith("/pdf")) return failure(503, "injected_pdf_download_failure");
+      if (scenario.id === "reader-offline-failure" && failuresArmed && pathname.endsWith("/layers")) return failure(503, "injected_offline_layers_download_failure");
       const slot = pathname.match(/\/shared-layers\/([ESATB])\//)?.[1];
       if (method === "PUT" && slot) {
         if (pathname.endsWith("/preference")) {
