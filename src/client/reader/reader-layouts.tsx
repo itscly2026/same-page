@@ -45,11 +45,6 @@ export interface AnnotationPageProps {
   onPersistenceChange?(state: "idle" | "saving" | "failed"): void;
 }
 
-export interface ContinuousReaderPosition {
-  page: number;
-  pageOffsetRatio: number;
-}
-
 interface ReaderLayoutProps {
   document: ScoreDocument;
   currentPage: number;
@@ -132,6 +127,7 @@ export function PageLayout({
       <div
         className="page-reader__viewport"
         data-zoom={zoom}
+        data-editing={annotationProps.editing || undefined}
         ref={containerRef}
         {...gestureHandlers}
       >
@@ -239,17 +235,10 @@ export function ContinuousLayout({
   onPageChange,
   onToggleChrome,
   annotationProps,
-  restorePosition,
-  onPositionChange,
-  onRestoreComplete,
-}: ReaderLayoutProps & {
-  restorePosition: ContinuousReaderPosition | null;
-  onPositionChange(position: ContinuousReaderPosition): void;
-  onRestoreComplete(): void;
-}) {
+}: ReaderLayoutProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const skipNextPageAlignment = useRef(false);
+  const alignedPage = useRef<number | null>(null);
   const size = useElementSize(scrollRef);
   const pageWidth = Math.max(1, size.width * zoom);
   // TanStack Virtual intentionally exposes mutable measurement functions.
@@ -262,11 +251,8 @@ export function ContinuousLayout({
   });
 
   useEffect(() => {
-    if (restorePosition !== null) return;
-    if (skipNextPageAlignment.current) {
-      skipNextPageAlignment.current = false;
-      return;
-    }
+    if (annotationProps.editing || alignedPage.current === currentPage) return;
+    alignedPage.current = currentPage;
     const scrollElement = scrollRef.current;
     const target = virtualizer
       .getVirtualItems()
@@ -279,33 +265,7 @@ export function ContinuousLayout({
     if (!visible) {
       virtualizer.scrollToIndex(currentPage - 1, { align: "start" });
     }
-  }, [currentPage, restorePosition, virtualizer]);
-
-  useEffect(() => {
-    if (restorePosition === null) return;
-    let positionFrame = 0;
-    const pageFrame = requestAnimationFrame(() => {
-      virtualizer.scrollToIndex(restorePosition.page - 1, { align: "start" });
-      positionFrame = requestAnimationFrame(() => {
-        const scrollElement = scrollRef.current;
-        if (!scrollElement) return;
-        const target = virtualizer
-          .getVirtualItems()
-          .find((item) => item.index === restorePosition.page - 1);
-        if (target) {
-          scrollElement.scrollTop =
-            target.start + target.size * restorePosition.pageOffsetRatio;
-        }
-        onPositionChange(restorePosition);
-        skipNextPageAlignment.current = true;
-        onRestoreComplete();
-      });
-    });
-    return () => {
-      cancelAnimationFrame(pageFrame);
-      cancelAnimationFrame(positionFrame);
-    };
-  }, [onPositionChange, onRestoreComplete, restorePosition, virtualizer]);
+  }, [annotationProps.editing, currentPage, virtualizer]);
 
   const gestureHandlers = useReaderGestures({
     containerRef: scrollRef,
@@ -322,23 +282,22 @@ export function ContinuousLayout({
       className="continuous-reader"
       data-underfit={zoom < 1 || undefined}
       data-zoom={zoom}
+      data-editing={annotationProps.editing || undefined}
       ref={scrollRef}
       {...gestureHandlers}
       onScroll={() => {
+        if (annotationProps.editing) return;
         const scrollTop = scrollRef.current?.scrollTop ?? 0;
         const threshold = scrollTop + 8;
         const items = virtualizer.getVirtualItems();
         const first = items.find((item) => item.end > threshold) ?? items[0];
         if (first) {
           const page = first.index + 1;
-          onPositionChange({
-            page,
-            pageOffsetRatio: clamp((scrollTop - first.start) / first.size, 0, 1),
-          });
+          alignedPage.current = page;
           onPageChange(page);
         }
       }}
-      aria-label="连续滚动阅读"
+      aria-label={annotationProps.editing ? "当前页编辑" : "连续滚动阅读"}
     >
       <div
         className="continuous-reader__inner"
@@ -353,6 +312,8 @@ export function ContinuousLayout({
             className="continuous-reader__page"
             key={item.key}
             data-index={item.index}
+            data-edit-hidden={annotationProps.editing && item.index + 1 !== currentPage || undefined}
+            inert={annotationProps.editing && item.index + 1 !== currentPage}
             ref={virtualizer.measureElement}
             style={{ transform: `translateY(${item.start}px)` }}
           >
@@ -360,7 +321,7 @@ export function ContinuousLayout({
               document={document}
               pageNumber={item.index + 1}
               width={pageWidth}
-              annotationProps={annotationProps}
+              annotationProps={item.index + 1 === currentPage ? annotationProps : { ...annotationProps, editing: false }}
             />
           </div>
         ))}
@@ -530,8 +491,4 @@ function usePdfPageAspectRatio(
     };
   }, [document, knownRatio, pageNumber]);
   return knownRatio ?? ratio;
-}
-
-function clamp(value: number, minimum: number, maximum: number) {
-  return Math.min(maximum, Math.max(minimum, value));
 }

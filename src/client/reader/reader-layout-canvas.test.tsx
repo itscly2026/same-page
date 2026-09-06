@@ -161,9 +161,6 @@ function renderLayout(
     <ContinuousLayout
       {...common}
       onPageChange={vi.fn()}
-      restorePosition={null}
-      onPositionChange={vi.fn()}
-      onRestoreComplete={vi.fn()}
     />
   );
 }
