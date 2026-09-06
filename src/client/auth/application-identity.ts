@@ -15,6 +15,7 @@ export function useApplicationIdentity() {
     session, onlineState, localUserId,
     authenticatedUserId: onlineState === "authenticated" ? session.data!.user.id : null,
     restoring: !session.data?.user && rememberedOwner === undefined,
+    showLocalEntry: onlineState !== "authenticated" && (Boolean(localUserId) || rememberedOwner === undefined || onlineState !== "signed-out"),
   };
 }
 export type ApplicationIdentity = ReturnType<typeof useApplicationIdentity>;

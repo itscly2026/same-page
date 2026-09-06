@@ -95,8 +95,9 @@ export class ReaderSession {
     if (this.authenticatedUserId === userId) return;
     this.authenticatedUserId = userId;
     this.layerAbort.abort();
+    this.downloadAbort?.abort();
     this.layerAbort = new AbortController();
-    if (this.started) void this.refresh();
+    if (this.started) void Promise.resolve(this.layerTask).then(() => this.refresh());
   };
   private layerAbort = new AbortController();
   getSnapshot = () => this.state;
@@ -160,7 +161,7 @@ export class ReaderSession {
     this.refreshTask ??= this.confirmCloud().finally(() => { this.refreshTask = null; });
     return this.refreshTask;
   };
-  private localMatches() { return !!this.state.offline && (!this.confirmedVersion ? this.cloudSettled : this.confirmedVersion === this.state.offline.versionId) && (this.state.offline.imageManifest ? "images" : "pdf") === this.state.mode; }
+  private localMatches() { return !!this.state.offline && (!this.confirmedVersion || this.confirmedVersion === this.state.offline.versionId) && (this.state.offline.imageManifest ? "images" : "pdf") === this.state.mode; }
   private async confirmCloud() {
     const sequence = ++this.lookupSequence;
     const lookup = await lookupScore(this.workspace, this.abort.signal);
@@ -296,8 +297,11 @@ export class ReaderSession {
       this.publish({ capability: this.state.offline ? (this.state.offline.annotationSnapshot.layers.some((layer) => layer.canEdit) ? "ready" : "read-only") : "failed" });
     }
   }
+  private canPrepareOffline() {
+    return !this.workspace.ownerKey.startsWith("user:") || this.workspace.ownerKey === `user:${this.authenticatedUserId}`;
+  }
   private prepareAutomaticOfflineCopy() {
-    if (!this.started || !this.localSettled || this.state.cloudState !== "active" ||
+    if (!this.canPrepareOffline() || !this.started || !this.localSettled || this.state.cloudState !== "active" ||
         !this.displayPrepared || !navigator.onLine || this.disposed || this.state.downloading || this.localMatches()) return;
     const key = JSON.stringify([this.confirmedVersion, this.state.mode]);
     if (this.offlineAttempts.has(key)) return;
@@ -305,7 +309,7 @@ export class ReaderSession {
     void this.download();
   }
   download = async () => {
-    if (this.disposed || !this.state.score || this.state.downloading || this.state.cloudState !== "active") return;
+    if (!this.canPrepareOffline() || this.disposed || !this.state.score || this.state.downloading || this.state.cloudState !== "active") return;
     const mode = this.state.mode;
     const score = this.state.score;
     this.offlineAttempts.add(JSON.stringify([score.currentVersion.id, mode]));

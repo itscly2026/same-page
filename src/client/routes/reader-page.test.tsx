@@ -2396,9 +2396,9 @@ it("keeps a single exit while the PDF never settles", async () => {
     );
   });
 
-  it.each([false, true])("allows the last local user to edit with authentication pending=%s", async (pending) => {
+  it.each(["expired", "checking", "hanging-cloud"])("allows the last local user to edit with authentication %s", async (state) => {
     readerAuthState.signedIn = false;
-    readerAuthState.pending = pending;
+    readerAuthState.pending = state === "checking";
     vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "offline-1",
       ...localWorkspace,
@@ -2436,7 +2436,8 @@ it("keeps a single exit while the PDF never settles", async () => {
         verifiedAt: 1,
       },
     });
-    vi.mocked(fetch).mockRejectedValue(new Error("offline"));
+    if (state === "hanging-cloud") vi.mocked(fetch).mockReturnValue(new Promise<Response>(() => {}));
+    else vi.mocked(fetch).mockRejectedValue(new Error("offline"));
     const view = render(
       <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
         <Routes>

@@ -12,6 +12,22 @@ import { clearDiagnostics } from "../diagnostics/diagnostics";
 export function LocalIdentityObserver() {
   const identity = useApplicationIdentity();
   const userId = identity.authenticatedUserId ?? undefined;
+  const refetch = identity.session.refetch;
+  useEffect(() => {
+    let running = false;
+    const reconnect = () => {
+      if (running) return;
+      running = true;
+      void refetch?.().finally(() => { running = false; });
+    };
+    const foreground = () => { if (document.visibilityState === "visible") reconnect(); };
+    window.addEventListener("online", reconnect);
+    document.addEventListener("visibilitychange", foreground);
+    return () => {
+      window.removeEventListener("online", reconnect);
+      document.removeEventListener("visibilitychange", foreground);
+    };
+  }, [refetch]);
   const readerIdentity = useRef(identity.localUserId);
   const [identityState, setIdentityState] = useState<{
     observedUserId: string | undefined;

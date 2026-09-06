@@ -50,7 +50,7 @@ export default function ChoirPage() {
   const { choirId = "" } = useParams();
   const identity = useApplicationIdentity();
   const { session } = identity;
-  if (!identity.authenticatedUserId && (identity.localUserId || identity.restoring || identity.onlineState !== "signed-out")) return <LocalEntry identity={identity} choirId={choirId} />;
+  if (identity.showLocalEntry) return <LocalEntry identity={identity} choirId={choirId} />;
   const cacheOwner = driveCacheOwnerKey(identity.authenticatedUserId, choirId);
   return <ChoirLibrary key={`${choirId}:${cacheOwner}`} choirId={choirId} session={session} cacheOwner={cacheOwner} />;
 }

@@ -153,3 +153,34 @@ it("keeps automatic recovery temporary and persists only an explicit choice", as
     explicit.dispose();
   } finally { session.dispose(); }
 });
+
+it("requires confirmed identity before user-owned offline preparation and cancels it on identity loss", async () => {
+  const workspace = await resolveLocalWorkspace({ authenticatedUserId: "a", choirId: "auth-drive", scoreId: "score" });
+  const requested: string[] = [];
+  const downloadState: { signal?: AbortSignal | null } = {};
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    requested.push(input);
+    if (input.endsWith("/bootstrap")) return Response.json({ state: "active", permissions: { canManage: false }, score: { id: "score", choirId: "auth-drive", fileName: "谱.pdf", updatedAt: 1,
+      currentVersion: { id: "version", versionNumber: 1, sizeBytes: 10, sha256: "a".repeat(64), etag: "test", pageCount: 1, createdAt: 1 } } });
+    if (input.endsWith("/pdf") && downloadState.signal !== undefined) {
+      downloadState.signal = init?.signal;
+      return new Promise<Response>((_resolve, reject) => downloadState.signal?.addEventListener("abort", () => reject(new DOMException("cancelled", "AbortError")), { once: true }));
+    }
+    return new Response(null, { status: 503 });
+  }));
+  const session = new ReaderSession(workspace, null);
+  session.open();
+  try {
+    await vi.waitFor(() => expect(session.getSnapshot().cloudState).toBe("active"));
+    await session.download();
+    expect(requested.some(url => url.endsWith("/pdf"))).toBe(false);
+    session.setAuthenticatedUser("a");
+    downloadState.signal = null;
+    const download = session.download();
+    await vi.waitFor(() => expect(downloadState.signal).toBeInstanceOf(AbortSignal));
+    session.setAuthenticatedUser(null);
+    await download;
+    expect(downloadState.signal?.aborted).toBe(true);
+    expect(session.getSnapshot().downloading).toBe(false);
+  } finally { session.dispose(); }
+});

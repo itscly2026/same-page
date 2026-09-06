@@ -7,7 +7,7 @@ import { chromium, webkit } from "@playwright/test";
 import { startStorageFixture } from "./storage-fixture.mjs";
 
 for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]]) {
-  test(`${engineName}: offline ${engineName === "chromium" ? "browser restart" : "new page"} restores home, drive and reader`, { timeout: 120_000 }, async t => {
+  test(`${engineName}: ${engineName === "chromium" ? "offline browser restart" : "API outage on a new page"} restores home, drive and reader`, { timeout: 120_000 }, async t => {
     const fixture = await startStorageFixture({ authenticated: true });
     const profile = await mkdtemp(path.join(tmpdir(), "same-page-offline-entry-"));
     let context = await engine.launchPersistentContext(profile, { headless: true, serviceWorkers: "allow", viewport: { width: 390, height: 844 } });
@@ -27,11 +27,13 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
       context = await engine.launchPersistentContext(profile, { headless: true, serviceWorkers: "allow", viewport: { width: 390, height: 844 } });
     } else {
       // Playwright WebKit does not restore its service-worker registration across
-      // process launches here. A fresh page tests cold JS state; installed iOS
+      // process launches or an offline new-page navigation here. API failure
+      // injection tests cold JS state while static assets remain online; installed iOS
       // PWA process-restart acceptance remains a separate real-device check.
       await page.close();
     }
-    await context.setOffline(true);
+    if (engineName === "chromium") await context.setOffline(true);
+    else await context.route("**/api/**", route => route.abort("internetdisconnected"));
     const offline = await context.newPage();
     await offline.goto(fixture.origin);
     await offline.getByRole("link").filter({ hasText: fixture.fileName }).waitFor();
@@ -47,7 +49,11 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     await offline.getByRole("button", { name: "编辑", exact: true }).click();
     await offline.getByRole("button", { name: "完成编辑", exact: true }).waitFor();
     const reconnected = offline.waitForResponse(response => response.url().includes("/api/auth/get-session") && response.status() === 200);
-    await context.setOffline(false);
+    if (engineName === "chromium") await context.setOffline(false);
+    else {
+      await context.unroute("**/api/**");
+      await offline.evaluate(() => window.dispatchEvent(new Event("online")));
+    }
     await reconnected;
     assert.equal(offline.url(), readerUrl);
     assert.equal(await offline.getByRole("button", { name: "完成编辑", exact: true }).getAttribute("aria-pressed"), "true");

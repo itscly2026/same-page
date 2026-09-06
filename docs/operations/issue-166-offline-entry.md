@@ -14,12 +14,12 @@
 - `src/client/auth/session-fetch.test.ts`：认证变更与查询乱序。
 - `src/client/score-library/local-library.test.tsx`：用户隔离与 A→B→A 目录写入保护。
 - `src/client/routes/reader-page.test.tsx`：已保存副本在认证等待/过期时仍可编辑，同用户恢复后保持编辑状态。
-- `browser-tests/offline-entry-smoke.test.mjs`：真实本地 Worker、D1、R2、认证、Service Worker 和 IndexedDB；通过产品下载副本，验证离线首页、云盘、PDF 与联网恢复。Chromium 重启浏览器进程；WebKit 关闭并新建页面以重置 JavaScript 状态。
+- `browser-tests/offline-entry-smoke.test.mjs`：真实本地 Worker、D1、R2、认证、Service Worker 和 IndexedDB；通过产品下载副本，验证离线首页、云盘、PDF 与联网恢复。Chromium 真实断网并重启浏览器进程；WebKit 关闭并新建页面、注入 API 网络失败以重置 JavaScript 状态，静态资源保持可访问。
 
 运行完整检查：`npm run check`。浏览器证据写入 `artifacts/verification/offline-entry/`。
 
 ## 尚需真实设备验收
 
-Playwright WebKit 在当前测试环境跨进程重启后未恢复 Service Worker，离线导航报内部错误，因此 WebKit 自动化只覆盖同浏览器进程内新页面。不能据此声称通过了 iOS 已安装 PWA 的强制关闭/重开验收。
+Playwright WebKit 在当前测试环境跨进程重启和新页面离线导航报内部错误，因此 WebKit 自动化仅覆盖同浏览器进程内新页面的 API 网络失败，不能证明离线应用壳启动。不能据此声称通过了 iOS 已安装 PWA 的强制关闭/重开验收。
 
 iOS 与 Android 需分别在浏览器和已安装 PWA 上验证：登录并保存乐谱，强制关闭，断网重开首页/深链接，编辑并恢复网络，确认草稿同步与阅读位置；另验证会话过期、显式退出和换用户。当前 PR 不部署生产，不将自动化结果视为真实设备验收。

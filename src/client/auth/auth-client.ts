@@ -5,6 +5,6 @@ import { diagnosticFetch } from "../diagnostics/diagnostics";
 
 export const authClient = createAuthClient({
   plugins: [emailOTPClient()],
-  sessionOptions: { refetchWhenOffline: true },
+  sessionOptions: { refetchWhenOffline: true, refetchOnWindowFocus: false },
   fetchOptions: { customFetchImpl: createSessionFetch(diagnosticFetch) },
 });
