@@ -59,7 +59,7 @@ test("runtime areas select only their relevant expensive checks", (t) => {
     ["worker/index.ts", ["worker", "build", "smoke", "deploy"]],
     ["src/shared/health.ts", ["client", "worker", "visual", "performance", "build", "smoke", "deploy"]],
     ["migrations/0002.sql", ["worker", "migration", "build", "smoke", "deploy"]],
-    ["visual-report/layout.test.mjs", ["visual", "performance", "build", "smoke"]],
+    ["visual-report/layout.test.mjs", ["visual"]],
     ["scripts/verify-score-schema-migration.mjs", ["migration"]],
   ]);
 
@@ -69,7 +69,7 @@ test("runtime areas select only their relevant expensive checks", (t) => {
     repo.commit();
     const scope = repo.scope();
     assert.equal(scope.full, true, name);
-    for (const check of ["client", "worker", "visual", "pwa", "performance", "migration", "build", "deploy", "smoke"]) {
+    for (const check of ["client", "worker", "visual", "pwa", "performance", "migration", "build", "deploy", "smoke", "renderer"]) {
       assert.equal(scope[check], enabled.includes(check), `${name}: ${check}`);
     }
   }
@@ -169,7 +169,7 @@ test("the workflow entrypoint emits scope and rejects whitespace errors in docs"
   assert.equal(run().status, 0);
   assert.equal(
     readFileSync(output, "utf8"),
-    "full=false\nclient=false\nworker=false\nvisual=false\npwa=false\nperformance=false\nmigration=false\nbuild=false\ndeploy=false\nsmoke=false\n",
+    "full=false\nclient=false\nworker=false\nvisual=false\npwa=false\nperformance=false\nmigration=false\nbuild=false\ndeploy=false\nsmoke=false\nrenderer=false\n",
   );
   rmSync(output);
   repo.put("docs/change.md", "bad whitespace \t\n");
@@ -194,4 +194,27 @@ test("documentation mixed with verification changes does not trigger deployment"
   const repo = repository(t);
   repo.put("README.md", "docs updated"); repo.put("scripts/release-admission.mjs"); repo.commit();
   assert.equal(repo.scope().deploy, false);
+});
+
+// These real review artifacts previously made unrelated reader PRs run PWA,
+// migrations and native packaging. Executable or unknown docs still fail closed.
+test("review evidence does not widen a reader PR or deploy an evidence-only push", (t) => {
+  const repo = repository(t);
+  repo.put("docs/operations/issue-142/390-menu.png");
+  repo.put("docs/operations/issue-142/evidence.json", "{}\n");
+  repo.commit();
+  assert.equal(repo.scope("push", { before: repo.base }).full, false);
+  repo.put("src/client/reader/reader-ux.css");
+  repo.commit();
+  const scope = repo.scope();
+  for (const check of ["client", "visual", "build", "smoke"]) assert.equal(scope[check], true, check);
+  for (const check of ["worker", "pwa", "migration", "renderer"]) assert.equal(scope[check], false, check);
+});
+
+test("native changes validate packaging and runtime consumers without unrelated UI suites", (t) => {
+  const repo = repository(t);
+  repo.put("renderer/server.py"); repo.commit();
+  const scope = repo.scope();
+  for (const check of ["renderer", "build", "smoke", "deploy"]) assert.equal(scope[check], true, check);
+  for (const check of ["client", "worker", "visual", "pwa", "migration"]) assert.equal(scope[check], false, check);
 });

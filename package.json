@@ -19,7 +19,7 @@
     "test:worker": "npm run test:worker:unit && npm run test:worker:integration",
     "test:worker:unit": "vitest run --config vitest.worker-unit.config.ts",
     "test:worker:integration": "vitest run --config vitest.worker.config.ts",
-    "test:visual-report": "node --test --test-concurrency=2 visual-report/*.test.mjs",
+    "test:visual-report": "node --test --test-global-setup=./visual-report/setup.mjs --test-concurrency=2 visual-report/*.test.mjs",
     "test:pwa-update": "node scripts/verify-pwa-update.mjs",
     "test:loading-performance": "npm run build && node scripts/measure-loading-performance.mjs",
     "measure:production-loading": "node scripts/measure-production-loading.mjs",

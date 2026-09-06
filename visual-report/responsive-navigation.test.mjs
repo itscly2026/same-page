@@ -5,7 +5,7 @@ import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium, webkit } from "playwright";
 
-import { startViteServer } from "../scripts/vite-server.mjs";
+import { startVisualServer } from "./setup.mjs";
 import { resolveFixtureRequest } from "./fixtures.mjs";
 
 const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -14,7 +14,7 @@ let origin = process.env.LAYOUT_TEST_ORIGIN;
 
 before(async () => {
   if (!origin) {
-    server = await startViteServer({ script: "dev", cwd: repositoryRoot });
+    server = await startVisualServer({ script: "dev", cwd: repositoryRoot });
     origin = server.origin;
   }
 });

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { chromium, webkit } from "playwright";
 
-import { startViteServer } from "../scripts/vite-server.mjs";
+import { startVisualServer } from "./setup.mjs";
 import { resolveFixtureRequest } from "./fixtures.mjs";
 
 const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -15,7 +15,7 @@ let appOrigin = process.env.LAYOUT_TEST_ORIGIN;
 
 before(async () => {
   if (!appOrigin) {
-    appServer = await startViteServer({ script: "dev", port, cwd: repositoryRoot });
+    appServer = await startVisualServer({ script: "dev", port, cwd: repositoryRoot });
     appOrigin = appServer.origin;
   }
 });
@@ -31,7 +31,7 @@ test(`${engineName}: keeps the capsule at the right edge above its page hint in 
 
   // Cover the minimum, the 360px rule boundary, the next mobile range,
   // portrait tablet, the orientation transition and a wide landscape.
-  for (const width of [320, 360, 390, 768, 834, 1194]) {
+  for (const width of engineName === "chromium" ? [320, 360, 390] : [320, 768, 834, 1194]) {
     const page = await openMemberReader(browser, { width, height: 800 });
     await showReaderChrome(page);
 

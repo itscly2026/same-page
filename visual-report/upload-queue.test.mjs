@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { chromium, webkit, expect } from "@playwright/test";
-import { startViteServer } from "../scripts/vite-server.mjs";
+import { startVisualServer } from "./setup.mjs";
 import { resolveFixtureRequest, visualFixture } from "./fixtures.mjs";
 
 let server;
 const deployedOrigin = process.env.SAME_PAGE_UPLOAD_TEST_ORIGIN;
-before(async () => { if (!deployedOrigin) server = await startViteServer({ script: "dev" }); });
+before(async () => { if (!deployedOrigin) server = await startVisualServer({ script: "dev" }); });
 after(async () => { await server?.stop(); });
 
 for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {

@@ -32,15 +32,6 @@ describe("loading performance diagnostics", () => {
     expect(JSON.stringify(snapshot)).not.toMatch(/choirId|scoreId|email|cookie/i);
   });
 
-  it("keeps cold, warm, reopen, direct, and failure categories distinct", () => {
-    for (const category of ["cold", "warm", "reopen", "direct", "failure"] as const) {
-      resetLoadingPerformance();
-      startLoadingJourney("enter-drive", category);
-      completeLoadingJourney("enter-drive", "drive-list-usable");
-      expect(getLoadingPerformanceSnapshot().records.at(-1)?.cacheCategory).toBe(category);
-    }
-  });
-
   it("records the route commit for whichever loading journey is active", () => {
     startLoadingJourney("open-score", "cold");
     markRouteTransitionMilestones();

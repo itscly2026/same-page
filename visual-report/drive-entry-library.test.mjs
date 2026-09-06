@@ -5,13 +5,13 @@ import { tmpdir } from "node:os";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium, webkit } from "playwright";
-import { startViteServer } from "../scripts/vite-server.mjs";
+import { startVisualServer } from "./setup.mjs";
 import { createVisualFixtureSession } from "./fixtures.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const evidence = path.join(root, "artifacts/verification/issue-140");
 let server;
-before(async () => { server = await startViteServer({ script: "dev", cwd: root }); await mkdir(evidence, { recursive: true }); });
+before(async () => { server = await startVisualServer({ script: "dev", cwd: root }); await mkdir(evidence, { recursive: true }); });
 after(async () => { await server?.stop(); });
 
 for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {

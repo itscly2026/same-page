@@ -15,7 +15,16 @@ const checkNames = [
   "build",
   "deploy",
   "smoke",
+  "renderer",
 ];
+
+function isDocumentation(file) {
+  return rootDocuments.has(file)
+    || (file.startsWith("docs/") && file.endsWith(".md"))
+    // Review evidence is never consumed by the application or build.
+    || /^docs\/operations\/.+\.(?:png|jpe?g|webp)$/.test(file)
+    || /^docs\/operations\/.+\/evidence\.json$/.test(file);
+}
 
 const checks = (enabled = []) => Object.fromEntries(
   checkNames.map((name) => [name, enabled.includes(name)]),
@@ -45,14 +54,13 @@ export function determineCiScope({ cwd, eventName, event }) {
     const files = git("diff", "--name-only", "--no-renames", "-z", base, "HEAD", "--")
       .split("\0").filter(Boolean);
     if (files.length === 0) return full("No changed paths; running all checks.");
-    const onlyDocuments = files.every((file) => rootDocuments.has(file)
-      || (file.startsWith("docs/") && file.endsWith(".md")));
+    const onlyDocuments = files.every(isDocumentation);
     if (onlyDocuments) {
       return {
         full: false,
         ...checks(),
         base,
-        reason: "Only Markdown documentation changed; checking patch whitespace.",
+        reason: "Only documentation or review evidence changed; checking patch whitespace.",
       };
     }
     const selected = selectChecks(files);
@@ -79,7 +87,7 @@ function selectChecks(files) {
 }
 
 function checksForPath(file) {
-  if (rootDocuments.has(file) || (file.startsWith("docs/") && file.endsWith(".md"))) return [];
+  if (isDocumentation(file)) return [];
   if (file.startsWith(".github/")) {
     return checkNames.filter((name) => name !== "deploy");
   }
@@ -113,9 +121,13 @@ function checksForPath(file) {
       ? ["worker"]
       : ["worker", "build", "smoke", "deploy"];
   }
+  if (file.startsWith("renderer/")) return ["renderer", "build", "smoke", "deploy"];
   if (file.startsWith("migrations/")) return ["worker", "migration", "build", "smoke", "deploy"];
   if (file.startsWith("browser-tests/")) return ["smoke", "build"];
-  if (file.startsWith("visual-report/")) return ["visual", "performance", "build", "smoke"];
+  if (file === "visual-report/setup.mjs") return ["visual"];
+  if (file.startsWith("visual-report/")) {
+    return isTestPath(file) ? ["visual"] : ["visual", "performance", "build", "smoke"];
+  }
   if (file.startsWith("public/") || file === "index.html") {
     return ["visual", "pwa", "performance", "build", "smoke", "deploy"];
   }

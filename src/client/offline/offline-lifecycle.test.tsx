@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { Blob as NodeBlob } from "node:buffer";

@@ -1,69 +1,66 @@
-# CI 用量与检查范围
+# CI 检查与开发反馈
 
-GitHub Actions 按每个 job 的执行分钟计量，分别向上取整；并行 job 的用量会累加，排队等待不等于 runner 执行时间。私有仓库共享所属账号的月额度。套餐、余额和付费预算以 GitHub Billing 为准，不能用工作流次数推断余额。
+PR 更新触发按变更范围选择的检查，同一 PR 新运行取消旧运行。`main` push 验证实际合并结果；生产部署继续串行，迁移和部署不被后续 push 中断。原有 required check 名称 `verify` 保持不变。
 
-## 触发与取消
+## 流程
 
-- PR 更新会触发 CI；同一 PR 新运行取消旧运行，不影响其他 PR。
-- `main` push 仍验证合并结果。每次 push 的工作流并发组独立，生产部署维持原有串行组，不取消正在进行的迁移/部署。
-- `verify` 始终执行 CI 范围回归测试和变更分类，不使用会让 required check 长期 pending 的顶层 `paths-ignore`。
-- 仅根目录 `README.md`、`CONTEXT.md`、`AGENTS.md` 和 `docs/**/*.md` 的修改，执行 `git diff --check` 后完成 `verify`，不安装依赖、不运行浏览器、不部署。
-- 其他改动始终运行 lint 和 typecheck，再按受影响区域选择昂贵步骤。空 diff、未知路径、未知事件、缺少历史或无法确定范围时回退完整门禁。PR 比较共同祖先到当前合并提交；push 比较事件的 `before` 到当前提交，覆盖一次 push 的所有提交。禁用 rename 检测以检查新旧两个路径，避免把代码改名为文档后漏检；本地 Git diff 没有 GitHub 顶层路径过滤的 300 文件限制。
+`scope` 不安装依赖：运行 CI 范围回归测试，然后比较完整 Git diff。三个验证 job 同时启动，各自只执行选中的步骤：
 
-文档路径是保守白名单。如果未来运行时代码或构建开始读取其中的 Markdown，应先从白名单移除相关路径。轻量检查只证明补丁格式与分类规则通过，不代表文档内容事实已经自动审查。
-
-## 按变更范围选择门禁
-
-路径分类取一次变更中所有文件的并集：
-
-| 变更区域 | 额外门禁 |
+| Job | 职责 |
 | --- | --- |
-| 客户端生产代码 | 客户端测试、视觉测试、加载性能、生产构建；真实存储 smoke；只有 PWA 入口与更新逻辑再运行 PWA 交接 |
-| Worker 生产代码 | Worker 测试、生产构建、真实存储 smoke |
-| 客户端或 Worker 测试 | 只运行对应测试，不构建或部署 |
-| 共享运行时代码 | 客户端、Worker、视觉、加载性能和生产构建 |
-| D1 migration | Worker、迁移、生产构建与真实存储 smoke |
-| 视觉报告代码 | 视觉、加载性能、生产构建、真实存储 smoke |
-| 依赖、Vite、Wrangler 或未知路径 | 完整门禁 |
+| `checks` | lint、typecheck、Node/组件测试、Worker 测试、迁移回归 |
+| `visual` | Chromium/WebKit 中的布局与交互回归 |
+| `integration` | 必要的原生渲染器验证、PWA 交接、生产构建、加载预算、真实 Worker/D1/R2 浏览器流程 |
+| `verify` | 等待以上全部结束；被选中的 job 必须成功，未选中的必须为 skipped；失败、取消、意外跳过均不能通过 |
 
-只有影响生产客户端、Worker、共享代码、静态资源或 migration 的 `main` push 才进入 deploy job。测试、CI 配置和验证脚本本身不会触发生产部署。分类器无法识别的新路径必须先按完整门禁处理，再显式加入规则。
+部署仅在 `verify` 成功且本次 main 变更需要发布时运行。并行降低等待时间，但重复的 runner 启动和安装可能增加总执行分钟；不是降低账单的承诺。保留三个实际工作 job，避免为每个小测试创建 runner。
 
-浏览器在视觉、PWA、加载性能或真实存储 smoke 被选中时安装。共享或尚未分类的验证脚本保守运行全部验证门禁，但不自动部署；已知专用脚本仅选择其消费者。文档与验证脚本混合改动仍不触发部署。客户端与 Worker 中不依赖 jsdom/workerd 的纯逻辑测试分别使用 Node 环境，避免为小测试重复启动重型运行时。视觉测试最多并发两个文件，并只保留 Chromium/WebKit、关键响应式边界和代表性身份组合；身份授权的全排列由组件测试覆盖。迁移测试仍从空数据库执行全部 migration 和断言，但会把连续 migration 与只读断言批量交给同一个 Wrangler 进程，减少 CLI 冷启动。
+## 范围选择
 
-## 完整门禁与构建
+不使用顶层 `paths-ignore`，避免 required check 长期 pending。PR 比较当前合并提交与 base 的共同祖先；push 比较事件 `before` 到当前提交，包含一次 push 的所有提交。禁用 rename 检测以同时检查新旧路径，NUL 分隔支持特殊文件名，不受 GitHub 顶层过滤的 300 文件限制。
 
-依赖、构建配置或未知路径仍保留 lint、typecheck、客户端、Worker、PWA 更新、加载性能、视觉、迁移、生产构建及真实存储 smoke 的全部检查。
+| 改动 | 选中的检查（非文档改动始终 lint/typecheck） |
+| --- | --- |
+| `README.md`、`CONTEXT.md`、`AGENTS.md`、`docs/**/*.md` | diff whitespace |
+| `docs/operations/` 内 PNG/JPEG/WebP、子目录 `evidence.json` | 同上；这些审查证据不被应用或构建读取 |
+| 客户端生产代码 | 客户端、视觉、构建、加载预算、真实存储 smoke |
+| PWA 入口/导航/更新提示 | 客户端路径加真实 PWA 双版本交接 |
+| Worker 生产代码 | Worker、构建、真实存储 smoke |
+| 共享运行时代码 | 客户端、Worker、视觉、构建、加载预算、smoke |
+| 客户端/Worker 测试 | 对应测试，不构建、不部署 |
+| D1 migration | Worker、迁移、构建、smoke |
+| 视觉测试文件、视觉 setup | 视觉测试，不构建、不部署 |
+| 共享视觉 fixture/report 代码 | 视觉、构建、加载预算、smoke |
+| `renderer/` | 原生验证、Linux 容器无网络验证、构建、smoke |
+| 依赖、构建配置或未知路径 | 完整验证 |
 
-PWA 更新测试必须分别构建 `pwa-e2e-first`、`pwa-e2e-second`，验证真实 Service Worker 更新。随后 CI 构建当前提交的正式版本，再直接运行 `node scripts/measure-loading-performance.mjs` 检查该产物。因此完整 verify 从四次构建降为三次；不能直接测量或发布 PWA 测试留下的合成版本。
+多个路径取检查的并集。未知事件、缺失历史、空 diff、不可识别文件均回退完整验证。文档中的 JS、未知 JSON、运行时图片仍不属于轻量白名单。如果将来运行时或构建开始消费审查证据，必须先更新分类器。
 
-单独使用 `npm run test:loading-performance` 仍会先构建，避免本地误用旧产物。`npm run check` 包含 `npm run test:ci`；`npm run check:full` 按 PWA 更新、`check`、加载性能顺序执行，是所有按范围 CI 路径的本地超集。CI 中保留独立步骤以定位耗时。部署 job 下载本次 verify 上传的 `release-<SHA>`，校验 SHA256 清单后直接部署，不再构建。清单、迁移、运行配置、lockfile 与完整 dist 同包传输；GitHub artifact ID、digest 和源码 SHA 写入 step summary。保留 14 天，过期需重跑验证生成新包，不能改为现场构建后直接发布。
+共享或未知验证脚本保守运行全部验证，但不自动部署。生产客户端、Worker、共享代码、静态资源、渲染器和 migration 的 main push 才进入部署；CI、测试和验证脚本本身不触发部署。完整规则以 `scripts/ci-scope.mjs` 为准。
 
-## 安装网络请求
+## 测试的职责
 
-CI 使用 `npm ci --prefer-offline --no-audit --no-fund`：优先复用已有 npm 下载缓存，缺失包仍会下载；保留 lockfile 一致性、包完整性和安装失败。`--no-audit` 移除安装附带的漏洞报告请求，`--no-fund` 仅关闭资助信息；这不替代独立的依赖安全审查，也没有删除原有独立安全门禁（当前并无此门禁）。本地默认 npm 配置不变。
+测试是否保留，以可观察错误及独立覆盖为标准，不以 TDD 来源、用例数量或覆盖率百分比为标准。清理结论与保留风险见 [测试审查记录](test-audit-2026-09-06.md)。
 
-2026-09-04 的历史 CI 多次在安装步骤耗时约 303–306 秒，正常约 15–20 秒。已有日志不足以确认是 audit、下载还是安装脚本阻塞。一次本地带时序的普通安装用时 11.5 秒，其中 audit 请求约 2.75 秒；这证明请求存在，不能证明历史 5 分钟停顿的根因。此次移除可避免的网络请求，不宣称完全消除所有网络长尾。
+- `npm test`：Node 规则和 jsdom 组件。客户端纯逻辑文件用 `*.node.test.ts` 命名，由 `vitest.node.config.ts` 收集，jsdom 明确排除；不为这些测试启动 DOM、React cleanup 或 IndexedDB setup。
+- `npm run test:worker`：纯认证配置/安全逻辑在 Node，真实路由、D1、R2、权限与生命周期在 workerd。保留实际迁移初始化和隔离，不为省时间改成共享可变数据库。
+- `npm run test:visual-report`：Node 原生 global setup 只启动一个隔离 Vite dev 服务，最多两个文件并行。各测试仍独立拥有浏览器 context、IndexedDB、API route 和 fixture session；没有重试。直接 `node --test visual-report/<file>.test.mjs` 仍可独立启动服务。
+- `npm run test:smoke`：必须先 build。每次 fixture 调用有独立真实 D1/R2，验证生产 API、PDF 字节、下载、浏览器关闭重开后的离线副本、批注并发、图片兼容模式和诊断提交；不改成 API mock。图片流程需要 `renderer/requirements.txt` 的 Python 依赖。
 
-同一 worktree 随后的优化安装用时 11.35 秒，普通安装为 11.52 秒；两次都成功，差值不足以证明稳定加速。可确定的收益是取消旧运行、文档轻量路径及减少一次构建，安装长尾仍需实际 CI 记录判断。
+视觉回归保留两种浏览器引擎、最窄视口、关键断点两侧、横竖屏、200% 文本、44px 点击目标和真实内容溢出断言。相同完整流程不重复遍历每个设备商品名；这些都是模拟视口，不代表实机验收。
 
-## 验证与测量
+## 产物与发布
 
-`npm run test:ci` 在临时 Git 仓库验证文档/混合改动、多提交 push、删除、改名、超过 300 文件及历史缺失。真实 PR 的 Actions 页面用于核对步骤与耗时；文档范围和并发取消还应分别检查实际分支/运行结果。
+PWA 测试构建 `pwa-e2e-first`、`pwa-e2e-second` 并验证真实 Service Worker 交接。随后重新构建当前源码，再验证加载预算和浏览器 smoke；合成版本不得发布。`npm run test:loading-performance` 单独执行时仍先 build。
 
-本地优化基线使用同一机器、同一 worktree 测量：迁移测试由约 116 秒降至约 51 秒，Worker 测试由约 57 秒降至约 21 秒，视觉测试由串行约 124 秒降至两次约 49–50 秒。本地 `npm run check:full` 最终用时约 213 秒。GitHub runner 的实际收益以合并后的 Actions 记录为准，不能直接把本地数据当作计费承诺。
+仅需部署的 main 运行封存并上传 `release-<SHA>`，PR 不上传不可用于生产的合并测试包。integration 可以先产生包，但 deploy 必须等待汇总 `verify` 成功。部署下载同次运行的产物，校验 SHA256 清单，直接发布而不重建。产物保留 14 天；过期需重新验证生成。visual/integration 分别保留 `artifacts/verification/` 的已有合成证据，失败时也上传，不能放入生产会话或私人内容。
 
-基线调查：9 月 1–4 日取样时 77 次运行中 73 次结束，job 实际执行合计约 398 分钟，逐 job 向上取整后约 456 分钟。它只描述该仓库当时的运行记录，不包含其他仓库或未结束运行，也不是账单余额。
+`npm run check` 运行所有常规检查；`npm run check:full` 再包含原生渲染、PWA 更新及加载预算，是本地验证超集。Linux Docker 无网络验证在 CI 单独运行。生产身份、准入与锁见 [交付契约](delivery-contract.md) 和 [发布流程](production-release.md)。
 
-参考：[GitHub Actions 计费](https://docs.github.com/en/billing/concepts/product-billing/github-actions)、[并发规则](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)、[npm ci 参数](https://docs.npmjs.com/cli/v11/commands/npm-ci/)。
+## 安装与性能评估
 
-## 并发发布与测试资源
+Node 使用 lockfile 和 npm 下载缓存，安装命令为 `npm ci --prefer-offline --no-audit --no-fund`；原生依赖使用 setup-python 的 pip 缓存。不缓存可变测试数据库，不复用未经本次验证的发布产物。
 
-身份和资源生命周期见 [交付契约](delivery-contract.md)。生产锁从准入持续到线上验收，不因新 push 取消。`production-release` 的 GitHub Deployment 记录在迁移前创建；旧祖先运行跳过，同 SHA 可重试，未知历史或分叉失败。判断依据是上次发布尝试，不是最新 main，因此文档提交不会造成漏发。GitHub 自带 job environment 的 queued 记录不参与判断。
+2026-09-06 两次成功 PR 的 verify 用时 740 秒、640 秒，视觉分别 229/206 秒、storage smoke 100/90 秒、依赖安装 18/13 秒。当前瓶颈是串行关键路径、重复浏览器启动与错误范围放大，不能继续把提速主要归因于 npm 缓存。修改后的真实 Actions 数据与本地验证边界记录在测试审查记录中。
 
-每次自动化 Vite dev/preview 都分配临时持久化目录、配置、缓存和端口；preview 使用隔离的构建配置副本，应用产物字节不变。只使用合成认证参数，测试不读取开发 `.dev.vars`。服务身份标记防止误连占用端口的其他进程；启动失败返回原始退出原因，停止时清理整个进程组，包括启动器先退出的后代。正常结束、启动失败和 SIGINT/SIGTERM 会清理拥有的目录；SIGKILL/断电无法执行清理，遗留目录位于系统临时目录，可在确认所属进程退出后删除，不应清空日常开发状态。
-
-`npm run test:smoke` 要求先 `npm run build`，通过 `browser-tests/storage-fixture.mjs` 为每次调用准备独立本地 D1/R2。准备进程释放后才启动 preview。场景使用真实生产 API，验证访客准入、R2 PDF 字节一致、产品下载完成、持久化 Chromium 关闭重开后断网阅读。共享图层是合成 fixture，没有 API 拦截、预填 IndexedDB 或测试 HTTP 后门。#135/#136 可复用该生命周期添加产品回归；认证提供方和实机验收仍由 #9/#39 跟踪。
-
-测试阶段与源码身份写入 `artifacts/verification/`，CI 无论成功失败都会保留已有合成测试证据；启动失败仍可从对应 Actions 步骤读取原始日志。不得向该目录放入生产会话、私人谱面或凭据。浏览器测试保留 `--test-concurrency=2`，没有自动用例重试。
-
-#134 的本地重复运行、历史 Actions 基线及尚待上线的证据见 [实施验证记录](verification-134.md)。
+参考：[GitHub jobs 与依赖](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-jobs)、[依赖缓存](https://docs.github.com/en/actions/concepts/workflows-and-actions/dependency-caching)、[Node 24 全局测试 setup](https://nodejs.org/docs/latest-v24.x/api/test.html#global-setup-and-teardown)、[Vitest 并行](https://v4.vitest.dev/guide/parallelism)。

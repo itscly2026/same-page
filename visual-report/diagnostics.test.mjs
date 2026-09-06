@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium } from "@playwright/test";
-import { startViteServer } from "../scripts/vite-server.mjs";
+import { startVisualServer } from "./setup.mjs";
 import { resolveFixtureRequest } from "./fixtures.mjs";
 
 test("real reader reports PDF permission, network and malformed bootstrap failures safely", async (t) => {
-  const server = await startViteServer({ script: "dev" });
+  const server = await startVisualServer({ script: "dev" });
   t.after(() => server.stop());
   const browser = await chromium.launch({ headless: true });
   try {
