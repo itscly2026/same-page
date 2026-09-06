@@ -31,8 +31,16 @@ const checks = (enabled = []) => Object.fromEntries(
 );
 const allChecks = () => checks(checkNames);
 
+// Audited presentation leaves: their only product consumer is ChoirPage.
+// Shared state, identity, downloads, reader preloading and the route itself stay broad.
+const libraryPresentation = new Set([
+  "src/client/score-library/drive-settings-dialog.tsx",
+  "src/client/score-library/drive-header.tsx",
+  "src/client/score-library/upload-fab.tsx",
+]);
+
 export function determineCiScope({ cwd, eventName, event }) {
-  const full = (reason) => ({ full: true, ...allChecks(), reason });
+  const full = (reason) => ({ full: true, ...allChecks(), browserGroup: "all", reason });
   const baseSha = eventName === "pull_request"
     ? event?.pull_request?.base?.sha
     : eventName === "push" ? event?.before : undefined;
@@ -59,15 +67,20 @@ export function determineCiScope({ cwd, eventName, event }) {
       return {
         full: false,
         ...checks(),
+        browserGroup: "all",
         base,
         reason: "Only documentation or review evidence changed; checking patch whitespace.",
       };
     }
+    const browserGroup = files.every(file => isDocumentation(file) || libraryPresentation.has(file))
+      ? "library" : "all";
     const selected = selectChecks(files);
+    if (browserGroup === "library") selected.performance = false;
     if (selected.deploy) selected.build = true;
     return {
       full: true,
       ...selected,
+      browserGroup,
       base,
       reason: `Selected checks for: ${files.join(", ")}`,
     };
@@ -111,6 +124,10 @@ function checksForPath(file) {
     const selected = ["client", "visual", "performance", "build", "smoke", "deploy"];
     if (
       file === "src/client/main.tsx"
+      || file === "src/client/app.tsx"
+      || file.startsWith("src/client/auth/")
+      || file.startsWith("src/client/offline/")
+      || file.startsWith("src/client/platform/")
       || file.startsWith("src/client/components/reload-prompt")
       || file.startsWith("src/client/pwa-navigation")
     ) selected.push("pwa");
@@ -132,7 +149,7 @@ function checksForPath(file) {
     return ["visual", "pwa", "performance", "build", "smoke", "deploy"];
   }
   if (file.startsWith("scripts/")) {
-    if (file.startsWith("scripts/ci-scope.")) return [];
+    if (file.startsWith("scripts/ci-scope.")) return checkNames.filter(name => name !== "deploy");
     if (file.startsWith("scripts/verify-pwa-update.")) return ["client", "pwa"];
     if (
       file.startsWith("scripts/measure-loading-performance.")
@@ -170,7 +187,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   }
   console.log(scope.reason);
   if (process.env.GITHUB_OUTPUT) {
-    const output = ["full", ...checkNames]
+    const output = ["full", ...checkNames, "browserGroup"]
       .map((name) => `${name}=${scope[name]}`)
       .join("\n");
     appendFileSync(process.env.GITHUB_OUTPUT, `${output}\n`);

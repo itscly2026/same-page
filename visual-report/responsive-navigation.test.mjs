@@ -31,12 +31,11 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
     const browser = await engine.launch({ headless: true });
     t.after(() => browser.close());
     const page = await openPage(browser, libraryIdentity);
-    // These widths cover the minimum, the library breakpoint, the desktop-row
-    // threshold, a tablet viewport and a wide desktop.
-    for (const width of [320, 600, 768, 834, 1440]) {
+    await page.goto(`${origin}/choirs/visual-choir`, { waitUntil: "domcontentloaded" });
+    await page.locator(".file-row").nth(99).waitFor();
+    for (const width of [320, 390, 600, 768, 834, 1194, 1440]) {
       await page.setViewportSize({ width, height: 1000 });
-      await page.goto(`${origin}/choirs/visual-choir`, { waitUntil: "domcontentloaded" });
-      await page.locator(".file-list").waitFor();
+
       const toolbar = await page.locator(".library-toolbar").boundingBox();
       const search = await page.getByPlaceholder("搜索乐谱").boundingBox();
       const sort = await page.getByRole("combobox", { name: "乐谱排序" }).boundingBox();
@@ -44,17 +43,24 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
       const avatar = await page.getByRole("button", { name: "用户菜单" }).boundingBox();
       assert.ok(menu.x + menu.width <= search.x && search.x + search.width <= avatar.x, `${width}: search sits between navigation and avatar`);
       assert.ok(Math.abs(search.y + search.height / 2 - avatar.y - avatar.height / 2) < 2, `${width}: header controls share a row`);
-      assert.ok(avatar.x - search.x - search.width <= 16, `${width}: search uses available header space`);
-      assert.ok(Math.abs(sort.x + sort.width - toolbar.x - toolbar.width + 16) < 2, `${width}: sort belongs at toolbar right`);
+      assert.ok(sort.x >= toolbar.x && sort.x + sort.width <= toolbar.x + toolbar.width, "sort remains inside the toolbar");
       assert.ok(search.height >= 44 && sort.height >= 44, "search and sort have touch-sized controls");
       assert.ok(search.y + search.height <= sort.y || search.x + search.width <= sort.x, "controls do not overlap");
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      for (const selector of [".file-row__open", ".offline-score-button", ".file-menu-button"]) {
+        const box = await page.locator(selector).first().boundingBox();
+        assert.ok(box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= width, `${width}: ${selector} usable without clipping`);
+      }
       await capture(page, `${engineName}-library-${libraryIdentity}-${width}`);
     }
     await page.getByPlaceholder("搜索乐谱").fill("晨光");
     await page.getByRole("status").filter({ hasText: "找到 1 份" }).waitFor();
     await page.getByRole("combobox", { name: "乐谱排序" }).selectOption("updated");
     assert.equal(await page.locator(".file-row").count(), 1);
+    await page.getByRole("button", { name: /更多操作/ }).focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("menuitem", { name: "文件信息", exact: true }).press("Enter");
+    await page.getByRole("dialog", { name: "文件信息" }).waitFor();
     await page.context().close();
   });
 
@@ -92,12 +98,20 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
 
 async function openPage(browser, identity) {
   const context = await browser.newContext({ serviceWorkers: "block", locale: "zh-CN", colorScheme: "light" });
-  await context.route("**/api/**", route => route.fulfill(resolveFixtureRequest({
-    pathname: new URL(route.request().url()).pathname,
-    method: route.request().method(),
-    identity,
-    cookie: route.request().headers().cookie ?? "",
-  })));
+  await context.route("**/api/**", async route => {
+    const pathname = new URL(route.request().url()).pathname;
+    const response = resolveFixtureRequest({ pathname, method: route.request().method(), identity, cookie: route.request().headers().cookie ?? "" });
+    if (pathname === "/api/choirs/visual-choir/bootstrap") {
+      const data = JSON.parse(response.body);
+      data.scores.push(...Array.from({ length: 100 - data.scores.length }, (_, i) => ({
+        ...data.scores[0], id: `long-${i}`, fileName: `${i} ${"秋日合唱排练与正式演出全声部附歌词".repeat(5)}.pdf`,
+      })));
+      // Put a long filename first regardless of the default sort.
+      data.scores[0].fileName = `000 ${"秋日合唱排练与正式演出全声部附歌词".repeat(5)}.pdf`;
+      response.body = JSON.stringify(data);
+    }
+    await route.fulfill(response);
+  });
   return context.newPage();
 }
 

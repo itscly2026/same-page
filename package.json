@@ -19,7 +19,7 @@
     "test:worker": "npm run test:worker:unit && npm run test:worker:integration",
     "test:worker:unit": "vitest run --config vitest.worker-unit.config.ts",
     "test:worker:integration": "vitest run --config vitest.worker.config.ts",
-    "test:visual-report": "node --test --test-global-setup=./visual-report/setup.mjs --test-concurrency=2 visual-report/*.test.mjs",
+    "test:visual-report": "node scripts/run-browser-tests.mjs visual",
     "test:pwa-update": "node scripts/verify-pwa-update.mjs",
     "test:loading-performance": "npm run build && node scripts/measure-loading-performance.mjs",
     "measure:production-loading": "node scripts/measure-production-loading.mjs",
@@ -35,7 +35,7 @@
     "verify:deployment": "node scripts/verify-deployment.mjs",
     "cf-typegen": "wrangler types",
     "deploy": "node scripts/release-artifact.mjs verify \"$SAME_PAGE_RELEASE_SHA\" && wrangler deploy --config dist/same_page/wrangler.json",
-    "test:smoke": "node --test browser-tests/*.test.mjs",
+    "test:smoke": "node scripts/run-browser-tests.mjs smoke",
     "test:renderer": "python3 renderer/verify.py",
     "diagnostics:inbox": "node scripts/diagnostic-reports.mjs"
   },

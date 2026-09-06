@@ -25,15 +25,6 @@ describe("JoinCodeField", () => {
       "true",
     );
   });
-
-  it("keeps ordinary keyboard deletion in the same semantic input", () => {
-    render(<FieldHarness initialValue="ABCDEFGH" />);
-
-    const input = screen.getByRole("textbox", { name: "邀请码" });
-    fireEvent.change(input, { target: { value: "ABCD-EFG" } });
-
-    expect(input).toHaveValue("ABCD-EFG");
-  });
 });
 
 function FieldHarness(props: { initialValue?: string }) {

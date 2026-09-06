@@ -31,12 +31,14 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
   const browser = await engine.launch({headless:true});
   context.after(() => browser.close());
   const page = await openMemberReader(browser, {width:834,height:1000});
+  await assertPageAlignment(page);
   await showReaderChrome(page);
   await page.getByRole("button", {name:"更多",exact:true}).click();
   for (let step = 0; step < 4; step++) await page.getByRole("button", {name:"放大",exact:true}).click();
   await page.getByRole("button", {name:"更多",exact:true}).click();
   const viewport = page.locator(".page-reader__viewport");
   await viewport.evaluate(element => { element.scrollTop = 180; element.scrollLeft = 110; });
+  await assertPageAlignment(page);
   const before = await readView(page);
   assert.equal(before.zoom, 2);
   await page.getByRole("button", {name:"编辑",exact:true}).click();
@@ -63,6 +65,7 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
     const read = () => page.locator('.continuous-reader__page[data-index="0"] .annotated-pdf-page').evaluate(element => {
      const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
     });
+    await assertPageAlignment(page);
     const before = await read();
     await page.getByRole("button", {name:"编辑",exact:true}).click();
     await page.locator(".annotation-controls").waitFor();
@@ -207,4 +210,17 @@ async function recordContinuousEditFailure(page, engineName) {
   });
   await writeFile(`${directory}/${engineName}-continuous-edit.json`, JSON.stringify(state, null, 2));
   await page.screenshot({ path: `${directory}/${engineName}-continuous-edit.png`, fullPage: true });
+}
+
+// Use actual layouts, PDF bitmaps and overlays instead of a mocked virtualizer
+// and duplicated getViewport arithmetic in jsdom.
+async function assertPageAlignment(page) {
+  await expect.poll(() => page.locator(".annotated-pdf-page:visible").first().evaluate(frame => {
+    const paper = frame.getBoundingClientRect();
+    return [frame.querySelector("canvas[data-pdf-canvas-active]"), frame.querySelector(".annotation-overlay")].every(element => {
+      if (!element) return false;
+      const box = element.getBoundingClientRect();
+      return ["x", "y", "width", "height"].every(key => Math.abs(box[key] - paper[key]) <= 1);
+    });
+  }), { message: "PDF bitmap and annotation coordinates must share the displayed page bounds" }).toBe(true);
 }

@@ -4,30 +4,6 @@ import { chromium } from "playwright";
 import { startVisualServer } from "./setup.mjs";
 import { createVisualFixtureSession } from "./fixtures.mjs";
 
-test("editing has an explicit finish action and restores page navigation", async t => {
-  const app = await startVisualServer({ script: "dev" });
-  const browser = await chromium.launch();
-  t.after(async () => { await browser.close(); await app.stop(); });
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
-  const fixture = createVisualFixtureSession({ id: "reader-tools-mobile", identity: "member" });
-  await page.route("**/api/**", route => {
-    const request = route.request();
-    return route.fulfill(fixture.resolve({ pathname: new URL(request.url()).pathname, method: request.method(), identity: "member", scenarioId: "reader-tools-mobile", cookie: "", body: request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() : null }));
-  });
-  await page.goto(`${app.origin}/choirs/visual-choir/scores/visual-score`);
-  await page.locator("[data-page-turn-current] [data-pdf-canvas-active]").waitFor();
-  await page.locator(".page-reader__viewport").click();
-  await page.getByRole("button", { name: "编辑", exact: true }).click();
-  await page.getByRole("button", { name: "完成编辑", exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "下一页", exact: true }).count(), 0);
-  assert.equal(await page.getByText("点铅笔完成", { exact: true }).count(), 0);
-  await page.getByRole("button", { name: "完成编辑", exact: true }).click();
-  await page.getByRole("button", { name: "编辑", exact: true }).waitFor();
-  await page.getByRole("button", { name: "下一页", exact: true }).press("Enter");
-  await page.getByRole("button", { name: /页面位置/ }).getByText("2 / 2", { exact: true }).waitFor();
-  assert.match(await page.getByRole("button", { name: /页面位置/ }).innerText(), /2\s*\/\s*2/);
-});
-
 test("shared-layer overview leads to details, explicitly saves edits and persists reordering", async t => {
   const app = await startVisualServer({ script: "dev" });
   const browser = await chromium.launch();

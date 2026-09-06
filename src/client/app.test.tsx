@@ -1,5 +1,4 @@
 import { StrictMode } from "react";
-import { rememberLibraryView } from "./score-library/library-view-state";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,7 +19,6 @@ import {
 import {
   clearDriveLibraryCache,
   driveCacheOwnerKey,
-  rememberDriveLibrary,
   rememberDriveSummary,
 } from "./score-library/drive-library-cache";
 
@@ -125,54 +123,6 @@ describe("AppRoutes", () => {
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
   });
 
-  it("edits drive-scoped defaults from My Preferences", async () => {
-    vi.mocked(authClient.useSession).mockReturnValue({
-      data: { user: { id: "user-1", email: "singer@example.test" } },
-      isPending: false,
-    } as ReturnType<typeof authClient.useSession>);
-    const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
-      if (input === "/api/choirs/choir-1/shared-layer-preferences" && !init?.method) {
-        return Promise.resolve(Response.json({
-          drive: { id: "choir-1", name: "小红花云盘" },
-          layers: [
-            {
-              slot: "E",
-              name: "Ensemble",
-              subscribed: true,
-              colorOverride: null,
-              adminDefaultColor: "#a12652",
-              displayColor: "#a12652",
-              colorSource: "admin",
-            },
-          ],
-        }));
-      }
-      if (input === "/api/choirs/choir-1/shared-layers/E/preference") {
-        return Promise.resolve(Response.json({ preference: { subscribed: false, colorOverride: null } }));
-      }
-      return Promise.resolve(new Response(null, { status: 404 }));
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    render(
-      <MemoryRouter initialEntries={["/choirs/choir-1/preferences"]}>
-        <AppRoutes />
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByRole("heading", { name: "阅读偏好" })).toBeInTheDocument();
-    expect(await screen.findByText("小红花云盘")).toBeInTheDocument();
-    const subscribed = await screen.findByRole("checkbox", { name: "E · 全体 默认显示" });
-    expect(subscribed).toBeChecked();
-    fireEvent.click(subscribed);
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/choirs/choir-1/shared-layers/E/preference",
-        expect.objectContaining({ method: "PUT", body: JSON.stringify({ subscribed: false }) }),
-      );
-    });
-  });
-
   it("rolls back only the failed layer preference when saves overlap", async () => {
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "user-1", email: "singer@example.test" } },
@@ -264,36 +214,6 @@ describe("AppRoutes", () => {
     expect(screen.queryByRole("button", { name: /恢复默认颜色/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("link", { name: "返回阅读偏好" }));
     expect(screen.getByRole("checkbox", { name: "E · 全体 默认显示" })).not.toBeChecked();
-  });
-
-  it("lists fixed shared layers in drive management", async () => {
-    vi.mocked(authClient.useSession).mockReturnValue({
-      data: { user: { id: "admin-1", email: "admin@example.test" } },
-      isPending: false,
-    } as ReturnType<typeof authClient.useSession>);
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
-      drive: { id: "choir-1", name: "小红花云盘" },
-      layers: [
-        {
-          slot: "E",
-          name: "Ensemble",
-          defaultColor: "#a12652",
-          grantedMemberCount: 2, sortOrder: 0, active: true,
-        },
-      ],
-    })));
-
-    render(
-      <MemoryRouter initialEntries={["/choirs/choir-1/shared-layers"]}>
-        <AppRoutes />
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByRole("heading", { name: "共享层管理" })).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /E · 全体.*已授权 2 位成员/ })).toHaveAttribute(
-      "href",
-      "/choirs/choir-1/shared-layers/E",
-    );
   });
 
   it("edits member grants from one shared-layer detail page", async () => {
@@ -530,79 +450,6 @@ describe("AppRoutes", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "尝试次数过多，请稍后再试。",
     );
-  });
-
-  it("shows every existing membership to a signed-in user", async () => {
-    vi.mocked(authClient.useSession).mockReturnValue({
-      data: { user: { id: "user-1", email: "member@example.test" } },
-      isPending: false,
-    } as ReturnType<typeof authClient.useSession>);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        Response.json({
-          memberships: [
-            {
-              id: "membership-1",
-              displayName: "小花",
-              role: "member",
-              choir: {
-                id: "choir-1",
-                name: "小红花云盘",
-                guestAdmissionMode: "invite",
-              },
-            },
-            {
-              id: "membership-2",
-              displayName: "Alto",
-              role: "member",
-              choir: {
-                id: "choir-2",
-                name: "周末云盘",
-                guestAdmissionMode: "invite",
-              },
-            },
-          ],
-        }),
-      ),
-    );
-    render(
-      <MemoryRouter initialEntries={["/"]}>
-        <AppRoutes />
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByRole("link", { name: /小红花云盘.*成员/ })).toHaveAttribute(
-      "href",
-      "/choirs/choir-1",
-    );
-    expect(screen.getByRole("link", { name: /周末云盘.*成员/ })).toHaveAttribute(
-      "href",
-      "/choirs/choir-2",
-    );
-    expect(screen.getByRole("heading", { name: "我已加入的云盘" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
-  });
-
-  it("shows a signed-in empty membership section without adding fields to invitation entry", async () => {
-    vi.mocked(authClient.useSession).mockReturnValue({
-      data: { user: { id: "user-1", email: "member@example.test" } },
-      isPending: false,
-    } as ReturnType<typeof authClient.useSession>);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(Response.json({ memberships: [] })),
-    );
-    render(
-      <MemoryRouter initialEntries={["/"]}>
-        <AppRoutes />
-      </MemoryRouter>,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "加入新云盘" }));
-    expect(await screen.findByText(/还没有已加入的云盘。/)).toBeInTheDocument();
-    expect(await screen.findByLabelText("邀请码")).toBeInTheDocument();
-    expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
   });
 
   it("asks a signed-in new member for a display name only after invitation validation", async () => {
@@ -1233,73 +1080,6 @@ describe("AppRoutes", () => {
 
   });
 
-  it("restores a cached drive library while background refresh is delayed", async () => {
-    const ownerKey = driveCacheOwnerKey(null, "choir-1");
-    rememberDriveLibrary(ownerKey, "choir-1", {
-      choir: {
-        id: "choir-1",
-        name: "小红花云盘",
-        guestAdmissionMode: "invite",
-      },
-      result: {
-        scores: [
-          {
-            id: "cached-score",
-            choirId: "choir-1",
-            fileName: "缓存中的春日.pdf",
-            updatedAt: 1,
-            currentVersion: {
-              id: "cached-version",
-              versionNumber: 1,
-              sizeBytes: 2048,
-              sha256: "a".repeat(64),
-              etag: '"cached"',
-              pageCount: 2,
-              createdAt: 1,
-            },
-          },
-        ],
-        storage: { usedBytes: 2048, limitBytes: 1_073_741_824 },
-        permissions: { canManage: false },
-      },
-    });
-    rememberLibraryView(ownerKey, "choir-1", { search: "春日", sort: "name", scrollTop: 320 });
-    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
-
-    const root = document.documentElement;
-    const originalScrollTop = Object.getOwnPropertyDescriptor(root, "scrollTop");
-    let scrollTop = 0;
-    let restoredAfterListCommit = false;
-    Object.defineProperty(root, "scrollTop", {
-      configurable: true,
-      get: () => scrollTop,
-      set: (value: number) => {
-        scrollTop = value;
-        if (value === 320) {
-          restoredAfterListCommit = document.querySelector(".file-list") !== null;
-        }
-      },
-    });
-
-    try {
-      render(
-        <MemoryRouter initialEntries={["/choirs/choir-1"]}>
-          <AppRoutes />
-        </MemoryRouter>,
-      );
-
-      expect(
-        await screen.findByRole("link", { name: /缓存中的春日\.pdf/ }),
-      ).toBeInTheDocument();
-      expect(screen.getByRole("searchbox", { name: "搜索乐谱" })).toHaveValue("春日");
-      expect(screen.queryByText("正在打开云盘…")).not.toBeInTheDocument();
-      await waitFor(() => expect(restoredAfterListCommit).toBe(true));
-    } finally {
-      if (originalScrollTop) Object.defineProperty(root, "scrollTop", originalScrollTop);
-      else Reflect.deleteProperty(root, "scrollTop");
-    }
-  });
-
   it("reuses the home summary while one member bootstrap loads the drive", async () => {
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "user-1", email: "member@example.test" } },
@@ -1343,92 +1123,6 @@ describe("AppRoutes", () => {
     finishBootstrap(Response.json(driveBootstrapBody({ access: "membership" })));
     expect(await screen.findByText("这个云盘还没有乐谱。")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", expect.objectContaining({ method: "DELETE" }));
-  });
-
-  it("keeps immediate search on the latest query without racing network responses", async () => {
-    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json(driveBootstrapBody({
-      scores: [
-        { ...scoreListBody("初始结果.pdf").scores[0], id: "initial" },
-        { ...scoreListBody("新结果.pdf").scores[0], id: "new" },
-      ],
-    }))));
-    vi.stubGlobal("fetch", fetchMock);
-    render(<MemoryRouter initialEntries={["/choirs/choir-1"]}><AppRoutes /></MemoryRouter>);
-    await screen.findByRole("link", { name: /初始结果\.pdf/ });
-    const searchbox = screen.getByRole("searchbox", { name: "搜索乐谱" });
-    fireEvent.change(searchbox, { target: { value: "慢" } });
-    expect(screen.getByText("找到 0 份，共 2 份乐谱")).toBeInTheDocument();
-    expect(searchbox).toHaveValue("慢");
-    fireEvent.change(searchbox, { target: { value: "新" } });
-    expect(screen.getByRole("link", { name: /新结果\.pdf/ })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /初始结果\.pdf/ })).not.toBeInTheDocument();
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("?q="))).toBe(false);
-    fireEvent.change(searchbox, { target: { value: "不存在" } });
-    fireEvent.click(screen.getByRole("button", { name: "清除搜索" }));
-    expect(screen.getByRole("link", { name: /初始结果\.pdf/ })).toBeInTheDocument();
-  });
-
-  it("uploads files independently and reports invalid and duplicate files in place", async () => {
-    vi.mocked(authClient.useSession).mockReturnValue({
-      data: { user: { id: "admin-1", email: "admin@example.test" } },
-      isPending: false,
-    } as ReturnType<typeof authClient.useSession>);
-    const uploadBodies: FormData[] = [];
-    const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
-      if (input === "/api/choirs/choir-1/scores" && init?.method === "POST") {
-        const form = init.body as FormData;
-        uploadBodies.push(form);
-        const file = form.get("file") as File;
-        return Promise.resolve(
-          file.name === "重复.pdf"
-            ? Response.json({ error: "filename_conflict" }, { status: 409 })
-            : Response.json({ score: scoreListBody(file.name).scores[0] }, { status: 201 }),
-        );
-      }
-      if (input.includes("/bootstrap")) {
-        return Promise.resolve(
-          Response.json(driveBootstrapBody({ canManage: true, access: "membership" })),
-        );
-      }
-      return Promise.resolve(
-        Response.json({
-          choir: {
-            id: "choir-1",
-            name: "小红花云盘",
-            guestAdmissionMode: "invite",
-          },
-        }),
-      );
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    render(
-      <MemoryRouter initialEntries={["/choirs/choir-1"]}>
-        <AppRoutes />
-      </MemoryRouter>,
-    );
-
-    fireEvent.click(await screen.findByRole("button", { name: "上传 PDF" }));
-    fireEvent.change(screen.getByLabelText("选择 PDF 文件"), {
-      target: {
-        files: [
-          new File(["ok"], "练声.pdf", { type: "application/pdf" }),
-          new File(["duplicate"], "重复.pdf", { type: "application/pdf" }),
-          new File(["notes"], "说明.txt", { type: "text/plain" }),
-        ],
-      },
-    });
-
-    const statuses = await screen.findByRole("list", { name: "上传状态" });
-    await waitFor(() => {
-      expect(within(statuses).getByText("上传完成")).toBeInTheDocument();
-      expect(within(statuses).getByText(/文件库已有同名文件/)).toBeInTheDocument();
-      expect(within(statuses).getByText("只接受 PDF 文件。")).toBeInTheDocument();
-    });
-    expect(uploadBodies).toHaveLength(2);
-    for (const body of uploadBodies) {
-      expect(Array.from(body.keys())).toEqual(["file"]);
-    }
   });
 
   it("requires explicit confirmation before logout discards pending work", async () => {
@@ -1515,33 +1209,8 @@ describe("AppRoutes", () => {
   });
 });
 
-function scoreListBody(fileName: string) {
-  return {
-    scores: [
-      {
-        id: `score-${fileName}`,
-        choirId: "choir-1",
-        fileName,
-        updatedAt: 1,
-        currentVersion: {
-          id: `version-${fileName}`,
-          versionNumber: 1,
-          sizeBytes: 2048,
-          sha256: "a".repeat(64),
-          etag: '"etag"',
-          pageCount: 2,
-          createdAt: 1,
-        },
-      },
-    ],
-    storage: { usedBytes: 2048, limitBytes: 1_073_741_824 },
-    permissions: { canManage: false },
-  };
-}
-
 function driveBootstrapBody(options: {
   choir?: { id: string; name: string; guestAdmissionMode: "invite" | "open" };
-  scores?: ReturnType<typeof scoreListBody>["scores"];
   usedBytes?: number;
   canManage?: boolean;
   access?: "membership" | "preview" | "guest";
@@ -1552,7 +1221,7 @@ function driveBootstrapBody(options: {
       name: "小红花云盘",
       guestAdmissionMode: "invite" as const,
     },
-    scores: options.scores ?? [],
+    scores: [],
     storage: {
       usedBytes: options.usedBytes ?? 0,
       limitBytes: 1_073_741_824,

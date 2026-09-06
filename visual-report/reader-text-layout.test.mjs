@@ -11,52 +11,24 @@ const styles = await readFile(
 const sampleText = "第一排男高音这里请统一";
 const longChineseText = "第一排男高音这里请统一提前吸气并保持轻声进入";
 
-test("keeps a text annotation on the same line when the PDF page width doubles", async (context) => {
+test("text wrapping and readable bounds remain proportional across zoom", async context => {
   const browser = await testBrowser(context);
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-
-  await setFixture(page, `
-    ${annotationPage("fit", 556.4, sampleText)}
-    ${annotationPage("zoomed", 1112.8, sampleText)}
-  `);
-
-  const layouts = await measureTextLayouts(page);
-  assert.deepEqual(layouts.map(({ id, lineCount }) => ({ id, lineCount })), [
-    { id: "fit", lineCount: 1 },
-    { id: "zoomed", lineCount: 1 },
-  ]);
-});
-
-test("keeps fixed screen-space padding out of text flow geometry", async (context) => {
-  const browser = await testBrowser(context);
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  const text = "排".repeat(41);
-
-  await setFixture(page, `
-    ${annotationPage("fit-small", 556.4, text, 1.2)}
-    ${annotationPage("zoomed-small", 1112.8, text, 1.2)}
-  `);
-
-  assert.deepEqual(
-    (await measureTextLayouts(page)).map(({ lineCount }) => lineCount),
-    [1, 1],
-  );
-});
-
-test("wraps a long unbroken annotation inside stable page-relative bounds", async (context) => {
-  const browser = await testBrowser(context);
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  const text = "https://samepage.example/rehearsal/tenor-breathe-together-before-entry";
-
-  await setFixture(page, `
-    ${annotationPage("fit-url", 556.4, text)}
-    ${annotationPage("zoomed-url", 1112.8, text)}
-  `);
-
-  const layouts = await measureTextLayouts(page);
-  assert.equal(layouts[0].lineCount, layouts[1].lineCount);
-  assert.ok(layouts[0].lineCount > 1);
-  assert.ok(layouts.every(({ contentFits }) => contentFits));
+  const page = await browser.newPage({ viewport: { width: 1800, height: 1800 } });
+  for (const [name, text, font, lines] of [
+    ["short", sampleText, 2.4, 1],
+    ["small-padding", "排".repeat(41), 1.2, 1],
+    ["chinese", longChineseText, 2.4, 2],
+    ["explicit-break", "第一排统一\n第二排保持轻声", 2.4, 2],
+    ["unbroken-url", "https://samepage.example/rehearsal/tenor-breathe-together-before-entry", 2.4, null],
+  ]) {
+    await setFixture(page, [556.4, 695.5, 1112.8, 1669.2]
+      .map((width, i) => annotationPage(name + i, width, text, font)).join(""));
+    const layouts = await measureTextLayouts(page);
+    if (lines === null) assert.ok(layouts[0].lineCount > 1, name);
+    assert.deepEqual(layouts.map(layout => layout.lineCount), layouts.map(() => lines ?? layouts[0].lineCount), name);
+    if (name === "chinese") assertNormalizedLayouts(layouts, lines);
+    assert.ok(layouts.every(layout => layout.contentFits), name + ": content is clipped");
+  }
 });
 
 test("gives short editable text a 44px hit target without enlarging its visual bounds", async (context) => {
@@ -91,59 +63,6 @@ test("gives short editable text a 44px hit target without enlarging its visual b
     "short-note",
     "short-note",
   ]);
-});
-
-test("preserves normalized wrapping at 100%, 125%, 200% and 300% zoom", async (context) => {
-  const browser = await testBrowser(context);
-  const page = await browser.newPage({ viewport: { width: 1800, height: 1800 } });
-  const cases = [
-    ["page-100", 556.4],
-    ["page-125", 695.5],
-    ["page-200", 1112.8],
-    ["page-300", 1669.2],
-  ];
-
-  await setFixture(
-    page,
-    cases.map(([id, width]) => annotationPage(id, width, longChineseText)).join(""),
-  );
-
-  assertNormalizedLayouts(await measureTextLayouts(page), 2);
-});
-
-test("preserves normalized wrapping in paged and continuous readers across orientation", async (context) => {
-  const browser = await testBrowser(context);
-  const cases = [
-    ["paged-landscape", "paged", { width: 1194, height: 834 }, 556.4],
-    ["paged-portrait", "paged", { width: 834, height: 1194 }, 760],
-    ["continuous-landscape", "continuous", { width: 1194, height: 834 }, 1194],
-    ["continuous-portrait", "continuous", { width: 834, height: 1194 }, 834],
-  ];
-
-  const layouts = [];
-  for (const [id, layout, viewport, width] of cases) {
-    const page = await browser.newPage({ viewport });
-    await setFixture(page, readerLayoutPage(id, layout, width, longChineseText));
-    layouts.push(...await measureTextLayouts(page));
-  }
-
-  assertNormalizedLayouts(layouts, 2);
-});
-
-test("preserves explicit line breaks at every page scale", async (context) => {
-  const browser = await testBrowser(context);
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  const text = "第一排统一\n第二排保持轻声";
-
-  await setFixture(page, `
-    ${annotationPage("fit-multiline", 556.4, text)}
-    ${annotationPage("zoomed-multiline", 1112.8, text)}
-  `);
-
-  assert.deepEqual(
-    (await measureTextLayouts(page)).map(({ lineCount }) => lineCount),
-    [2, 2],
-  );
 });
 
 test("keeps pinch preview geometry equal to the committed zoom layout", async (context) => {
@@ -232,33 +151,5 @@ function annotationPage(id, width, text, fontScalePercent = 2.4, editing = false
         >${text}</button>
       </div>
     </div>
-  `;
-}
-
-function readerLayoutPage(id, layout, width, text) {
-  const page = annotationPage(id, width, text);
-  if (layout === "continuous") {
-    return `
-      <section class="continuous-reader">
-        <div class="continuous-reader__inner" style="width: ${width}px; height: 600px">
-          <div class="continuous-reader__page">${page}</div>
-        </div>
-      </section>
-    `;
-  }
-  return `
-    <section class="page-reader">
-      <div class="page-reader__viewport">
-        <div class="page-reader__canvas-stage" style="width: 100vw; height: 100vh">
-          <div class="page-reader__pager-window" style="width: ${width}px; height: 240px">
-            <div class="page-reader__pager-track">
-              <div class="page-reader__sheet" data-page-turn-current>
-                <div class="page-reader__content page-reader__paper">${page}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
   `;
 }

@@ -30,6 +30,7 @@ jobs:
       deploy: ${{ steps.scope.outputs.deploy }}
       smoke: ${{ steps.scope.outputs.smoke }}
       renderer: ${{ steps.scope.outputs.renderer }}
+      browserGroup: ${{ steps.scope.outputs.browserGroup }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -90,7 +91,7 @@ jobs:
       - name: Install Playwright Chromium and WebKit
         run: npx playwright install --with-deps chromium webkit
       - name: Browser layout and interaction regressions
-        run: npm run test:visual-report
+        run: node scripts/run-browser-tests.mjs visual "${{ needs.scope.outputs.browserGroup }}"
       - name: Preserve synthetic test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -170,7 +171,7 @@ jobs:
       - name: Real browser Worker storage smoke
         timeout-minutes: 5
         if: needs.scope.outputs.smoke == 'true'
-        run: node --test --test-reporter=tap browser-tests/*.test.mjs
+        run: node scripts/run-browser-tests.mjs smoke "${{ needs.scope.outputs.browserGroup }}"
       - name: Seal verified release
         if: github.event_name == 'push' && needs.scope.outputs.deploy == 'true'
         run: |

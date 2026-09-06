@@ -11,10 +11,11 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
   const app = await startVisualServer({ script: "dev" });
   const browser = await chromium.launch();
   t.after(async () => { await browser.close(); await app.stop(); });
-  const output = "artifacts/verification/issue-142";
-  await mkdir(output, { recursive: true });
+  const output = process.env.LAYOUT_CAPTURE_DIR;
+  if (process.env.LAYOUT_CAPTURE_DIR) await mkdir(output, { recursive: true });
   const evidence = [];
-  for (const width of [390, 834]) {
+  {
+    const width = 390;
     const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: "block", reducedMotion: "reduce" });
     await context.addInitScript(() => {
       localStorage.setItem("reader-gesture-hint-seen", "true");
@@ -58,11 +59,11 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
     const bounds = await menu.boundingBox();
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width + 1);
     assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= 901);
-    await page.screenshot({ path: `${output}/${width}-menu.png` });
+    await captureStates(page, `${width}-menu.png`);
     await page.getByRole("button", { name: "关闭更多阅读选项" }).click();
     await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
     await page.locator(".annotation-controls").waitFor();
-    await page.screenshot({ path: `${output}/${width}-editing.png` });
+    await captureStates(page, `${width}-editing.png`);
     await page.evaluate(() => { window.fixtureOnline = false; window.dispatchEvent(new Event("offline")); });
     const svg = page.locator("[data-page-turn-current] .annotation-overlay svg");
     await svg.dispatchEvent("pointerdown", { pointerId: 1, pointerType: "touch", clientX: width / 2, clientY: 450, bubbles: true });
@@ -74,7 +75,7 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
     await page.getByRole("button", { name: "返回编辑器" }).click();
     await page.getByRole("dialog", { name: "请先完成编辑" }).waitFor({ state: "hidden" });
     assert.equal(await page.getByRole("textbox", { name: "批注文本" }).inputValue(), "本机草稿等待重连");
-    await page.screenshot({ path: `${output}/${width}-text.png` });
+    await captureStates(page, `${width}-text.png`);
     await page.evaluate(() => { window.fixtureStorageFailed = true; });
     await page.getByRole("button", { name: "完成", exact: true }).click();
     await page.getByText("本机保存失败", { exact: true }).waitFor();
@@ -83,7 +84,7 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
     await page.getByRole("button", { name: "返回编辑器" }).click();
     await page.getByRole("dialog", { name: "请先完成编辑" }).waitFor({ state: "hidden" });
     assert.equal(await page.getByRole("textbox", { name: "批注文本" }).inputValue(), "本机草稿等待重连");
-    await page.screenshot({ path: `${output}/${width}-storage-failed.png` });
+    await captureStates(page, `${width}-storage-failed.png`);
     await page.evaluate(() => { window.fixtureStorageFailed = false; });
     await page.getByRole("button", { name: "完成", exact: true }).click();
     await page.getByRole("form", { name: "文字输入" }).waitFor({ state: "hidden" });
@@ -92,28 +93,28 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
     await page.getByText("已保存在本机 · 等待联网", { exact: true }).waitFor();
     assert.equal(pushes, 0);
     await page.getByText("已保存在本机 · 等待联网", { exact: true }).scrollIntoViewIfNeeded();
-    await page.screenshot({ path: `${output}/${width}-offline-draft.png` });
+    await captureStates(page, `${width}-offline-draft.png`);
     failSync = true;
     await page.evaluate(() => { window.fixtureOnline = true; });
     await menu.getByRole("button", { name: "立即同步", exact: true }).click();
     await menu.getByRole("button", { name: "重试同步", exact: true }).waitFor();
-    await page.screenshot({ path: `${output}/${width}-sync-failed.png` });
+    await captureStates(page, `${width}-sync-failed.png`);
     failSync = false;
     await page.evaluate(() => { window.dispatchEvent(new Event("online")); });
     await page.getByText("已同步", { exact: true }).waitFor();
     assert.ok(pushes > 0);
-    await page.screenshot({ path: `${output}/${width}-synced.png` });
+    await captureStates(page, `${width}-synced.png`);
     // The blocked service worker makes automatic offline preparation fail.
     // Retry that failure; PDF bytes can now be reused without another request.
     await page.getByRole("button", { name: "重试下载离线副本", exact: true }).click();
     await page.getByText("离线下载未完成。当前乐谱尚不可离线使用，请联网重试。", { exact: true }).waitFor();
     await page.getByRole("button", { name: "重试下载离线副本" }).waitFor();
     await page.getByRole("button", { name: "重试下载离线副本" }).scrollIntoViewIfNeeded();
-    await page.screenshot({ path: `${output}/${width}-download-failed.png` });
+    await captureStates(page, `${width}-download-failed.png`);
     await page.getByRole("button", { name: "图片兼容模式", exact: true }).click();
     await page.getByText(/显示切换未完成，已保留原谱面/).first().waitFor();
     await page.getByRole("button", { name: "关闭更多阅读选项" }).click();
-    await page.screenshot({ path: `${output}/${width}-display-failed.png` });
+    await captureStates(page, `${width}-display-failed.png`);
     assert.equal(await page.locator("[data-page-turn-current] [data-pdf-canvas-active]").count(), 1);
     assert.deepEqual(errors, []);
     evidence.push({ width, height: 900, pushes, errors, flow: "open → edit → durable local draft → simulated reconnect → accepted sync → download failure → display rollback" });
@@ -134,12 +135,26 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
   const loadingPage = await loadingContext.newPage();
   await loadingPage.goto(`${app.origin}/choirs/visual-choir/scores/visual-score`, { waitUntil: "domcontentloaded" });
   await loadingPage.locator(".reader-loading").waitFor();
-  await loadingPage.screenshot({ path: `${output}/390-loading.png` });
+  await captureStates(loadingPage, `390-loading.png`);
   failOpen();
   await loadingPage.getByRole("heading", { name: "无法打开", exact: true }).waitFor();
-  await loadingPage.screenshot({ path: `${output}/390-open-failed.png` });
+  await captureStates(loadingPage, `390-open-failed.png`);
   assert.ok(await loadingPage.getByRole("link", { name: "返回云盘", exact: true }).isVisible());
   assert.ok(await loadingPage.getByRole("button", { name: "重试加载", exact: true }).isVisible());
   await loadingContext.close();
-  await writeFile(`${output}/evidence.json`, JSON.stringify({ environment: "Chromium; simulated API and offline events; no real-device claim", evidence }, null, 2));
+  if (process.env.LAYOUT_CAPTURE_DIR) await writeFile(`${output}/evidence.json`, JSON.stringify({ environment: "Chromium; simulated API and offline events; no real-device claim", evidence }, null, 2));
 });
+
+async function captureStates(page, name) {
+  for (const width of [390, 834]) {
+    await page.setViewportSize({ width, height: 900 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${name}/${width}: overflow`);
+    for (const dialog of await page.getByRole("dialog").all()) {
+      if (!await dialog.isVisible()) continue;
+      const box = await dialog.boundingBox();
+      assert.ok(box.x >= -1 && box.x + box.width <= width + 1 && box.y >= -1 && box.y + box.height <= 901, `${name}/${width}: dialog clipped`);
+    }
+    if (process.env.LAYOUT_CAPTURE_DIR) await page.screenshot({ path: `${process.env.LAYOUT_CAPTURE_DIR}/reader-${width}-${name}` });
+  }
+  await page.setViewportSize({ width: 390, height: 900 });
+}

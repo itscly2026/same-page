@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium, webkit } from "@playwright/test";
+import { expectSampleScoreContent } from "./pdf-content.mjs";
 import { startStorageFixture } from "./storage-fixture.mjs";
 
 for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]]) {
@@ -75,7 +76,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     await offline.goto(drive);
     await offline.getByRole("heading", { name: "本地链路云盘" }).waitFor();
     await offline.getByRole("link").filter({ hasText: fixture.fileName }).click();
-    await offline.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
+    await expectSampleScoreContent(offline);
     const readerUrl = offline.url();
     await offline.locator(".reader-shell").click({ position: { x: 195, y: 350 } });
     await offline.getByRole("button", { name: "编辑", exact: true }).click();
