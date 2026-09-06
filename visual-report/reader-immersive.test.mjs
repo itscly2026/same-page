@@ -49,15 +49,17 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
  for (let iteration = 0; iteration < Number(process.env.WEBKIT_EDIT_REPEATS ?? 1); iteration++) {
  test(`${engineName}: continuous editing locks one page without changing its scale or position / ${iteration}`, async (context) => {
   const browser = await engine.launch({headless:true});
-  context.after(() => browser.close());
   const page = await openMemberReader(browser, {width:834,height:700});
   const probing = process.env.WEBKIT_EDIT_REPEATS !== undefined;
   if (probing) await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
   const evidence = `artifacts/verification/webkit-edit-probe/${engineName}-${iteration}`;
   context.after(async () => {
-    if (!probing) return;
-    await mkdir(path.dirname(evidence), { recursive: true });
-    await page.context().tracing.stop({ path: `${evidence}.zip` });
+    try {
+      if (probing) {
+        await mkdir(path.dirname(evidence), { recursive: true });
+        await page.context().tracing.stop({ path: `${evidence}.zip` });
+      }
+    } finally { await browser.close(); }
   });
   await showReaderChrome(page);
   await page.getByRole("button", {name:"更多",exact:true}).click();

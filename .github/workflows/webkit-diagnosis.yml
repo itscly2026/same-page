@@ -2,6 +2,9 @@ name: WebKit edit diagnosis
 on:
   push:
     branches: [codex/webkit-edit-visibility]
+concurrency:
+  group: webkit-edit-diagnosis
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -19,7 +22,8 @@ jobs:
       - name: Repeat original WebKit edit assertion with evidence
         env:
           WEBKIT_EDIT_REPEATS: '20'
-        run: node --test --test-name-pattern='webkit: continuous editing' visual-report/reader-immersive.test.mjs
+        run: |
+          node --test --test-name-pattern='webkit: continuous editing' visual-report/reader-immersive.test.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
