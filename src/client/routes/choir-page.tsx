@@ -80,7 +80,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
 
   useEffect(() => {
     if (!userId) return;
-    if (access.kind === "opened" && (access.isMember || access.local)) rememberLastDrive(userId, choirId);
+    if (access.kind === "opened" && (access.isMember || access.rememberedMembership)) rememberLastDrive(userId, choirId);
     if (access.kind === "denied" || access.kind === "not-found") forgetLastDrive(userId, choirId);
   }, [access, userId, choirId]);
 
@@ -230,33 +230,39 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
   }
 
   const { choir, result } = access;
+  const managementVisible = result.permissions.canManage || access.managementVisible;
+  const localFilesOnly = Boolean(access.local) && (!online || Boolean(searchMessage) || (Boolean(userId) && identity.onlineState !== "authenticated"));
   const storageRatio = result.storage.usedBytes / result.storage.limitBytes;
 
   return (
     <div className="app-page drive-page">
       <DriveHeader choirId={choirId} choirName={choir.name} userId={userId} localOnly={Boolean(access.local)} avatarRevision={avatarRevision} onEditDisplayName={access.isMember && !access.local ? () => setSettingsField("display-name") : undefined} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
-        management={result.permissions.canManage ? close => <section className="drive-drawer-management">
+        management={managementVisible ? close => <section className="drive-drawer-management">
           <h3>云盘管理</h3>
-          <Menu aria-label="管理员菜单" onAction={key => {
+          <Menu aria-label="管理员菜单" disabledKeys={access.local ? ["name", "memberships", "layers", "trash", "invite"] : []} onAction={key => {
             close();
             if (key === "name") setSettingsField("name");
             if (key === "trash") setTrashOpen(true);
             if (key === "invite") setInviteManagementOpen(true);
           }}>
             <MenuItem id="name">云盘名称</MenuItem>
-            <MenuItem href={`/choirs/${choirId}/memberships`}>成员与管理员</MenuItem>
-            <MenuItem href={`/choirs/${choirId}/shared-layers`}>共享层</MenuItem>
+            <MenuItem id="memberships" href={`/choirs/${choirId}/memberships`}>成员与管理员</MenuItem>
+            <MenuItem id="layers" href={`/choirs/${choirId}/shared-layers`}>共享层</MenuItem>
             <MenuItem id="trash">回收站</MenuItem>
             {choir.guestAdmissionMode === "invite" && <MenuItem id="invite">邀请码</MenuItem>}
           </Menu>
+          {access.local && <p role="status">管理操作需联网并确认权限后使用。</p>}
           <p className="drive-storage">云盘存储：{formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}</p>
         </section> : undefined}
       />
       <main className="page-shell file-library">
         <h1 className="visually-hidden">{choir.name}</h1>
-        <IdentityNotice identity={identity} />
-        {!online && <p role="status">当前离线，已下载的乐谱可继续使用。</p>}
-        {access.local && <p role="status">显示本机目录，搜索仅限本机记录；已下载的乐谱可继续使用，最新内容需联网确认。</p>}
+        <div className="drive-connection-notice">
+          <IdentityNotice identity={identity} />
+          {!online ? <p role="status">当前离线，已下载的乐谱可继续使用。</p> : null}
+          {localFilesOnly && <p>显示本机目录，搜索仅限本机记录。</p>}
+          {searchMessage && <p role="status">{searchMessage}<Button className="text-button library-retry" onPress={() => void refresh()}>重试</Button></p>}
+        </div>
         <section className="library-workspace" aria-labelledby="library-content-title">
           <div className="library-toolbar">
             <div className="library-controls">
@@ -286,16 +292,13 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
               {quotaBlocked ? " 请先释放空间后再上传。" : " 接近上限，请留意后续上传。"}
             </p>
           ) : null}
-          {searchMessage ? (
-            <p className="library-message" role="status">{searchMessage}<Button className="text-button library-retry" onPress={() => void refresh()}>重试</Button></p>
-          ) : null}
           {message ? <p className="library-message" role="status">{message}</p> : null}
 
           {visibleScores.length > 0 ? (
             <section className="file-list" aria-label="PDF 文件">
               {visibleScores.map((score) => (
                 <article className="file-row" key={score.id}>
-                  <ScoreLink userId={userId} choirId={choirId} scoreId={score.id} local={Boolean(access.local)}
+                  <ScoreLink userId={userId} choirId={choirId} scoreId={score.id} local={localFilesOnly}
                     onOpen={() =>
                       {
                         startLoadingJourney(
@@ -318,10 +321,11 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
                       <Popover className="file-menu-popover">
                         <Menu
                           aria-label={`${score.fileName} 操作`}
+                          disabledKeys={access.local ? ["rename", "replace", "history", "trash"] : []}
                           onAction={(key) => openScoreAction(score, key as ScoreAction)}
                         >
                           <MenuItem id="info">文件信息</MenuItem>
-                          {result.permissions.canManage && <>
+                          {managementVisible && <>
                           <MenuItem id="rename">重命名</MenuItem>
                           <MenuItem id="replace">替换 PDF</MenuItem>
                           <MenuItem id="history">历史 PDF 版本</MenuItem>
@@ -340,7 +344,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
       </main>
 
       {settingsField && !access.local && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async () => { await refreshAfterMutation(); setAvatarRevision(value => value + 1); setMessage("已保存。"); }} />}
-      {result.permissions.canManage && <UploadFab onPress={() => setUploadOpen(true)} />}
+      {managementVisible && <UploadFab disabled={Boolean(access.local)} onPress={() => setUploadOpen(true)} />}
 
       {inviteManagementOpen && result.permissions.canManage ? (
         <InviteCodeDialog

@@ -56,7 +56,7 @@ export class DriveLibrary {
     const cached = readDriveLibrary(this.ownerKey, this.choirId);
     this.publish({
       access: cached
-        ? { kind: "opened", choir: cached.choir, result: { ...cached.result, permissions: { canManage: false } }, isMember: false, local: true }
+        ? { kind: "opened", choir: cached.choir, result: { ...cached.result, permissions: { canManage: false } }, isMember: false, local: true, managementVisible: cached.result.permissions.canManage }
         : { kind: "loading", choir: readDriveSummary(this.ownerKey, this.choirId) ?? undefined },
     });
     this.localController = new AbortController();
@@ -161,7 +161,7 @@ export class DriveLibrary {
 
   private failed() {
     this.publish(this.snapshot.access.kind === "opened"
-      ? { access: { ...this.snapshot.access, local: true, result: { ...this.snapshot.access.result, permissions: { canManage: false } } }, refreshMessage: refreshFailed }
+      ? { access: { ...this.snapshot.access, local: true, managementVisible: this.snapshot.access.managementVisible || this.snapshot.access.result.permissions.canManage, result: { ...this.snapshot.access.result, permissions: { canManage: false } } }, refreshMessage: refreshFailed }
       : { access: { kind: "failed" }, refreshMessage: null });
   }
 

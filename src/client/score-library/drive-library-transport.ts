@@ -4,7 +4,7 @@ import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnos
 
 export type DriveLibraryAccess =
   | { kind: "loading"; choir?: ChoirSummary }
-  | { kind: "opened"; choir: ChoirSummary; result: ScoreListResponse; isMember: boolean; local?: boolean }
+  | { kind: "opened"; choir: ChoirSummary; result: ScoreListResponse; isMember: boolean; local?: boolean; rememberedMembership?: boolean; managementVisible?: boolean }
   | { kind: "join-required"; choir: ChoirSummary }
   | { kind: "denied" }
   | { kind: "not-found" }

@@ -12,9 +12,9 @@ export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, s
       if (!ownerKey.startsWith("user:")) return null;
       const directory = (await readLocalDriveDirectories(ownerKey.slice(5))).find(entry => entry.choirId === choirId);
       signal.throwIfAborted();
-      return { kind: "opened" as const, local: true, isMember: false,
+      return { kind: "opened" as const, local: true, isMember: false, rememberedMembership: directory?.membership ?? false, managementVisible: directory?.canManage ?? false,
         choir: directory?.choir ?? { id: choirId, name: "云盘", guestAdmissionMode: "invite" as const },
-        result: { scores: directory?.scores ?? [], storage: { usedBytes: 0, limitBytes: 1 }, permissions: { canManage: false } } };
+        result: { scores: directory?.scores ?? [], storage: directory?.storage ?? { usedBytes: 0, limitBytes: 1 }, permissions: { canManage: false } } };
     };
     return new DriveLibrary(ownerKey, choirId, {
       ...transport,
@@ -27,7 +27,7 @@ export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, s
         const access = await transport.load(signal, allowAdmission);
         const captured = await workspace;
         if (captured && access.kind === "opened") {
-          await rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal).catch(() => undefined);
+          await rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal, access.isMember, access.result.permissions.canManage, access.result.storage).catch(() => undefined);
         }
         return access;
       },

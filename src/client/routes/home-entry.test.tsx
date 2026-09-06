@@ -175,3 +175,26 @@ it("keeps the drive shell and search when the online session cannot be reached a
   expect(screen.queryByRole("heading", { name: "本机内容" })).not.toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "登录或注册" })).not.toBeInTheDocument();
 });
+
+it("explains an unavailable last drive instead of silently opening the remaining drive", async () => {
+  const { rememberLastDrive } = await import("../score-library/last-drive");
+  rememberLastDrive("user-a", "removed");
+  render(tree());
+  await screen.findByText(/上次使用的云盘已不在可访问列表/);
+  expectPath("/");
+  expect(screen.getByRole("link", { name: /云盘 one/ })).toHaveAttribute("href", "/choirs/one");
+});
+
+it("does not put a saved public preview into offline drive selection or default startup", async () => {
+  const { localDatabase } = await import("../platform/local-database");
+  const { activateAuthenticatedLocalOwner, authenticatedLocalOwnerKey } = await import("../platform/local-workspace");
+  await localDatabase.open();
+  await activateAuthenticatedLocalOwner("user-a");
+  await localDatabase.driveDirectories.put({ key: "preview", ownerKey: authenticatedLocalOwnerKey("user-a"), choirId: "preview", choir: { id: "preview", name: "公开体验", guestAdmissionMode: "open" }, scores: [], membership: false });
+  vi.mocked(authClient.useSession).mockReturnValue({ data: null, isPending: false, error: { status: 503 }, refetch: vi.fn() } as unknown as ReturnType<typeof authClient.useSession>);
+  vi.mocked(fetch).mockRejectedValue(new TypeError("offline"));
+  render(tree());
+  await screen.findByText(/本机尚未保存云盘目录/);
+  expectPath("/");
+  expect(screen.queryByRole("link", { name: /公开体验/ })).not.toBeInTheDocument();
+});

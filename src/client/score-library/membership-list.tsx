@@ -62,7 +62,7 @@ export function MembershipList({
   }, [userId, retry, localOnly]);
 
   if (localOnly || (state.userId === userId && state.kind === "failed")) {
-    const drives = local?.userId === userId ? local.drives : [];
+    const drives = local?.userId === userId ? local.drives.filter(entry => entry.membership) : [];
     const destination = drives.find(entry => entry.choirId === readLastDrive(userId)) ?? (drives.length === 1 ? drives[0] : null);
     if (autoEnter && destination) return <Navigate to={`/choirs/${destination.choirId}`} replace />;
     return <>
@@ -73,32 +73,22 @@ export function MembershipList({
   if (state.userId !== userId || state.kind === "loading") {
     return <p role="status">正在加载已加入的云盘…</p>;
   }
-  if (state.kind !== "loaded") {
-    return (
-      <>
-      <div role="alert">
-        <p>暂时无法加载已加入的云盘。</p>
-        <Button className="secondary-button" onPress={() => setRetry((value) => value + 1)}>
-          重试
-        </Button>
-      </div>
-
-      </>
-    );
-  }
+  if (state.kind !== "loaded") return null;
+  const lastDrive = readLastDrive(userId);
+  const missingLastDrive = autoEnter && Boolean(lastDrive) && !state.memberships.some(entry => entry.choir.id === lastDrive);
   if (!state.memberships.length) {
     return (
-      <p className="membership-empty">
+      <p className="membership-empty">{missingLastDrive && "上次使用的云盘已不在可访问列表中。"}
         还没有已加入的云盘。请使用管理员提供的邀请码加入。
       </p>
     );
   }
-  const lastDrive = readLastDrive(userId);
   const destination = state.memberships.find(entry => entry.choir.id === lastDrive)
     ?? (state.memberships.length === 1 ? state.memberships[0] : null);
-  if (autoEnter && destination) return <Navigate to={`/choirs/${destination.choir.id}`} replace />;
+  if (autoEnter && !missingLastDrive && destination) return <Navigate to={`/choirs/${destination.choir.id}`} replace />;
   return (
     <>
+    {missingLastDrive && <p role="status">上次使用的云盘已不在可访问列表中，请选择其他云盘。</p>}
     <div className="membership-list">
       {state.memberships.map((membership) => (
         <Link

@@ -1228,7 +1228,8 @@ describe("AppRoutes", () => {
     expect(
       await screen.findByText("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。"),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /排练 10\.pdf/ })).toBeInTheDocument();
+    expect(screen.getByText("排练 10.pdf")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /排练 10\.pdf/ })).not.toBeInTheDocument();
 
   });
 

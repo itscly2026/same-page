@@ -78,3 +78,7 @@
   .drive-page .library-controls { flex-wrap: nowrap; }
 }
 @media (prefers-reduced-motion: reduce) { .upload-fab { transition: none; } }
+
+.drive-connection-notice { position: fixed; z-index: 20; bottom: 1rem; left: 1rem; max-width: min(36rem, calc(100vw - 6rem)); border-radius: .75rem; background: var(--surface, white); box-shadow: 0 2px 16px #0002; font-size: .8rem; color: var(--muted); }
+.drive-connection-notice:empty { display: none; }
+.drive-connection-notice p { margin: 0; padding: .5rem .75rem; }

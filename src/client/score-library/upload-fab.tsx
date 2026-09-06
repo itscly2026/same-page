@@ -2,7 +2,7 @@ import { Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "react-aria-components";
 
-export function UploadFab({ onPress }: { onPress: () => void }) {
+export function UploadFab({ onPress, disabled = false }: { onPress: () => void; disabled?: boolean }) {
   const [visible, setVisible] = useState(true);
   const button = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -24,5 +24,5 @@ export function UploadFab({ onPress }: { onPress: () => void }) {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
-  return <Button ref={button} className="upload-fab" aria-label="上传 PDF" data-visible={visible} inert={!visible} onPress={onPress}><Plus size={28} aria-hidden="true" /></Button>;
+  return <Button ref={button} className="upload-fab" isDisabled={disabled} aria-label={disabled ? "上传 PDF（需联网）" : "上传 PDF"} data-visible={visible} inert={!visible} onPress={onPress}><Plus size={28} aria-hidden="true" /></Button>;
 }

@@ -48,12 +48,12 @@ export function DriveSettingsDialog({ choirId, field, onClose, onSaved }: {
   return <ModalOverlay className="modal-overlay" isOpen onOpenChange={open => { if (!open && !busy) onClose(); }} isDismissable={!busy}>
     <Modal className="app-modal"><Dialog className="app-dialog" aria-label={title}>
       <Heading slot="title">{title}</Heading>
-      <Form onSubmit={event => { event.preventDefault(); void save(); }}>
+      <Form className="entry-form" onSubmit={event => { event.preventDefault(); void save(); }}>
         <TextField value={value} onChange={setValue} isDisabled={!settings || busy} maxLength={field === "name" ? 100 : 40} isRequired><Label>{title}</Label><Input autoFocus /></TextField>
         {message && <p role="status">{message}</p>}
         {!settings && !message && <p role="status">正在读取当前设置…</p>}
         {message && <Button isDisabled={busy} onPress={() => setAttempt(value => value + 1)}>重新读取</Button>}
-        <div className="dialog-actions"><Button className="secondary-button" isDisabled={busy} onPress={onClose}>取消</Button><Button type="submit" isDisabled={!settings || busy || (field === "name" && !settings.canManage)}>{busy ? "正在保存…" : "保存"}</Button></div>
+        <div className="dialog-actions"><Button className="secondary-button" isDisabled={busy} onPress={onClose}>取消</Button><Button className="primary-button" type="submit" isDisabled={!settings || busy || (field === "name" && !settings.canManage)}>{busy ? "正在保存…" : "保存"}</Button></div>
       </Form>
     </Dialog></Modal>
   </ModalOverlay>;
