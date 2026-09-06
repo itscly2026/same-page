@@ -1,10 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  authenticatedLocalOwnerKey,
-  createLocalWorkspace,
-} from "../platform/local-workspace";
 import type { PDFDocumentProxy } from "./pdf-document";
 import {
   ContinuousLayout,
@@ -30,11 +26,7 @@ vi.mock("@tanstack/react-virtual", () => ({
 }));
 
 const annotationProps: AnnotationPageProps = {
-  workspace: createLocalWorkspace(
-    authenticatedLocalOwnerKey("user-1"),
-    "choir-1",
-    "score-1",
-  ),
+  editor: null,
   layers: [],
   annotations: [],
   editing: false,

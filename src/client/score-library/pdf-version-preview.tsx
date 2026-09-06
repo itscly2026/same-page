@@ -82,7 +82,7 @@ export function PdfVersionPreview({ scorePath, choirId, scoreId, versionId, onRe
     <p>显示云端共享批注与本人的个人批注；本机未同步草稿不参与此预览。</p>
     <div className="pdf-version-preview" style={{ aspectRatio: String(ratio) }}>
       <PdfPageCanvas document={preview.document} pageNumber={page} width={600} aspectRatio={ratio} onRenderStart={renderStart} />
-      <AnnotationOverlay workspace={preview.workspace} layers={preview.layers} annotations={preview.annotations}
+      <AnnotationOverlay editor={null} layers={preview.layers} annotations={preview.annotations}
         pageNumber={page} editing={false} tool="text" activeLayerId={null} />
     </div>
     <div className="pdf-version-preview__pages">

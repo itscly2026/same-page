@@ -2197,7 +2197,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     expect(screen.getByRole("button", { name: "更多" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.queryByRole("button", { name: "连续滚动" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "故障诊断" }));
+    fireEvent.click(within(screen.getByRole("region", { name: "阅读帮助" })).getByRole("button", { name: "故障诊断" }));
     const report = screen.getByLabelText<HTMLTextAreaElement>("可发送给支持人员的诊断内容");
     expect(JSON.parse(report.value).reader.interactionMode).toBe("editing");
     fireEvent.click(within(screen.getByRole("dialog", { name: "故障诊断" })).getByRole("button", { name: "关闭" }));
@@ -2290,6 +2290,25 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     write.mockRestore();
     fireEvent.click(screen.getByRole("button", { name: "重试本机保存" }));
     await waitFor(() => expect(target).toBeEnabled());
+
+    fireEvent.pointerDown(inkOverlay, { pointerId: 22, clientX: 50, clientY: 60 });
+    fireEvent.pointerMove(inkOverlay, { pointerId: 22, clientX: 70, clientY: 80 });
+    fireEvent.pointerUp(inkOverlay, { pointerId: 22, clientX: 70, clientY: 80 });
+    await waitFor(() => expect(target).toBeEnabled());
+
+    // History writes participate in the same local-save completion condition.
+    const undoWrite = vi.spyOn(localDatabase.annotations, "delete").mockImplementation(() => new Dexie.Promise((_resolve, reject) => { rejectWrite = reject; }));
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    await waitFor(() => expect(undoWrite).toHaveBeenCalled());
+    expect(editButton).toBeDisabled();
+    expect(target).toBeDisabled();
+    expect(screen.getByRole("button", { name: "重做" })).toBeDisabled();
+    rejectWrite(new DOMException("full", "QuotaExceededError"));
+    await screen.findByRole("button", { name: "重试本机保存" });
+    expect(editButton).toBeDisabled();
+    undoWrite.mockRestore();
+    fireEvent.click(screen.getByRole("button", { name: "重试本机保存" }));
+    await waitFor(() => expect(editButton).toBeEnabled());
 
     fireEvent.click(editButton);
     expect(editButton).toHaveAttribute("aria-pressed", "false");

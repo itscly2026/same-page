@@ -1,3 +1,4 @@
+import { useAnnotationEditor } from "../annotations/use-annotation-editor";
 import { useLiveQuery } from "dexie-react-hooks";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -21,9 +22,10 @@ let serverLayers: AnnotationLayerSummary[];
 let requests: Array<{ url: string; body: unknown }>;
 
 function Reader() {
+  const { editor } = useAnnotationEditor(workspace);
   const layers = useLiveQuery(() => readAnnotationLayers(workspace), [], []);
   return <><ReaderLayerPanel workspace={workspace} layers={layers} signedIn />
-    <ReaderEditingControls workspace={workspace} layers={layers} isDisabled={false} activeLayerId={own.id} tool="text" onLayerChange={() => undefined} onToolChange={() => undefined} /></>;
+    <ReaderEditingControls editor={editor!} layers={layers} isDisabled={false} activeLayerId={own.id} tool="text" onLayerChange={() => undefined} onToolChange={() => undefined} /></>;
 }
 
 beforeEach(async () => {

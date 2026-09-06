@@ -13,11 +13,7 @@ import {
   authenticatedLocalOwnerKey,
   createLocalWorkspace,
 } from "../platform/local-workspace";
-import {
-  beginAnnotationEditSession,
-  endAnnotationEditSession,
-  undoAnnotationEdit,
-} from "./annotation-state";
+import { AnnotationEditor } from "./annotation-editor";
 import {
   AnnotationOverlay,
   type AnnotationOverlayInteraction,
@@ -32,6 +28,7 @@ const workspace = createLocalWorkspace(
   scoreId,
 );
 const scopeKey = workspace.scopeKey;
+let editor: AnnotationEditor;
 const activeLayerId = "11111111-1111-4111-8111-111111111111";
 const otherLayerId = "22222222-2222-4222-8222-222222222222";
 
@@ -74,7 +71,8 @@ beforeEach(async () => {
   await localDatabase.open();
   await localDatabase.annotations.clear();
   await activateAuthenticatedLocalOwner("user-1");
-  beginAnnotationEditSession();
+  editor = new AnnotationEditor(workspace);
+  editor.begin();
 });
 
 describe("AnnotationOverlay", () => {
@@ -484,8 +482,8 @@ describe("AnnotationOverlay", () => {
       expect(stored.payload.x).toBeCloseTo(0.6);
       expect(stored.payload.y).toBeCloseTo(0.7);
     });
-    expect(await undoAnnotationEdit(workspace, activeLayerId)).toBe(true);
-    expect(await undoAnnotationEdit(workspace, activeLayerId)).toBe(false);
+    expect(await editor.undo(activeLayerId)).toBe(true);
+    expect(await editor.undo(activeLayerId)).toBe(false);
   });
 
   it("adds a second pointer to scale and move text before one final save", async () => {
@@ -626,7 +624,7 @@ describe("AnnotationOverlay", () => {
 
     view.rerender(
       <AnnotationOverlay
-        workspace={workspace}
+        editor={editor}
         pageNumber={1}
         layers={layers}
         annotations={[active, other]}
@@ -647,7 +645,7 @@ function renderOverlay(
 ) {
   return render(
     <AnnotationOverlay
-      workspace={workspace}
+      editor={editor}
       pageNumber={1}
       layers={layers}
       annotations={annotations}
@@ -767,7 +765,7 @@ function installVisualViewport() {
 }
 
 afterEach(() => {
-  endAnnotationEditSession();
+  editor.cancel();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
