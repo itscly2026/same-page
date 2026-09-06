@@ -11,7 +11,7 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
   const app = await startVisualServer({ script: "dev" });
   const browser = await chromium.launch();
   t.after(async () => { await browser.close(); await app.stop(); });
-  const output = "artifacts/verification/issue-142";
+  const output = process.env.LAYOUT_CAPTURE_DIR;
   if (process.env.LAYOUT_CAPTURE_DIR) await mkdir(output, { recursive: true });
   const evidence = [];
   {
@@ -154,7 +154,7 @@ async function captureStates(page, name) {
       const box = await dialog.boundingBox();
       assert.ok(box.x >= -1 && box.x + box.width <= width + 1 && box.y >= -1 && box.y + box.height <= 901, `${name}/${width}: dialog clipped`);
     }
-    if (process.env.LAYOUT_CAPTURE_DIR) await page.screenshot({ path: `artifacts/verification/issue-142/${width}-${name}` });
+    if (process.env.LAYOUT_CAPTURE_DIR) await page.screenshot({ path: `${process.env.LAYOUT_CAPTURE_DIR}/reader-${width}-${name}` });
   }
   await page.setViewportSize({ width: 390, height: 900 });
 }

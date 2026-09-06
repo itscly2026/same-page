@@ -10,7 +10,7 @@
 | reader-status 两宽度完整保存失败、草稿、同步恢复 | 390 完整执行一次，每个原截图状态都原地检查 390/834 的无溢出与弹窗裁切 | 原文件；保留未完成编辑、QuotaExceededError、零离线 push、同步失败/恢复、下载失败和显示回滚 |
 | homepage 强制 flex/grid | 删除 CSS 机制断言；保留原宽度、两个 WebKit iPad 预设、200% 文字，以及实际文字/插图阅读顺序、内容裁切 | homepage-responsive |
 | drive-navigation 834/1440 空搜索结果无溢出 | 保留独有 320 极窄空结果；公共 390/834/1194/1440 长文件名、搜索/清空/排序、44px 矩阵由 drive-entry-library 负责 | drive-navigation 保留菜单焦点恢复、滚动上传入口、键盘和空结果交互；drive-entry-library 两引擎完整保留 |
-| auth-methods / reader-status 成功截图 | 默认不写截图；`LAYOUT_CAPTURE_DIR=1` 显式报告模式保留原 artifacts 路径。截图没有差异判定，行为/几何仍每次断言 | 原文件；reader-status 新增每个状态的尺寸测量 |
+| auth-methods / reader-status 成功截图 | 默认不写截图；`LAYOUT_CAPTURE_DIR=artifacts/verification/report` 显式指定报告目录。截图没有差异判定，行为/几何仍每次断言 | 原文件；reader-status 新增每个状态的尺寸测量 |
 | 所有客户端文件加载 React、IndexedDB 和数据库删除 | DOM 无存储清单只加载 DOM cleanup；数据库逻辑只加载 fake IndexedDB + 每用例删除；其余 DOM/数据库测试保持单个 hook 先 React cleanup 再删数据库，避免 afterEach 注册顺序导致卸载晚于清库。未审计的新文件默认带数据库隔离 | vitest.client.config.ts、src/test/setup{,-database}.ts |
 | invite-link、session-fetch、loading-performance | 3 文件/6 项迁到 Node，无产品兼容代码、断言删除或 mock 增加 | 同目录 *.node.test.ts；原生 URL/Response/性能记录接口 |
 | 每个迁移文件启动 Wrangler | 同一 applyMigrations 调用内合并 SQL 文件，保留顺序和 PRAGMA；原数据插入/观测点不移动 | verify-score-schema-migration；真实 D1、旧记录、外键、文件名 backfill 幂等检查全部保留 |
@@ -56,3 +56,40 @@ npm 与 CI 现统一使用同一浏览器入口；有状态 smoke 明确串行�
 2. 在真实 storage smoke 离线重开后将 PDF canvas 全部涂白：新增内容断言明确失败；恢复原 helper 后 storage smoke 通过（5.52 秒）。未提交故意错误。
 
 另找到 [34041072554](https://github.com/itscly2026/same-page/actions/runs/34041072554) 的成功 PR 基线，`7e39172` 与实施基线的树完全相同，完整测试范围一致，可用于第二个优化前样本。没有第三个相同树的成功样本，不为补数量重跑旧 CI。
+
+### 完整成功 CI 对比（秒）
+
+| 指标 | 改前 PR 34041072554 | 改前 main 34041415382 | 改后 PR 34042495545 |
+| --- | ---: | ---: | ---: |
+| 验证关键路径 | 342 | 305 | 310 |
+| 验证 runner 合计 | 851 | 868 | 782 |
+| scope job | 7 | 7 | 7 |
+| checks job | 281 | 287 | 210 |
+| visual job | 233 | 281 | 268 |
+| integration job | 327 | 290 | 294 |
+| verify job | 3 | 3 | 3 |
+| Lint | 14 | 14 | 10 |
+| Typecheck | 14 | 14 | 11 |
+| Client | 96 | 95 | 70 |
+| Worker | 57 | 61 | 47 |
+| 迁移 | 76 | 75 | 48 |
+| Visual 安装浏览器 | 70 | 57 | 52 |
+| Visual 测试 | 136 | 200 | 190 |
+| Integration 安装浏览器 | 44 | 42 | 52 |
+| Linux renderer 打包验证 | 18 | 18 | 20 |
+| PWA | 51 | 36 | 39 |
+| Build | 19 | 15 | 15 |
+| Performance | 13 | 11 | 11 |
+| Smoke | 145 | 131 | 124 |
+
+各验证 job 在 scope 完成后的启动等待（checks / visual / integration）：34041072554: 4/3/2 秒；34041415382: 3/3/2 秒；34042495545: 3/3/3 秒。这些间隔包含调度与启动开销，不推断具体 runner 调度原因。
+
+[优化后完整成功运行](https://github.com/itscly2026/same-page/actions/runs/34042495545)，[机器可读 job/step 数据](test-audit-174/evidence.json)。三个运行均选择全部测试组，包含 Linux renderer/PWA/迁移；没有拿 library 子集作为降本样本。改前与改后分别是 16/19 项 scope；Node+client 均 437 项，Worker 均 95 项，visual 均 46 项，smoke 均 11 项。
+
+runner 合计减少 69–86 秒（8.1%–9.9%）。main 基线包含 PR 不做的 seal/upload/identity，共 6 秒；扣除后为 862 秒，下降 80 秒（9.3%）。未计部署 job 111 秒，不将 runner 秒直接换算账单分钟。关键路径 310 秒，相对两基线一快一慢，不能宣称稳定缩短等待。Worker 未改变却也更快、visual 在 136–200 秒间波动，说明 runner 速度有混杂；不能将每个差值都归因于清理。
+
+优化前只有 2 个同树成功样本，优化后此表只有 1 个完整成功样本，尚无稳定分布证据。后续最终提交 CI 见 PR #175 checks；不为凑三次无意义触发。当前剩余瓶颈是浏览器安装、完整 smoke 和视觉流程；renderer 打包仅约 20 秒。浏览器安装本轮为 52/52 秒，相对基线 70/44、57/42 并无稳定下降，因此没有宣称缓存收益。
+
+最终本机 `npm run check:full` 退出 0：437 项 Node/客户端、95 项 Worker、46 项 visual、11 项 smoke，以及 renderer、PWA、lint/typecheck、范围门禁、真实迁移、build/precache 和加载预算全部通过。最终完整 visual 78.91 秒。没有产品部署或实机验收声明。
+
+截图报告目录统一后，显式报告模式下 auth-methods 与 reader-status 3/3 通过，30 张报告图片写入指定目录；lint 通过。默认运行仍不生成这些成功截图。
