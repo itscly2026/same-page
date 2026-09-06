@@ -13,6 +13,7 @@ import type { LocalWorkspace } from "../platform/local-workspace";
 import "./reader-ux.css";
 
 export function ReaderEditingControls({
+  isDisabled,
   workspace,
   layers,
   tool,
@@ -20,6 +21,7 @@ export function ReaderEditingControls({
   onToolChange,
   onLayerChange,
 }: {
+  isDisabled: boolean;
   workspace: LocalWorkspace;
   layers: AnnotationLayerSummary[];
   tool: AnnotationTool;
@@ -42,6 +44,7 @@ export function ReaderEditingControls({
     <section className="annotation-controls" aria-label="批注工具">
       <DialogTrigger isOpen={choosingLayer} onOpenChange={setChoosingLayer}>
         <Button
+          isDisabled={isDisabled}
           className="reader-edit-layer-trigger"
           aria-label={`当前编辑层：${selectedLayer?.kind === "personal" ? "P · Personal" : `${selectedLayer?.defaultSlot} · ${selectedLayer?.name}`}，写到哪里`}
         >
@@ -56,6 +59,7 @@ export function ReaderEditingControls({
             <div className="annotation-layer-switcher" aria-label="编辑层">
               {defaultSharedLayerSlots.map((slot) => (
                 <LayerSlotButton
+                  isDisabled={isDisabled}
                   key={slot}
                   slot={slot}
                   layer={defaultLayers.get(slot)}
@@ -67,6 +71,7 @@ export function ReaderEditingControls({
             <p>个人层 · 仅自己可见</p>
             <div className="annotation-layer-switcher">
               <LayerSlotButton
+                isDisabled={isDisabled}
                 slot="P"
                 layer={personalLayer}
                 activeLayerId={activeLayerId}
@@ -81,6 +86,7 @@ export function ReaderEditingControls({
         <div className="segmented-control" aria-label="批注工具">
           {(["text", "ink", "eraser"] as const).map((entry) => (
             <Button
+              isDisabled={isDisabled}
               aria-label={{ text: "文本", ink: "画笔", eraser: "整条橡皮" }[entry]}
               aria-pressed={tool === entry}
               className="annotation-tool-button"
@@ -94,6 +100,7 @@ export function ReaderEditingControls({
       </div>
       <div className="annotation-control-group annotation-history-controls" aria-label="历史">
         <Button
+          isDisabled={isDisabled}
           aria-label="撤销"
           className="annotation-tool-button"
           onPress={() => activeLayerId ? void undoAnnotationEdit(workspace, activeLayerId) : undefined}
@@ -101,6 +108,7 @@ export function ReaderEditingControls({
           <Undo2 aria-hidden="true" size={20} />
         </Button>
         <Button
+          isDisabled={isDisabled}
           aria-label="重做"
           className="annotation-tool-button"
           onPress={() => activeLayerId ? void redoAnnotationEdit(workspace, activeLayerId) : undefined}
@@ -113,11 +121,13 @@ export function ReaderEditingControls({
 }
 
 function LayerSlotButton({
+  isDisabled,
   slot,
   layer,
   activeLayerId,
   onLayerChange,
 }: {
+  isDisabled: boolean;
   slot: DefaultSharedLayerSlot | "P";
   layer: AnnotationLayerSummary | undefined;
   activeLayerId: string | null;
@@ -126,6 +136,7 @@ function LayerSlotButton({
   const label = slot === "P" ? "P，Personal" : `${slot}，${layer?.name ?? slot}`;
   const button = (
     <Button
+      isDisabled={isDisabled}
       aria-label={`${label}${layer?.canEdit ? "" : "，只读，查看权限说明"}`}
       aria-pressed={layer?.id === activeLayerId}
       className="annotation-layer-slot"

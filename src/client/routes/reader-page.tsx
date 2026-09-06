@@ -75,7 +75,8 @@ import {
   type ReaderSyncOutcome,
 } from "../reader/reader-sync-status";
 
-import { DiagnosticReportDialog } from "../diagnostics/diagnostic-report-dialog";
+import type { DiagnosticReader } from "../../shared/diagnostic-report";
+import { DiagnosticReportDialog, DiagnosticReportModal } from "../diagnostics/diagnostic-report-dialog";
 
 type ReaderPanel = "layers" | "pages";
 
@@ -135,6 +136,7 @@ function ReaderPageContent() {
   const [chromeVisible, setChromeVisible] = useState(false);
   const [readerPanel, setReaderPanel] = useState<ReaderPanel | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [diagnosticOpen, setDiagnosticOpen] = useState(false);
   const moreTrigger = useRef<HTMLButtonElement>(null);
   const [editingOrigin, setEditingOrigin] = useState<{
     layout: ReaderLayout;
@@ -256,7 +258,7 @@ function ReaderPageContent() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         layout !== "page" ||
-        readerPanel !== null || moreOpen ||
+        readerPanel !== null || moreOpen || diagnosticOpen ||
         editing ||
         event.metaKey ||
         event.ctrlKey ||
@@ -278,7 +280,7 @@ function ReaderPageContent() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [editing, layout, moreOpen, readerPanel, requestPage]);
+  }, [editing, layout, moreOpen, diagnosticOpen, readerPanel, requestPage]);
 
   const beginEditing = () => {
     if (cloudState === "trashed") {
@@ -415,12 +417,13 @@ function ReaderPageContent() {
     }
   };
 
-  const diagnosticDialog = <DiagnosticReportDialog reader={{
+  const diagnosticReader: DiagnosticReader = {
     displayMode: reader.snapshot.mode,
     interactionMode: editing ? "editing" : "reading",
     pendingCount: activeAnnotations ? Math.min(9999, pendingCount) : null,
     conflictCount: activeAnnotations ? Math.min(9999, conflicts.length) : null,
-  }} />;
+  };
+  const diagnosticDialog = <DiagnosticReportDialog reader={diagnosticReader} />;
 
   if (!workspace) {
     return <main className="page-shell compact-page">
@@ -547,6 +550,15 @@ function ReaderPageContent() {
         if (editing && event.target instanceof Element && event.target.closest("a")) event.preventDefault();
       }}>
       <ReaderNavigationGuard editing={editing} />
+      <DiagnosticReportModal
+        reader={diagnosticReader}
+        isOpen={diagnosticOpen}
+        onOpenChange={open => {
+          setDiagnosticOpen(open);
+          // Restore focus after the modal releases its focus trap and inert background.
+          if (!open) requestAnimationFrame(() => moreTrigger.current?.focus());
+        }}
+      />
       <h1 className="visually-hidden">{score.fileName}</h1>
       {cloudState === "trashed" ? (
         <aside className="reader-alert reader-alert--trash" role="alert">
@@ -722,7 +734,7 @@ function ReaderPageContent() {
               </>}
               <section aria-label="阅读帮助"><h2>帮助</h2>
                 <p className="reader-more-menu__status">轻点中央显示工具；点按两侧或左右滑动翻页。编辑时锁定当前页，再点铅笔完成。批注同步与离线副本分别准备。</p>
-                {diagnosticDialog}
+                <Button onPress={() => { setMoreOpen(false); setDiagnosticOpen(true); }}>故障诊断</Button>
               </section>
             </Dialog>
             </Popover>
@@ -741,9 +753,10 @@ function ReaderPageContent() {
         />
       ) : null}
 
-      {editing && annotationInteraction === "idle" && persistence === "idle" ? (
+      {editing && annotationInteraction === "idle" ? (
         <Suspense fallback={<p role="status">正在准备批注工具…</p>}>
           <ReaderEditingControls
+            isDisabled={persistence !== "idle"}
             workspace={workspace}
             layers={layers}
             tool={tool}

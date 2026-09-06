@@ -1,3 +1,4 @@
+import Dexie from "dexie";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
@@ -2221,7 +2222,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     expect(JSON.parse(report.value).reader.interactionMode).toBe("editing");
     fireEvent.click(within(screen.getByRole("dialog", { name: "故障诊断" })).getByRole("button", { name: "关闭" }));
     expect(editButton).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    expect(screen.queryByRole("dialog", { name: "更多阅读选项" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "下一页" })).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "ArrowRight" });
@@ -2289,6 +2290,31 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
         { name: "取消" },
       ),
     );
+
+    // A slow/failed ink write must retain the selected target from #141,
+    // while #142 prevents changing layers, tools or history before persistence.
+    fireEvent.click(screen.getByRole("button", { name: "画笔" }));
+    const inkOverlay = screen.getByLabelText("第 1 页批注层");
+    vi.spyOn(inkOverlay, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, top: 0, left: 0, right: 100, bottom: 100, width: 100, height: 100, toJSON: () => ({}) });
+    let rejectWrite!: (reason: Error) => void;
+    const write = vi.spyOn(localDatabase.annotations, "put").mockImplementation(() => new Dexie.Promise((_resolve, reject) => { rejectWrite = reject; }));
+    fireEvent.pointerDown(inkOverlay, { pointerId: 21, clientX: 20, clientY: 30 });
+    fireEvent.pointerMove(inkOverlay, { pointerId: 21, clientX: 40, clientY: 50 });
+    fireEvent.pointerUp(inkOverlay, { pointerId: 21, clientX: 40, clientY: 50 });
+    await waitFor(() => expect(write).toHaveBeenCalled());
+    const target = screen.getByRole("button", { name: /当前编辑层：E · Ensemble/ });
+    expect(target).toBeVisible();
+    expect(target).toBeDisabled();
+    for (const name of ["文本", "画笔", "整条橡皮", "撤销", "重做"]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    }
+    rejectWrite(new DOMException("full", "QuotaExceededError"));
+    await screen.findByRole("button", { name: "重试本机保存" });
+    expect(target).toBeVisible();
+    expect(target).toBeDisabled();
+    write.mockRestore();
+    fireEvent.click(screen.getByRole("button", { name: "重试本机保存" }));
+    await waitFor(() => expect(target).toBeEnabled());
 
     virtualTestState.itemSize = 200;
     fireEvent.click(editButton);

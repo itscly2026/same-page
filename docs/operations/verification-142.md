@@ -1,6 +1,6 @@
 # #142 阅读器工具、保存状态与恢复验证
 
-关联 [#142](https://github.com/itscly2026/same-page/issues/142)。实现于独立 worktree，基线 `6de4882`。范围为阅读器呈现及既有会话的恢复；没有更改服务端转换、权限协议、数据库结构或 #141 的图层信息架构。
+关联 [#142](https://github.com/itscly2026/same-page/issues/142)。实现于独立 worktree，初始基线 `6de4882`，随后 rebase 到 `main` 的 `5c238c0`。范围为阅读器呈现及既有会话的恢复；没有更改服务端转换、权限协议、数据库结构或 #141 的图层信息架构。
 
 ## 最终行为
 
@@ -50,3 +50,11 @@ PATH="/tmp/same-page-issue142-renderer/bin:$PATH" npm run check
 ```
 
 PDFium 基准图校验通过。初次 smoke 因系统 Python 缺少 Pillow 而转换失败；另外已将图片 smoke 的更多菜单查询更新为最终 Dialog 语义。早期两次单独浏览器测试曾在全部交互完成后遇到本机子进程清理 `EPERM`，后续独立重跑及完整视觉套件通过。
+
+## 与最新 main 的集成复核
+
+保留 #141 的“显示哪些批注 / 写到哪里”和当前编辑层提示，以及 #143 的诊断发送面板。保存或失败期间仍显示当前编辑层，暂时禁用图层、工具及历史操作，重试成功后恢复。更多在编辑期只提供帮助和诊断；打开诊断时收起更多，防止 Popover 遮挡诊断面板。诊断打开时拦截底层翻页快捷键，关闭后焦点返回“更多”，编辑状态保留。
+
+Rebase 后 lint、typecheck、41 项单元、314 项客户端及 83 项 Worker 测试通过。36 项视觉断言全部通过；上传队列文件的 macOS 子进程清理遇到 `EPERM`，Chromium/WebKit 两项独立复跑通过。生产构建及 precache 审计通过。真实 Chromium/WebKit + Worker/D1 的诊断测试扩展了菜单退出、标题实际无遮挡、阅读态键盘不翻底层谱面及关闭后焦点恢复断言；阅读器持久化、断线重连、下载/显示失败的完整交互也通过。
+
+更新后的 [手机菜单](issue-142/390-menu.png)、[编辑目标](issue-142/390-editing.png) 和 [平板诊断](issue-142/diagnostic-webkit-reader.png) 已重新查看。其余代表截图保留初次实现的场景证据；完整重跑产物位于 `artifacts/verification/`。浏览器/视口模拟仍不代表实体设备或生产验收。
