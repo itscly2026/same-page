@@ -5,6 +5,7 @@ import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { chromium, webkit } from "playwright";
+import { expect } from "@playwright/test";
 
 import { startVisualServer } from "./setup.mjs";
 import { resolveFixtureRequest } from "./fixtures.mjs";
@@ -73,8 +74,10 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
    const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
   });
   const before = await read();
+  if (process.env.WEBKIT_EDIT_FORCE_VISIBLE) await page.addStyleTag({ content: '.continuous-reader__page[data-edit-hidden] { visibility: visible !important; }' });
   await page.getByRole("button", {name:"编辑",exact:true}).click();
   await page.locator(".annotation-controls").waitFor();
+  if (process.env.WEBKIT_EDIT_WAIT) await expect(page.locator('.annotated-pdf-page:visible')).toHaveCount(1, { timeout: 3000 });
   const focused = await page.locator('.annotated-pdf-page:visible').evaluateAll(elements => elements.map(element => {
    const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
   }));
