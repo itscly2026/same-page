@@ -80,7 +80,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
 
   useEffect(() => {
     if (!userId) return;
-    if (access.kind === "opened" && (access.isMember || access.rememberedMembership)) rememberLastDrive(userId, choirId);
+    if (access.kind === "opened" && !access.choir.isPreviewEntry && (access.isMember || access.rememberedMembership)) rememberLastDrive(userId, choirId);
     if (access.kind === "denied" || access.kind === "not-found") forgetLastDrive(userId, choirId);
   }, [access, userId, choirId]);
 
@@ -343,7 +343,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
         </section>
       </main>
 
-      {settingsField && !access.local && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async () => { await refreshAfterMutation(); setAvatarRevision(value => value + 1); setMessage("已保存。"); }} />}
+      {settingsField && !access.local && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async value => { if (settingsField === "name") await library.confirmName(value); await refreshAfterMutation(); setAvatarRevision(value => value + 1); setMessage("已保存。"); }} />}
       {managementVisible && <UploadFab disabled={Boolean(access.local)} onPress={() => setUploadOpen(true)} />}
 
       {inviteManagementOpen && result.permissions.canManage ? (

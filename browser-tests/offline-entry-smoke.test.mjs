@@ -8,7 +8,7 @@ import { startStorageFixture } from "./storage-fixture.mjs";
 
 for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]]) {
   test(`${engineName}: ${engineName === "chromium" ? "offline browser restart" : "API outage on a new page"} restores home, drive and reader`, { timeout: 120_000 }, async t => {
-    const fixture = await startStorageFixture({ authenticated: true });
+    const fixture = await startStorageFixture({ authenticated: true, previewEntry: false });
     const profile = await mkdtemp(path.join(tmpdir(), "same-page-offline-entry-"));
     let context = await engine.launchPersistentContext(profile, { headless: true, serviceWorkers: "allow", viewport: { width: 390, height: 844 } });
     t.after(async () => { await context.close(); await fixture.stop(); await rm(profile, { recursive: true, force: true }); });
@@ -36,6 +36,9 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
       // failure for the new page. This is not an offline app-shell test.
       await page.evaluate(async () => {
         for (const registration of await navigator.serviceWorker.getRegistrations()) await registration.unregister();
+      });
+      await context.addInitScript(() => {
+        navigator.serviceWorker.register = async () => { throw new Error("Service worker disabled for API-outage fixture"); };
       });
       await page.close();
     }

@@ -5,7 +5,7 @@ import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnos
 
 type Settings = ReturnType<typeof driveSettingsSchema.parse>;
 export function DriveSettingsDialog({ choirId, field, onClose, onSaved }: {
-  choirId: string; field: "name" | "display-name"; onClose: () => void; onSaved: () => Promise<void>;
+  choirId: string; field: "name" | "display-name"; onClose: () => void; onSaved: (value: string) => Promise<void>;
 }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [value, setValue] = useState("");
@@ -40,7 +40,7 @@ export function DriveSettingsDialog({ choirId, field, onClose, onSaved }: {
         } else setMessage(response.status === 403 ? "当前没有修改权限，请关闭并刷新云盘。" : "保存失败，输入已保留，请重试。");
         return;
       }
-      await onSaved();
+      await onSaved(parsed.data);
       onClose();
     } catch { setMessage("保存结果未确认，输入已保留。请重新读取当前设置后核对。"); }
     finally { setBusy(false); }

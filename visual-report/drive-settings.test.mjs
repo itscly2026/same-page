@@ -14,14 +14,16 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     const fixture = createVisualFixtureSession();
     let displayName = "林";
     let driveName = "示例云盘";
+    let failRefresh = false;
     await page.route("**/api/**", async route => {
       const request = route.request();
       const pathname = new URL(request.url()).pathname;
+      if (failRefresh && pathname.endsWith("/bootstrap")) return route.fulfill({ status: 503, body: "injected refresh failure" });
       if (pathname.endsWith("/settings")) return route.fulfill({ json: { name: driveName, nameRevision: 0, displayName, membershipRevision: 0, canManage: true } });
       if (request.method() === "PATCH") {
         const data = request.postDataJSON();
         if (pathname.endsWith("/display-name")) displayName = data.displayName;
-        else if (pathname.endsWith("/name")) driveName = data.name;
+        else if (pathname.endsWith("/name")) { driveName = data.name; failRefresh = true; }
         else assert.fail(`Unexpected mutation: ${pathname}`);
         return route.fulfill({ json: { revision: 1 } });
       }
@@ -51,11 +53,14 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.getByRole("dialog").waitFor({ state: "hidden" });
     await page.getByRole("heading", { name: "周末排练云盘", exact: true }).waitFor({ state: "attached" });
     await page.reload();
-    await page.getByRole("button", { name: "上传 PDF", exact: true }).waitFor();
+    await page.getByRole("button", { name: "上传 PDF（需联网）", exact: true }).waitFor();
     await page.getByRole("button", { name: "打开云盘菜单" }).click();
     await page.getByRole("menuitem", { name: "成员与管理员" }).waitFor();
     await expect(page.getByRole("dialog", { name: "云盘菜单" })).toContainText("周末排练云盘");
+    await expect(page.getByRole("menuitem", { name: "成员与管理员" })).toHaveAttribute("aria-disabled", "true");
     await page.screenshot({ path: `artifacts/verification/issue-170/${name}-renamed-drive.png` });
+    await page.getByRole("button", { name: "切换云盘", exact: true }).click();
+    await expect(page.getByRole("link", { name: /周末排练云盘/ })).toBeVisible();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   });
 }

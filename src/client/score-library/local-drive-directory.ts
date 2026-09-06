@@ -30,3 +30,12 @@ export async function readLocalDriveDirectories(userId: string) {
     return directories;
   });
 }
+
+export async function renameLocalDriveDirectory(workspace: LocalWorkspace, name: string, signal: AbortSignal) {
+  await withLocalWorkspaceTransaction(workspace, "rw", [localDatabase.driveDirectories], async () => {
+    signal.throwIfAborted();
+    const key = JSON.stringify([workspace.ownerKey, workspace.choirId]);
+    const directory = await localDatabase.driveDirectories.get(key);
+    if (directory) await localDatabase.driveDirectories.put({ ...directory, choir: { ...directory.choir, name } });
+  });
+}

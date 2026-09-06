@@ -198,3 +198,19 @@ it("does not put a saved public preview into offline drive selection or default 
   expectPath("/");
   expect(screen.queryByRole("link", { name: /公开体验/ })).not.toBeInTheDocument();
 });
+
+it("does not remember the public preview as a startup drive even for its administrator", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/preview/bootstrap")) return Response.json({ choir: { ...membership("preview").choir, isPreviewEntry: true }, scores: [], storage: { usedBytes: 0, limitBytes: 1000 }, permissions: { access: "membership", canManage: true } });
+    return original(input, init);
+  });
+  memberships = [membership("one"), membership("two")];
+  const view = render(tree(["/choirs/preview"]));
+  await screen.findByRole("button", { name: "上传 PDF" });
+  view.unmount();
+  render(tree());
+  await screen.findByRole("link", { name: /云盘 one.*成员/ });
+  expect(screen.queryByText(/上次使用的云盘已不在可访问列表/)).not.toBeInTheDocument();
+  expectPath("/");
+});

@@ -1,5 +1,5 @@
 import { captureLocalWorkspaceSession, createLocalWorkspace, authenticatedLocalOwnerKey } from "../platform/local-workspace";
-import { readLocalDriveDirectories, rememberLocalDriveDirectory } from "./local-drive-directory";
+import { readLocalDriveDirectories, rememberLocalDriveDirectory, renameLocalDriveDirectory } from "./local-drive-directory";
 import { useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { DriveLibrary } from "./drive-library";
 import { type DriveCacheOwnerKey } from "./drive-library-cache";
@@ -19,6 +19,11 @@ export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, s
     return new DriveLibrary(ownerKey, choirId, {
       ...transport,
       readLocal,
+      async rememberName(name, signal) {
+        if (!ownerKey.startsWith("user:")) return;
+        const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey(ownerKey.slice(5)), choirId, ""));
+        await renameLocalDriveDirectory(workspace, name, signal);
+      },
       async load(signal, allowAdmission) {
         if (!signedIn && ownerKey.startsWith("user:")) return (await readLocal(signal))!;
         const workspace = signedIn && ownerKey.startsWith("user:")
@@ -27,7 +32,7 @@ export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, s
         const access = await transport.load(signal, allowAdmission);
         const captured = await workspace;
         if (captured && access.kind === "opened") {
-          await rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal, access.isMember, access.result.permissions.canManage, access.result.storage).catch(() => undefined);
+          await rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal, access.isMember && !access.choir.isPreviewEntry, access.result.permissions.canManage, access.result.storage).catch(() => undefined);
         }
         return access;
       },

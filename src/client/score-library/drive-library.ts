@@ -87,6 +87,16 @@ export class DriveLibrary {
     return this.load(false);
   };
 
+  confirmName = async (name: string) => {
+    if (!this.isActive() || this.snapshot.access.kind !== "opened") return;
+    this.request?.controller.abort();
+    this.request = null;
+    const access = { ...this.snapshot.access, choir: { ...this.snapshot.access.choir, name } };
+    rememberDriveLibrary(this.ownerKey, this.choirId, access);
+    this.publish({ access });
+    await this.transport.rememberName?.(name, this.ownerSignal);
+  };
+
   setSearch = (search: string) => this.updateView({ search, scrollTop: 0 });
   setSort = (sort: LibrarySort) => this.updateView({ sort });
   rememberScroll = (scrollTop: number) => {

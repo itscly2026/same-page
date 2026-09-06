@@ -124,6 +124,7 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
 
   return context.json({
     choir: {
+      ...(drive.is_preview_entry === 1 ? { isPreviewEntry: true as const } : {}),
       id: drive.drive_id,
       name: drive.drive_name,
       guestAdmissionMode: drive.guest_admission_mode,

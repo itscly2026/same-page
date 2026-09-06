@@ -43,6 +43,7 @@ export const currentJoinCodeResponseSchema = z.object({
 });
 
 export const choirSummarySchema = z.object({
+  isPreviewEntry: z.literal(true).optional(),
   id: z.string(),
   name: z.string(),
   guestAdmissionMode: guestAdmissionModeSchema,
