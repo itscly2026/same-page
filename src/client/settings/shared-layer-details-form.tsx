@@ -32,7 +32,7 @@ export function SharedLayerDetailsForm({ choirId, layer, onSaved }: {
     }
   };
   return <form className="settings-card layer-details-form" aria-label="共享层设置" onSubmit={event => { event.preventDefault(); void save(); }}>
-    <label>名称<input value={name} required maxLength={60} disabled={pending} onChange={event => setName(event.target.value)} /></label>
+    <label>名称<input type="text" value={name} required maxLength={60} disabled={pending} onChange={event => setName(event.target.value)} /></label>
     <label className="settings-color-control">云盘默认颜色<input type="color" value={color} disabled={pending} onChange={event => setColor(event.target.value)} /></label>
     <label className="layer-active-toggle"><input type="checkbox" checked={active} disabled={pending} onChange={event => setActive(event.target.checked)} />启用此共享层</label>
     <p className="settings-copy">停用后隐藏批注并暂停编辑，笔记和授权保留。</p>

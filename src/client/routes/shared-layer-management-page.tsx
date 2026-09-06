@@ -84,7 +84,7 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
           </article>)}
         </section>
         <form className="layer-create-form" onSubmit={event => { event.preventDefault(); if (newName.trim()) void change("", "POST", { name: newName.trim(), defaultColor: "#3157a4" }, "共享层已创建。"); }}>
-          <label>新共享层名称<input value={newName} maxLength={60} required disabled={pending || loading} onChange={event => setNewName(event.target.value)} /></label>
+          <label>新共享层名称<input type="text" value={newName} maxLength={60} required disabled={pending || loading} onChange={event => setNewName(event.target.value)} /></label>
           <button className="secondary-button" disabled={pending || loading}>新增共享层</button>
         </form>
       </>}

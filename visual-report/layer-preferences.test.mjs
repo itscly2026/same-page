@@ -152,11 +152,11 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
       await page.setViewportSize({ width, height });
       await page.goto(`${origin}${drive}/shared-layers`);
       await page.getByRole("link", { name: /E · 全体.*已授权/ }).waitFor();
-      await layout(page, ".settings-layer-link");
+      await layout(page, ".settings-layer-link, .layer-create-form input[type=text]");
       await capture(page, `${engineName}-${width}-management`);
       await page.getByRole("link", { name: /E · 全体.*已授权/ }).click();
       await page.getByRole("heading", { name: "E · 全体" }).waitFor();
-      await layout(page, ".settings-member-row");
+      await layout(page, ".settings-member-row, .layer-details-form input[type=text]");
       await capture(page, `${engineName}-${width}-grants`);
     }
     if (process.env.LAYOUT_CAPTURE_DIR) await writeFile(path.join(process.env.LAYOUT_CAPTURE_DIR, `${engineName}-interactions.json`), JSON.stringify({ writes, checks: ["drive defaults", "score override and restore", "save failure and retry", "custom color and restore", "permission explanation", "edit hidden layer without subscribing", "exit restores reading"] }, null, 2));
