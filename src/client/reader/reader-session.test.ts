@@ -180,7 +180,7 @@ it("requires confirmed identity before user-owned offline preparation and cancel
     await vi.waitFor(() => expect(downloadState.signal).toBeInstanceOf(AbortSignal));
     session.setAuthenticatedUser(null);
     await download;
-    expect(downloadState.signal?.aborted).toBe(true);
+    expect(downloadState.signal).toMatchObject({ aborted: true });
     expect(session.getSnapshot().downloading).toBe(false);
   } finally { session.dispose(); }
 });
