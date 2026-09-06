@@ -84,3 +84,5 @@ Linux renderer 继续在每个发布产物封存前实际构建和验证。最�
 Scope 完成到 checks/visual/integration 启动间隔：原 PR 4/3/2 秒，原 main 3/3/2 秒，首轮最终 2/3/2 秒；间隔包含调度与启动开销。其余主要测试步骤见上表。
 
 第二轮本机 check:full：renderer、PWA、lint/typecheck、Node/client、Worker、38 项 visual（65.41 秒）、迁移与 build/precache 通过；11 项 smoke 中 10 项通过，图片 Chromium 在 teardown 遇到已有的 kill EPERM，完整命令因此退出 1。图片两引擎原样单独复验 2/2 通过（21.49 秒），后续加载预算及最终 lint 通过。PDF 网络分类恢复后的浏览器复验通过，不把该本机拆分验证描述为一次完整成功运行；最终完整 Linux CI 见 PR。
+
+第二轮首次 Linux CI `34044895070`：checks/integration 成功，visual 37/38；WebKit 的 drive-navigation 在 Escape 后立即读取焦点而失败。React Aria FocusScope 实际在卸载后的 requestAnimationFrame 恢复焦点，改用等待 dialog 关闭及按钮 toBeFocused 的行为断言，未增加超时或重试。与 CI 相同 global setup 下两引擎单文件 2/2 通过（9.36 秒），lint 通过；最终 CI 另见 PR，失败运行不纳入成功收益样本。

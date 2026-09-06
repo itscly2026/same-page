@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { test } from "node:test";
 import { chromium, webkit } from "playwright";
+import { expect } from "@playwright/test";
 import { startVisualServer } from "./setup.mjs";
 import { createVisualFixtureSession } from "./fixtures.mjs";
 
@@ -43,7 +44,9 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.keyboard.press("Enter");
     await page.getByRole("dialog").waitFor();
     await page.keyboard.press("Escape");
-    assert.equal(await page.getByRole("button", { name: "打开云盘菜单" }).evaluate(el => el === document.activeElement), true);
+    // React Aria restores focus on the next animation frame after unmount.
+    await expect(page.getByRole("dialog", { name: "云盘菜单" })).toBeHidden();
+    await expect(page.getByRole("button", { name: "打开云盘菜单" })).toBeFocused();
     await page.evaluate(() => window.scrollTo(0, 500));
     await page.waitForFunction(() => document.querySelector(".upload-fab")?.dataset.visible === "false");
     await fab.waitFor({ state: "hidden" });
