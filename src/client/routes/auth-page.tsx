@@ -37,6 +37,10 @@ type AuthView =
   | "identify"
   | "sign-in"
   | "sign-up"
+  | "set-password"
+  | "verify-password"
+  | "choose-password"
+  | "password-set"
   | "verify-registration"
   | "request-reset"
   | "reset-password"
@@ -51,6 +55,7 @@ export default function AuthPage() {
   const initialOauthResult = new URLSearchParams(location.search).get("oauth");
   const [view, setView] = useState<AuthView>("identify");
   const [email, setEmail] = useState(readSocialEmailDraft);
+  const [hasGoogle, setHasGoogle] = useState(false);
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [otp, setOtp] = useState("");
@@ -150,6 +155,7 @@ export default function AuthPage() {
       setMessage("暂时无法继续，请稍后再试。");
       return;
     }
+    setHasGoogle(parsed.data.flow === "set-password" && parsed.data.hasGoogle);
     setView(parsed.data.flow);
   };
 
@@ -274,6 +280,85 @@ export default function AuthPage() {
           : "暂时无法发送验证码，请稍后再试。"
         : "新的密码重置验证码已经发送。",
     );
+  };
+
+  const requestFirstPasswordOtp = async () => {
+    setSubmitting(true);
+    setMessage(null);
+    const delivery = await postJson("/api/auth/email-otp/request-password-reset", {
+      email: normalizedEmail(email),
+    });
+    setSubmitting(false);
+    const retryAfter = delivery ? rememberOtpCooldown(delivery) : 0;
+    // A prior accepted request may have lost its response. Keep code entry
+    // available during cooldown so that the delivered code can still be used.
+    if (delivery?.ok || delivery?.status === 429) {
+      setOtp("");
+      setView("verify-password");
+    }
+    setMessage(delivery?.ok
+      ? "验证码已经发送，请检查收件箱和垃圾邮件。"
+      : retryAfter > 0
+        ? `发送太频繁，请在 ${retryAfter} 秒后再试；已收到的验证码仍可使用。`
+        : "暂时无法发送验证码，请检查网络后重试。");
+  };
+
+  const verifyFirstPasswordOtp = async (event: FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setMessage(null);
+    const response = await postJson("/api/auth/email-otp/check-verification-otp", {
+      email: normalizedEmail(email), type: "forget-password", otp: otp.trim(),
+    });
+    setSubmitting(false);
+    if (response?.ok) {
+      setView("choose-password");
+      return;
+    }
+    setMessage(!response || response.status >= 500
+      ? "暂时无法验证，请检查网络后重试。"
+      : response.status === 429
+        ? "尝试次数过多，请稍后再试。"
+        : "验证码错误、已过期或尝试次数已用尽，请检查或重新获取。");
+  };
+
+  const setFirstPassword = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!validPasswordConfirmation(password, passwordConfirmation)) {
+      setMessage(passwordValidationMessage(password, passwordConfirmation));
+      return;
+    }
+    setSubmitting(true);
+    setMessage(null);
+    const response = await postJson("/api/auth/email-otp/reset-password", {
+      email: normalizedEmail(email), otp: otp.trim(), password,
+    });
+    // If the response was lost, check the chosen password before retrying an
+    // already consumed OTP. A successful login proves that setup completed.
+    if (response?.ok || !response || response.status >= 500) {
+      const login = await authClient.signIn.email({ email: normalizedEmail(email), password })
+        .catch(() => null);
+      setSubmitting(false);
+      if (login && !login.error) {
+        setPassword("");
+        setPasswordConfirmation("");
+        setOtp("");
+        setView("password-set");
+        return;
+      }
+      setView("sign-in");
+      setMessage(response?.ok
+        ? "密码已设置，自动登录没有完成，请使用新密码登录。"
+        : "暂时无法确认密码是否已设置，请先尝试使用新密码登录；若未成功，可验证邮箱后重设密码。");
+      return;
+    }
+    setSubmitting(false);
+    if (response.status === 429) {
+      setMessage("尝试次数过多，请稍后再试。");
+      return;
+    }
+    setView("verify-password");
+    setMessage("验证码无效或已过期，请重新验证邮箱后设置密码。");
   };
 
   const resetPassword = async (event: FormEvent) => {
@@ -424,6 +509,7 @@ export default function AuthPage() {
 
   const changeEmail = () => {
     setView("identify");
+    setHasGoogle(false);
     setPassword("");
     setPasswordConfirmation("");
     setOtp("");
@@ -532,6 +618,77 @@ export default function AuthPage() {
               </Button>
             </Form>
           ),
+        };
+      case "set-password":
+        return {
+          title: hasGoogle ? "使用 Google 登录" : "设置合谱密码",
+          description: hasGoogle
+            ? "你此前通过 Google 登录，尚未设置合谱密码"
+            : "你尚未设置合谱密码，验证邮箱后即可设置。",
+          form: (
+            <div className="entry-form">
+              <EmailSummary email={email} />
+              {hasGoogle && socialProviders.includes("google") ? (
+                <Button className="primary-button" isDisabled={submitting} onPress={() => void startSocialAuthentication("google")}>
+                  使用 Google 继续
+                </Button>
+              ) : null}
+              <Button className={hasGoogle && socialProviders.includes("google") ? "secondary-button" : "primary-button"}
+                isDisabled={submitting} onPress={() => void requestFirstPasswordOtp()}>
+                {submitting ? "正在继续…" : "设置密码，以后用邮箱登录"}
+              </Button>
+              <Button className="text-button" isDisabled={submitting} onPress={changeEmail}>更换邮箱</Button>
+            </div>
+          ),
+        };
+      case "verify-password":
+        return {
+          title: "验证邮箱",
+          description: `输入发送至 ${normalizedEmail(email)} 的验证码，验证后设置合谱密码。`,
+          form: (
+            <Form className="entry-form" onSubmit={verifyFirstPasswordOtp}>
+              <OtpField value={otp} onChange={setOtp} autoFocus />
+              <Button type="submit" isDisabled={submitting}>{submitting ? "正在验证…" : "验证邮箱"}</Button>
+              <Button className="text-button" isDisabled={submitting || otpRetrySeconds > 0}
+                onPress={() => void requestFirstPasswordOtp()}>{resendButtonLabel(otpRetrySeconds)}</Button>
+              <Button className="text-button" isDisabled={submitting} onPress={() => {
+                setView("set-password"); setMessage(null); setOtp("");
+              }}>返回登录方式</Button>
+              <Button className="text-button" isDisabled={submitting} onPress={changeEmail}>更换邮箱</Button>
+            </Form>
+          ),
+        };
+      case "choose-password":
+        return {
+          title: "设置合谱密码",
+          description: hasGoogle
+            ? "邮箱已验证。请为合谱设置密码；此密码独立于 Google 密码。"
+            : "邮箱已验证。请为合谱设置密码。",
+          form: (
+            <Form className="entry-form" onSubmit={setFirstPassword}>
+              <EmailSummary email={email} />
+              <PasswordField label={`密码（至少 ${PASSWORD_POLICY.minLength} 位）`} value={password}
+                onChange={setPassword} autoComplete="new-password" autoFocus />
+              <PasswordField label="确认密码" value={passwordConfirmation}
+                onChange={setPasswordConfirmation} autoComplete="new-password" />
+              <Button type="submit" isDisabled={submitting}>{submitting ? "正在设置…" : "设置密码并登录"}</Button>
+              <Button className="text-button" isDisabled={submitting} onPress={() => {
+                setView("verify-password"); setMessage(null); setPassword(""); setPasswordConfirmation("");
+              }}>返回验证邮箱</Button>
+              <Button className="text-button" isDisabled={submitting} onPress={changeEmail}>更换邮箱</Button>
+            </Form>
+          ),
+        };
+      case "password-set":
+        return {
+          title: "密码已设置",
+          description: hasGoogle
+            ? "密码已设置，以后可以使用邮箱密码或 Google 登录"
+            : "密码已设置，以后可以使用邮箱密码登录",
+          form: <Button className="primary-button auth-primary-link" isDisabled={submitting} onPress={() => {
+            setSubmitting(true);
+            void finishAuthentication().finally(() => setSubmitting(false));
+          }}>继续</Button>,
         };
       case "request-reset":
         return {
@@ -647,7 +804,7 @@ export default function AuthPage() {
           <p className="auth-description">{viewPanel.description}</p>
           {viewPanel.form}
 
-          {view === "identify" && socialProviders.length > 0 ? (
+          {(view === "identify" || view === "sign-in") && socialProviders.length > 0 ? (
             <SocialAuthOptions
               providers={socialProviders}
               disabled={submitting}
@@ -886,7 +1043,8 @@ async function postJson(path: string, body: unknown) {
 
 function validPasswordConfirmation(password: string, confirmation: string) {
   return (
-    password.length >= PASSWORD_POLICY.minLength && password === confirmation
+    password.length >= PASSWORD_POLICY.minLength &&
+    password.length <= PASSWORD_POLICY.maxLength && password === confirmation
   );
 }
 

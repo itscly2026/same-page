@@ -21,6 +21,7 @@ export async function convertScoreImages(env: Env, job: { versionId: string; gen
   if (!source) return;
   await env.DB.prepare("DELETE FROM score_image_objects WHERE version_id = ? AND generation <> ?").bind(versionId, generation).run();
   const signal = AbortSignal.timeout(180_000);
+  let stage = "source";
   try {
     const pdf = await env.SCORES_BUCKET.get(source.object_key);
     if (!pdf || pdf.size > 50 * 1024 * 1024 || source.page_count > 200) throw new Error("source-limit");
@@ -30,6 +31,7 @@ export async function convertScoreImages(env: Env, job: { versionId: string; gen
     const request = (path: string) => renderer.fetch(new Request(`http://renderer${path}`, {
       method: "POST", body: bytes, signal, headers: { "Content-Type": "application/pdf" },
     }));
+    stage = "inspect";
     const inspected = await request("/inspect");
     if (!inspected.ok) throw new Error("render-failed");
     const geometry = geometrySchema.parse(await inspected.json());
@@ -40,6 +42,7 @@ export async function convertScoreImages(env: Env, job: { versionId: string; gen
       signal.throwIfAborted();
       const assets: ImageManifest["pages"][number]["assets"] = [];
       for (const edge of imageEdges) {
+        stage = "render";
         const response = await request(`/render?page=${page.pageNumber}&edge=${edge}`);
         if (!response.ok) throw new Error("render-failed");
         const data = await response.arrayBuffer();
@@ -51,10 +54,12 @@ export async function convertScoreImages(env: Env, job: { versionId: string; gen
         totalBytes += data.byteLength;
         if (totalBytes > 512 * 1024 * 1024) throw new Error("output-limit");
         const hash = await sha256(data), key = imageObjectKey(versionId, generation, page.pageNumber, edge);
+        stage = "register";
         const registered = await env.DB.prepare(`INSERT OR IGNORE INTO score_image_objects(object_key, version_id, generation)
           SELECT ?, version_id, generation FROM score_image_jobs WHERE version_id = ? AND generation = ? AND state = 'preparing'`)
           .bind(key, versionId, generation).run();
         if (!registered.meta.changes) throw new Error("job-expired");
+        stage = "store";
         await env.SCORES_BUCKET.put(key, data, { httpMetadata: { contentType: "image/png" }, sha256: hash });
         if (!await env.DB.prepare("SELECT object_key FROM score_image_objects WHERE object_key = ?").bind(key).first()) {
           await env.SCORES_BUCKET.delete(key); throw new Error("job-expired");
@@ -63,10 +68,15 @@ export async function convertScoreImages(env: Env, job: { versionId: string; gen
       }
       pages.push({ ...page, assets });
     }
+    stage = "manifest";
     const manifest = imageManifestSchema.parse({ versionId, sourceSha256: source.sha256, generation, spec: imageOutputSpec, engine: geometry.engine, pages });
     await env.DB.prepare("UPDATE score_image_jobs SET state = 'ready', manifest = ?, updated_at = ? WHERE version_id = ? AND generation = ? AND state = 'preparing'")
       .bind(JSON.stringify(manifest), Date.now(), versionId, generation).run();
-  } catch {
+  } catch (error) {
+    const known = ["source-limit", "source-checksum", "render-failed", "page-count", "image-size", "image-format", "pixel-limit", "output-limit", "job-expired"];
+    // Emit only fixed phase/reason names; never raw renderer, PDF or D1 errors.
+    console.error(JSON.stringify({ event: "score_image_conversion_failed", stage,
+      reason: error instanceof Error && known.includes(error.message) ? error.message : "external-error" }));
     await env.DB.prepare("DELETE FROM score_image_objects WHERE version_id = ? AND generation = ?").bind(versionId, generation).run();
     await env.DB.prepare("UPDATE score_image_jobs SET state = 'failed', failure = 'conversion-failed', updated_at = ? WHERE version_id = ? AND generation = ?")
       .bind(Date.now(), versionId, generation).run();

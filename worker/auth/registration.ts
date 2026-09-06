@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { isInternalAuthEmail, PASSWORD_POLICY } from "../../src/shared/auth";
 import { createDatabase } from "../db/database";
-import { user } from "../db/schema";
+import { account, user } from "../db/schema";
 import type { AppEnvironment } from "../env";
 import {
   consumeRateLimit,
@@ -40,8 +40,19 @@ export async function resolveAuthFlow(context: Context<AppEnvironment>) {
   if (limited) return limited;
 
   const existingUser = await findUserByEmail(context, email);
+  context.header("Cache-Control", "no-store");
+  if (!existingUser?.emailVerified) return context.json({ flow: "sign-up" });
+
+  const identities = await createDatabase(context.env.DB).query.account.findMany({
+    where: eq(account.userId, existingUser.id),
+    columns: { providerId: true, password: true },
+  });
+  if (identities.some((identity) => identity.providerId === "credential" && identity.password)) {
+    return context.json({ flow: "sign-in" });
+  }
   return context.json({
-    flow: existingUser?.emailVerified ? "sign-in" : "sign-up",
+    flow: "set-password",
+    hasGoogle: identities.some((identity) => identity.providerId === "google"),
   });
 }
 
@@ -143,7 +154,7 @@ async function findUserByEmail(
 ) {
   return createDatabase(context.env.DB).query.user.findFirst({
     where: eq(user.email, email),
-    columns: { emailVerified: true },
+    columns: { id: true, emailVerified: true },
   });
 }
 

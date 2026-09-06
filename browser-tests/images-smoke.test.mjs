@@ -28,8 +28,14 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     await page.locator(".page-reader__viewport").click({ position: { x: 510, y: 300 } });
     await page.getByRole("button", { name: "更多", exact: true }).click();
     await page.getByRole("button", { name: "图片兼容模式", exact: true }).click();
-    await expect.poll(async () => (await (await context.request.get(base)).json()).state, { timeout: 90_000 }).toBe("ready");
-    const manifest = (await (await context.request.get(base)).json()).manifest;
+    let conversion;
+    await expect.poll(async () => {
+      conversion = await (await context.request.get(base)).json();
+      return conversion.state === "ready" || conversion.state === "failed";
+    }, { timeout: 90_000 }).toBe(true);
+    const failures = [...fixture.logs.join("").matchAll(/\{"event":"score_image_conversion_failed","stage":"[a-z-]+","reason":"[a-z-]+"\}/g)].map(match => JSON.parse(match[0]));
+    assert.equal(conversion.state, "ready", JSON.stringify({ failure: conversion.failure, phases: failures }));
+    const manifest = conversion.manifest;
     await expect(page.locator(".reader-display-recovery")).toHaveCount(0);
     await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
     if (!await page.getByRole("button", { name: "更多", exact: true }).isVisible()) await page.locator(".page-reader__viewport").click({ position: { x: 510, y: 300 } });
