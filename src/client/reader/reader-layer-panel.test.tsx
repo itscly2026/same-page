@@ -7,7 +7,7 @@ import { cacheAnnotationLayers, readAnnotationLayers, readScoreAnnotationState, 
 import { findVerifiedOfflineScore, sha256Hex, verifyOfflineScore } from "../offline/offline-score-verification";
 import { syncAnnotations } from "../annotations/sync";
 import { captureOfflineAnnotationSnapshot } from "../annotations/offline-snapshot";
-import { localDatabase, type OfflineScoreRecord } from "../platform/local-database";
+import { activateVerifiedOfflineScore, localDatabase, type OfflineScoreRecord } from "../platform/local-database";
 import { activateAuthenticatedLocalOwner, authenticatedLocalOwnerKey, createLocalWorkspace } from "../platform/local-workspace";
 import { ReaderLayerPanel } from "./reader-layer-panel";
 import { ReaderEditingControls } from "./reader-editing-controls";
@@ -137,4 +137,24 @@ it("keeps paused shared notes but does not restore their layer from an older off
   serverLayers.push(shared);
   await syncAnnotations(workspace, { pull: true });
   expect((await readAnnotationLayers(workspace)).some(layer => layer.id === shared.id)).toBe(true);
+});
+
+
+it("does not activate a captured publication after a sync withdraws it during file verification", async () => {
+  const candidate: OfflineScoreRecord = {
+    ...workspace, key: "inflight-copy", versionId: "version", fileName: "谱.pdf",
+    sha256: await sha256Hex(new TextEncoder().encode("test").buffer), pageCount: 1,
+    blob: new Blob(["test"]), active: 1, verifiedAt: 1,
+    annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace),
+  };
+  expect(candidate.annotationSnapshot.layers.some(layer => layer.id === published.id)).toBe(true);
+  expect(await verifyOfflineScore(candidate)).toBe(true);
+  serverLayers = [{ ...own }];
+  await syncAnnotations(workspace, { pull: true });
+  await activateVerifiedOfflineScore(candidate, { activeKey: null });
+  const activated = await findVerifiedOfflineScore(workspace);
+  expect(activated).not.toBeNull();
+  expect(activated!.annotationSnapshot.layers.some(layer => layer.id === published.id)).toBe(false);
+  await restoreOfflineAnnotationSnapshot(workspace, candidate);
+  expect((await readAnnotationLayers(workspace)).some(layer => layer.id === published.id)).toBe(false);
 });
