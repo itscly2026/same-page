@@ -1,5 +1,6 @@
-import { lazy, Suspense, useLayoutEffect } from "react";
-import { BrowserRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { RouteContent } from "./components/route-content";
+import { lazy, useLayoutEffect, useState } from "react";
+import { createBrowserRouter, RouterProvider, Outlet, Route, Routes, useLocation } from "react-router-dom";
 
 import { AppFooter } from "./components/app-footer";
 import { ReloadPrompt } from "./components/reload-prompt";
@@ -28,35 +29,35 @@ export function AppRoutes() {
   return (
     <>
       <RouteScrollReset />
-      <Suspense fallback={<p className="route-loading">正在打开乐谱…</p>}>
+
         <Routes>
           <Route element={<PageWithFooter />}>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/user" element={<UserLifecyclePage />} />
-            <Route path="/choirs/:choirId/memberships" element={<MembershipManagementPage />} />
-            <Route path="/login" element={<AuthPage />} />
-            <Route path="/privacy" element={<PrivacyPage />} />
-            <Route path="/diagnostics" element={<DiagnosticsPage />} />
-            <Route path="/choirs/:choirId" element={<ChoirPage />} />
+            <Route path="/" element={<RouteContent><HomePage /></RouteContent>} />
+            <Route path="/user" element={<RouteContent><UserLifecyclePage /></RouteContent>} />
+            <Route path="/choirs/:choirId/memberships" element={<RouteContent><MembershipManagementPage /></RouteContent>} />
+            <Route path="/login" element={<RouteContent><AuthPage /></RouteContent>} />
+            <Route path="/privacy" element={<RouteContent><PrivacyPage /></RouteContent>} />
+            <Route path="/diagnostics" element={<RouteContent><DiagnosticsPage /></RouteContent>} />
+            <Route path="/choirs/:choirId" element={<RouteContent><ChoirPage /></RouteContent>} />
             <Route
               path="/choirs/:choirId/preferences"
-              element={<DriveLayerPreferencesPage />}
+              element={<RouteContent><DriveLayerPreferencesPage /></RouteContent>}
             />
             <Route
               path="/choirs/:choirId/shared-layers"
-              element={<SharedLayerManagementPage />}
+              element={<RouteContent><SharedLayerManagementPage /></RouteContent>}
             />
             <Route
               path="/choirs/:choirId/shared-layers/:slot"
-              element={<SharedLayerGrantsPage />}
+              element={<RouteContent><SharedLayerGrantsPage /></RouteContent>}
             />
           </Route>
           <Route
             path="/choirs/:choirId/scores/:scoreId"
-            element={<ReaderPage />}
+            element={<RouteContent><ReaderPage /></RouteContent>}
           />
         </Routes>
-      </Suspense>
+
     </>
   );
 }
@@ -78,11 +79,14 @@ function RouteScrollReset() {
 }
 
 export function App() {
-  return (
-    <BrowserRouter>
-      <LocalIdentityObserver />
-      <AppRoutes />
-      <ReloadPrompt />
-    </BrowserRouter>
-  );
+  const [router] = useState(() => createBrowserRouter([{ path: "*", element: <AppContent /> }]));
+  return <RouterProvider router={router} />;
+}
+
+function AppContent() {
+  return <>
+    <LocalIdentityObserver />
+    <AppRoutes />
+    <ReloadPrompt />
+  </>;
 }

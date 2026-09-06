@@ -25,59 +25,34 @@ export interface ReaderSyncStatus {
 }
 
 export function deriveReaderSyncStatus({
-  outcome,
-  syncing,
-  pendingCount,
-  conflictCount,
-  syncErrorCount,
+  outcome, syncing, pendingCount, conflictCount, syncErrorCount,
+  loaded = false, draftCount = 0, acceptedCount = 0, online = true,
+  permissionErrorCount = 0,
 }: {
   outcome: ReaderSyncOutcome;
   syncing: boolean;
   pendingCount: number;
   conflictCount: number;
   syncErrorCount: number;
+  loaded?: boolean;
+  draftCount?: number;
+  acceptedCount?: number;
+  online?: boolean;
+  permissionErrorCount?: number;
 }): ReaderSyncStatus {
-  if (outcome === "trash-preserved") {
-    return {
-      kind: "risk",
-      message: "乐谱已移入回收站；本机内容仍保留，恢复后才能继续同步。",
-    };
-  }
-  if (conflictCount > 0) {
-    return {
-      kind: "conflict",
-      message: `仍有 ${conflictCount} 项本机冲突待处理。`,
-    };
-  }
-  if (syncErrorCount > 0 || outcome === "failed") {
-    return {
-      kind: "failed",
-      message:
-        syncErrorCount > 0
-          ? `${syncErrorCount} 项批注同步失败；本机版本仍然保留，请重试。`
-          : "同步未完成；本机内容仍然保留，请重试。",
-    };
-  }
-  if (syncing) return { kind: "syncing", message: "正在同步批注…" };
-  if (pendingCount > 0 || outcome === "local-saved") {
-    return {
-      kind: "pending",
-      message:
-        pendingCount > 0
-          ? `已保存在本机，${pendingCount} 项等待同步。`
-          : "已保存在本机，联网后会继续同步。",
-    };
-  }
-  if (outcome === "local-draft") {
-    return { kind: "draft", message: "编辑内容已持续保存在本机。" };
-  }
-  if (outcome === "conflict-discarded") {
-    return { kind: "quiet", message: "已放弃本机冲突版本。" };
-  }
-  if (outcome === "conflict-reapplied") {
-    return { kind: "quiet", message: "冲突处理已同步。" };
-  }
-  return { kind: "quiet", message: null };
+  if (outcome === "trash-preserved") return { kind: "risk", message: "乐谱已移入回收站；本机内容仍保留，恢复后才能继续同步。" };
+  if (!loaded) return { kind: "risk", message: "尚未确认本机批注状态，请稍后重试。" };
+  if (conflictCount > 0) return { kind: "conflict", message: `仍有 ${conflictCount} 项本机冲突待处理。` };
+  if (permissionErrorCount > 0) return { kind: "failed", message: `${permissionErrorCount} 项批注编辑权已撤销；本机草稿保留，恢复权限后重试。其它批注会继续同步。` };
+  if (syncErrorCount > 0 || outcome === "failed") return { kind: "failed", message: "同步未完成；已保存的本机草稿保留，请查看原因或重试。" };
+  if (syncing) return { kind: "syncing", message: pendingCount > 0 ? `正在同步 ${pendingCount} 项修改` : "正在检查云端批注…" };
+  if (pendingCount > 0 || draftCount > 0) return {
+    kind: "pending",
+    message: !online ? "已保存在本机 · 等待联网" : draftCount > 0 ? "已保存在本机 · 完成编辑后同步" : `已保存在本机 · ${pendingCount} 项等待同步`,
+  };
+  // A completed request, empty query or network connection is not acceptance.
+  if (acceptedCount > 0) return { kind: "quiet", message: "已同步" };
+  return { kind: "quiet", message: "尚无批注修改" };
 }
 
 export function describeAnnotationConflict(

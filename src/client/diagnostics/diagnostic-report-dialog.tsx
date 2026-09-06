@@ -5,7 +5,16 @@ import { DiagnosticReportForm } from "./diagnostic-report-form";
 export function DiagnosticReportDialog({ reader }: { reader: DiagnosticReader }) {
   return <DialogTrigger>
     <Button className="secondary-button">故障诊断</Button>
-    <ModalOverlay className="diagnostic-overlay" isDismissable>
+    <DiagnosticReportModal reader={reader} />
+  </DialogTrigger>;
+}
+
+export function DiagnosticReportModal({ reader, isOpen, onOpenChange }: {
+  reader: DiagnosticReader;
+  isOpen?: boolean;
+  onOpenChange?(isOpen: boolean): void;
+}) {
+  return <ModalOverlay className="diagnostic-overlay" isDismissable isOpen={isOpen} onOpenChange={onOpenChange}>
       <Modal className="diagnostic-modal">
         <Dialog>
           {({ close }) => <>
@@ -17,6 +26,5 @@ export function DiagnosticReportDialog({ reader }: { reader: DiagnosticReader })
           </>}
         </Dialog>
       </Modal>
-    </ModalOverlay>
-  </DialogTrigger>;
+    </ModalOverlay>;
 }

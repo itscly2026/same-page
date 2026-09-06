@@ -1,3 +1,4 @@
+import Dexie from "dexie";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -426,12 +427,50 @@ describe("AnnotationOverlay", () => {
     expect(await localDatabase.annotations.count()).toBe(0);
 
     fireEvent.click(composer);
-    expect(screen.queryByRole("form", { name: "文字输入" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("form", { name: "文字输入" })).not.toBeInTheDocument());
     await waitFor(async () => {
       expect(await localDatabase.annotations.toCollection().first()).toMatchObject({
         payload: { kind: "text", text: "外围完成" },
       });
     });
+  });
+
+  it("retains unwritten text and retries after local storage fails", async () => {
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    mockBounds(overlay);
+    openNewText(overlay);
+    fireEvent.change(screen.getByLabelText("批注文本"), { target: { value: "尚未写入的草稿" } });
+    let rejectWrite!: (reason: Error) => void;
+    const write = vi.spyOn(localDatabase.annotations, "put").mockImplementation(() => new Dexie.Promise((_resolve, reject) => { rejectWrite = reject; }));
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    await waitFor(() => expect(screen.getByLabelText("批注文本")).toBeDisabled());
+    expect(screen.getByRole("slider", { name: "字号" })).toBeDisabled();
+    await waitFor(() => expect(write).toHaveBeenCalled());
+    rejectWrite(new DOMException("full", "QuotaExceededError"));
+    expect(await screen.findByText("本机保存失败")).toBeInTheDocument();
+    expect(screen.getByLabelText("批注文本")).toHaveValue("尚未写入的草稿");
+    expect(await localDatabase.annotations.count()).toBe(0);
+    write.mockRestore();
+    fireEvent.click(screen.getByRole("button", { name: "重试本机保存" }));
+    await waitFor(() => expect(screen.queryByText("本机保存失败")).not.toBeInTheDocument());
+    expect(await localDatabase.annotations.toCollection().first()).toMatchObject({ state: "draft", payload: { text: "尚未写入的草稿" } });
+  });
+
+  it("discards failed text intent when the user cancels the composer", async () => {
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    mockBounds(overlay);
+    openNewText(overlay);
+    fireEvent.change(screen.getByLabelText("批注文本"), { target: { value: "取消这次修改" } });
+    const write = vi.spyOn(localDatabase.annotations, "put").mockRejectedValue(new DOMException("full", "QuotaExceededError"));
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    await screen.findByText("本机保存失败");
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByText("本机保存失败")).not.toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "文字输入" })).not.toBeInTheDocument();
+    write.mockRestore();
+    expect(await localDatabase.annotations.count()).toBe(0);
   });
 
   it("treats complete on empty new text as no-op and empty existing text as delete", async () => {

@@ -12,6 +12,7 @@ import {
 
 const quiet = {
   outcome: "none" as const,
+  loaded: true,
   syncing: false,
   pendingCount: 0,
   conflictCount: 0,
@@ -19,23 +20,23 @@ const quiet = {
 };
 
 describe("reader sync status", () => {
-  it("keeps no-change and successful states quiet", () => {
-    expect(deriveReaderSyncStatus(quiet)).toEqual({ kind: "quiet", message: null });
-    expect(
-      deriveReaderSyncStatus({ ...quiet, outcome: "synced" }),
-    ).toEqual({ kind: "quiet", message: null });
+  it("requires loaded, accepted records before claiming synced", () => {
+    expect(deriveReaderSyncStatus({ ...quiet, loaded: false }).message).toContain("尚未确认");
+    expect(deriveReaderSyncStatus({ ...quiet, outcome: "synced" }).message).toBe("尚无批注修改");
+    expect(deriveReaderSyncStatus({ ...quiet, acceptedCount: 2 }).message).toBe("已同步");
   });
 
-  it("distinguishes durable pending work, failures and true conflicts", () => {
-    expect(
-      deriveReaderSyncStatus({ ...quiet, outcome: "local-saved", pendingCount: 2 }),
-    ).toEqual({ kind: "pending", message: "已保存在本机，2 项等待同步。" });
-    expect(
-      deriveReaderSyncStatus({ ...quiet, outcome: "failed" }),
-    ).toMatchObject({ kind: "failed" });
-    expect(
-      deriveReaderSyncStatus({ ...quiet, outcome: "failed", conflictCount: 1 }),
-    ).toEqual({ kind: "conflict", message: "仍有 1 项本机冲突待处理。" });
+  it("distinguishes local persistence, queued work and real requests", () => {
+    expect(deriveReaderSyncStatus({ ...quiet, draftCount: 1 }).message).toBe("已保存在本机 · 完成编辑后同步");
+    expect(deriveReaderSyncStatus({ ...quiet, pendingCount: 2, online: false }).message).toBe("已保存在本机 · 等待联网");
+    expect(deriveReaderSyncStatus({ ...quiet, pendingCount: 2, syncing: true }).message).toBe("正在同步 2 项修改");
+    expect(deriveReaderSyncStatus({ ...quiet, pendingCount: 1, acceptedCount: 2 }).kind).toBe("pending");
+  });
+
+  it("keeps conflicts and revoked grants actionable even during other sync", () => {
+    expect(deriveReaderSyncStatus({ ...quiet, conflictCount: 1, syncing: true }).kind).toBe("conflict");
+    expect(deriveReaderSyncStatus({ ...quiet, syncErrorCount: 1, permissionErrorCount: 1 }).message).toContain("编辑权已撤销");
+    expect(deriveReaderSyncStatus({ ...quiet, outcome: "failed" }).message).toContain("查看原因或重试");
   });
 
   it("describes a persisted conflict by page, layer and a safe summary", () => {

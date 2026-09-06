@@ -1,3 +1,4 @@
+import { imageManifestSchema } from "../../shared/score-images";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ReaderSession } from "./reader-session";
 import { localDatabase } from "../platform/local-database";
@@ -89,6 +90,30 @@ it("opens server page geometry in image mode without starting PDF.js", async () 
     const page = await session.getSnapshot().document!.getPage(1);
     expect(page.getViewport({ scale: 1 })).toMatchObject({ width: 800, height: 600 });
     expect(vi.mocked(loadPdfDocument).mock.calls.length).toBe(before);
+    const original = session.getSnapshot().document!;
+    session.confirmDisplay(original);
+    const offlineModule = await import("../offline/offline-score");
+    let completeDownload!: (value: Awaited<ReturnType<typeof offlineModule.prepareOfflineScore>>) => void;
+    const prepare = vi.spyOn(offlineModule, "prepareOfflineScore").mockImplementationOnce(() => new Promise(resolve => { completeDownload = resolve; }));
+    const download = session.download();
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalled());
+    let rejectPdf!: (reason: Error) => void;
+    vi.mocked(loadPdfDocument).mockReturnValueOnce({ promise: new Promise((_resolve, reject) => { rejectPdf = reject; }), destroy: vi.fn().mockResolvedValue(undefined) });
+    session.selectMode("pdf");
+    expect(session.getSnapshot().document).toBe(original);
+    expect(session.getSnapshot().status).toBe("ready");
+    // A zoom/page repaint of the retained document must not release rollback.
+    session.confirmDisplay(original);
+    completeDownload({ ...workspace, key: "verified-image-copy", versionId: "image-version", fileName: "图片.pdf", sha256: "a".repeat(64), pageCount: 1, blob: new Blob(), active: 1, verifiedAt: 1,
+      imageManifest: imageManifestSchema.parse(manifest), annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 } });
+    await download;
+    expect(session.getSnapshot().downloadMessage).toContain("当前显示方式或版本已改变");
+    expect(session.getSnapshot().downloadMessage).not.toContain("可以离线打开");
+    await vi.waitFor(() => expect(rejectPdf).toBeDefined());
+    rejectPdf(new Error("decode failed"));
+    await vi.waitFor(() => expect(session.getSnapshot().mode).toBe("images"));
+    expect(session.getSnapshot().document).toBe(original);
+    expect(session.getSnapshot().modeMessage).toContain("已保留原谱面");
   } finally { session.dispose(); }
 });
 

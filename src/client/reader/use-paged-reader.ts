@@ -39,10 +39,14 @@ export interface PagedReader {
   gesture: PageTurnGesture;
   beginPageRender(page: number): PageRenderLease;
   finishTransition(): void;
+  failedPage: number | null;
+  retryPage(): void;
+  renderKey(page: number): string;
 }
 
 export interface PageRenderLease {
   ready(): void;
+  failed(): void;
   cancel(): void;
 }
 
@@ -86,6 +90,9 @@ export function usePagedReader({
   const initialPage = clampPage(currentPage, pageCount);
   const [view, setView] = useState<PagerView>(() => idleView(initialPage));
   const viewRef = useRef(view);
+  const [failure, setFailure] = useState<{ documentKey: string; page: number } | null>(null);
+  const [retry, setRetry] = useState({ page: 0, attempt: 0 });
+  const failedPages = useRef(new Map<string, Set<number>>());
   const drag = useRef<DragSession | null>(null);
   const readyPages = useRef(new Map<string, Set<number>>());
   const renderGenerations = useRef(new Map<string, Map<number, number>>());
@@ -156,6 +163,11 @@ export function usePagedReader({
     const current = viewRef.current;
     const target = clampPage(targetPage, pageCountRef.current);
     if (!enabledRef.current || target === current.anchorPage) return;
+    if (failedPages.current.get(documentKey)?.has(target)) {
+      setFailure({ documentKey, page: target });
+      return;
+    }
+    setFailure(null);
     updateView({
       anchorPage: current.anchorPage,
       targetPage: target,
@@ -223,10 +235,24 @@ export function usePagedReader({
           !active ||
           renderGenerations.current.get(documentKey)?.get(page) !== generation
         ) return;
+        failedPages.current.get(documentKey)?.delete(page);
         readyPages.current.get(documentKey)?.add(page);
         const current = viewRef.current;
         if (current.phase === "preparing" && current.targetPage === page) {
           schedulePreparedTransition(page);
+        }
+      },
+      failed() {
+        if (!active || renderGenerations.current.get(documentKey)?.get(page) !== generation) return;
+        const failures = failedPages.current.get(documentKey) ?? new Set<number>();
+        failures.add(page);
+        failedPages.current.set(documentKey, failures);
+        readyPages.current.get(documentKey)?.delete(page);
+        if (viewRef.current.targetPage === page) {
+          cancelFrame();
+          queuedTarget.current = null;
+          updateView(idleView(viewRef.current.anchorPage));
+          setFailure({ documentKey, page });
         }
       },
       cancel() {
@@ -238,7 +264,7 @@ export function usePagedReader({
         currentGenerations.set(page, generation + 1);
       },
     };
-  }, [documentKey, schedulePreparedTransition]);
+  }, [documentKey, schedulePreparedTransition, cancelFrame, updateView]);
 
   const settleDrag = useCallback((commit: boolean) => {
     const current = viewRef.current;
@@ -392,6 +418,14 @@ export function usePagedReader({
     gesture,
     beginPageRender,
     finishTransition,
+    failedPage: failure?.documentKey === documentKey ? failure.page : null,
+    retryPage: () => {
+      if (!failure || failure.documentKey !== documentKey) return;
+      failedPages.current.get(documentKey)?.delete(failure.page);
+      setRetry(value => ({ page: failure.page, attempt: value.attempt + 1 }));
+      startRequest(failure.page);
+    },
+    renderKey: (page: number) => `${page}:${retry.page === page ? retry.attempt : 0}`,
   };
 }
 

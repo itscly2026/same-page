@@ -64,6 +64,19 @@ test("diagnostic feedback survives lost receipts and preserves reader editing in
       const viewport = page.locator(".page-reader__viewport");
       const bounds = await viewport.boundingBox();
       await viewport.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
+      const more = page.getByRole("button", { name: "更多", exact: true });
+      await more.click();
+      await page.getByRole("button", { name: "故障诊断", exact: true }).click();
+      const readingDialog = page.getByRole("dialog", { name: "故障诊断" });
+      const closeReadingDialog = readingDialog.getByRole("button", { name: "关闭", exact: true });
+      await closeReadingDialog.focus();
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("PageDown");
+      // Let a requested page transition settle before checking that the modal blocked it.
+      await page.waitForTimeout(500);
+      await expect(page.locator(".reader-page-indicator")).toContainText("1 / 2");
+      await closeReadingDialog.click();
+      await expect(more).toBeFocused();
       await page.getByRole("button", { name: "编辑", exact: true }).click();
       await expect(page.getByRole("button", { name: "编辑", exact: true })).toHaveAttribute("aria-pressed", "true");
       await page.getByRole("button", { name: "更多", exact: true }).click();
@@ -72,6 +85,11 @@ test("diagnostic feedback survives lost receipts and preserves reader editing in
       await page.getByRole("button", { name: "故障诊断", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "故障诊断" });
       await expect(dialog).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "更多阅读选项" })).toHaveCount(0);
+      assert.equal(await dialog.getByRole("heading", { name: "故障诊断" }).evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+      }), true, "diagnostic heading is unobscured by the reader menu");
       await dialog.getByText("查看诊断内容", { exact: true }).click();
       const snapshot = JSON.parse(await dialog.getByLabel("可发送给支持人员的诊断内容").inputValue());
       assert.equal(snapshot.reader.interactionMode, "editing");
@@ -83,6 +101,7 @@ test("diagnostic feedback survives lost receipts and preserves reader editing in
       await dialog.getByRole("button", { name: "发送诊断", exact: true }).click();
       await expect(dialog.getByRole("button", { name: "复制反馈编号" })).toBeVisible();
       await dialog.getByRole("button", { name: "关闭", exact: true }).click();
+      await expect(more).toBeFocused();
       assert.equal(page.url(), readerUrl);
       await expect(page.getByRole("button", { name: "编辑", exact: true })).toHaveAttribute("aria-pressed", "true");
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

@@ -1,0 +1,19 @@
+{
+  "environment": "Chromium; simulated API and offline events; no real-device claim",
+  "evidence": [
+    {
+      "width": 390,
+      "height": 900,
+      "pushes": 2,
+      "errors": [],
+      "flow": "open → edit → durable local draft → simulated reconnect → accepted sync → download failure → display rollback"
+    },
+    {
+      "width": 834,
+      "height": 900,
+      "pushes": 2,
+      "errors": [],
+      "flow": "open → edit → durable local draft → simulated reconnect → accepted sync → download failure → display rollback"
+    }
+  ]
+}
