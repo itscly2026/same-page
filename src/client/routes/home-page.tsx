@@ -1,3 +1,5 @@
+import { useApplicationIdentity } from "../auth/application-identity";
+import { LocalEntry } from "../auth/local-entry";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { type FormEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 import {
@@ -87,7 +89,9 @@ const productFeatures = [
 ] as const;
 
 export function HomePage() {
-  const session = authClient.useSession();
+  const identity = useApplicationIdentity();
+  const { session } = identity;
+  if (!identity.authenticatedUserId && (identity.localUserId || identity.restoring || identity.onlineState !== "signed-out")) return <LocalEntry identity={identity} />;
   return <HomeContent key={session.isPending ? "pending" : session.data?.user.id ?? "guest"} session={session} />;
 }
 

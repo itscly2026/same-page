@@ -11,7 +11,7 @@ import { startLoadingJourney } from "../performance/loading-performance";
 import { driveCacheOwnerKey, rememberDriveSummary } from "./drive-library-cache";
 import { ContinueReading } from "./continue-reading";
 import { readLastOpenedScore } from "./library-view-state";
-import { SavedScoreLinks } from "./saved-score-links";
+import { LocalLibrary } from "./local-library";
 import "./library-ux.css";
 
 type MembershipState =
@@ -67,7 +67,7 @@ export function MembershipList({
           重试
         </Button>
       </div>
-      <SavedScoreLinks key={userId} userId={userId} />
+      <LocalLibrary key={userId} userId={userId} />
       </>
     );
   }

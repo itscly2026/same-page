@@ -33,10 +33,12 @@ export function authenticatedLocalOwnerKey(
   return `user:${userId}` as LocalWorkspaceOwnerKey;
 }
 
-export async function activateAuthenticatedLocalOwner(userId: string) {
+export async function activateAuthenticatedLocalOwner(userId: string, signal?: AbortSignal) {
   const ownerKey = authenticatedLocalOwnerKey(userId);
   await localDatabase.transaction("rw", localDatabase.system, async () => {
-    if ((await currentLocalOwnerKey()) !== ownerKey) {
+    const currentOwner = await currentLocalOwnerKey();
+    signal?.throwIfAborted();
+    if (currentOwner !== ownerKey) {
       await localDatabase.system.put({ key: "local-workspace:epoch", value: crypto.randomUUID() });
     }
     await localDatabase.system.bulkPut([
@@ -49,12 +51,13 @@ export async function activateAuthenticatedLocalOwner(userId: string) {
 
 export async function resolveLocalWorkspace(options: {
   authenticatedUserId: string | null;
+  signal?: AbortSignal;
   choirId: string;
   scoreId: string;
 }): Promise<LocalWorkspace> {
   const ownerKey = options.authenticatedUserId
-    ? await activateAuthenticatedLocalOwner(options.authenticatedUserId)
-    : await resolveOfflineOwner(options.choirId);
+    ? await activateAuthenticatedLocalOwner(options.authenticatedUserId, options.signal)
+    : await resolveOfflineOwner(options.choirId, options.signal);
   return createLocalWorkspace(ownerKey, options.choirId, options.scoreId);
 }
 
@@ -137,11 +140,12 @@ export async function clearCurrentAuthenticatedLocalOwner() {
   return ownerKey;
 }
 
-async function resolveOfflineOwner(choirId: string) {
+async function resolveOfflineOwner(choirId: string, signal?: AbortSignal) {
   return localDatabase.transaction("rw", localDatabase.system, async () => {
     const lastAuthenticated = await localDatabase.system.get(
       LAST_AUTHENTICATED_OWNER_KEY,
     );
+    signal?.throwIfAborted();
     if (lastAuthenticated) {
       const ownerKey = lastAuthenticated.value as LocalWorkspaceOwnerKey;
       await localDatabase.system.put({
@@ -152,6 +156,7 @@ async function resolveOfflineOwner(choirId: string) {
     }
     const key = guestOwnerSystemKey(choirId);
     const existing = await localDatabase.system.get(key);
+    signal?.throwIfAborted();
     const ownerKey = existing
       ? (existing.value as LocalWorkspaceOwnerKey)
       : (`guest:${crypto.randomUUID()}` as LocalWorkspaceOwnerKey);

@@ -1,3 +1,5 @@
+import type { ChoirSummary } from "../../shared/choirs";
+import type { ScoreSummary } from "../../shared/scores";
 import Dexie, { type EntityTable, type Table, type Transaction } from "dexie";
 
 import type {
@@ -139,7 +141,16 @@ export interface LocalAnnotationLayerRecord extends AnnotationLayerSummary {
   scoreId: string;
 }
 
+export interface LocalDriveDirectory {
+  key: string;
+  ownerKey: LocalWorkspaceOwnerKey;
+  choirId: string;
+  choir: ChoirSummary;
+  scores: ScoreSummary[];
+}
+
 export class SamePageDatabase extends Dexie {
+  driveDirectories!: EntityTable<LocalDriveDirectory, "key">;
   system!: EntityTable<SystemRecord, "key">;
   offlineScores!: EntityTable<OfflineScoreRecord, "key">;
   annotations!: EntityTable<LocalAnnotationRecord, "key">;
@@ -240,6 +251,7 @@ export class SamePageDatabase extends Dexie {
     this.version(8).stores({
       annotationOutbox: "&opId,ownerKey,scopeKey,[ownerKey+scopeKey],[scopeKey+annotationId],createdAt",
     });
+    this.version(10).stores({ driveDirectories: "&key,ownerKey,[ownerKey+choirId]" });
     this.version(9).stores({}).upgrade(async transaction => {
       const renameSlot = (layer: Record<string, unknown>) => {
         layer.sharedSlot = layer.defaultSlot;

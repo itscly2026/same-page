@@ -188,16 +188,16 @@ vi.mock("../annotations/annotation-state", async (importOriginal) => {
 });
 
 describe("ReaderPage", () => {
-it("can leave during authentication without opening local storage afterwards", async () => {
+it("can leave during authentication without starting a reader afterwards", async () => {
   readerAuthState.pending = true;
-  const storageRead = vi.spyOn(localDatabase.system, "get");
+
   render(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}><Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /><Route path="/choirs/:choirId" element={<h1>乐谱列表</h1>} /></Routes></MemoryRouter>);
   expect(screen.getByRole("status")).toHaveTextContent("正在打开乐谱");
   fireEvent.click(screen.getByRole("link", { name: "返回云盘" }));
   expect(await screen.findByRole("heading", { name: "乐谱列表" })).toBeVisible();
   readerAuthState.pending = false;
   await act(() => new Promise(resolve => setTimeout(resolve, 30)));
-  expect(storageRead).not.toHaveBeenCalled();
+  expect(findVerifiedOfflineScore).not.toHaveBeenCalled();
 });
 
 it("lets a failed local storage open retry without losing the return link", async () => {
@@ -2396,8 +2396,9 @@ it("keeps a single exit while the PDF never settles", async () => {
     );
   });
 
-  it("allows the last authenticated user to edit a verified local copy after session expiry", async () => {
+  it.each([false, true])("allows the last local user to edit with authentication pending=%s", async (pending) => {
     readerAuthState.signedIn = false;
+    readerAuthState.pending = pending;
     vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "offline-1",
       ...localWorkspace,
@@ -2436,7 +2437,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       },
     });
     vi.mocked(fetch).mockRejectedValue(new Error("offline"));
-    render(
+    const view = render(
       <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
         <Routes>
           <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
@@ -2456,6 +2457,11 @@ it("keeps a single exit while the PDF never settles", async () => {
       "aria-pressed",
       "true",
     );
+    readerAuthState.signedIn = true;
+    readerAuthState.pending = false;
+    view.rerender(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}><Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /></Routes></MemoryRouter>);
+    await waitFor(() => expect(screen.getByRole("button", { name: "完成编辑" })).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
   });
 
   it("hides A's loaded reader state as soon as another tab activates B", async () => {

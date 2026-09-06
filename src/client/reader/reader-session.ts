@@ -86,11 +86,19 @@ export class ReaderSession {
   private readonly identity: string;
 
   constructor(readonly workspace: LocalWorkspace, private authenticatedUserId: string | null) {
-    this.identity = authenticatedUserId ?? "guest";
+    this.identity = workspace.ownerKey.startsWith("user:") ? workspace.ownerKey.slice(5) : "guest";
     const score = peekReaderScore(this.identity, workspace.choirId, workspace.scoreId);
     this.confirmedVersion = score?.currentVersion.id ?? null;
     this.state = { mode: readDisplayPreference(workspace), modeMessage: null, score, document: null, offline: null, cloudState: "checking", capability: "preparing", status: "loading", error: null, downloading: false, downloadMessage: null };
   }
+  setAuthenticatedUser = (userId: string | null) => {
+    if (this.authenticatedUserId === userId) return;
+    this.authenticatedUserId = userId;
+    this.layerAbort.abort();
+    this.layerAbort = new AbortController();
+    if (this.started) void this.refresh();
+  };
+  private layerAbort = new AbortController();
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private publish(patch: Partial<ReaderSessionSnapshot>) {
@@ -276,7 +284,7 @@ export class ReaderSession {
     try {
       if (this.workspace.ownerKey.startsWith("user:") && this.workspace.ownerKey !== `user:${this.authenticatedUserId ?? ""}`) throw new Error("layer_identity_mismatch");
       await syncAnnotations(this.workspace, {
-        pull: true, freshLayers: false, signal: this.abort.signal,
+        pull: true, freshLayers: false, signal: AbortSignal.any([this.abort.signal, this.layerAbort.signal]),
         onLayersApplied: layers => {
           if (this.disposed || this.state.cloudState === "trashed") return;
           layersApplied = true;
