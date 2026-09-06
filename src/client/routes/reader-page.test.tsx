@@ -897,7 +897,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(
       vi.mocked(loadPdfDocument).mock.calls.some(([source]) => source instanceof ArrayBuffer),
     ).toBe(false);
-    expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
+    expect(await screen.findByLabelText("翻页阅读")).toBeInTheDocument();
   });
 
   it("clears a stale denial while a same-version reacquire is pending", async () => {

@@ -1,0 +1,12 @@
+.local-entry h1 { font-size: 1.8rem; }
+.local-drive-link {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: inherit;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.local-drive-link:hover { text-decoration: underline; }
+.local-entry .membership-row { gap: 1rem; flex-wrap: wrap; }
+.local-entry .membership-row > span { overflow-wrap: anywhere; }

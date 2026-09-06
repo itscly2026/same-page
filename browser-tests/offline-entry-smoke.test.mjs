@@ -18,6 +18,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     const page = await context.newPage();
     const drive = `${fixture.origin}/choirs/${fixture.choirId}`;
     await page.goto(drive);
+    await page.getByRole("button", { name: "用户菜单", exact: true }).waitFor();
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
     await page.getByRole("button", { name: /^下载离线副本：/ }).click();
     await page.getByRole("status").filter({ hasText: /^可离线使用$/ }).waitFor();
@@ -30,13 +31,31 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
       // process launches or an offline new-page navigation here. API failure
       // injection tests cold JS state while static assets remain online; installed iOS
       // PWA process-restart acceptance remains a separate real-device check.
+      // WebKit routing does not intercept service-worker requests. Remove the
+      // registration after the product verified its download, then inject API
+      // failure for the new page. This is not an offline app-shell test.
+      await page.evaluate(async () => {
+        for (const registration of await navigator.serviceWorker.getRegistrations()) await registration.unregister();
+      });
       await page.close();
     }
     if (engineName === "chromium") await context.setOffline(true);
     else await context.route("**/api/**", route => route.abort("internetdisconnected"));
     const offline = await context.newPage();
+    const sessionResponses = [];
+    const sessionRequests = [];
+    const errors = [];
+    offline.on("pageerror", error => errors.push(error.message));
+    offline.on("request", request => { if (request.url().includes("/auth/")) sessionRequests.push(new URL(request.url()).pathname); });
+    offline.on("requestfailed", request => { if (request.url().includes("/auth/")) errors.push(request.failure()?.errorText); });
+    offline.on("response", response => { if (response.url().includes("/api/auth/get-session")) sessionResponses.push(response.status()); });
     await offline.goto(fixture.origin);
-    await offline.getByRole("link").filter({ hasText: fixture.fileName }).waitFor();
+    try { await offline.getByRole("link").filter({ hasText: fixture.fileName }).waitFor({ timeout: 10_000 }); }
+    catch {
+      await mkdir("artifacts/verification/offline-entry", { recursive: true });
+      await offline.screenshot({ path: `artifacts/verification/offline-entry/${engineName}-failure.png` });
+      assert.fail(JSON.stringify({ headings: await offline.locator("h1,h2").allTextContents(), notices: await offline.locator('[role="status"]').allTextContents(), sessionRequests, sessionResponses, errors }));
+    }
     assert.equal(await offline.getByRole("heading", { name: "Harmony begins on the Same Page" }).count(), 0);
     await mkdir("artifacts/verification/offline-entry", { recursive: true });
     await offline.screenshot({ path: `artifacts/verification/offline-entry/${engineName}-home.png` });
@@ -49,12 +68,18 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     await offline.getByRole("button", { name: "编辑", exact: true }).click();
     await offline.getByRole("button", { name: "完成编辑", exact: true }).waitFor();
     const reconnected = offline.waitForResponse(response => response.url().includes("/api/auth/get-session") && response.status() === 200);
-    if (engineName === "chromium") await context.setOffline(false);
+    if (engineName === "chromium") {
+      await context.setOffline(false);
+      // Network emulation does not consistently deliver the OS online event.
+      await offline.evaluate(() => window.dispatchEvent(new Event("online")));
+    }
     else {
       await context.unroute("**/api/**");
       await offline.evaluate(() => window.dispatchEvent(new Event("online")));
     }
-    await reconnected;
+    try { await reconnected; } catch {
+      assert.fail(JSON.stringify({ sessionResponses, sessionRequests, errors, online: await offline.evaluate(() => navigator.onLine), connectionNotice: await offline.locator('[role="status"]').allTextContents() }));
+    }
     assert.equal(offline.url(), readerUrl);
     assert.equal(await offline.getByRole("button", { name: "完成编辑", exact: true }).getAttribute("aria-pressed"), "true");
     await offline.screenshot({ path: `artifacts/verification/offline-entry/${engineName}-reconnected-editing.png` });

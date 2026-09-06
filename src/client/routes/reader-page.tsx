@@ -338,7 +338,12 @@ function ReaderPageContent() {
       setSyncOutcome("trash-preserved");
       return;
     }
-    if (!identity.authenticatedUserId) { setSyncOutcome("local-saved"); return; }
+    if (!identity.authenticatedUserId) {
+      // A manual retry must also recover a missed connectivity notification.
+      await identity.session.refetch();
+      setSyncOutcome("local-saved");
+      return; // The identity observer resumes queued work after confirmation.
+    }
     setSyncing(true);
     requestOutboxRecovery();
     try {

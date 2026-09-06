@@ -29,7 +29,7 @@ export function LocalLibrary({ userId, choirId }: { userId: string; choirId?: st
   return <section aria-label="本机乐谱目录">
     <p>本机已保存的乐谱可打开，进入时会校验副本。云盘成员关系与最新内容需联网确认。</p>
     {content.drives.map(drive => <section key={drive.id}>
-      <h2>{choirId ? drive.name : <Link to={`/choirs/${drive.id}`}>{drive.name}</Link>}</h2>
+      <h2>{choirId ? drive.name : <Link className="local-drive-link" to={`/choirs/${drive.id}`}>{drive.name}</Link>}</h2>
       <div className="membership-list">{drive.scores.map(score => score.saved
         ? <Link className="membership-row" key={score.id} to={`/choirs/${drive.id}/scores/${score.id}`}><span>{score.fileName}</span><small>本机已保存 · 打开时校验</small></Link>
         : <div className="membership-row" key={score.id}><span>{score.fileName}</span><small>需联网下载</small></div>)}</div>
