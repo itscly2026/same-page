@@ -11,7 +11,6 @@ import {
   readReturningDriveCacheOwner,
   rememberDriveLibrary,
   rememberDriveSummary,
-  rememberDriveView,
 } from "./drive-library-cache";
 
 const result = {
@@ -23,17 +22,14 @@ const result = {
 describe("drive library cache", () => {
   beforeEach(clearDriveLibraryCache);
 
-  it("restores one owner's library and view without crossing identities", () => {
+  it("restores one owner's library without crossing identities", () => {
     const firstOwner = driveCacheOwnerKey("user-1", "drive-1");
     rememberDriveLibrary(firstOwner, "drive-1", {
       choir: { id: "drive-1", name: "排练云盘", guestAdmissionMode: "invite" },
       result,
     });
-    rememberDriveView(firstOwner, "drive-1", { search: "春天", scrollTop: 420 });
 
     expect(readDriveLibrary(firstOwner, "drive-1")).toMatchObject({
-      search: "春天",
-      scrollTop: 420,
       choir: { name: "排练云盘" },
     });
 
