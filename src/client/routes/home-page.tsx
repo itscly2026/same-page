@@ -1,5 +1,5 @@
 import { diagnosticFetch } from "../diagnostics/diagnostics";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   Button,
   Dialog,
@@ -11,7 +11,7 @@ import {
   ModalOverlay,
   TextField,
 } from "react-aria-components";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { isInternalAuthEmail } from "../../shared/auth";
 import {
@@ -37,6 +37,7 @@ import {
 } from "../auth/logout-local-data";
 import { AppHeader } from "../components/app-header";
 import { JoinCodeField } from "../components/join-code-field";
+import { readInviteLink } from "../components/invite-link";
 import { JOIN_CODE_LENGTH } from "../components/join-code";
 import { startLoadingJourney } from "../performance/loading-performance";
 import {
@@ -92,9 +93,12 @@ export function HomePage() {
 function HomeContent({ session }: { session: ReturnType<typeof authClient.useSession> }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [joinOpen, setJoinOpen] = useState(searchParams.get("join") === "1");
+  const location = useLocation();
+  const [linkInvite] = useState(() => readInviteLink(location.hash));
+  const linkHandled = useRef(false);
+  const [joinOpen, setJoinOpen] = useState(searchParams.get("join") === "1" || linkInvite !== null);
   const [joinStep, setJoinStep] = useState<JoinStep>({ kind: "invite" });
-  const [joinCode, setJoinCode] = useState("");
+  const [joinCode, setJoinCode] = useState(linkInvite?.code ?? "");
   const [displayName, setDisplayName] = useState("");
   const [previewChoir, setPreviewChoir] = useState<ChoirSummary | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -153,8 +157,8 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
     finishJoinDialog();
   };
 
-  const enterInviteDrive = async (event: FormEvent) => {
-    event.preventDefault();
+  const enterInviteDrive = async (event?: FormEvent) => {
+    event?.preventDefault();
     if (clearingGuestSession) return;
     setSubmitting(true);
     setJoinMessage(null);
@@ -213,6 +217,19 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
       setSubmitting(false);
     }
   };
+
+  const enterLinkedDrive = useEffectEvent(() => {
+    if (linkInvite?.code) void enterInviteDrive();
+    else setJoinMessage("邀请链接无效，请输入当前邀请码。");
+  });
+
+  useEffect(() => {
+    if (session.isPending || !linkInvite || linkHandled.current) return;
+    linkHandled.current = true;
+    // Remove the shared credential before making admission requests.
+    void navigate({ pathname: location.pathname, search: location.search, hash: "" }, { replace: true });
+    enterLinkedDrive();
+  }, [session.isPending, linkInvite, navigate, location.pathname, location.search]);
 
   const joinValidatedDrive = async (event: FormEvent) => {
     event.preventDefault();

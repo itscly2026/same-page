@@ -13,7 +13,7 @@ describe("current invite code", () => {
         : Response.json({ joinCode: null })),
     );
     vi.stubGlobal("fetch", fetchMock);
-    render(<InviteCodeDialog choirId="drive" onClose={() => {}} />);
+    render(<InviteCodeDialog choirId="drive" choirName="示例云盘" onClose={() => {}} />);
     fireEvent.change(await screen.findByRole("textbox", { name: "邀请码" }), { target: { value: "ABCDEFGH" } });
     fireEvent.click(screen.getByRole("button", { name: "保存原邀请码" }));
     expect(await screen.findByLabelText("当前有效邀请码")).toHaveTextContent("ABCDEFGH");
@@ -29,7 +29,7 @@ describe("current invite code", () => {
         ? Response.json({ error: "join_code_mismatch" }, { status: 409 })
         : Response.json({ joinCode: null })),
     ));
-    render(<InviteCodeDialog choirId="drive" onClose={() => {}} />);
+    render(<InviteCodeDialog choirId="drive" choirName="示例云盘" onClose={() => {}} />);
     fireEvent.change(await screen.findByRole("textbox", { name: "邀请码" }), { target: { value: "ABCDEFGH" } });
     fireEvent.click(screen.getByRole("button", { name: "保存原邀请码" }));
     expect(await screen.findByRole("status")).toHaveTextContent("输入的原码与当前有效邀请码不一致。");
@@ -40,7 +40,7 @@ describe("current invite code", () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response(null, { status: 503 }))
       .mockResolvedValueOnce(Response.json({ joinCode: "ABCDEFGH" }));
     vi.stubGlobal("fetch", fetchMock);
-    render(<InviteCodeDialog choirId="drive" onClose={() => {}} />);
+    render(<InviteCodeDialog choirId="drive" choirName="示例云盘" onClose={() => {}} />);
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("暂时无法读取邀请码"));
     expect(screen.queryByRole("button", { name: "保存原邀请码" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "轮换邀请码" })).toBeDisabled();

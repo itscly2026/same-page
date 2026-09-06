@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { rememberLibraryView } from "./score-library/library-view-state";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -433,6 +434,21 @@ describe("AppRoutes", () => {
     expect(await screen.findByText(/还没有已加入的云盘/)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "访问公开体验云盘" })).not.toBeInTheDocument();
     expect(screen.queryByText(/或先访问公开体验/)).not.toBeInTheDocument();
+  });
+
+  it("automatically admits a linked guest once under StrictMode", async () => {
+    render(<StrictMode><MemoryRouter initialEntries={["/?join=1#invite=ABCDEFGH"]}><AppRoutes /></MemoryRouter></StrictMode>);
+    expect(await screen.findByRole("heading", { name: "小红花云盘" })).toBeInTheDocument();
+    const admissions = vi.mocked(fetch).mock.calls.filter(([url, init]) => url === "/api/guest/session" && init?.method === "POST");
+    expect(admissions).toHaveLength(1);
+    expect(admissions[0][1]?.body).toBe(JSON.stringify({ admission: "invite", joinCode: "ABCDEFGH" }));
+  });
+
+  it("keeps a malformed invitation available for manual correction", async () => {
+    render(<MemoryRouter initialEntries={["/?join=1#invite=bad"]}><AppRoutes /></MemoryRouter>);
+    expect(await screen.findByText("邀请链接无效，请输入当前邀请码。")).toBeInTheDocument();
+    expect(screen.getByLabelText("邀请码")).toHaveValue("");
+    expect(vi.mocked(fetch).mock.calls.filter(([url, init]) => url === "/api/guest/session" && init?.method === "POST")).toHaveLength(0);
   });
 
   it("normalizes a grouped pasted invitation and enters as a guest", async () => {
@@ -1034,7 +1050,7 @@ describe("AppRoutes", () => {
       "/choirs/choir-1/shared-layers",
     );
     fireEvent.click(await screen.findByRole("menuitem", { name: "邀请码" }));
-    expect(await screen.findByRole("dialog", { name: "邀请码" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "邀请加入云盘" })).toBeInTheDocument();
     expect(await screen.findByLabelText("当前有效邀请码")).toHaveTextContent("HGFEDCBA");
     fireEvent.click(screen.getByRole("button", { name: "轮换邀请码" }));
 
