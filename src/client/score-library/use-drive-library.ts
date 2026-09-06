@@ -2,7 +2,7 @@ import { captureLocalWorkspaceSession, createLocalWorkspace, authenticatedLocalO
 import { readLocalDriveDirectories, rememberLocalDriveDirectory, renameLocalDriveDirectory } from "./local-drive-directory";
 import { useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { DriveLibrary } from "./drive-library";
-import { type DriveCacheOwnerKey } from "./drive-library-cache";
+import { readDriveSummary, type DriveCacheOwnerKey } from "./drive-library-cache";
 import { driveLibraryTransport } from "./drive-library-transport";
 
 export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, signedIn: boolean) {
@@ -13,7 +13,7 @@ export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, s
       const directory = (await readLocalDriveDirectories(ownerKey.slice(5))).find(entry => entry.choirId === choirId);
       signal.throwIfAborted();
       return { kind: "opened" as const, local: true, isMember: false, rememberedMembership: directory?.membership ?? false, managementVisible: directory?.canManage ?? false,
-        choir: directory?.choir ?? { id: choirId, name: "云盘", guestAdmissionMode: "invite" as const },
+        choir: directory?.choir ?? readDriveSummary(ownerKey, choirId) ?? { id: choirId, name: "云盘", guestAdmissionMode: "invite" as const },
         result: { scores: directory?.scores ?? [], storage: directory?.storage ?? { usedBytes: 0, limitBytes: 1 }, permissions: { canManage: false } } };
     };
     return new DriveLibrary(ownerKey, choirId, {

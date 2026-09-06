@@ -9,12 +9,23 @@ import { startNativeRenderer } from "./native-renderer.mjs";
 
 for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]]) {
   test(`${engineName}: native conversion, image reading and verified offline reopen`, { timeout: 180_000 }, async t => {
-    const native = await startNativeRenderer(); t.after(() => native.stop());
-    const fixture = await startStorageFixture({ authenticated: true, rendererOrigin: native.origin }); t.after(() => fixture.stop());
+    // LIFO disposal closes the browser before deleting its live profile, and
+    // still releases every acquired resource if an earlier cleanup throws.
+    const cleanup = new AsyncDisposableStack();
+    t.after(async () => {
+      try { await cleanup.disposeAsync(); }
+      catch (error) {
+        // The test reporter omits the nested errors in SuppressedError.
+        console.error("Smoke resource cleanup failed:", error);
+        throw error;
+      }
+    });
+    const native = await startNativeRenderer(); cleanup.defer(() => native.stop());
+    const fixture = await startStorageFixture({ authenticated: true, rendererOrigin: native.origin }); cleanup.defer(() => fixture.stop());
     const profile = await mkdtemp(path.join(tmpdir(), "same-page-images-"));
-    t.after(() => rm(profile, { recursive: true, force: true }));
+    cleanup.defer(() => rm(profile, { recursive: true, force: true }));
     let context = await engine.launchPersistentContext(profile, { headless: true, serviceWorkers: "allow", viewport: { width: 1024, height: 768 } });
-    t.after(() => context.close());
+    cleanup.defer(() => context.close());
     const account = fixture.accounts[1];
     assert.equal((await context.request.post(`${fixture.origin}/api/auth/sign-in/email`, {
       headers: { origin: fixture.origin }, data: { email: account.email, password: account.password },
