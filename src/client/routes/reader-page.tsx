@@ -39,6 +39,7 @@ import {
 import { requestOutboxRecovery } from "../annotations/outbox-recovery";
 import { getAnnotationSyncActivity, subscribeAnnotationSync, syncAnnotations } from "../annotations/sync";
 import { useAnnotationEditor } from "../annotations/use-annotation-editor";
+import type { AnnotationEditor } from "../annotations/annotation-editor";
 import { authClient } from "../auth/auth-client";
 import {
   ensureLoadingJourney,
@@ -109,7 +110,7 @@ function ReaderPageContent() {
   );
   const fullscreen = useReaderFullscreen();
   const [zoom, setZoom] = useState(1);
-  const [editing, setEditing] = useState(false);
+  const [editingEditor, setEditingEditor] = useState<AnnotationEditor | null>(null);
   const [annotationInteraction, setAnnotationInteraction] =
     useState<AnnotationOverlayInteraction>("idle");
   const [tool, setTool] = useState<AnnotationTool>("text");
@@ -183,6 +184,7 @@ function ReaderPageContent() {
       ? resolvedWorkspace
       : null;
   const { editor, persistence } = useAnnotationEditor(workspace);
+  const editing = editor !== null && editor === editingEditor;
   const [visibleDisplay, setVisibleDisplay] = useState<ScoreDocument | null>(null);
   const [failedDisplay, setFailedDisplay] = useState<ScoreDocument | null>(null);
   const reader = useReaderSession(workspace, session.data?.user.id ?? null);
@@ -282,7 +284,7 @@ function ReaderPageContent() {
     setActiveLayerId(editableLayer.id);
     writeStringPreference(preferenceKey, editableLayer.id);
     setTool("text");
-    setEditing(true);
+    setEditingEditor(editor);
 
   };
 
@@ -300,7 +302,7 @@ function ReaderPageContent() {
 
   const finishEditing = async () => {
     if (!workspace || !editor?.finish()) return;
-    setEditing(false);
+    setEditingEditor(null);
     let queued: number;
     try { queued = await queueScoreDrafts(workspace); }
     catch { setSyncOutcome("failed"); return; }

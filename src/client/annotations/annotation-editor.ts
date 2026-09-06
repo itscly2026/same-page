@@ -86,10 +86,8 @@ export class AnnotationEditor {
     const completion = new Promise<boolean>(resolve => {
       // Editing a failed text again replaces that unwritten intent, without
       // erasing the history mode needed by a partially persisted stroke.
-      const previous = !this.running && edit.kind === "write"
-        ? this.pending.find(task => task.edit.kind === "write" && task.edit.input.id === edit.input.id)
-        : undefined;
-      if (previous && previous.edit.kind === "write" && edit.kind === "write") {
+      const previous = !this.running ? this.pending.at(-1) : undefined;
+      if (previous?.edit.kind === "write" && edit.kind === "write" && previous.edit.input.id === edit.input.id) {
         previous.complete(false);
         previous.edit = { ...edit, replaceHistory: previous.edit.replaceHistory && edit.replaceHistory };
         previous.complete = resolve;

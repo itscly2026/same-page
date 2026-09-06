@@ -122,3 +122,16 @@ it("keeps another reader's history independent and fences a previous owner epoch
   expect(await editor.retry()).toBe(false);
   expect(await savedText()).toBeUndefined();
 });
+
+it("keeps the newest intent when editing again after several stroke writes failed", async () => {
+  const write = vi.spyOn(localDatabase.annotations, "put").mockRejectedValueOnce(new Error("storage unavailable"));
+  const first = editor.persist(text("first"));
+  const next = editor.persist(text("second"), true);
+  await Promise.all([first, next]);
+  write.mockRestore();
+  expect(await editor.persist(text("latest"), true)).toBe(true);
+  await waitFor(() => expect(editor.getSnapshot()).toBe("idle"));
+  expect(await savedText()).toMatchObject({ text: "latest" });
+  await editor.undo("personal");
+  expect(await savedText()).toBeUndefined();
+});

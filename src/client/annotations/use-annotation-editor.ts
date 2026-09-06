@@ -10,7 +10,10 @@ export function useEditorPersistence(editor: AnnotationEditor | null) {
 }
 
 export function useAnnotationEditor(workspace: LocalWorkspace | null) {
-  const editor = useMemo(() => workspace ? new AnnotationEditor(workspace) : null, [workspace]);
+  const { scopeKey, ownerKey, choirId, scoreId, sessionEpoch, syncLockToken } = workspace ?? {};
+  const editor = useMemo(() => scopeKey !== undefined && ownerKey !== undefined && choirId !== undefined && scoreId !== undefined
+    ? new AnnotationEditor({ scopeKey, ownerKey, choirId, scoreId, sessionEpoch, syncLockToken }) : null,
+  [scopeKey, ownerKey, choirId, scoreId, sessionEpoch, syncLockToken]);
   const persistence = useEditorPersistence(editor);
   useEffect(() => {
     const preventLoss = (event: BeforeUnloadEvent) => {
