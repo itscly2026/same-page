@@ -47,74 +47,46 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
  });
 }
 for (const [engineName, engine] of Object.entries({chromium, webkit})) {
- for (let iteration = 0; iteration < Number(process.env.WEBKIT_EDIT_REPEATS ?? 1); iteration++) {
- test(`${engineName}: continuous editing locks one page without changing its scale or position / ${iteration}`, async (context) => {
+ test(`${engineName}: continuous editing locks one page without changing its scale or position`, async (context) => {
   const browser = await engine.launch({headless:true});
+  context.after(() => browser.close());
   const page = await openMemberReader(browser, {width:834,height:700});
-  const probing = process.env.WEBKIT_EDIT_REPEATS !== undefined;
-  if (probing) await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
-  const evidence = `artifacts/verification/webkit-edit-probe/${engineName}-${iteration}`;
-  context.after(async () => {
-    try {
-      if (probing) {
-        await mkdir(path.dirname(evidence), { recursive: true });
-        await page.context().tracing.stop({ path: `${evidence}.zip` });
-      }
-    } finally { await browser.close(); }
-  });
-  await showReaderChrome(page);
-  await page.getByRole("button", {name:"更多",exact:true}).click();
-  await page.getByRole("button", {name:"连续滚动",exact:true}).click();
-  await page.getByRole("button", {name:"更多",exact:true}).click();
-  await page.getByRole("button", {name:"放大",exact:true}).click();
-  await page.getByRole("button", {name:"更多",exact:true}).click();
-  await page.locator(".continuous-reader .pdf-page-canvas [data-pdf-canvas-active]").first().waitFor();
-  await page.locator(".continuous-reader").evaluate(element => {element.scrollTop = 170; element.scrollLeft = 90;});
-  const read = () => page.locator('.continuous-reader__page[data-index="0"] .annotated-pdf-page').evaluate(element => {
-   const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
-  });
-  const before = await read();
-  if (process.env.WEBKIT_EDIT_FORCE_VISIBLE) await page.addStyleTag({ content: '.continuous-reader__page[data-edit-hidden] { visibility: visible !important; }' });
-  await page.getByRole("button", {name:"编辑",exact:true}).click();
-  await page.locator(".annotation-controls").waitFor();
-  if (process.env.WEBKIT_EDIT_WAIT) await expect(page.locator('.annotated-pdf-page:visible')).toHaveCount(1, { timeout: 3000 });
-  const focused = await page.locator('.annotated-pdf-page:visible').evaluateAll(elements => elements.map(element => {
-   const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
-  }));
-  if (probing) {
-    const snapshot = () => page.evaluate(() => ({
-      readyState: document.readyState,
-      editing: document.querySelector('.continuous-reader')?.getAttribute('data-editing'),
-      button: document.querySelector('[aria-label="完成编辑"]')?.getAttribute('aria-pressed'),
-      pages: [...document.querySelectorAll('.annotated-pdf-page')].map(e => ({
-        visibility: getComputedStyle(e).visibility, display: getComputedStyle(e).display,
-        rect: e.getBoundingClientRect().toJSON(),
-        ancestor: e.parentElement?.outerHTML.slice(0, 260),
-        ancestorVisibility: getComputedStyle(e.parentElement).visibility,
-      })),
-      rules: [...document.styleSheets].flatMap(sheet => { try { return [...sheet.cssRules].filter(rule => rule.cssText.includes('data-edit-hidden')).map(rule => rule.cssText); } catch { return []; } }),
+  try {
+    await showReaderChrome(page);
+    await page.getByRole("button", {name:"更多",exact:true}).click();
+    await page.getByRole("button", {name:"连续滚动",exact:true}).click();
+    await page.getByRole("button", {name:"更多",exact:true}).click();
+    await page.getByRole("button", {name:"放大",exact:true}).click();
+    await page.getByRole("button", {name:"更多",exact:true}).click();
+    await page.locator(".continuous-reader .pdf-page-canvas [data-pdf-canvas-active]").first().waitFor();
+    await page.locator(".continuous-reader").evaluate(element => {element.scrollTop = 170; element.scrollLeft = 90;});
+    const read = () => page.locator('.continuous-reader__page[data-index="0"] .annotated-pdf-page').evaluate(element => {
+     const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
+    });
+    const before = await read();
+    await page.getByRole("button", {name:"编辑",exact:true}).click();
+    await page.locator(".annotation-controls").waitFor();
+    // Toolbar readiness is independent of WebKit's next style update. Wait for
+    // the page-lock invariant itself; a persistently visible neighbour still fails.
+    const visiblePages = page.locator('.annotated-pdf-page:visible');
+    await expect(visiblePages).toHaveCount(1, { timeout: 3000 });
+    const focused = await visiblePages.evaluateAll(elements => elements.map(element => {
+     const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
     }));
-    const immediate = await snapshot();
-    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-    const settled = await snapshot();
-    await mkdir(path.dirname(evidence), { recursive: true });
-    await writeFile(`${evidence}.json`, JSON.stringify({ focused, immediate, settled }, null, 2));
-    if (focused.length !== 1) {
-      console.log('[DEBUG-webkit-edit]', JSON.stringify({ focused, immediate, settled }));
-      await page.screenshot({ path: `${evidence}.png`, fullPage: true });
-    }
+    assert.equal(focused.length,1);
+    assertView(focused[0], before);
+    await page.mouse.move(400,450);
+    await page.mouse.wheel(0,600);
+    assertView((await page.locator('.annotated-pdf-page:visible').evaluateAll(elements => elements.map(element => {
+     const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
+    })))[0],before);
+    await page.getByRole("button", {name:"完成编辑",exact:true}).click();
+    assertView(await read(), before);
+  } catch (error) {
+    await recordContinuousEditFailure(page, engineName).catch(evidenceError => console.error("Could not capture reader failure evidence", evidenceError));
+    throw error;
   }
-  assert.equal(focused.length,1);
-  assertView(focused[0], before);
-  await page.mouse.move(400,450);
-  await page.mouse.wheel(0,600);
-  assertView((await page.locator('.annotated-pdf-page:visible').evaluateAll(elements => elements.map(element => {
-   const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
-  })))[0],before);
-  await page.getByRole("button", {name:"完成编辑",exact:true}).click();
-  assertView(await read(), before);
  });
- }
 }
 
 test("fullscreen entry, browser exit and portalled controls stay usable", async (context) => {
@@ -210,4 +182,29 @@ async function waitForRenderedPdf(page) {
 
 async function assertEventually(page, predicate) {
   await page.waitForFunction(predicate);
+}
+
+async function recordContinuousEditFailure(page, engineName) {
+  const directory = "artifacts/verification/reader-immersive";
+  await mkdir(directory, { recursive: true });
+  const state = await page.evaluate(() => {
+    const reader = document.querySelector(".continuous-reader");
+    return {
+      editing: reader?.getAttribute("data-editing"),
+      scroll: reader ? { top: reader.scrollTop, left: reader.scrollLeft } : null,
+      pages: [...document.querySelectorAll(".continuous-reader__page")].map(element => {
+        const paper = element.querySelector(".annotated-pdf-page");
+        return {
+          index: element.getAttribute("data-index"),
+          hidden: element.getAttribute("data-edit-hidden"),
+          inert: element.hasAttribute("inert"),
+          visibility: getComputedStyle(element).visibility,
+          paperVisibility: paper ? getComputedStyle(paper).visibility : null,
+          paperRect: paper?.getBoundingClientRect().toJSON(),
+        };
+      }),
+    };
+  });
+  await writeFile(`${directory}/${engineName}-continuous-edit.json`, JSON.stringify(state, null, 2));
+  await page.screenshot({ path: `${directory}/${engineName}-continuous-edit.png`, fullPage: true });
 }
