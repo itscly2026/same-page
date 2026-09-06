@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import {
-  defaultSharedLayerSlotSchema,
+  sharedLayerSlotSchema,
   sharedLayerGrantListResponseSchema,
   sharedLayerManagementResponseSchema,
   type SharedLayerGrantMember,
@@ -22,7 +22,7 @@ export default function SharedLayerGrantsPage() {
 }
 
 function SharedLayerGrants({ choirId, slotParam }: { choirId: string; slotParam: string }) {
-  const parsedSlot = defaultSharedLayerSlotSchema.safeParse(slotParam);
+  const parsedSlot = sharedLayerSlotSchema.safeParse(slotParam);
   const slot = parsedSlot.success ? parsedSlot.data : null;
   const [driveName, setDriveName] = useState("");
   const [layer, setLayer] = useState<SharedLayerManagementSummary | null>(null);
@@ -97,7 +97,7 @@ function SharedLayerGrants({ choirId, slotParam }: { choirId: string; slotParam:
     }
   };
 
-  const layerName = layer ? `${layer.slot} · ${layer.name}` : slot ?? "共享层";
+  const layerName = layer ? `${layer.slot.length === 1 ? `${layer.slot} · ` : ""}${layer.name}` : slot ?? "共享层";
 
 
   return (
@@ -111,7 +111,7 @@ function SharedLayerGrants({ choirId, slotParam }: { choirId: string; slotParam:
         <header className="settings-heading">
           <p className="eyebrow">云盘管理 · {driveName || "共享层"}</p>
           <h1>{layerName} 编辑权限</h1>
-          <p className="settings-copy">管理员始终可以编辑；以下授权对当前云盘中的全部乐谱生效。</p>
+          <p className="settings-copy">以下授权对当前云盘中的全部乐谱生效，管理员无需单独授权。停用的共享层暂停所有人的编辑，恢复后授权继续生效。</p>
         </header>
         {slot ? <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} /> : <p role="alert">共享层不存在。</p>}
         <section className="settings-card" aria-label={`${layerName} 编辑成员`} aria-busy={loading}>
@@ -120,7 +120,7 @@ function SharedLayerGrants({ choirId, slotParam }: { choirId: string; slotParam:
             <label className="settings-member-row">
               <span>
                 <strong>{member.displayName}</strong>
-                {member.role === "admin" ? <small>管理员 · 始终可编辑</small> : <small>{member.granted ? "可以编辑" : "未授权编辑"}</small>}
+                {member.role === "admin" ? <small>管理员 · 无需单独授权</small> : <small>{member.granted ? "可以编辑" : "未授权编辑"}</small>}
               </span>
               <input
                 aria-label={`${member.displayName}${member.role === "admin" ? " 管理员" : ""}`}

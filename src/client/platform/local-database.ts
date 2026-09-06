@@ -108,6 +108,7 @@ export interface AnnotationSyncCursorRecord {
   choirId: string;
   scoreId: string;
   cursor: number;
+  layerIds?: string[];
 }
 
 export interface GuestLayerPreferenceRecord {
@@ -237,6 +238,16 @@ export class SamePageDatabase extends Dexie {
       .upgrade(clearSupersededLayerModelData);
     this.version(8).stores({
       annotationOutbox: "&opId,ownerKey,scopeKey,[ownerKey+scopeKey],[scopeKey+annotationId],createdAt",
+    });
+    this.version(9).stores({}).upgrade(async transaction => {
+      const renameSlot = (layer: Record<string, unknown>) => {
+        layer.sharedSlot = layer.defaultSlot;
+        delete layer.defaultSlot;
+      };
+      await transaction.table("annotationLayers").toCollection().modify(renameSlot);
+      await transaction.table("offlineScores").toCollection().modify((record: OfflineScoreRecord) => {
+        for (const layer of record.annotationSnapshot?.layers ?? []) renameSlot(layer as unknown as Record<string, unknown>);
+      });
     });
   }
 }

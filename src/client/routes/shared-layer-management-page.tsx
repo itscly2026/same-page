@@ -19,6 +19,9 @@ export default function SharedLayerManagementPage() {
 }
 
 function SharedLayerManagement({ choirId }: { choirId: string }) {
+  const [newName, setNewName] = useState("");
+  const [createMessage, setCreateMessage] = useState("");
+  const [creating, setCreating] = useState(false);
   const [driveName, setDriveName] = useState("");
   const [layers, setLayers] = useState<SharedLayerManagementSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,6 +87,43 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
     }
   };
 
+  const updateDefinition = async (layer: SharedLayerManagementSummary, changes: { name?: string; sortOrder?: number; active?: boolean }) => {
+    if (pendingSlotsRef.current.has(layer.slot)) return;
+    const requestGeneration = generation.current;
+    pendingSlotsRef.current.add(layer.slot); setPendingSlots(new Set(pendingSlotsRef.current));
+    try {
+      await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/shared-layers/${layer.slot}/settings`, {
+        method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(changes),
+      }));
+      if (requestGeneration !== generation.current) return;
+      setLayers(current => current.map(entry => entry.slot === layer.slot ? { ...entry, ...changes } : entry)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.slot.localeCompare(b.slot)));
+      setResults(current => ({ ...current, [layer.slot]: { message: "共享层设置已保存。" } }));
+    } catch (error) {
+      if (requestGeneration === generation.current) setResults(current => ({ ...current, [layer.slot]: {
+        message: settingsError(error, "保存失败，原设置已保留，请重试。"),
+      } }));
+    } finally {
+      if (requestGeneration === generation.current) {
+        pendingSlotsRef.current.delete(layer.slot); setPendingSlots(new Set(pendingSlotsRef.current));
+      }
+    }
+  };
+  const createLayer = async () => {
+    if (creating || !newName.trim()) return;
+    setCreating(true); setCreateMessage("正在创建…");
+    const requestGeneration = generation.current;
+    try {
+      await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/shared-layers`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: newName.trim(), defaultColor: "#3157a4" }),
+      }));
+      if (requestGeneration !== generation.current) return;
+      setNewName(""); setCreateMessage("共享层已创建。"); retryLoad();
+    } catch (error) {
+      if (requestGeneration === generation.current) setCreateMessage(settingsError(error, "创建失败，请重试。"));
+    } finally { if (requestGeneration === generation.current) setCreating(false); }
+  };
+
   return (
     <div className="app-page">
       <AppHeader actions={<Link className="header-action" to={`/choirs/${choirId}`}>返回云盘</Link>} />
@@ -92,22 +132,29 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
           <p className="eyebrow">云盘管理</p>
           <h1>共享层管理</h1>
           {driveName ? <p>{driveName}</p> : null}
-          <p className="settings-copy">设置共享批注的默认颜色，或选择一个层管理谁可以编辑。颜色不会改变编辑权限，成员也可以选择自己的显示颜色。</p>
+          <p className="settings-copy">共享层配置对云盘内所有乐谱生效。可调整名称、顺序、默认颜色和编辑权限。停用会隐藏该层并暂停编辑，笔记保留，恢复后可继续使用。</p>
         </header>
         <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} />
+        <form className="settings-card layer-definition-form" onSubmit={event => { event.preventDefault(); void createLayer(); }}>
+          <label>新共享层名称<input value={newName} maxLength={60} required disabled={creating} onChange={event => setNewName(event.target.value)} /></label>
+          <button type="submit" disabled={creating || loading}>新增共享层</button>
+          {createMessage ? <p role="status">{createMessage}</p> : null}
+        </form>
         <section className="settings-card" aria-label="共享层管理列表" aria-busy={loading}>
           {layers.map((layer) => (
             <article className="settings-layer-row settings-layer-row--management" key={layer.slot}>
               <Link className="settings-layer-link" to={`/choirs/${choirId}/shared-layers/${layer.slot}`}>
                 <span className="settings-layer-swatch" style={{ background: layer.defaultColor }} />
-                <strong><span>{layer.slot}</span> · {layer.name}</strong>
+                <strong><span>{layer.slot.length === 1 ? `${layer.slot} · ` : ""}</span> {layer.name}</strong>
                 <small>已授权 {layer.grantedMemberCount} 位成员</small>
                 <span aria-hidden="true">›</span>
               </Link>
+              <LayerDefinitionForm key={`${layer.slot}:${layer.name}:${layer.sortOrder}:${layer.active}`} layer={layer}
+                pending={pendingSlots.has(layer.slot)} save={changes => void updateDefinition(layer, changes)} />
               <label className="settings-color-control">
                 <span>云盘默认颜色</span>
                 <input
-                  aria-label={`${layer.slot} · ${layer.name} 云盘默认颜色`}
+                  aria-label={`${layer.slot.length === 1 ? `${layer.slot} · ` : ""}${layer.name} 云盘默认颜色`}
                   type="color"
                   value={layer.defaultColor}
                   disabled={pendingSlots.has(layer.slot)}
@@ -117,7 +164,7 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
             {results[layer.slot] ? <div className="settings-row-feedback">
               <span role={results[layer.slot].failedColor ? "alert" : "status"}>{results[layer.slot].message}</span>
               {results[layer.slot].failedColor ? <button type="button" className="text-button"
-                disabled={pendingSlots.has(layer.slot)} aria-label={`重试 ${layer.slot} · ${layer.name}`}
+                disabled={pendingSlots.has(layer.slot)} aria-label={`重试 ${layer.slot.length === 1 ? `${layer.slot} · ` : ""}${layer.name}`}
                 onClick={() => void saveDefaultColor(layer, results[layer.slot].failedColor!)}>重试</button> : null}
             </div> : null}
             </article>
@@ -126,4 +173,16 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
       </main>
     </div>
   );
+}
+
+function LayerDefinitionForm({ layer, pending, save }: { layer: SharedLayerManagementSummary; pending: boolean;
+  save: (changes: { name?: string; sortOrder?: number; active?: boolean }) => void }) {
+  const [name, setName] = useState(layer.name);
+  const [order, setOrder] = useState(layer.sortOrder);
+  return <form className="layer-definition-form" onSubmit={event => { event.preventDefault(); save({ name: name.trim(), sortOrder: order }); }}>
+    <label>名称<input aria-label={`${layer.name} 名称`} value={name} required maxLength={60} disabled={pending} onChange={event => setName(event.target.value)} /></label>
+    <label>顺序<input aria-label={`${layer.name} 顺序`} type="number" min={0} max={10000} value={order} required disabled={pending} onChange={event => setOrder(Number(event.target.value))} /></label>
+    <button type="submit" disabled={pending}>保存名称和顺序</button>
+    <button type="button" disabled={pending} onClick={() => save({ active: !layer.active })}>{layer.active ? "停用" : "恢复"} {layer.name}</button>
+  </form>;
 }

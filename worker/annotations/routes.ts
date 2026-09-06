@@ -4,12 +4,13 @@ import { type Context, Hono } from "hono";
 import {
   annotationPayloadSchema,
   annotationPushRequestSchema,
-  defaultSharedLayerSlotSchema,
+  sharedLayerSlotSchema,
   defaultSharedLayers,
   driveLayerPreferenceUpdateSchema,
   resolveSharedLayerPreference,
   scoreLayerPreferenceUpdateSchema,
   sharedLayerSettingUpdateSchema,
+  sharedLayerCreateSchema,
   type AnnotationObjectRecord,
 } from "../../src/shared/annotations";
 import {
@@ -42,7 +43,9 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
   }
 
   const rows = await context.env.DB.prepare(
-    `SELECT layers.id, layers.kind, layers.default_slot, layers.name, layers.sort_order,
+    `SELECT layers.id, layers.kind, layers.default_slot, COALESCE(settings.name, layers.name) AS name, COALESCE(settings.sort_order, layers.sort_order) AS sort_order,
+            layers.sharing, owner.display_name AS owner_name,
+            CASE WHEN subscriptions.user_id IS NULL THEN 0 ELSE 1 END AS personal_subscribed,
             layers.default_color AS product_default_color,
             settings.default_color AS admin_default_color,
             drive_preferences.subscribed AS drive_subscribed,
@@ -50,8 +53,8 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
             score_preferences.subscribed_override AS score_subscribed_override,
             CASE
               WHEN layers.kind = 'personal' AND layers.owner_user_id = ? THEN 1
-              WHEN ? = 1 THEN 1
-              WHEN grants.id IS NOT NULL THEN 1
+              WHEN layers.kind = 'shared' AND ? = 1 THEN 1
+              WHEN layers.kind = 'shared' AND grants.id IS NOT NULL THEN 1
               ELSE 0
             END AS can_edit
      FROM annotation_layers AS layers
@@ -67,15 +70,19 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
        ON grants.slot = layers.default_slot
       AND grants.membership_id = ?
       AND grants.choir_id = layers.choir_id
+     LEFT JOIN memberships owner ON owner.user_id = layers.owner_user_id AND owner.choir_id = layers.choir_id AND owner.status = 'active'
+     LEFT JOIN personal_layer_subscriptions subscriptions ON subscriptions.layer_id = layers.id AND subscriptions.user_id = ?
      WHERE layers.choir_id = ? AND layers.score_id = ?
-       AND (layers.kind = 'shared' OR layers.owner_user_id = ?)
+       AND ((layers.kind = 'shared' AND settings.active = 1) OR layers.owner_user_id = ?
+         OR (layers.sharing = 1 AND owner.id IS NOT NULL AND EXISTS (SELECT 1 FROM memberships reader WHERE reader.id = ? AND reader.status = 'active')
+             AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = layers.owner_user_id)))
      ORDER BY CASE layers.kind WHEN 'shared' THEN 0 ELSE 1 END,
-              layers.sort_order, layers.created_at`,
+              sort_order, layers.created_at`,
   ).bind(userId, access.membership?.role === "admin" ? 1 : 0, userId, userId,
-    access.membership?.id ?? null, choirId, scoreId, userId).all<LayerRow>();
+    access.membership?.id ?? null, userId, choirId, scoreId, userId, access.membership?.id ?? null).all<LayerRow>();
 
   return context.json({
-    layers: rows.results.map(serializeLayer),
+    layers: rows.results.map(row => ({ ...serializeLayer(row), canShare: row.kind === "personal" && row.can_edit === 1 && !!access.membership })),
     permissions: { canManageLayers: access.membership?.role === "admin" },
   });
 });
@@ -91,43 +98,27 @@ annotationRoutes.get("/choirs/:choirId/shared-layer-preferences", async (context
   const drive = await readDriveIdentity(context, choirId);
   if (!drive) return context.json({ error: "choir_not_found" }, 404);
   const rows = await context.env.DB.prepare(
-    `SELECT settings.slot, settings.default_color AS admin_default_color,
+    `SELECT settings.slot, settings.name, settings.default_color AS admin_default_color,
             preferences.subscribed, preferences.color_override
      FROM choir_shared_layer_settings AS settings
      LEFT JOIN user_drive_layer_preferences AS preferences
        ON preferences.choir_id = settings.choir_id
       AND preferences.slot = settings.slot
       AND preferences.user_id = ?
-     WHERE settings.choir_id = ?`,
+     WHERE settings.choir_id = ? AND settings.active = 1 ORDER BY settings.sort_order, settings.slot`,
   ).bind(principal.userId, choirId).all<{
-    slot: "E" | "S" | "A" | "T" | "B";
+    slot: string;
+    name: string;
     admin_default_color: string;
     subscribed: number | null;
     color_override: string | null;
   }>();
-  const bySlot = new Map(rows.results.map((row) => [row.slot, row]));
-
-  return context.json({
-    drive,
-    layers: defaultSharedLayers.map((layer) => {
-      const row = bySlot.get(layer.slot);
-      const adminDefaultColor = row?.admin_default_color ?? layer.defaultColor;
-      const colorOverride = row?.color_override ?? null;
-      return {
-        slot: layer.slot,
-        name: layer.name,
-        subscribed: row?.subscribed !== 0,
-        colorOverride,
-        adminDefaultColor,
-        displayColor: colorOverride ?? adminDefaultColor ?? layer.defaultColor,
-        colorSource: colorOverride
-          ? "drive" as const
-          : row?.admin_default_color
-            ? "admin" as const
-            : "product" as const,
-      };
-    }),
-  });
+  return context.json({ drive, layers: rows.results.map(row => ({
+    slot: row.slot, name: row.name, subscribed: row.subscribed !== 0,
+    colorOverride: row.color_override, adminDefaultColor: row.admin_default_color,
+    displayColor: row.color_override ?? row.admin_default_color,
+    colorSource: row.color_override ? "drive" : "admin",
+  })) });
 });
 
 annotationRoutes.get("/choirs/:choirId/shared-layers", async (context) => {
@@ -137,7 +128,7 @@ annotationRoutes.get("/choirs/:choirId/shared-layers", async (context) => {
   const drive = await readDriveIdentity(context, choirId);
   if (!drive) return context.json({ error: "choir_not_found" }, 404);
   const rows = await context.env.DB.prepare(
-    `SELECT settings.slot, settings.default_color,
+    `SELECT settings.slot, settings.name, settings.sort_order, settings.active, settings.default_color,
             COUNT(granted_members.id) AS granted_member_count
      FROM choir_shared_layer_settings AS settings
      LEFT JOIN shared_layer_edit_grants AS grants
@@ -148,48 +139,64 @@ annotationRoutes.get("/choirs/:choirId/shared-layers", async (context) => {
       AND granted_members.status = 'active'
       AND granted_members.role = 'member'
      WHERE settings.choir_id = ?
-     GROUP BY settings.slot, settings.default_color`,
+     GROUP BY settings.slot ORDER BY settings.sort_order, settings.slot`,
   ).bind(choirId).all<{
-    slot: "E" | "S" | "A" | "T" | "B";
+    slot: string;
+    name: string;
     default_color: string;
     granted_member_count: number;
+    sort_order: number;
+    active: number;
   }>();
-  const bySlot = new Map(rows.results.map((row) => [row.slot, row]));
+  return context.json({ drive, layers: rows.results.map(row => ({
+    slot: row.slot, name: row.name, defaultColor: row.default_color,
+    sortOrder: row.sort_order, active: row.active === 1,
+    grantedMemberCount: Number(row.granted_member_count),
+  })) });
+});
 
-  return context.json({
-    drive,
-    layers: defaultSharedLayers.map((layer) => ({
-      slot: layer.slot,
-      name: layer.name,
-      defaultColor: bySlot.get(layer.slot)?.default_color ?? layer.defaultColor,
-      grantedMemberCount: Number(bySlot.get(layer.slot)?.granted_member_count ?? 0),
-    })),
-  });
+annotationRoutes.post("/choirs/:choirId/shared-layers", async context => {
+  const choirId = context.req.param("choirId");
+  const member = await requireChoirAdmin(createDatabase(context.env.DB), await resolveContextPrincipal(context), choirId);
+  const parsed = sharedLayerCreateSchema.safeParse(await context.req.json().catch(() => null));
+  if (!parsed.success) return context.json({ error: "invalid_layer" }, 400);
+  const slot = crypto.randomUUID();
+  const results = await context.env.DB.batch([
+    context.env.DB.prepare(`INSERT INTO choir_shared_layer_settings (choir_id, slot, name, sort_order, default_color, updated_by_membership_id)
+      SELECT ?, ?, ?, COALESCE((SELECT MAX(sort_order) FROM choir_shared_layer_settings WHERE choir_id = ?), -1) + 1, ?, ?
+      WHERE EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND role = 'admin' AND lifecycle_revision = ?)` )
+      .bind(choirId, slot, parsed.data.name, choirId, parsed.data.defaultColor.toLowerCase(), member.id, member.id, member.lifecycleRevision),
+    context.env.DB.prepare(`INSERT INTO annotation_layers
+      (id, choir_id, score_id, kind, default_slot, name, sort_order, default_color, created_at, updated_at)
+      SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-8' || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),
+        scores.choir_id, scores.id, 'shared', settings.slot, settings.name, settings.sort_order, settings.default_color, ?, ?
+      FROM scores JOIN choir_shared_layer_settings settings ON settings.choir_id = scores.choir_id
+      WHERE scores.choir_id = ? AND settings.slot = ?`).bind(Date.now(), Date.now(), choirId, slot),
+  ]);
+  if (!results[0].meta.changes) return context.json({ error: "membership_changed" }, 409);
+  return context.json({ slot }, 201);
 });
 
 annotationRoutes.put("/choirs/:choirId/shared-layers/:slot/settings", async (context) => {
   const choirId = context.req.param("choirId");
-  const slot = defaultSharedLayerSlotSchema.safeParse(context.req.param("slot"));
-  const principal = await resolveContextPrincipal(context);
-  const membership = await requireChoirAdmin(createDatabase(context.env.DB), principal, choirId);
+  const slot = sharedLayerSlotSchema.safeParse(context.req.param("slot"));
+  const membership = await requireChoirAdmin(createDatabase(context.env.DB), await resolveContextPrincipal(context), choirId);
   const parsed = sharedLayerSettingUpdateSchema.safeParse(await context.req.json().catch(() => null));
   if (!slot.success || !parsed.success) return context.json({ error: "invalid_layer_setting" }, 400);
-  const defaultColor = parsed.data.defaultColor.toLowerCase();
-  await context.env.DB.prepare(
-    `INSERT INTO choir_shared_layer_settings
-       (choir_id, slot, default_color, updated_by_membership_id, updated_at)
-     VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(choir_id, slot) DO UPDATE SET
-       default_color = excluded.default_color,
-       updated_by_membership_id = excluded.updated_by_membership_id,
-       updated_at = excluded.updated_at`,
-  ).bind(choirId, slot.data, defaultColor, membership.id, Date.now()).run();
-  return context.json({ setting: { slot: slot.data, defaultColor } });
+  const data = parsed.data;
+  const result = await context.env.DB.prepare(`UPDATE choir_shared_layer_settings SET
+    name = COALESCE(?, name), sort_order = COALESCE(?, sort_order), active = COALESCE(?, active),
+    default_color = COALESCE(?, default_color), updated_by_membership_id = ?, updated_at = ?
+    WHERE choir_id = ? AND slot = ? AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND role = 'admin' AND lifecycle_revision = ?)`).bind(data.name ?? null, data.sortOrder ?? null,
+      data.active === undefined ? null : Number(data.active), data.defaultColor?.toLowerCase() ?? null,
+      membership.id, Date.now(), choirId, slot.data, membership.id, membership.lifecycleRevision).run();
+  if (!result.meta.changes) return context.json({ error: "layer_not_found" }, 404);
+  return context.json({ setting: { slot: slot.data, ...data } });
 });
 
 annotationRoutes.put("/choirs/:choirId/shared-layers/:slot/preference", async (context) => {
   const choirId = context.req.param("choirId");
-  const slot = defaultSharedLayerSlotSchema.safeParse(context.req.param("slot"));
+  const slot = sharedLayerSlotSchema.safeParse(context.req.param("slot"));
   const principal = await resolveContextPrincipal(context);
   await requireChoirRead(createDatabase(context.env.DB), principal, choirId);
   if (principal?.kind !== "user") return context.json({ error: "guest_preferences_are_local" }, 403);
@@ -197,6 +204,7 @@ annotationRoutes.put("/choirs/:choirId/shared-layers/:slot/preference", async (c
   if (!slot.success || !parsed.success || Object.keys(parsed.data).length === 0) {
     return context.json({ error: "invalid_preference" }, 400);
   }
+  if (!await hasSharedLayer(context, choirId, slot.data)) return context.json({ error: "layer_not_found" }, 404);
   const existing = await context.env.DB.prepare(
     "SELECT subscribed, color_override FROM user_drive_layer_preferences WHERE user_id = ? AND choir_id = ? AND slot = ?",
   ).bind(principal.userId, choirId, slot.data).first<{ subscribed: number; color_override: string | null }>();
@@ -219,12 +227,13 @@ annotationRoutes.put("/choirs/:choirId/shared-layers/:slot/preference", async (c
 annotationRoutes.put("/choirs/:choirId/scores/:scoreId/shared-layers/:slot/preference", async (context) => {
   const access = await resolveScoreAccess(context);
   if (access instanceof Response) return access;
-  const slot = defaultSharedLayerSlotSchema.safeParse(context.req.param("slot"));
+  const slot = sharedLayerSlotSchema.safeParse(context.req.param("slot"));
   if (access.principal.kind !== "user") return context.json({ error: "guest_preferences_are_local" }, 403);
   const parsed = scoreLayerPreferenceUpdateSchema.safeParse(await context.req.json().catch(() => null));
   if (!slot.success || !parsed.success || Object.keys(parsed.data).length === 0) {
     return context.json({ error: "invalid_preference" }, 400);
   }
+  if (!await hasSharedLayer(context, access.choirId, slot.data)) return context.json({ error: "layer_not_found" }, 404);
   const existing = await context.env.DB.prepare(
     "SELECT subscribed_override FROM user_score_layer_preferences WHERE user_id = ? AND score_id = ? AND slot = ?",
   ).bind(access.principal.userId, access.scoreId, slot.data).first<{
@@ -247,10 +256,11 @@ annotationRoutes.put("/choirs/:choirId/scores/:scoreId/shared-layers/:slot/prefe
 
 annotationRoutes.get("/choirs/:choirId/shared-layers/:slot/grants", async (context) => {
   const choirId = context.req.param("choirId");
-  const slot = defaultSharedLayerSlotSchema.safeParse(context.req.param("slot"));
+  const slot = sharedLayerSlotSchema.safeParse(context.req.param("slot"));
   const principal = await resolveContextPrincipal(context);
   await requireChoirAdmin(createDatabase(context.env.DB), principal, choirId);
   if (!slot.success) return context.json({ error: "invalid_slot" }, 400);
+  if (!await hasSharedLayer(context, choirId, slot.data)) return context.json({ error: "layer_not_found" }, 404);
   const members = await context.env.DB.prepare(
     `SELECT memberships.id, memberships.display_name, memberships.role,
             CASE WHEN grants.id IS NULL THEN 0 ELSE 1 END AS granted
@@ -270,12 +280,13 @@ annotationRoutes.get("/choirs/:choirId/shared-layers/:slot/grants", async (conte
 
 annotationRoutes.put("/choirs/:choirId/shared-layers/:slot/grants/:membershipId", async (context) => {
   const choirId = context.req.param("choirId");
-  const slot = defaultSharedLayerSlotSchema.safeParse(context.req.param("slot"));
+  const slot = sharedLayerSlotSchema.safeParse(context.req.param("slot"));
   const membershipId = context.req.param("membershipId");
   const principal = await resolveContextPrincipal(context);
   await requireChoirAdmin(createDatabase(context.env.DB), principal, choirId);
   const body = (await context.req.json().catch(() => null)) as { granted?: unknown } | null;
   if (!slot.success || typeof body?.granted !== "boolean") return context.json({ error: "invalid_grant" }, 400);
+  if (!await hasSharedLayer(context, choirId, slot.data)) return context.json({ error: "layer_not_found" }, 404);
   const actorId = principal?.kind === "user" ? principal.userId : "";
   const target = await context.env.DB.prepare(
     `SELECT target.role, target.lifecycle_revision AS target_revision, actor.lifecycle_revision AS actor_revision
@@ -299,6 +310,46 @@ annotationRoutes.put("/choirs/:choirId/shared-layers/:slot/grants/:membershipId"
   const results = await context.env.DB.batch<{ valid: number }>([mutation, context.env.DB.prepare(`SELECT ${guard} AS valid`).bind(...guardBindings)]);
   if (!results[1]?.results[0]?.valid) return context.json({ error: "membership_changed" }, 409);
   return context.json({ grant: { membershipId, granted: body.granted } });
+});
+
+annotationRoutes.put("/choirs/:choirId/scores/:scoreId/personal-layer/sharing", async context => {
+  const access = await resolveScoreAccess(context);
+  if (access instanceof Response) return access;
+  if (access.principal.kind !== "user" || !access.membership) return context.json({ error: "membership_required" }, 403);
+  const body = await context.req.json<{ sharing?: unknown }>().catch(() => null);
+  if (typeof body?.sharing !== "boolean") return context.json({ error: "invalid_sharing" }, 400);
+  const result = await context.env.DB.prepare(`UPDATE annotation_layers SET sharing = ?, updated_at = ?
+    WHERE choir_id = ? AND score_id = ? AND kind = 'personal' AND owner_user_id = ?
+      AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND lifecycle_revision = ?)
+      AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = owner_user_id)`)
+    .bind(Number(body.sharing), Date.now(), access.choirId, access.scoreId, access.principal.userId, access.membership.id, access.membership.lifecycleRevision).run();
+  if (!result.meta.changes) return context.json({ error: "personal_layer_unavailable" }, 404);
+  return context.json({ sharing: body.sharing });
+});
+
+annotationRoutes.put("/choirs/:choirId/scores/:scoreId/personal-layers/:layerId/subscription", async context => {
+  const access = await resolveScoreAccess(context);
+  if (access instanceof Response) return access;
+  if (access.principal.kind !== "user" || !access.membership) return context.json({ error: "membership_required" }, 403);
+  const body = await context.req.json<{ subscribed?: unknown }>().catch(() => null);
+  if (typeof body?.subscribed !== "boolean") return context.json({ error: "invalid_subscription" }, 400);
+  const layerId = context.req.param("layerId");
+  if (!body.subscribed) {
+    await context.env.DB.prepare("DELETE FROM personal_layer_subscriptions WHERE user_id = ? AND layer_id = ?")
+      .bind(access.principal.userId, layerId).run();
+  } else {
+    const result = await context.env.DB.prepare(`INSERT INTO personal_layer_subscriptions(user_id, layer_id)
+      SELECT ?, layers.id FROM annotation_layers layers JOIN memberships owner
+        ON owner.user_id = layers.owner_user_id AND owner.choir_id = layers.choir_id AND owner.status = 'active'
+      WHERE layers.id = ? AND layers.choir_id = ? AND layers.score_id = ? AND layers.kind = 'personal'
+        AND layers.sharing = 1 AND layers.owner_user_id <> ?
+        AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = layers.owner_user_id)
+        AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND lifecycle_revision = ?)
+      ON CONFLICT(user_id, layer_id) DO UPDATE SET layer_id = excluded.layer_id`)
+      .bind(access.principal.userId, layerId, access.choirId, access.scoreId, access.principal.userId, access.membership.id, access.membership.lifecycleRevision).run();
+    if (!result.meta.changes) return context.json({ error: "personal_layer_unavailable" }, 404);
+  }
+  return context.json({ subscribed: body.subscribed });
 });
 
 annotationRoutes.post("/choirs/:choirId/scores/:scoreId/annotations/push", async (context) => {
@@ -356,7 +407,10 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/annotations", async (cont
       AND grants.choir_id = layers.choir_id
      WHERE operations.score_id = ? AND operations.choir_id = ?
        AND operations.status = 'accepted' AND operations.sequence > ?
-       AND (layers.kind = 'shared' OR layers.owner_user_id = ?)
+       AND ((layers.kind = 'shared' AND EXISTS (SELECT 1 FROM choir_shared_layer_settings WHERE choir_id = layers.choir_id AND slot = layers.default_slot AND active = 1))
+         OR layers.owner_user_id = ? OR (layers.kind = 'personal' AND layers.sharing = 1 AND EXISTS (SELECT 1 FROM memberships reader WHERE reader.id = ? AND reader.status = 'active')
+           AND EXISTS (SELECT 1 FROM memberships WHERE choir_id = layers.choir_id AND user_id = layers.owner_user_id AND status = 'active')
+           AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = layers.owner_user_id)))
      ORDER BY operations.sequence ASC
      LIMIT 500`,
   )
@@ -370,6 +424,7 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/annotations", async (cont
       access.choirId,
       cursor,
       userId,
+      access.membership?.id ?? null,
     )
     .all<PullRow>();
   const latestById = new Map<string, AnnotationObjectRecord>();
@@ -378,7 +433,7 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/annotations", async (cont
     nextCursor = Math.max(nextCursor, row.sequence);
     latestById.set(row.id, serializeObject(row));
   }
-  return context.json({ cursor: nextCursor, objects: [...latestById.values()] });
+  return context.json({ hasMore: rows.results.length === 500, cursor: nextCursor, objects: [...latestById.values()] });
 });
 
 async function resolveScoreAccess(
@@ -423,10 +478,11 @@ function serializeLayer(row: LayerRow) {
     return {
       id: row.id,
       kind: row.kind,
-      defaultSlot: null,
-      name: row.name,
+      sharedSlot: null,
+      name: row.can_edit === 1 ? row.name : `${row.owner_name}的笔记`,
       sortOrder: row.sort_order,
-      subscribed: true,
+      sharing: row.sharing === 1,
+      subscribed: row.can_edit === 1 || row.personal_subscribed === 1,
       subscriptionSource: "personal" as const,
       displayColor: row.product_default_color,
       colorSource: "personal" as const,
@@ -451,7 +507,7 @@ function serializeLayer(row: LayerRow) {
   return {
     id: row.id,
     kind: row.kind,
-    defaultSlot: row.default_slot,
+    sharedSlot: row.default_slot,
     name: row.name,
     sortOrder: row.sort_order,
     ...resolved,
@@ -483,13 +539,16 @@ interface ResolvedScoreAccess {
   choirId: string;
   scoreId: string;
   principal: Principal;
-  membership: { id: string; role: "admin" | "member"; displayName: string } | null;
+  membership: { id: string; role: "admin" | "member"; displayName: string; lifecycleRevision: number } | null;
 }
 
 interface LayerRow {
   id: string;
   kind: "shared" | "personal";
-  default_slot: "E" | "S" | "A" | "T" | "B" | null;
+  default_slot: string | null;
+  sharing: number;
+  owner_name: string | null;
+  personal_subscribed: number;
   name: string;
   sort_order: number;
   product_default_color: string;
@@ -513,4 +572,9 @@ interface ObjectRow {
 
 interface PullRow extends ObjectRow {
   sequence: number;
+}
+
+async function hasSharedLayer(context: Context<AppEnvironment>, choirId: string, slot: string) {
+  return context.env.DB.prepare("SELECT 1 FROM choir_shared_layer_settings WHERE choir_id = ? AND slot = ?")
+    .bind(choirId, slot).first();
 }

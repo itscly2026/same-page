@@ -68,9 +68,11 @@ async function verifyRecord(record: OfflineScoreRecord) {
 }
 
 export function hasCompleteOfflineLayers(layers: AnnotationLayerSummary[], ownerKey: string) {
-  const sharedSlots = layers.filter((layer) => layer.kind === "shared").map((layer) => layer.defaultSlot).sort().join(",");
-  const personalCount = layers.filter((layer) => layer.kind === "personal").length;
-  return sharedSlots === "A,B,E,S,T" && personalCount === (ownerKey.startsWith("user:") ? 1 : 0);
+  const ownPersonal = layers.filter(layer => layer.kind === "personal" && (layer.canEdit || !layer.sharing));
+  const shared = layers.filter(layer => layer.kind === "shared");
+  return new Set(shared.map(layer => layer.sharedSlot)).size === shared.length
+    && shared.every(layer => !!layer.sharedSlot)
+    && ownPersonal.length === (ownerKey.startsWith("user:") ? 1 : 0);
 }
 
 type OfflineInspection = { record: OfflineScoreRecord | null; invalid: boolean };

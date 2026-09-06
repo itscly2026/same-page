@@ -1,5 +1,4 @@
 import type { Env } from "../env";
-import { defaultSharedLayers } from "../../src/shared/annotations";
 
 export const PDF_CANDIDATE_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
@@ -81,25 +80,12 @@ export async function createScoreVersion(options: {
         options.membershipId,
         now,
       ),
-      ...defaultSharedLayers.map((layer) =>
-        options.env.DB.prepare(
-          `INSERT INTO annotation_layers
-            (id, choir_id, score_id, kind, owner_user_id, default_slot, name,
-             sort_order, default_color, created_by_membership_id, created_at, updated_at)
-           VALUES (?, ?, ?, 'shared', NULL, ?, ?, ?, ?, ?, ?, ?)`,
-        ).bind(
-          crypto.randomUUID(),
-          options.choirId,
-          scoreId,
-          layer.slot,
-          layer.name,
-          layer.sortOrder,
-          layer.defaultColor,
-          options.membershipId,
-          now,
-          now,
-        ),
-      ),
+      options.env.DB.prepare(`INSERT INTO annotation_layers
+        (id, choir_id, score_id, kind, owner_user_id, default_slot, name, sort_order, default_color, created_by_membership_id, created_at, updated_at)
+        SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-8' || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),
+          choir_id, ?, 'shared', NULL, slot, name, sort_order, default_color, ?, ?, ?
+        FROM choir_shared_layer_settings WHERE choir_id = ?`)
+        .bind(scoreId, options.membershipId, now, now, options.choirId),
     ]);
   } catch (error) {
     throw classifyReservationError(error);

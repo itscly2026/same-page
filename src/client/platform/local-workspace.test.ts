@@ -247,7 +247,7 @@ function legacyLayer(scopeKey: string, id: string, kind: "shared" | "personal") 
     scopeKey,
     id,
     kind,
-    defaultSlot: null,
+    sharedSlot: null,
     name: id,
     sortOrder: kind === "shared" ? 0 : 10_000,
     subscribed: false,

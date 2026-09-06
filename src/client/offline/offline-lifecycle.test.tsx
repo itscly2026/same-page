@@ -18,7 +18,7 @@ async function recordFor(scoreId = "score"): Promise<OfflineScoreRecord> {
   const blob = new Blob([new Uint8Array(1024 * 1024)]);
   return { ...workspace, key: `${workspace.scopeKey}:v1`, versionId: "v1", fileName: "sample.pdf", sha256: await sha256Hex(await blob.arrayBuffer()), pageCount: 1, blob, active: 1, verifiedAt: 1,
     annotationSnapshot: { cursor: 0, verifiedAt: 1, annotations: [], layers: (["E", "S", "A", "T", "B"] as const).map((slot, index) => ({
-      ...workspace, key: `${workspace.scopeKey}:${slot}`, id: `00000000-0000-4000-8000-00000000000${index}`, kind: "shared", defaultSlot: slot, name: slot, sortOrder: index, subscribed: true, subscriptionSource: "product", displayColor: "#a12652", colorSource: "product", adminDefaultColor: "#a12652", driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: false,
+      ...workspace, key: `${workspace.scopeKey}:${slot}`, id: `00000000-0000-4000-8000-00000000000${index}`, kind: "shared", sharedSlot: slot, name: slot, sortOrder: index, subscribed: true, subscriptionSource: "product", displayColor: "#a12652", colorSource: "product", adminDefaultColor: "#a12652", driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: false,
     })) } };
 }
 

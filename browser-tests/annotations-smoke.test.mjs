@@ -99,7 +99,7 @@ test("annotation commands retain offline and in-flight edits with real Worker/D1
   assert.equal((await adminContext.request.put(grantPath, { headers: { origin: fixture.origin }, data: { granted: false } })).status(), 200);
   await page.evaluate(async payload => {
     const { state, sync, workspace, layers } = window.annotationTest;
-    await state.saveAnnotationDraft(workspace, { id: crypto.randomUUID(), layerId: layers.find(l => l.defaultSlot === "E").id, payload });
+    await state.saveAnnotationDraft(workspace, { id: crypto.randomUUID(), layerId: layers.find(l => l.sharedSlot === "E").id, payload });
     await state.queueScoreDrafts(workspace); await sync.syncAnnotations(workspace, { pull: true });
   }, text("blocked again"));
   await adminContext.close();

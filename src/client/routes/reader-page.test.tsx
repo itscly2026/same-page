@@ -69,20 +69,20 @@ const scoreSummary = {
 function completeReaderLayers(overrides: AnnotationLayerSummary[] = []): AnnotationLayerSummary[] {
   const shared = (["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
     id: `00000000-0000-4000-8000-00000000000${index}`,
-    kind: "shared", defaultSlot: slot,
+    kind: "shared", sharedSlot: slot,
     name: ({ E: "Ensemble", S: "Soprano", A: "Alto", T: "Tenor", B: "Bass" })[slot],
     sortOrder: index, subscribed: true, subscriptionSource: "product",
     displayColor: "#a12652", colorSource: "product", adminDefaultColor: "#a12652",
     driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: false,
   }));
   const personal: AnnotationLayerSummary = {
-    id: "00000000-0000-4000-8000-000000000006", kind: "personal", defaultSlot: null,
+    id: "00000000-0000-4000-8000-000000000006", kind: "personal", sharedSlot: null,
     name: "Personal", sortOrder: 10000, subscribed: true, subscriptionSource: "personal",
     displayColor: "#6750a4", colorSource: "product", adminDefaultColor: "#6750a4",
     driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: false,
   };
   return [...shared, personal].map((layer) => overrides.find((override) =>
-    override.kind === layer.kind && override.defaultSlot === layer.defaultSlot,
+    override.kind === layer.kind && override.sharedSlot === layer.sharedSlot,
   ) ?? layer);
 }
 
@@ -1611,7 +1611,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
             {
               id: "11111111-1111-4111-8111-111111111111",
               kind: "personal",
-              defaultSlot: null,
+              sharedSlot: null,
               name: "Personal",
               sortOrder: 10_000,
               subscribed: true,
@@ -1723,7 +1723,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
             ...(["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
               id: `00000000-0000-4000-8000-00000000000${index}`,
               kind: "shared" as const,
-              defaultSlot: slot,
+              sharedSlot: slot,
               name: ({ E: "Ensemble", S: "Soprano", A: "Alto", T: "Tenor", B: "Bass" })[slot],
               sortOrder: index,
               subscribed: slot === "E" || slot === "B",
@@ -1739,7 +1739,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
             {
               id: "11111111-1111-4111-8111-111111111111",
               kind: "personal",
-              defaultSlot: null,
+              sharedSlot: null,
               name: "Personal",
               sortOrder: 10000,
               subscribed: true,
@@ -1811,7 +1811,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
               {
                 id: "11111111-1111-4111-8111-111111111111",
                 kind: "shared",
-                defaultSlot: "E",
+                sharedSlot: "E",
                 name: "Ensemble",
                 sortOrder: 0,
                 subscribed: true,
@@ -2086,7 +2086,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
               ...(["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
                 id: `00000000-0000-4000-8000-00000000000${index}`,
                 kind: "shared" as const,
-                defaultSlot: slot,
+                sharedSlot: slot,
                 name: ({ E: "Ensemble", S: "Soprano", A: "Alto", T: "Tenor", B: "Bass" })[slot],
                 sortOrder: index,
                 subscribed: slot === "B",
@@ -2102,7 +2102,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
               {
                 id: "11111111-1111-4111-8111-111111111111",
                 kind: "personal",
-                defaultSlot: null,
+                sharedSlot: null,
                 name: "Personal",
                 sortOrder: 10000,
                 subscribed: true,
@@ -2334,14 +2334,14 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
             layers: completeReaderLayers([
               ...(["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
                 id: `00000000-0000-4000-8000-00000000000${index}`,
-                kind: "shared", defaultSlot: slot,
+                kind: "shared", sharedSlot: slot,
                 name: ({ E: "Ensemble", S: "Soprano", A: "Alto", T: "Tenor", B: "Bass" })[slot],
                 sortOrder: index, subscribed: true, subscriptionSource: "product",
                 displayColor: "#a12652", colorSource: "product", adminDefaultColor: "#a12652",
                 driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: false,
               })),
               {
-                id: "11111111-1111-4111-8111-111111111111", kind: "personal", defaultSlot: null,
+                id: "11111111-1111-4111-8111-111111111111", kind: "personal", sharedSlot: null,
                 name: "Personal", sortOrder: 10000, subscribed: true, subscriptionSource: "personal",
                 displayColor: "#6750a4", colorSource: "product", adminDefaultColor: "#6750a4",
                 driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true,
@@ -2409,7 +2409,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
             ...localWorkspace,
             id: "11111111-1111-4111-8111-111111111111",
             kind: "personal",
-            defaultSlot: null,
+            sharedSlot: null,
             name: "我的批注",
             sortOrder: 10000,
             subscribed: true,
@@ -2501,7 +2501,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
             ...localWorkspace,
             id: "11111111-1111-4111-8111-111111111111",
             kind: "personal",
-            defaultSlot: null,
+            sharedSlot: null,
             name: "我的批注",
             sortOrder: 10_000,
             subscribed: true,

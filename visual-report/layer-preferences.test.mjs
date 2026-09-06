@@ -38,7 +38,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
       if (pathname.endsWith("/layers")) {
         const payload = JSON.parse(response.body);
         // Member fixture has a drive-wide E edit grant and no grants on S/A/T/B.
-        payload.layers = payload.layers.map(layer => layer.defaultSlot === "E" ? { ...layer, canEdit: true } : layer);
+        payload.layers = payload.layers.map(layer => layer.sharedSlot === "E" ? { ...layer, canEdit: true } : layer);
         response.body = JSON.stringify(payload);
       }
       await route.fulfill(response);

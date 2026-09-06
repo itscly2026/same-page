@@ -3275,3 +3275,14 @@ h1 {
 .diagnostics-document { padding-top: 2rem; }
 .diagnostic-help { margin: 1rem 0; }
 .diagnostic-help summary { min-height: 44px; cursor: pointer; }
+
+.layer-definition-form { display: flex; flex-wrap: wrap; gap: 12px; padding: 16px; align-items: end; }
+.layer-definition-form label { display: grid; gap: 6px; min-width: 0; }
+.layer-definition-form input { max-width: 100%; min-height: 44px; }
+.layer-definition-form button { min-height: 44px; }
+.reader-sharing-control { padding: 12px; font-size: .875rem; }
+.reader-sharing-control label { display: flex; gap: 10px; align-items: center; min-height: 44px; }
+
+.settings-layer-row--management > .layer-definition-form { grid-column: 1 / -1; order: 2; padding: 8px 0; }
+.layer-definition-form input[type="number"] { width: 6rem; }
+.layer-definition-form input:not([type="number"]) { width: min(100%, 16rem); }
