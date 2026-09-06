@@ -33,7 +33,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
       conversion = await (await context.request.get(base)).json();
       return conversion.state === "ready" || conversion.state === "failed";
     }, { timeout: 90_000 }).toBe(true);
-    const failures = fixture.logs.flatMap(log => [...log.matchAll(/\{"event":"score_image_conversion_failed","stage":"[a-z-]+","reason":"[a-z-]+"\}/g)].map(match => JSON.parse(match[0])));
+    const failures = [...fixture.logs.join("").matchAll(/\{"event":"score_image_conversion_failed","stage":"[a-z-]+","reason":"[a-z-]+"\}/g)].map(match => JSON.parse(match[0]));
     assert.equal(conversion.state, "ready", JSON.stringify({ failure: conversion.failure, phases: failures }));
     const manifest = conversion.manifest;
     await expect(page.locator(".reader-display-recovery")).toHaveCount(0);
