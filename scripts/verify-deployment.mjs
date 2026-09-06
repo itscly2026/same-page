@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import {
+  isReleaseScriptPath,
   shellJavaScriptAssets,
 } from "./deployment-identity.mjs";
 
@@ -23,7 +24,7 @@ export async function verifyDeployment({
   const scriptHashes = Object.entries(assetManifest.scripts ?? {});
   assert.ok(scriptHashes.length > 0, "verified script manifest is empty");
   for (const [scriptPath, hash] of scriptHashes) {
-    assert.match(scriptPath, /^\/assets\/[^/]+\.(?:m?js)$/);
+    assert.ok(isReleaseScriptPath(scriptPath), `unrecognized release script path: ${scriptPath}`);
     assert.match(hash, /^[a-f0-9]{64}$/);
   }
   assert.ok(Number.isInteger(attempts) && attempts > 0 && attempts <= 12);

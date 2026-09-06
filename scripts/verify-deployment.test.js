@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { expect, it } from "vitest";
 import { verifyDeployment } from "./verify-deployment.mjs";
+import { pdfJsDecoderFiles, pdfJsWasmDirectory } from "../src/shared/pdfjs-assets.ts";
 
 function deployment({ worker = "new-sha", build = "new-sha", shell = "new-sha", script = "new-sha", preload = false } = {}) {
   return async (url) => {
@@ -59,4 +60,35 @@ it("rejects an old preload even when the entry contains the expected build ID", 
     if (new URL(url).pathname === "/assets/shared.js") return new Response("old-sha", { headers: { "cache-control": "max-age=31536000,immutable" } });
     return live(url);
   }, { assetManifest: { ...manifest(true), scripts: { ...manifest(true).scripts, "/assets/app.js": manifest().scripts["/assets/app.js"] } } })).rejects.toThrow(/expected build/);
+});
+
+it("verifies the bytes and immutable caching of every runtime PDF decoder script", async () => {
+  const decoders = Object.fromEntries(pdfJsDecoderFiles.filter((name) => name.endsWith(".js"))
+    .map((name) => [`/${pdfJsWasmDirectory}${name}`, `decoder ${name}`]));
+  const assetManifest = manifest();
+  for (const [name, body] of Object.entries(decoders)) {
+    assetManifest.scripts[name] = createHash("sha256").update(body).digest("hex");
+  }
+  const live = deployment();
+  const responses = (brokenPath, stale = false) => async (url) => {
+    const pathname = new URL(url).pathname;
+    if (Object.hasOwn(decoders, pathname)) return new Response(
+      pathname === brokenPath && stale ? "old decoder" : decoders[pathname],
+      { headers: { "cache-control": pathname === brokenPath && !stale ? "no-cache" : "public,max-age=31536000,immutable" } },
+    );
+    return live(url);
+  };
+  await expect(verify(responses(), { assetManifest })).resolves.toBeUndefined();
+  for (const pathname of Object.keys(decoders)) {
+    await expect(verify(responses(pathname, true), { assetManifest })).rejects.toMatchObject({ cause: { message: expect.stringContaining("differs from verified release") } });
+    await expect(verify(responses(pathname), { assetManifest })).rejects.toMatchObject({ cause: { message: expect.stringContaining("immutable") } });
+  }
+});
+
+it("rejects script paths outside the built asset namespaces", async () => {
+  for (const pathname of ["https://other.invalid/app.js", "/api/app.js", "/pdfjs/current/wasm/openjpeg_nowasm_fallback.js", "/pdfjs/6.3.289/wasm/../../app.js"]) {
+    const assetManifest = manifest();
+    assetManifest.scripts[pathname] = "a".repeat(64);
+    await expect(verify(deployment(), { assetManifest })).rejects.toThrow();
+  }
 });

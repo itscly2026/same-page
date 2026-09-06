@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile, readdir, stat, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pdfJsDecoderFiles, pdfJsLicenseFiles, pdfJsWasmDirectory } from "../src/shared/pdfjs-assets.ts";
 
 async function files(root) {
   const entries = await readdir(root, { withFileTypes: true });
@@ -17,6 +18,12 @@ export async function verifyPrecache(root = "dist/client", designRoot = "design"
   assert.ok(entries.length > 0, "Generated precache manifest not found");
   for (const required of ["index.html", "favicon-32.png", "apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png"]) assert.ok(entries.includes(required), `Missing offline dependency: ${required}`);
   assert.ok(entries.some((file) => /pdf\.worker.*\.mjs$/.test(file)), "PDF worker not precached");
+  for (const name of pdfJsDecoderFiles) {
+    assert.ok(entries.includes(pdfJsWasmDirectory + name), `PDF decoder not precached: ${name}`);
+  }
+  for (const name of pdfJsLicenseFiles) {
+    assert.ok(published.includes(path.join(root, pdfJsWasmDirectory, name)), `PDF decoder license not published: ${name}`);
+  }
   for (const file of published.filter((file) => file.endsWith(".woff2"))) assert.ok(entries.includes(path.relative(root, file)), `Font not precached: ${file}`);
   const bytes = (await Promise.all(entries.map(async (file) => (await stat(path.join(root, file))).size))).reduce((a, b) => a + b, 0);
   const report = { entries: entries.length, bytes, baseline: { entries: 60, bytes: 5403008 }, deltaEntries: entries.length - 60, deltaBytes: bytes - 5403008 };

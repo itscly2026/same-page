@@ -1,6 +1,7 @@
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import type { PDFDocumentProxy, getDocument as GetDocument } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
+import { pdfJsWasmDirectory } from "../../shared/pdfjs-assets";
 
 export class PdfEngineUnavailableError extends Error {
   constructor() { super("pdf_engine_unavailable"); this.name = "PdfEngineUnavailableError"; }
@@ -50,15 +51,16 @@ export function loadPdfDocument(
       resolvedSource = versionedPdfUrl(source, actualVersionId);
     }
     if (destroyed) throw new DOMException("PDF load cancelled", "AbortError");
-    loadingTask = engine.getDocument(
-      typeof resolvedSource === "string"
+    loadingTask = engine.getDocument({
+      wasmUrl: new URL(`/${pdfJsWasmDirectory}`, window.location.href).href,
+      ...(typeof resolvedSource === "string"
         ? {
             url: resolvedSource,
             withCredentials: true,
             rangeChunkSize: 64 * 1024,
           }
-        : { data: new Uint8Array(resolvedSource) },
-    );
+        : { data: new Uint8Array(resolvedSource) }),
+    });
     const document = await loadingTask.promise;
     return { document, versionId: actualVersionId };
   })();
