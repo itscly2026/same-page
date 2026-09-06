@@ -1,0 +1,63 @@
+import { Menu as MenuIcon, X } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Button, Dialog, Form, Heading, Input, Menu, MenuItem, MenuTrigger, Modal, ModalOverlay, Popover, TextField } from "react-aria-components";
+import { Link } from "react-router-dom";
+import { choirMembershipsResponseSchema } from "../../shared/choirs";
+import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
+import { MembershipList } from "./membership-list";
+
+export function DriveHeader({ choirId, choirName, userId, search, onSearch, onRefresh, management }: {
+  choirId: string; choirName: string; userId?: string; search: string;
+  onSearch: (value: string) => void; onRefresh: () => void;
+  management?: (close: () => void) => ReactNode;
+}) {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  return <>
+    <header className="drive-header">
+      <Button className="icon-button" aria-label="打开云盘菜单" onPress={() => setDrawerOpen(true)}><MenuIcon aria-hidden="true" size={23} /></Button>
+      <Form className="library-search drive-search" role="search" onSubmit={event => { event.preventDefault(); onRefresh(); }}>
+        <TextField value={search} onChange={onSearch} aria-label="搜索乐谱"><Input type="search" placeholder="搜索乐谱" /></TextField>
+      </Form>
+      {userId ? <DriveAvatar key={`${userId}:${choirId}`} userId={userId} choirId={choirId} /> : <Link className="drive-avatar" aria-label="登录或注册" to="/login">访</Link>}
+    </header>
+    <ModalOverlay className="drive-drawer-overlay" isOpen={drawerOpen} onOpenChange={setDrawerOpen} isDismissable>
+      <Modal className="drive-drawer"><Dialog aria-label="云盘菜单">{({ close }) => <>
+        <div className="dialog-heading"><Heading slot="title">{choirName}</Heading><Button className="icon-button" aria-label="关闭" onPress={close}><X size={21} aria-hidden="true" /></Button></div>
+        <Button className="drive-drawer-switch" onPress={() => { close(); setPickerOpen(true); }}>切换云盘</Button>
+        <nav aria-label="云盘导航"><Link to={`/choirs/${choirId}`} onClick={close}>乐谱</Link>{userId && <Link to={`/choirs/${choirId}/preferences`} onClick={close}>阅读偏好</Link>}</nav>
+        {management?.(close)}
+      </>}</Dialog></Modal>
+    </ModalOverlay>
+    <ModalOverlay className="modal-overlay" isOpen={pickerOpen} onOpenChange={setPickerOpen} isDismissable>
+      <Modal className="app-modal"><Dialog className="app-dialog drive-picker-dialog">{({ close }) => <>
+        <div className="dialog-heading"><Heading slot="title">切换云盘</Heading><Button className="icon-button" aria-label="关闭" onPress={close}><X size={21} aria-hidden="true" /></Button></div>
+        {userId ? <MembershipList userId={userId} currentChoirId={choirId} onSelect={close} /> : <p><Link to="/login">登录后查看已加入的云盘</Link></p>}
+        <Link className="drive-picker-join" to="/?join=1" onClick={close}>{userId ? "加入新云盘" : "使用邀请码进入云盘"}</Link>
+      </>}</Dialog></Modal>
+    </ModalOverlay>
+  </>;
+}
+
+function DriveAvatar({ userId, choirId }: { userId: string; choirId: string }) {
+  const [displayName, setDisplayName] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await diagnosticFetch("/api/choirs", { signal: controller.signal });
+        if (!response.ok) return;
+        const { memberships } = await parseDiagnosticResponse(response, choirMembershipsResponseSchema);
+        if (!controller.signal.aborted) setDisplayName(memberships.find(entry => entry.choir.id === choirId)?.displayName.trim() ?? "");
+      } catch { /* The account menu remains usable when membership names are unavailable. */ }
+    })();
+    return () => controller.abort();
+  }, [userId, choirId]);
+  const initial = Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(displayName))[0]?.segment.toLocaleUpperCase() ?? "我";
+  return <MenuTrigger>
+    <Button className="drive-avatar" aria-label="用户菜单">{initial}</Button>
+    <Popover className="file-menu-popover account-menu-popover"><Menu aria-label="用户菜单">
+      <MenuItem href={`/choirs/${choirId}/preferences`}>阅读偏好</MenuItem><MenuItem href="/user">个人设置</MenuItem>
+    </Menu></Popover>
+  </MenuTrigger>;
+}

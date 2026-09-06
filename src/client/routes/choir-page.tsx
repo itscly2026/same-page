@@ -43,6 +43,8 @@ import { TrashDialog } from "../score-library/trash-dialog";
 import { UploadDialog } from "../score-library/upload-dialog";
 
 import { MembershipList } from "../score-library/membership-list";
+import { DriveHeader } from "../score-library/drive-header";
+import { UploadFab } from "../score-library/upload-fab";
 import type { LibrarySort } from "../score-library/library-view-state";
 import { OfflineScoreControl } from "../score-library/offline-score-control";
 
@@ -209,20 +211,9 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
 
   if (access.kind === "loading") {
     return (
-      <div className="app-page">
-        <AppHeader actions={headerActions} />
-        {access.choir ? (
-          <main className="page-shell file-library">
-            <header className="library-heading">
-              <div className="library-title">
-                <h1>{access.choir.name}</h1>
-                <p>正在加载乐谱…</p>
-              </div>
-            </header>
-          </main>
-        ) : (
-          <p className="route-loading">正在打开云盘…</p>
-        )}
+      <div className="app-page drive-page">
+        <DriveHeader choirId={choirId} choirName={access.choir?.name ?? "云盘"} userId={userId} search={search} onSearch={updateSearch} onRefresh={() => void refresh()} />
+        <main className="page-shell file-library">{access.choir && <h1 className="visually-hidden">{access.choir.name}</h1>}<p className="route-loading" role="status">正在加载乐谱…</p></main>
       </div>
     );
   }
@@ -231,63 +222,29 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
   const storageRatio = result.storage.usedBytes / result.storage.limitBytes;
 
   return (
-    <div className="app-page">
-      <AppHeader actions={headerActions} />
+    <div className="app-page drive-page">
+      <DriveHeader choirId={choirId} choirName={choir.name} userId={userId} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
+        management={result.permissions.canManage ? close => <section className="drive-drawer-management">
+          <h3>云盘管理</h3>
+          <Menu aria-label="管理员菜单" onAction={key => {
+            close();
+            if (key === "trash") setTrashOpen(true);
+            if (key === "invite") setInviteManagementOpen(true);
+          }}>
+            <MenuItem href={`/choirs/${choirId}/memberships`}>成员与权限</MenuItem>
+            <MenuItem href={`/choirs/${choirId}/shared-layers`}>共享层</MenuItem>
+            <MenuItem id="trash">回收站</MenuItem>
+            {choir.guestAdmissionMode === "invite" && <MenuItem id="invite">邀请码</MenuItem>}
+          </Menu>
+          <p className="drive-storage">云盘存储：{formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}</p>
+        </section> : undefined}
+      />
       <main className="page-shell file-library">
-        <header className="library-heading">
-          <div className="library-title">
-                <h1>{choir.name}</h1>
-            <p>{result.scores.length} 份乐谱</p>
-          </div>
-          {result.permissions.canManage ? (
-            <div className="library-actions">
-              <MenuTrigger>
-                <Button className="secondary-button">管理</Button>
-                <Popover className="file-menu-popover admin-menu-popover">
-                  <Menu
-                    aria-label="管理员菜单"
-                    onAction={(key) => {
-                      if (key === "trash") setTrashOpen(true);
-                      if (key === "invite") setInviteManagementOpen(true);
-                    }}
-                  >
-                    <MenuItem href={`/choirs/${choirId}/memberships`}>成员与权限</MenuItem>
-                    <MenuItem href={`/choirs/${choirId}/shared-layers`}>
-                      共享层
-                    </MenuItem>
-                    <MenuItem id="trash">回收站</MenuItem>
-                    {choir.guestAdmissionMode === "invite" ? (
-                      <MenuItem id="invite">邀请码</MenuItem>
-                    ) : null}
-                    <MenuItem id="storage" isDisabled>
-                      云盘存储：{formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}
-                    </MenuItem>
-                  </Menu>
-                </Popover>
-              </MenuTrigger>
-              <Button className="primary-button" onPress={() => setUploadOpen(true)}>
-                上传 PDF
-              </Button>
-            </div>
-          ) : null}
-        </header>
-
+        <h1 className="visually-hidden">{choir.name}</h1>
         <section className="library-workspace" aria-labelledby="library-content-title">
           <div className="library-toolbar">
-            <h2 id="library-content-title" className="visually-hidden">乐谱</h2>
             <div className="library-controls">
-              <Form
-                className="library-search"
-                role="search"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void refresh();
-                }}
-              >
-                <TextField value={search} onChange={updateSearch} aria-label="搜索乐谱">
-                  <Input type="search" placeholder="搜索乐谱" />
-                </TextField>
-              </Form>
+              <h2 id="library-content-title">乐谱 <span className="drive-score-count">{result.scores.length}</span></h2>
               <label className="library-sort-label">
                 排序
                 <span className="library-sort-control">
@@ -367,6 +324,8 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
           )}
         </section>
       </main>
+
+      {result.permissions.canManage && <UploadFab onPress={() => setUploadOpen(true)} />}
 
       {inviteManagementOpen && result.permissions.canManage ? (
         <InviteCodeDialog

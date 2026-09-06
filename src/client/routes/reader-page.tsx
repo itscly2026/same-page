@@ -100,7 +100,6 @@ function ReaderPageContent() {
     useState<LocalWorkspace | null>(null);
   const [workspaceAttempt, setWorkspaceAttempt] = useState(0);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
-  const cancelWorkspace = useRef(() => {});
   const workspaceIsActive = useLiveQuery(
     () => resolvedWorkspace
       ? isLocalWorkspaceActive(resolvedWorkspace)
@@ -150,7 +149,6 @@ function ReaderPageContent() {
       setWorkspaceError(message);
     };
     const timer = setTimeout(() => fail("打开本机工作区用时较长，可以重试或返回云盘。"), 45_000);
-    cancelWorkspace.current = () => fail("已取消打开工作区，本机草稿仍然保留。");
     if (session.isPending) return () => { active = false; clearTimeout(timer); };
     void resolveLocalWorkspace({
       authenticatedUserId: session.data?.user.id ?? null,
@@ -382,14 +380,20 @@ function ReaderPageContent() {
   };
   const diagnosticDialog = <DiagnosticReportDialog reader={diagnosticReader} />;
 
+  const loadingScreen = <main className="reader-loading" aria-label="正在加载乐谱">
+    <Link className="reader-loading__back icon-button" to={`/choirs/${choirId}`} aria-label="返回云盘"><ArrowLeft size={22} aria-hidden="true" /></Link>
+    <div className="reader-loading__paper" aria-hidden="true" />
+    <div className="reader-loading__label" role="status">{score && <strong>{score.fileName}</strong>}<span>正在打开乐谱…</span></div>
+  </main>;
+
   if (!workspace) {
+    if (!workspaceError) return loadingScreen;
     return <main className="page-shell compact-page">
-      <p role={workspaceError ? "alert" : "status"}>{workspaceError ?? "正在打开本机工作区…"}</p>
+      <h1>无法打开</h1>
+      <p role="alert">{workspaceError}</p>
       <Link className="primary-link" to={`/choirs/${choirId}`}>返回云盘</Link>
-      {workspaceError
-        ? <Button className="secondary-button" onPress={() => { setWorkspaceError(null); setWorkspaceAttempt(value => value + 1); }}>重试打开工作区</Button>
-        : <Button className="secondary-button" onPress={() => cancelWorkspace.current()}>取消打开工作区</Button>}
-      {diagnosticDialog}
+      <Button className="secondary-button" onPress={() => { setWorkspaceError(null); setWorkspaceAttempt(value => value + 1); }}>重试打开工作区</Button>
+      <details><summary>更多帮助</summary>{diagnosticDialog}</details>
     </main>;
   }
 
@@ -415,8 +419,7 @@ function ReaderPageContent() {
           返回云盘
         </Link>
         <Button className="secondary-button" onPress={reader.retry}>重试加载</Button>
-        {displayChoices}
-        {diagnosticDialog}
+        <details><summary>更多帮助</summary>{displayChoices}{diagnosticDialog}</details>
       </main>
     );
   }
@@ -427,19 +430,7 @@ function ReaderPageContent() {
     !document ||
     documentScopeKey !== workspace.scopeKey
   ) {
-    return (
-      <main className="reader-loading" aria-label="正在加载乐谱">
-        <div className="reader-loading__paper" aria-hidden="true" />
-        <div className="reader-loading__label" role="status">
-          <strong>{score?.fileName ?? "乐谱"}</strong>
-          <span>{reader.snapshot.mode === "images" ? "正在准备图片兼容模式…" : "正在加载乐谱…"}</span>
-          {displayChoices}
-          <Link className="primary-link" to={`/choirs/${choirId}`}>返回云盘</Link>
-          <Button className="secondary-button" onPress={reader.cancel}>取消加载</Button>
-          {diagnosticDialog}
-        </div>
-      </main>
-    );
+    return loadingScreen;
   }
 
   const hasNewOfflineVersion =
