@@ -59,7 +59,7 @@ test(`${engineName}: keeps the capsule at the right edge above its page hint in 
       };
     });
 
-    assert.deepEqual(result.labels, ["编辑", "图层", "更多"]);
+    assert.deepEqual(result.labels, ["编辑", "看哪些批注", "更多"]);
     assert.equal(result.states[0], "ready");
     assert.ok(result.sizes.every(({ width: buttonWidth, height }) => buttonWidth >= 44 && height >= 44));
     assert.ok(result.actionLeft >= 0 && result.actionRight <= width);

@@ -60,7 +60,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
       await page.getByRole("link", { name: "批注颜色", exact: true }).click();
       await page.getByRole("heading", { name: "批注颜色", exact: true }).waitFor();
       assert.equal(await page.getByRole("checkbox").count(), 0);
-      await layout(page, ".settings-layer-link");
+      await layout(page, ".settings-color-control input");
       await capture(page, `${engineName}-${width}-colors`);
       await page.getByRole("link", { name: "返回阅读偏好" }).click();
       await page.goto(`${origin}${drive}/scores/visual-score`);

@@ -40,7 +40,7 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
   await page.getByRole("button", {name:"编辑",exact:true}).click();
   await page.locator(".annotation-controls").waitFor();
   assertView(await readView(page), before);
-  await page.getByRole("button", {name:"编辑",exact:true}).click();
+  await page.getByRole("button", {name:"完成编辑",exact:true}).click();
   assertView(await readView(page), before);
  });
 }
@@ -73,7 +73,7 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
   assertView((await page.locator('.annotated-pdf-page:visible').evaluateAll(elements => elements.map(element => {
    const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
   })))[0],before);
-  await page.getByRole("button", {name:"编辑",exact:true}).click();
+  await page.getByRole("button", {name:"完成编辑",exact:true}).click();
   assertView(await read(), before);
  });
 }

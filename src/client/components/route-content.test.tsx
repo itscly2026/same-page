@@ -19,7 +19,7 @@ it("offers exit and retry when the route module rejects", async () => {
   const Failed = lazy(() => Promise.reject(new Error("chunk unavailable")));
   try {
     render(<MemoryRouter initialEntries={["/choirs/drive/preferences"]}><RouteContent><Failed /></RouteContent></MemoryRouter>);
-    expect(await screen.findByRole("alert")).toHaveTextContent("我的偏好加载失败");
+    expect(await screen.findByRole("alert")).toHaveTextContent("阅读偏好加载失败");
     expect(screen.getByRole("link", { name: "返回云盘" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重新加载页面" })).toBeInTheDocument();
   } finally { error.mockRestore(); }

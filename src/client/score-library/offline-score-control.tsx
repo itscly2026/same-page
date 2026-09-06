@@ -31,6 +31,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, disabled = fal
   const [attempt, setAttempt] = useState<{ identity: string; phase: "downloading" | "failed" | "ready"; message?: string } | null>(null);
   const running = useRef(false);
   const phase = attempt?.identity === identity ? attempt.phase : null;
+  const inspected = Boolean(workspace && offline?.scopeKey === workspace.scopeKey);
   const record = offline?.scopeKey === workspace?.scopeKey ? offline?.record ?? null : null;
   const invalid = offline?.scopeKey === workspace?.scopeKey && offline?.invalid;
   const label = offlineScoreLabel(record, score.currentVersion.id, invalid, workspace ? readDisplayPreference(workspace) : undefined);
@@ -61,7 +62,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, disabled = fal
   const modeMissing = workspace && record && (record.imageManifest ? "images" : "pdf") !== readDisplayPreference(workspace);
   const needsDownload = !record || invalid || stale || failed || modeMissing;
   const state = downloading ? "downloading" : failed || invalid ? "error" : stale ? "stale" : modeMissing ? "missing" : record ? "ready" : "missing";
-  const description = downloading ? "正在下载并校验…" : failed ? attempt?.message ?? offlineDownloadFailure(record, score.currentVersion.id, invalid, workspace ? readDisplayPreference(workspace) : undefined) : label;
+  const description = downloading ? "正在下载并校验…" : failed ? attempt?.message ?? (inspected ? offlineDownloadFailure(record, score.currentVersion.id, invalid, workspace ? readDisplayPreference(workspace) : undefined) : "离线下载未完成，尚未确认本机副本，请重试校验。") : label;
   const actionLabel = failed ? "重试下载" : stale ? "下载新版离线副本" : "下载离线副本";
   const Icon = state === "downloading" ? LoaderCircle : state === "error" ? CircleAlert : state === "stale" ? RefreshCw : state === "ready" ? HardDrive : Download;
 
