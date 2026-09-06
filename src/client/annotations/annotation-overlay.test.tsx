@@ -446,6 +446,7 @@ describe("AnnotationOverlay", () => {
     fireEvent.click(screen.getByRole("button", { name: "完成" }));
     await waitFor(() => expect(screen.getByLabelText("批注文本")).toBeDisabled());
     expect(screen.getByRole("slider", { name: "字号" })).toBeDisabled();
+    await waitFor(() => expect(write).toHaveBeenCalled());
     rejectWrite(new DOMException("full", "QuotaExceededError"));
     expect(await screen.findByText("本机保存失败")).toBeInTheDocument();
     expect(screen.getByLabelText("批注文本")).toHaveValue("尚未写入的草稿");
