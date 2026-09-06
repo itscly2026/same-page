@@ -18,7 +18,9 @@ test("diagnostic feedback survives lost receipts and preserves reader editing in
       activePage = page;
       await page.goto(`${fixture.origin}/diagnostics`);
       await expect(page.getByRole("button", { name: "发送诊断", exact: true })).toBeEnabled();
-      assert.equal(await page.locator("details").getAttribute("open"), null);
+      assert.equal(await page.locator(".diagnostic-report-form details").getAttribute("open"), null);
+      const sendBounds = await page.getByRole("button", { name: "发送诊断", exact: true }).boundingBox();
+      assert.ok(sendBounds.height >= 44 && sendBounds.y + sendBounds.height <= height, "send is touch-sized and reachable in the first viewport");
       await page.getByLabel("刚才遇到了什么问题？（选填）").fill("显示不正常，没有报错");
       await page.screenshot({ path: `artifacts/verification/diagnostic-${name}-form.png`, fullPage: true });
       let original, attempts = 0;
