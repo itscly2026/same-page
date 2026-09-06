@@ -2,10 +2,6 @@ import { ChevronDown, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   Button,
-  Dialog,
-  Heading,
-  Modal,
-  ModalOverlay,
   Form,
   Input,
   Label,
@@ -42,8 +38,7 @@ import { InviteCodeDialog } from "../score-library/invite-code-dialog";
 import { TrashDialog } from "../score-library/trash-dialog";
 import { UploadDialog } from "../score-library/upload-dialog";
 
-import { MembershipList } from "../score-library/membership-list";
-import { DriveHeader } from "../score-library/drive-header";
+import { DriveHeader, DrivePicker } from "../score-library/drive-header";
 import { UploadFab } from "../score-library/upload-fab";
 import type { LibrarySort } from "../score-library/library-view-state";
 import { OfflineScoreControl } from "../score-library/offline-score-control";
@@ -105,9 +100,7 @@ function ChoirLibrary({ choirId, session, cacheOwner }: { choirId: string; sessi
   const headerActions = (
     <>
       <Button className="header-action" onPress={() => setPickerOpen(true)}>切换云盘</Button>
-      <ModalOverlay className="modal-overlay" isOpen={pickerOpen} onOpenChange={setPickerOpen} isDismissable>
-        <Modal className="app-modal"><Dialog className="app-dialog drive-picker-dialog">{({ close }) => <><div className="dialog-heading"><Heading slot="title">切换云盘</Heading><Button className="icon-button" aria-label="关闭" onPress={close}>×</Button></div>{userId ? <MembershipList userId={userId} currentChoirId={choirId} onSelect={close} /> : <p><Link to="/login">登录后查看已加入的云盘</Link></p>}<Link className="drive-picker-join" to="/?join=1" onClick={close}>{userId ? "加入新云盘" : "使用邀请码进入云盘"}</Link></>}</Dialog></Modal>
-      </ModalOverlay>
+      <DrivePicker choirId={choirId} userId={userId} isOpen={pickerOpen} onOpenChange={setPickerOpen} />
       {session.data?.user ? (
         <MenuTrigger>
           <Button className="account-menu-button" aria-label="用户菜单">

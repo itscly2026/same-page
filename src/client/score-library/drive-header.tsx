@@ -29,14 +29,22 @@ export function DriveHeader({ choirId, choirName, userId, search, onSearch, onRe
         {management?.(close)}
       </>}</Dialog></Modal>
     </ModalOverlay>
-    <ModalOverlay className="modal-overlay" isOpen={pickerOpen} onOpenChange={setPickerOpen} isDismissable>
+    <DrivePicker choirId={choirId} userId={userId} isOpen={pickerOpen} onOpenChange={setPickerOpen} />
+  </>;
+}
+
+export function DrivePicker({ choirId, userId, isOpen, onOpenChange }: {
+  choirId: string; userId?: string; isOpen: boolean; onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <ModalOverlay className="modal-overlay" isOpen={isOpen} onOpenChange={onOpenChange} isDismissable>
       <Modal className="app-modal"><Dialog className="app-dialog drive-picker-dialog">{({ close }) => <>
         <div className="dialog-heading"><Heading slot="title">切换云盘</Heading><Button className="icon-button" aria-label="关闭" onPress={close}><X size={21} aria-hidden="true" /></Button></div>
         {userId ? <MembershipList userId={userId} currentChoirId={choirId} onSelect={close} /> : <p><Link to="/login">登录后查看已加入的云盘</Link></p>}
         <Link className="drive-picker-join" to="/?join=1" onClick={close}>{userId ? "加入新云盘" : "使用邀请码进入云盘"}</Link>
       </>}</Dialog></Modal>
     </ModalOverlay>
-  </>;
+  );
 }
 
 function DriveAvatar({ userId, choirId }: { userId: string; choirId: string }) {
