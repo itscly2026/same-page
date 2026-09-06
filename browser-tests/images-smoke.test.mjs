@@ -9,12 +9,12 @@ import { startNativeRenderer } from "./native-renderer.mjs";
 
 for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]]) {
   test(`${engineName}: native conversion, image reading and verified offline reopen`, { timeout: 180_000 }, async t => {
-    const native = await startNativeRenderer(); t.after(() => traceCleanup("native.stop", () => native.stop()));
-    const fixture = await startStorageFixture({ authenticated: true, rendererOrigin: native.origin }); t.after(() => traceCleanup("fixture.stop", () => fixture.stop()));
+    const native = await startNativeRenderer(); t.after(() => native.stop());
+    const fixture = await startStorageFixture({ authenticated: true, rendererOrigin: native.origin }); t.after(() => fixture.stop());
     const profile = await mkdtemp(path.join(tmpdir(), "same-page-images-"));
-    t.after(() => traceCleanup("profile.rm", () => rm(profile, { recursive: true, force: true })));
+    t.after(() => rm(profile, { recursive: true, force: true }));
     let context = await engine.launchPersistentContext(profile, { headless: true, serviceWorkers: "allow", viewport: { width: 1024, height: 768 } });
-    t.after(() => traceCleanup("context.close", () => context.close()));
+    t.after(() => context.close());
     const account = fixture.accounts[1];
     assert.equal((await context.request.post(`${fixture.origin}/api/auth/sign-in/email`, {
       headers: { origin: fixture.origin }, data: { email: account.email, password: account.password },
@@ -96,10 +96,4 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     }
     await writeFile(`artifacts/verification/137/${engineName}-images.json`, JSON.stringify({ engine: manifest.engine, pages: manifest.pages.length, sizes: manifest.pages.map(p => p.assets), backend: "local PDFium + Worker/D1/R2 + IndexedDB", cloudContainer: false }, null, 2));
   });
-}
-
-async function traceCleanup(step, run) {
-  console.log("[CI-DIAG] begin " + step);
-  try { await run(); console.log("[CI-DIAG] done " + step); }
-  catch (error) { console.log("[CI-DIAG] failed " + step + " " + JSON.stringify({ message: error.message, code: error.code, syscall: error.syscall })); throw error; }
 }
