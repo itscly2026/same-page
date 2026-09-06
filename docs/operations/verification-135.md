@@ -38,3 +38,5 @@
 - [浏览器测试](../../browser-tests/annotations-smoke.test.mjs) 使用真实密码登录和产品命令，不预置批注数据，不伪造 API 响应；只延迟真实响应以确定性触发竞态。另一独立浏览器上下文通过真实 pull 验证云端结果。截图输出 `artifacts/verification/annotations-135.png`。
 - Standards 审查发现快照/退出清理绕过状态边界，已迁入命令；Spec 审查发现状态探测及后台 Web Lock 可无限等待，已加入请求超时与非阻塞取锁，busy 后继续轮转。
 - 本次仅完成本地实现、提交和验证；没有生产部署或真实移动设备验收。
+
+后续 #165 将编辑会话与历史操作迁移至 `AnnotationEditor`，取代上文历史记录中的 `saveDraftWithHistory`、`undoAnnotationEdit` 和 `redoAnnotationEdit`。本地草稿事务与同步元数据规则保持不变，真实 Worker/D1 smoke 已迁移到新编辑 module 的 interface。

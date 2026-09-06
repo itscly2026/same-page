@@ -38,10 +38,8 @@ import {
 } from "../annotations/annotation-state";
 import { requestOutboxRecovery } from "../annotations/outbox-recovery";
 import { getAnnotationSyncActivity, subscribeAnnotationSync, syncAnnotations } from "../annotations/sync";
-import {
-  beginAnnotationEditSession,
-  endAnnotationEditSession,
-} from "../annotations/annotation-state";
+import { useAnnotationEditor } from "../annotations/use-annotation-editor";
+import type { AnnotationEditor } from "../annotations/annotation-editor";
 import { authClient } from "../auth/auth-client";
 import {
   ensureLoadingJourney,
@@ -112,10 +110,9 @@ function ReaderPageContent() {
   );
   const fullscreen = useReaderFullscreen();
   const [zoom, setZoom] = useState(1);
-  const [editing, setEditing] = useState(false);
+  const [editingEditor, setEditingEditor] = useState<AnnotationEditor | null>(null);
   const [annotationInteraction, setAnnotationInteraction] =
     useState<AnnotationOverlayInteraction>("idle");
-  const [persistence, setPersistence] = useState<"idle" | "saving" | "failed">("idle");
   const [tool, setTool] = useState<AnnotationTool>("text");
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const [syncOutcome, setSyncOutcome] = useState<ReaderSyncOutcome>("none");
@@ -186,6 +183,8 @@ function ReaderPageContent() {
     resolvedWorkspace.scoreId === scoreId
       ? resolvedWorkspace
       : null;
+  const { editor, persistence } = useAnnotationEditor(workspace);
+  const editing = editor !== null && editor === editingEditor;
   const [visibleDisplay, setVisibleDisplay] = useState<ScoreDocument | null>(null);
   const [failedDisplay, setFailedDisplay] = useState<ScoreDocument | null>(null);
   const reader = useReaderSession(workspace, session.data?.user.id ?? null);
@@ -194,9 +193,6 @@ function ReaderPageContent() {
   const offlineStatus = useOfflineScore(workspace);
   const offline = offlineStatus?.scopeKey === workspace?.scopeKey ? offlineStatus?.record ?? null : loadedOffline;
   const downloadOffline = reader.download;
-  useEffect(() => {
-    endAnnotationEditSession();
-  }, [workspace?.scopeKey]);
   useEffect(() => {
     if (document && workspace && documentScopeKey === workspace.scopeKey) {
       recordScoreOpened(driveCacheOwnerKey(workspace.ownerKey.startsWith("user:") ? workspace.ownerKey.slice(5) : null, choirId), choirId, scoreId);
@@ -281,15 +277,14 @@ function ReaderPageContent() {
       layers.find((layer) => layer.id === rememberedLayerId && layer.canEdit) ??
       layers.find((layer) => layer.kind === "personal" && layer.canEdit) ??
       layers.find((layer) => layer.canEdit);
-    if (!editableLayer) return;
+    if (!editableLayer || !editor?.begin()) return;
     setChromeVisible(true);
     setMoreOpen(false);
     setReaderPanel(null);
     setActiveLayerId(editableLayer.id);
     writeStringPreference(preferenceKey, editableLayer.id);
     setTool("text");
-    beginAnnotationEditSession();
-    setEditing(true);
+    setEditingEditor(editor);
 
   };
 
@@ -306,9 +301,8 @@ function ReaderPageContent() {
   };
 
   const finishEditing = async () => {
-    if (!workspace) return;
-    setEditing(false);
-    endAnnotationEditSession();
+    if (!workspace || !editor?.finish()) return;
+    setEditingEditor(null);
     let queued: number;
     try { queued = await queueScoreDrafts(workspace); }
     catch { setSyncOutcome("failed"); return; }
@@ -475,14 +469,13 @@ function ReaderPageContent() {
     writeStringPreference(`reader-edit-layer:${workspace.scopeKey}`, layerId);
   };
   const annotationPageProps: AnnotationPageProps = {
-    workspace,
     layers,
     annotations,
     editing,
     tool,
     activeLayerId,
     onInteractionChange: setAnnotationInteraction,
-    onPersistenceChange: setPersistence,
+    editor,
   };
   const syncStatus = deriveReaderSyncStatus({
     outcome: cloudState === "trashed" ? "trash-preserved" : syncActivity === "failed" && online ? "failed" : syncOutcome,
@@ -722,11 +715,11 @@ function ReaderPageContent() {
         />
       ) : null}
 
-      {editing && annotationInteraction === "idle" ? (
+      {editing && editor && annotationInteraction === "idle" ? (
         <Suspense fallback={<p role="status">正在准备批注工具…</p>}>
           <ReaderEditingControls
             isDisabled={persistence !== "idle"}
-            workspace={workspace}
+            editor={editor}
             layers={layers}
             tool={tool}
             activeLayerId={activeLayerId}

@@ -16,8 +16,8 @@ import {
   type AnnotationPayload,
 } from "../../shared/annotations";
 import type { LocalAnnotationRecord } from "../platform/local-database";
-import type { LocalWorkspace } from "../platform/local-workspace";
-import { useDraftWriter } from "./use-draft-writer";
+import type { AnnotationEditor } from "./annotation-editor";
+import { useEditorPersistence } from "./use-annotation-editor";
 import { calculateTextEditorLayout } from "./text-editor-layout";
 
 export type AnnotationTool = "text" | "ink" | "eraser";
@@ -75,7 +75,7 @@ interface TextSelection {
 }
 
 export function AnnotationOverlay({
-  workspace,
+  editor,
   pageNumber,
   layers,
   annotations,
@@ -83,9 +83,8 @@ export function AnnotationOverlay({
   tool,
   activeLayerId,
   onInteractionChange,
-  onPersistenceChange,
 }: {
-  workspace: LocalWorkspace;
+  editor: AnnotationEditor | null;
   pageNumber: number;
   layers: AnnotationLayerSummary[];
   annotations: LocalAnnotationRecord[];
@@ -93,10 +92,8 @@ export function AnnotationOverlay({
   tool: AnnotationTool;
   activeLayerId: string | null;
   onInteractionChange?(interaction: AnnotationOverlayInteraction): void;
-  onPersistenceChange?(state: "idle" | "saving" | "failed"): void;
 }) {
-  const writer = useDraftWriter(workspace);
-  useEffect(() => { if (editing) onPersistenceChange?.(writer.state); }, [editing, writer.state, onPersistenceChange]);
+  const persistence = useEditorPersistence(editor);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [draftStroke, setDraftStroke] = useState<Extract<AnnotationPayload, { kind: "ink" }> | null>(null);
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
@@ -213,7 +210,7 @@ export function AnnotationOverlay({
       }));
       if (distanceToPolyline(pointer, points) > ERASER_HIT_RADIUS_PX) continue;
       erasedStrokeIds.current.add(annotation.id);
-      void writer.persist({
+      void editor?.persist({
         id: annotation.id,
         layerId: annotation.layerId,
         payload: null,
@@ -259,19 +256,19 @@ export function AnnotationOverlay({
   };
 
   const cancelTextEditor = () => {
-    if (writer.state === "saving") return;
-    if (textEditor) writer.discard(textEditor.id);
+    if (persistence === "saving") return;
+    if (textEditor) editor?.discard(textEditor.id);
     closeTextEditor();
   };
 
   const finishTextEditor = async () => {
-    if (!textEditor || !activeLayerId || writer.state === "saving") return;
-    const editor = textEditor;
+    if (!textEditor || !activeLayerId || persistence === "saving") return;
+    const textDraft = textEditor;
     const text = editorText.trim();
     if (!text) {
-      if (editor.source === "existing") {
-        const saved = await writer.persist({
-          id: editor.id,
+      if (textDraft.source === "existing") {
+        const saved = await editor?.persist({
+          id: textDraft.id,
           layerId: activeLayerId,
           payload: null,
           deleted: true,
@@ -281,14 +278,14 @@ export function AnnotationOverlay({
       closeTextEditor();
       return;
     }
-    const saved = await writer.persist({
-      id: editor.id,
+    const saved = await editor?.persist({
+      id: textDraft.id,
       layerId: activeLayerId,
       payload: {
         kind: "text",
         pageNumber,
-        x: editor.x,
-        y: editor.y,
+        x: textDraft.x,
+        y: textDraft.y,
         fontScale: editorFontScale,
         text,
       },
@@ -432,7 +429,7 @@ export function AnnotationOverlay({
       });
       return;
     }
-    void writer.persist({
+    void editor?.persist({
       id: transform.id,
       layerId: transform.layerId,
       payload: shouldDelete ? null : transform.preview,
@@ -535,10 +532,10 @@ export function AnnotationOverlay({
       const next = { ...current, points: [...current.points, position] };
       const input = { id: currentStrokeId.current!, layerId: activeLayerId, payload: next };
       if (strokeHistoryStarted.current) {
-        void writer.persist(input, true);
+        void editor?.persist(input, true);
       } else {
         strokeHistoryStarted.current = true;
-        void writer.persist(input);
+        void editor?.persist(input);
       }
       return next;
     });
@@ -662,7 +659,7 @@ export function AnnotationOverlay({
             onPointerCancel={cancelTextTransform}
             onKeyDown={(event) => {
               if (event.key === "Delete" || event.key === "Backspace") {
-                void writer.persist({
+                void editor?.persist({
                   id: annotation.id,
                   layerId: annotation.layerId,
                   payload: null,
@@ -679,10 +676,10 @@ export function AnnotationOverlay({
       </div>
       {editing ? createPortal(
         <>
-          {writer.state === "failed" && <aside className="annotation-storage-error" role="alert">
+          {persistence === "failed" && <aside className="annotation-storage-error" role="alert">
             <strong>本机保存失败</strong>
             <p>修改仍留在当前编辑器，尚未可靠保存。请保留此页面，释放设备空间后重试。</p>
-            <button type="button" onClick={() => void writer.retry()}>重试本机保存</button>
+            <button type="button" onClick={() => void editor?.retry()}>重试本机保存</button>
           </aside>}
           {editing && tool === "text" && !textEditor && !transformingText ? (
             <p className="annotation-text-hint" role="status">轻点任意位置添加文字</p>
@@ -723,7 +720,7 @@ export function AnnotationOverlay({
           <button
             tabIndex={textEditor ? 0 : -1}
             type="button"
-            disabled={writer.state === "saving"}
+            disabled={persistence === "saving"}
             onClick={cancelTextEditor}
           >
             取消
@@ -735,7 +732,7 @@ export function AnnotationOverlay({
             aria-label="批注文本"
             autoFocus
             name="text"
-            disabled={writer.state === "saving"}
+            disabled={persistence === "saving"}
             ref={textInputRef}
             inputMode="text"
             maxLength={1000}
@@ -775,7 +772,7 @@ export function AnnotationOverlay({
             <input
               aria-label="字号"
               type="range"
-            disabled={writer.state === "saving"}
+            disabled={persistence === "saving"}
               min={MIN_TEXT_FONT_SCALE}
               max={MAX_TEXT_FONT_SCALE}
               step="0.001"

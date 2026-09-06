@@ -24,21 +24,22 @@ test("annotation commands retain offline and in-flight edits with real Worker/D1
   await page.goto(fixture.origin);
   await page.evaluate(async ({ account, choirId, scoreId, base }) => {
     const state = await import("/src/client/annotations/annotation-state.ts");
+    const { AnnotationEditor } = await import("/src/client/annotations/annotation-editor.ts");
     const sync = await import("/src/client/annotations/sync.ts");
     const local = await import("/src/client/platform/local-workspace.ts");
     const { localDatabase: db } = await import("/src/client/platform/local-database.ts");
     await local.activateAuthenticatedLocalOwner(account);
     const workspace = local.createLocalWorkspace(local.authenticatedLocalOwnerKey(account), choirId, scoreId);
     const { layers } = await (await fetch(`${base}/layers`)).json();
-    window.annotationTest = { state, sync, local, db, workspace, layers };
+    window.annotationTest = { state, sync, local, db, workspace, layers, editor: new AnnotationEditor(workspace) };
   }, { account: account.id, choirId: fixture.choirId, scoreId: fixture.scoreId, base });
   const text = value => ({ kind: "text", pageNumber: 1, x: .2, y: .3, fontScale: .024, text: value });
   const id = await page.evaluate(() => crypto.randomUUID());
   await context.setOffline(true);
   await page.evaluate(async ({ id, payload }) => {
-    const { state, workspace, layers } = window.annotationTest;
-    state.beginAnnotationEditSession();
-    await state.saveDraftWithHistory(workspace, { id, layerId: layers.find(l => l.kind === "personal").id, payload });
+    const { state, workspace, layers, editor } = window.annotationTest;
+    editor.begin();
+    await editor.persist({ id, layerId: layers.find(l => l.kind === "personal").id, payload });
     await state.queueScoreDrafts(workspace);
   }, { id, payload: text("offline A") });
   await context.setOffline(false);
@@ -53,17 +54,17 @@ test("annotation commands retain offline and in-flight edits with real Worker/D1
     const response = await route.fetch(); received(); await held; await route.fulfill({ response });
   });
   await page.evaluate(async ({ id, payload }) => {
-    const { state, workspace, layers } = window.annotationTest;
-    await state.saveDraftWithHistory(workspace, { id, layerId: layers.find(l => l.kind === "personal").id, payload });
+    const { state, workspace, layers, editor } = window.annotationTest;
+    await editor.persist({ id, layerId: layers.find(l => l.kind === "personal").id, payload });
     await state.queueScoreDrafts(workspace);
     window.pushTask = window.annotationTest.sync.syncAnnotations(workspace, { pull: false });
   }, { id, payload: text("submitted B") });
   await arrived;
   await page.evaluate(async ({ id, payload }) => {
-    const { state, workspace, layers } = window.annotationTest;
-    await state.saveDraftWithHistory(workspace, { id, layerId: layers.find(l => l.kind === "personal").id, payload });
-    await state.undoAnnotationEdit(workspace, layers.find(l => l.kind === "personal").id);
-    await state.redoAnnotationEdit(workspace, layers.find(l => l.kind === "personal").id);
+    const { layers, editor } = window.annotationTest;
+    await editor.persist({ id, layerId: layers.find(l => l.kind === "personal").id, payload });
+    await editor.undo(layers.find(l => l.kind === "personal").id);
+    await editor.redo(layers.find(l => l.kind === "personal").id);
   }, { id, payload: text("newer C") });
   release(); await page.evaluate(() => window.pushTask); await page.unroute("**/annotations/push");
   const local = await page.evaluate(async id => {

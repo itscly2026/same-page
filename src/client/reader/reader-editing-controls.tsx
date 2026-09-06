@@ -8,13 +8,12 @@ import {
   type SharedLayerSlot,
 } from "../../shared/annotations";
 import type { AnnotationTool } from "../annotations/annotation-overlay";
-import { redoAnnotationEdit, undoAnnotationEdit } from "../annotations/annotation-state";
-import type { LocalWorkspace } from "../platform/local-workspace";
+import type { AnnotationEditor } from "../annotations/annotation-editor";
 import "./reader-ux.css";
 
 export function ReaderEditingControls({
   isDisabled,
-  workspace,
+  editor,
   layers,
   tool,
   activeLayerId,
@@ -22,7 +21,7 @@ export function ReaderEditingControls({
   onLayerChange,
 }: {
   isDisabled: boolean;
-  workspace: LocalWorkspace;
+  editor: AnnotationEditor;
   layers: AnnotationLayerSummary[];
   tool: AnnotationTool;
   activeLayerId: string | null;
@@ -107,7 +106,7 @@ export function ReaderEditingControls({
           isDisabled={isDisabled}
           aria-label="撤销"
           className="annotation-tool-button"
-          onPress={() => activeLayerId ? void undoAnnotationEdit(workspace, activeLayerId) : undefined}
+          onPress={() => activeLayerId ? void editor.undo(activeLayerId) : undefined}
         >
           <Undo2 aria-hidden="true" size={20} />
         </Button>
@@ -115,7 +114,7 @@ export function ReaderEditingControls({
           isDisabled={isDisabled}
           aria-label="重做"
           className="annotation-tool-button"
-          onPress={() => activeLayerId ? void redoAnnotationEdit(workspace, activeLayerId) : undefined}
+          onPress={() => activeLayerId ? void editor.redo(activeLayerId) : undefined}
         >
           <Redo2 aria-hidden="true" size={20} />
         </Button>

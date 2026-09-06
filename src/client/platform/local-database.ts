@@ -122,6 +122,7 @@ export interface GuestLayerPreferenceRecord {
 }
 
 export interface SyncLeaseRecord {
+  sessionEpoch?: string;
   ownerKey: LocalWorkspaceOwnerKey;
   scopeKey: string;
   choirId: string;

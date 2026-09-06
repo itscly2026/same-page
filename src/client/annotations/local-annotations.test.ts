@@ -18,7 +18,7 @@ import {
   retryScoreSyncErrors,
   saveAnnotationDraft,
 } from "./annotation-state";
-import { beginAnnotationEditSession, saveDraftWithHistory, undoAnnotationEdit, redoAnnotationEdit } from "./annotation-state";
+import { AnnotationEditor } from "./annotation-editor";
 import { withScoreSyncLock } from "./sync";
 
 beforeEach(async () => {
@@ -126,13 +126,14 @@ describe("local annotation durability", () => {
     await saveAnnotationDraft(workspace, { id, layerId, payload: textPayload("A") });
     await queueScoreDrafts(workspace);
     const a = (await localDatabase.annotationOutbox.toArray())[0]!;
-    beginAnnotationEditSession();
-    await saveDraftWithHistory(workspace, { id, layerId, payload: textPayload("B") });
+    const editor = new AnnotationEditor(workspace);
+    editor.begin();
+    await editor.persist({ id, layerId, payload: textPayload("B") });
     await applyPushResults(workspace, [a], [{ opId: a.opId, status: "accepted", object: canonicalText(id, layerId, 1, "A") }]);
-    await undoAnnotationEdit(workspace, layerId);
+    await editor.undo(layerId);
     localDatabase.close(); await localDatabase.open();
     expect(await localDatabase.annotations.toCollection().first()).toMatchObject({ version: 1, baseVersion: 1, state: "draft", payload: { text: "A" } });
-    await redoAnnotationEdit(workspace, layerId);
+    await editor.redo(layerId);
     await queueScoreDrafts(workspace);
     expect(await localDatabase.annotationOutbox.toArray()).toEqual([expect.objectContaining({ baseVersion: 1, payload: { ...textPayload("B") } })]);
   });

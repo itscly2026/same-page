@@ -17,7 +17,7 @@ import type {
   AnnotationTool,
 } from "../annotations/annotation-overlay";
 import type { LocalAnnotationRecord } from "../platform/local-database";
-import type { LocalWorkspace } from "../platform/local-workspace";
+import type { AnnotationEditor } from "../annotations/annotation-editor";
 import type { ScoreDocument } from "./image-document";
 import { PdfPageCanvas, type PdfPageRenderLease } from "./pdf-page";
 import {
@@ -35,14 +35,13 @@ const AnnotationOverlay = lazy(() =>
 );
 
 export interface AnnotationPageProps {
-  workspace: LocalWorkspace;
   layers: AnnotationLayerSummary[];
   annotations: LocalAnnotationRecord[];
   editing: boolean;
   tool: AnnotationTool;
   activeLayerId: string | null;
   onInteractionChange(interaction: AnnotationOverlayInteraction): void;
-  onPersistenceChange?(state: "idle" | "saving" | "failed"): void;
+  editor: AnnotationEditor | null;
 }
 
 interface ReaderLayoutProps {

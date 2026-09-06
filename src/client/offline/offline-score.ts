@@ -1,19 +1,18 @@
 import { imageManifestSchema, pageImagePath, scoreImagesPath, type ScoreDisplayMode, type ImageManifest } from "../../shared/score-images";
 import { prepareImageManifest } from "../reader/image-document";
 import { readDisplayPreference } from "../reader/display-preferences";
-import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
-import { annotationLayerListResponseSchema } from "../../shared/annotations";
+import { diagnosticFetch } from "../diagnostics/diagnostics";
 import type { ScoreSummary } from "../../shared/scores";
-import { cacheAnnotationLayers, readAnnotationLayers } from "../annotations/annotation-state";
 import { captureOfflineAnnotationSnapshot, ensureOfflineAppShell } from "../annotations/offline-snapshot";
 import { syncAnnotations } from "../annotations/sync";
 import { activateVerifiedOfflineScore, findActiveOfflineScore } from "../platform/local-database";
 import { assertLocalWorkspaceActive, captureLocalWorkspaceSession, localWorkspaceRecordKey, type LocalWorkspace } from "../platform/local-workspace";
 
-import { findVerifiedOfflineScore, hasCompleteOfflineLayers, sha256Hex, verifyOfflineScore } from "./offline-score-verification";
+import { findVerifiedOfflineScore, sha256Hex, verifyOfflineScore } from "./offline-score-verification";
 
 // Both entry points use the same verified replacement path. A failed attempt never
-// activates the new PDF or removes the existing copy, annotations, or drafts.
+// activates the new PDF or removes the previous copy or local drafts. Confirmed
+// publication revocations still scrub inaccessible notes, even on failure.
 export async function prepareOfflineScore(workspace: LocalWorkspace, score: ScoreSummary, mode: ScoreDisplayMode = readDisplayPreference(workspace), signal = new AbortController().signal, pdfData?: Uint8Array) {
   signal.throwIfAborted();
   workspace = await captureLocalWorkspaceSession(workspace);
@@ -56,21 +55,10 @@ export async function prepareOfflineScore(workspace: LocalWorkspace, score: Scor
   await ensureOfflineAppShell();
   signal.throwIfAborted();
   await assertLocalWorkspaceActive(workspace);
-  const layerResponse = await diagnosticFetch(`${base}/layers`, { signal });
-  if (!layerResponse.ok) throw new Error("offline_layer_download_failed");
-  const { layers } = await parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema);
+  // This call requires a layer request started after the bytes are prepared;
+  // an earlier reader refresh cannot establish fresh access for activation.
+  await syncAnnotations(workspace, { pull: true, signal });
   signal.throwIfAborted();
-  // An expired user can keep their local copy, but a guest API response must
-  // never replace that user's private layer metadata while preparing a download.
-  if (!hasCompleteOfflineLayers(layers, workspace.ownerKey)) throw new Error("offline_download_requires_matching_identity");
-  const existing = await readAnnotationLayers(workspace);
-  const currentById = new Map(existing.map((layer) => [layer.id, layer]));
-  await cacheAnnotationLayers(workspace, workspace.ownerKey.startsWith("user:") ? layers : layers.map((layer) => ({
-    ...layer, subscribed: currentById.get(layer.id)?.subscribed ?? layer.subscribed,
-  })));
-  signal.throwIfAborted();
-  const synced = await syncAnnotations(workspace, { pull: true });
-  if (!synced) throw new Error("offline_annotation_sync_busy");
   const annotationSnapshot = await captureOfflineAnnotationSnapshot(workspace);
   const record = {
     key: localWorkspaceRecordKey(workspace, `${score.currentVersion.id}:${mode}`), ...workspace,
