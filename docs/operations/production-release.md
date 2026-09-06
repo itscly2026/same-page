@@ -146,7 +146,7 @@ Google 端固定使用 `same-page-renderer-signing:1`，轮换时应协调两个
 
 CI 在验证任务中构建、测试并保存 `renderer/image.tar`，随 release artifact 一起封存。
 生产锁内先发布该镜像的不可变 digest，再验证 buildId、未签名请求 403、
-签名测试 PDF 的六张完整 PNG 与 golden 文件逐字节一致，最后执行 D1 和 Worker 发布。
+签名测试 PDF 的六张完整 PNG 与已验证 Linux 镜像的输出哈希一致（镜像测试逐像素对照 golden），最后执行 D1 和 Worker 发布。
 源配置中的 `PDF_RENDERER_URL` 是 Same Page 的稳定 Cloud Run 地址。
 
 Cloud Run 和 Worker 发布不具备跨平台事务性；失败时分别核对 Run revision/buildId

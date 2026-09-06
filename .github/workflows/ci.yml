@@ -143,7 +143,7 @@ jobs:
             --mount type=bind,src="$PWD/renderer/fixtures",dst=/app/fixtures,readonly \
             --mount type=bind,src="$PWD/renderer/verify.py",dst=/app/verify.py,readonly \
             --tmpfs /artifacts:uid=10001,gid=10001,size=64m \
-            same-page-renderer:verify python /app/verify.py
+            same-page-renderer:verify python /app/verify.py > renderer/verified-output.json
           docker run --rm --network none --memory 1g --cpus 1 \
             --mount type=bind,src="$PWD/renderer/fixtures",dst=/app/fixtures,readonly \
             --mount type=bind,src="$PWD/renderer/test_transport.py",dst=/app/test_transport.py,readonly \

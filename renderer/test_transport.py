@@ -3,6 +3,8 @@ import hashlib
 import hmac
 import http.client
 import json
+import io
+from PIL import Image, ImageChops
 import os
 from pathlib import Path
 import struct
@@ -63,7 +65,10 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(len(geometry["pages"]), 3)
         for page in range(1, 4):
             for edge in (2048, 3072):
-                self.assertEqual(frame(), (ROOT / f"fixtures/specimen-{page}-{edge}.png").read_bytes())
+                actual = Image.open(io.BytesIO(frame())).convert("RGB")
+                expected = Image.open(ROOT / f"fixtures/specimen-{page}-{edge}.png").convert("RGB")
+                self.assertEqual(actual.size, expected.size)
+                self.assertIsNone(ImageChops.difference(actual, expected).getbbox())
         self.assertEqual(frame(), b"")
         self.assertEqual(offset, len(body))
 

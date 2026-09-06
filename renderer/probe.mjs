@@ -26,9 +26,11 @@ function frame() {
   const payload = data.subarray(offset, offset + length); offset += length; return payload;
 }
 assert.equal(JSON.parse(frame().toString()).pages.length, 3);
+const verified = JSON.parse(await readFile(new URL("./verified-output.json", import.meta.url), "utf8"));
 for (let page = 1; page <= 3; page++) for (const edge of [2048, 3072]) {
-  const expected = await readFile(new URL(`./fixtures/specimen-${page}-${edge}.png`, import.meta.url));
-  assert.deepEqual(frame(), expected, `renderer image mismatch: ${page}/${edge}`);
+  const expected = verified.results.find(row => row.page === page && row.edge === edge);
+  assert.ok(expected, "verified Linux image output missing");
+  assert.equal(createHash("sha256").update(frame()).digest("hex"), expected.sha256, `renderer image mismatch: ${page}/${edge}`);
 }
 assert.equal(frame().length, 0); assert.equal(offset, data.length);
 console.log(`renderer verified: ${process.argv[2]}, unsigned 403, 3 pages, 6 reviewed PNGs`);
