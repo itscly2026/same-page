@@ -26,7 +26,6 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
       };
       Object.defineProperty(navigator, "onLine", { get: () => window.fixtureOnline });
     });
-    let failDownload = false;
     let pushes = 0;
     let failSync = false;
     await context.route("**/api/**", async route => {
@@ -41,7 +40,6 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
           createdByDisplayName: "周宁", updatedByDisplayName: "周宁", updatedAt: Date.now(),
         } })) } });
       }
-      if (failDownload && pathname.endsWith("/pdf")) return route.fulfill({ status: 503, body: "unavailable" });
       await route.fulfill(resolveFixtureRequest({ pathname, method: request.method(), identity: "member", scenarioId: "reader-status", cookie: "" }));
     });
     const page = await context.newPage();
@@ -105,8 +103,10 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
     await page.getByText("已同步", { exact: true }).waitFor();
     assert.ok(pushes > 0);
     await page.screenshot({ path: `${output}/${width}-synced.png` });
-    failDownload = true;
-    await page.getByRole("button", { name: "下载离线副本", exact: true }).click();
+    // The blocked service worker makes automatic offline preparation fail.
+    // Retry that failure; PDF bytes can now be reused without another request.
+    await page.getByRole("button", { name: "重试下载离线副本", exact: true }).click();
+    await page.getByText("离线下载未完成，仍可在线阅读，现有离线版本没有切换。请重试。", { exact: true }).waitFor();
     await page.getByRole("button", { name: "重试下载离线副本" }).waitFor();
     await page.getByRole("button", { name: "重试下载离线副本" }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${output}/${width}-download-failed.png` });
