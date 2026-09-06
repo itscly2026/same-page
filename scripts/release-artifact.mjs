@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isReleaseScriptPath } from "./deployment-identity.mjs";
 
 async function releaseFiles(cwd) {
   const files = ["wrangler.jsonc", "package-lock.json"];
@@ -30,7 +31,7 @@ async function verifyIdentity(cwd, sha, files) {
   const build = JSON.parse(await readFile(path.join(cwd, "dist/client/build.json"), "utf8"));
   assert.equal(build.buildId, sha, "release build must match source SHA");
   const scripts = Object.fromEntries(Object.entries(files)
-    .filter(([name]) => /^dist\/client\/assets\/[^/]+\.m?js$/.test(name))
+    .filter(([name]) => name.startsWith("dist/client/") && isReleaseScriptPath(name.slice("dist/client".length)))
     .map(([name, hash]) => [name.slice("dist/client".length), hash]));
   assert.ok(Object.keys(scripts).length > 0, "release scripts are missing");
   assert.deepEqual(build.scripts, scripts, "script manifest must describe final build bytes");

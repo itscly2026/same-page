@@ -16,6 +16,12 @@ CCITT / JBIG2 图片，使用 `openjpeg.wasm` 解码 JPEG2000，并使用
 升级 PDF.js 时，核实文件清单、许可证和实际产物，不能只检查 worker。
 `npm run build` 的预缓存审计会拒绝缺失解码依赖或许可证的产物。
 
+两个 JS fallback 也属于 `build.json` 的脚本哈希清单。发布封存和部署校验
+共用 `scripts/deployment-identity.mjs` 中的路径规则，并验证最终文件字节；
+该模块不依赖 npm 包，以支持安装依赖前的产物校验。版本目录通过 `_headers`
+设置 immutable 缓存。升级时如 fallback 名称或版本目录格式改变，须同步更新
+路径规则并运行发布、部署回归测试。
+
 验证：
 
 - `node --test browser-tests/pdf-codecs-smoke.test.mjs`：先构建，使用真实本地
