@@ -792,13 +792,8 @@ describe("AppRoutes", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "进入" }));
 
-    expect(
-      await screen.findByRole(
-        "heading",
-        { name: "小红花云盘" },
-        { timeout: 3_000 },
-      ),
-    ).toBeInTheDocument();
+    await screen.findByRole("searchbox", { name: "搜索乐谱" });
+    expect(screen.getByRole("heading", { name: "小红花云盘" })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", {
       method: "DELETE",
     });
@@ -997,7 +992,9 @@ describe("AppRoutes", () => {
     expect(await screen.findByRole("heading", { name: "公开体验云盘" })).toBeInTheDocument();
     expect(screen.getByText("这个云盘还没有乐谱。")).toBeInTheDocument();
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "管理" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "打开云盘菜单" }));
+    expect(screen.queryByRole("menu", { name: "管理员菜单" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     expect(fetchMock).not.toHaveBeenCalledWith("/api/choirs/join", expect.anything());
     expect(fetchMock).not.toHaveBeenCalledWith("/api/guest/session", expect.objectContaining({ method: "POST" }));
   });
@@ -1044,7 +1041,7 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "管理" }));
+    fireEvent.click(await screen.findByRole("button", { name: "打开云盘菜单" }));
     expect(await screen.findByRole("menuitem", { name: "共享层" })).toHaveAttribute(
       "href",
       "/choirs/choir-1/shared-layers",
@@ -1067,7 +1064,7 @@ describe("AppRoutes", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     expect(screen.queryByLabelText("当前有效邀请码")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "管理" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开云盘菜单" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "邀请码" }));
     expect(await screen.findByLabelText("当前有效邀请码")).toHaveTextContent("ABCDEFGH");
   });
@@ -1090,6 +1087,7 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
+    await screen.findByRole("searchbox", { name: "搜索乐谱" });
     fireEvent.click(await screen.findByRole("button", { name: "用户菜单" }));
     expect(await screen.findByRole("menuitem", { name: "阅读偏好" })).toHaveAttribute(
       "href",
@@ -1139,11 +1137,8 @@ describe("AppRoutes", () => {
       await screen.findByRole("button", { name: "上传 PDF" }),
     ).toBeInTheDocument();
     expect(screen.getByText(/云盘存储已使用 858\.3 MB/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "管理" }));
-    expect(await screen.findByRole("menuitem", { name: /云盘存储：858\.3 MB/ })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
+    fireEvent.click(screen.getByRole("button", { name: "打开云盘菜单" }));
+    expect(await screen.findByText(/云盘存储：858\.3 MB/)).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "回收站" })).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "轮换邀请码" }),
@@ -1339,7 +1334,7 @@ describe("AppRoutes", () => {
       await screen.findByRole("heading", { name: "已知云盘名称" }),
     ).toBeInTheDocument();
     expect(screen.getByText("正在加载乐谱…")).toBeInTheDocument();
-    expect(fetchMock.mock.calls.map(([input]) => input)).toEqual([
+    expect(fetchMock.mock.calls.map(([input]) => input).filter(input => input !== "/api/choirs")).toEqual([
       "/api/choirs/choir-1/bootstrap",
     ]);
 

@@ -188,20 +188,15 @@ vi.mock("../annotations/annotation-state", async (importOriginal) => {
 });
 
 describe("ReaderPage", () => {
-it("keeps workspace cancellation in force when authentication finishes", async () => {
+it("can leave during authentication without opening local storage afterwards", async () => {
   readerAuthState.pending = true;
   const storageRead = vi.spyOn(localDatabase.system, "get");
-  const content = () => <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}><Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /></Routes></MemoryRouter>;
-  const view = render(content());
-  const cancel = screen.getByRole("button", { name: "取消打开工作区" });
-  fireEvent.keyDown(cancel, { key: "Enter", code: "Enter" });
-  fireEvent.keyUp(cancel, { key: "Enter", code: "Enter" });
-  expect(await screen.findByRole("alert")).toHaveTextContent("已取消打开工作区");
+  render(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}><Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /><Route path="/choirs/:choirId" element={<h1>乐谱列表</h1>} /></Routes></MemoryRouter>);
+  expect(screen.getByRole("status")).toHaveTextContent("正在打开乐谱");
+  fireEvent.click(screen.getByRole("link", { name: "返回云盘" }));
+  expect(await screen.findByRole("heading", { name: "乐谱列表" })).toBeVisible();
   readerAuthState.pending = false;
-  view.rerender(content());
   await act(() => new Promise(resolve => setTimeout(resolve, 30)));
-  expect(screen.getByRole("alert")).toHaveTextContent("已取消打开工作区");
-  expect(screen.queryByLabelText("翻页阅读")).not.toBeInTheDocument();
   expect(storageRead).not.toHaveBeenCalled();
 });
 
@@ -216,15 +211,14 @@ it("lets a failed local storage open retry without losing the return link", asyn
   expect(await screen.findByLabelText("翻页阅读")).toBeInTheDocument();
 });
 
-it("offers an exit and cancellation while the PDF never settles", async () => {
+it("keeps a single exit while the PDF never settles", async () => {
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
   vi.mocked(loadPdfDocument).mockReturnValue({ promise: new Promise(() => {}), destroy: vi.fn().mockResolvedValue(undefined) });
-  render(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}><Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /></Routes></MemoryRouter>);
-  expect(await screen.findByRole("link", { name: "返回云盘" })).toHaveAttribute("href", "/choirs/choir-1");
-  const cancel = await screen.findByRole("button", { name: "取消加载" });
-  fireEvent.keyDown(cancel, { key: "Enter", code: "Enter" });
-  fireEvent.keyUp(cancel, { key: "Enter", code: "Enter" });
-  expect(await screen.findByRole("button", { name: "重试加载" })).toBeVisible();
+  render(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}><Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /><Route path="/choirs/:choirId" element={<h1>乐谱列表</h1>} /></Routes></MemoryRouter>);
+  expect(screen.queryByRole("button", { name: "取消加载" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "图片兼容模式" })).not.toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("link", { name: "返回云盘" }));
+  expect(await screen.findByRole("heading", { name: "乐谱列表" })).toBeVisible();
 });
 
 
@@ -1431,7 +1425,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("正在加载乐谱…")).toBeInTheDocument();
+    expect(await screen.findByText("正在打开乐谱…")).toBeInTheDocument();
     await waitFor(() =>
       expect(loadPdfDocument).toHaveBeenCalledWith(
         "/api/choirs/choir-1/scores/score-1/pdf",
@@ -2493,7 +2487,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     await waitFor(() => {
       expect(screen.queryByText("A 的离线乐谱.pdf")).not.toBeInTheDocument();
     });
-    expect(screen.getByText("正在打开本机工作区…")).toBeInTheDocument();
+    expect(screen.getByText("正在打开乐谱…")).toBeInTheDocument();
   });
 
   it("keeps a trashed score's offline copy and outbox without editing or syncing", async () => {

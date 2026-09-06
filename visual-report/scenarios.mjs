@@ -124,9 +124,9 @@ export const visualReportScenarios = [
     device: "narrow",
     identity: "admin",
     route: "/choirs/visual-choir",
-    ready: { type: "selector", selector: ".admin-menu-popover" },
+    ready: { type: "selector", selector: ".drive-drawer-management" },
     actions: [
-      { type: "clickRole", role: "button", name: "管理" },
+      { type: "clickRole", role: "button", name: "打开云盘菜单" },
     ],
   },
   {
@@ -136,7 +136,7 @@ export const visualReportScenarios = [
     device: "narrow", identity: "admin", route: "/choirs/visual-choir",
     ready: { type: "selector", selector: ".join-code-result" },
     actions: [
-      { type: "clickRole", role: "button", name: "管理" },
+      { type: "clickRole", role: "button", name: "打开云盘菜单" },
       { type: "clickRole", role: "menuitem", name: "邀请码" },
     ],
   },
@@ -147,7 +147,7 @@ export const visualReportScenarios = [
     device: "narrow", identity: "admin", route: "/choirs/visual-choir",
     ready: { type: "role", role: "button", name: "保存原邀请码" },
     actions: [
-      { type: "clickRole", role: "button", name: "管理" },
+      { type: "clickRole", role: "button", name: "打开云盘菜单" },
       { type: "clickRole", role: "menuitem", name: "邀请码" },
     ],
   },

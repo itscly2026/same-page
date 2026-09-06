@@ -39,7 +39,7 @@ test("shared-layer overview leads to details, explicitly saves edits and persist
     return route.fulfill(fixture.resolve({ pathname: new URL(request.url()).pathname, method: request.method(), identity: "admin", cookie: "", body: request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() : null }));
   });
   await page.goto(`${app.origin}/choirs/visual-choir`);
-  await page.getByRole("button", { name: "管理", exact: true }).click();
+  await page.getByRole("button", { name: "打开云盘菜单", exact: true }).click();
   assert.equal(await page.getByRole("menuitem", { name: "成员与权限" }).getAttribute("href"), "/choirs/visual-choir/memberships");
   await page.getByRole("menuitem", { name: "共享层", exact: true }).click();
   await page.getByRole("button", { name: "上移 T · 男高音" }).click();

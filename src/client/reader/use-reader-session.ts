@@ -35,5 +35,5 @@ export function useReaderSession(workspace: LocalWorkspace | null, userId: strin
       writeDisplayPreference(active.session.workspace, mode, "score");
       setAttempt(value => value + 1);
     } else active.session.selectMode(mode);
-  }, setDefaultMode: (mode: "pdf" | "images" | null) => active?.session.setDefaultMode(mode), resetMode: () => active?.session.resetMode(), retry: () => setAttempt(value => value + 1), cancel: () => active?.session.cancel(), snapshot: active?.snapshot ?? initial, download: () => active?.session.download(), retryLayers: () => active?.session.retryLayers() };
+  }, setDefaultMode: (mode: "pdf" | "images" | null) => active?.session.setDefaultMode(mode), resetMode: () => active?.session.resetMode(), retry: () => setAttempt(value => value + 1), snapshot: active?.snapshot ?? initial, download: () => active?.session.download(), retryLayers: () => active?.session.retryLayers() };
 }

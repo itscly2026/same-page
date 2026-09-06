@@ -150,3 +150,5 @@ body:has(.reader-edit-layer-popover) .annotation-text-hint { display: none; }
 .reader-edit-first-hint button { flex-shrink: 0; min-width: 44px; min-height: 44px; border: 0; background: transparent; }
 
 .reader-shell:has(.reader-edit-first-hint) .annotation-text-hint { display: none; }
+
+.reader-loading__back { position: absolute; top: max(.75rem, env(safe-area-inset-top)); left: max(.75rem, env(safe-area-inset-left)); z-index: 1; color: #eee; background: transparent; }

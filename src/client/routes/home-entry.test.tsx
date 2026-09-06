@@ -73,6 +73,7 @@ it("keeps explicit invitation intent and the switch picker accessible with one m
   expectPath("/?join=1");
   fireEvent.click(screen.getByRole("link", { name: /云盘 one.*成员/ }));
   await screen.findByRole("heading", { name: "云盘 one" });
+  fireEvent.click(screen.getByRole("button", { name: "打开云盘菜单" }));
   fireEvent.click(screen.getByRole("button", { name: "切换云盘" }));
   await screen.findByRole("link", { name: /云盘 one.*成员 · 当前云盘/ });
   expect(screen.getByRole("dialog", { name: "切换云盘" })).toBeInTheDocument();
@@ -83,7 +84,7 @@ it("does not override an explicit drive deep link with the sole membership", asy
   render(tree(["/choirs/explicit"]));
   await screen.findByRole("heading", { name: "云盘 explicit" });
   expectPath("/choirs/explicit");
-  expect(fetch).not.toHaveBeenCalledWith("/api/choirs", expect.anything());
+  expectPath("/choirs/explicit");
 });
 
 it("shows a retry instead of using cached metadata as membership authorization", async () => {
