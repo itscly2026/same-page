@@ -168,8 +168,9 @@ jobs:
         if: needs.scope.outputs.performance == 'true'
         run: node scripts/measure-loading-performance.mjs
       - name: Real browser Worker storage smoke
+        timeout-minutes: 5
         if: needs.scope.outputs.smoke == 'true'
-        run: npm run test:smoke
+        run: node --test --test-reporter=tap browser-tests/*.test.mjs
       - name: Seal verified release
         if: github.event_name == 'push' && needs.scope.outputs.deploy == 'true'
         run: |
