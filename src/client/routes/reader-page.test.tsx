@@ -30,6 +30,10 @@ import { findVerifiedOfflineScore } from "../offline/offline-score-verification"
 import ReaderPage from "./reader-page";
 import { clearDiagnostics, exportDiagnostics } from "../diagnostics/diagnostics";
 
+// Navigation blocking is exercised with the production data router in
+// reader-navigation-guard.test.tsx and the browser status flow.
+vi.mock("../reader/reader-navigation-guard", () => ({ ReaderNavigationGuard: () => null }));
+
 const readerAuthState = vi.hoisted(() => ({ signedIn: true, pending: false }));
 
 const virtualTestState = vi.hoisted(() => ({

@@ -1,3 +1,4 @@
+import { ReaderNavigationGuard } from "../reader/reader-navigation-guard";
 import { DisplayRecovery } from "../reader/display-recovery";
 import type { ScoreDocument } from "../reader/image-document";
 import "../reader/reader-ux.css";
@@ -128,6 +129,9 @@ function ReaderPageContent() {
   }, []);
   const syncActivity = useSyncExternalStore(subscribeAnnotationSync,
     () => getAnnotationSyncActivity(resolvedWorkspace?.scopeKey ?? ""));
+  useEffect(() => subscribeAnnotationSync(() => {
+    if (getAnnotationSyncActivity(resolvedWorkspace?.scopeKey ?? "") === "running") setSyncOutcome("none");
+  }), [resolvedWorkspace?.scopeKey]);
   const [chromeVisible, setChromeVisible] = useState(false);
   const [readerPanel, setReaderPanel] = useState<ReaderPanel | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -199,7 +203,7 @@ function ReaderPageContent() {
   const { score, document, offline: loadedOffline, cloudState, downloading, downloadMessage } = reader.snapshot;
   const documentScopeKey = document ? workspace?.scopeKey ?? null : null;
   const offlineStatus = useOfflineScore(workspace);
-  const offline = offlineStatus?.scopeKey === workspace?.scopeKey ? offlineStatus?.record ?? loadedOffline : loadedOffline;
+  const offline = offlineStatus?.scopeKey === workspace?.scopeKey ? offlineStatus?.record ?? null : loadedOffline;
   const downloadOffline = reader.download;
   useEffect(() => {
     endAnnotationEditSession();
@@ -537,7 +541,12 @@ function ReaderPageContent() {
         if (!editing) reader.recoverDisplay(reason);
       },
     }}>
-    <main className="reader-shell" data-chrome-visible={chromeVisible || undefined}>
+    <main className="reader-shell" data-chrome-visible={chromeVisible || undefined}
+      onClickCapture={event => {
+        // All in-reader navigation follows the editing lock, including recovery links.
+        if (editing && event.target instanceof Element && event.target.closest("a")) event.preventDefault();
+      }}>
+      <ReaderNavigationGuard editing={editing} />
       <h1 className="visually-hidden">{score.fileName}</h1>
       {cloudState === "trashed" ? (
         <aside className="reader-alert reader-alert--trash" role="alert">
@@ -619,6 +628,9 @@ function ReaderPageContent() {
               <span>{currentPage} / {document.numPages}</span>
               {editing ? <span className="reader-edit-finish-hint">点铅笔完成</span> : null}
             </Button>
+            {editing && annotationInteraction !== "composing-text" && <span className="reader-save-feedback" role="status">
+              {persistence === "saving" ? "正在保存到本机…" : persistence === "failed" ? "本机保存失败" : annotations.some(annotation => annotation.state === "draft") ? "已保存在本机" : "编辑中 · 点铅笔完成"}
+            </span>}
             {editAvailability !== "ready" ? (
               <p
                 className="reader-edit-status"
@@ -680,9 +692,11 @@ function ReaderPageContent() {
               </section>
               <section aria-label="谱面显示方式"><h2>谱面显示方式</h2>
               {displayChoices}
+              <details className="reader-display-defaults"><summary>本机显示偏好</summary>
               <Button onPress={() => reader.setDefaultMode(reader.snapshot.mode)}>本机默认使用当前显示方式</Button>
               <Button onPress={reader.resetMode}>本谱跟随本机默认</Button>
               <Button onPress={() => reader.setDefaultMode(null)}>恢复本机默认 PDF 阅读</Button>
+              </details>
               <a href={`/api/choirs/${encodeURIComponent(choirId)}/scores/${encodeURIComponent(scoreId)}/versions/${encodeURIComponent(score.currentVersion.id)}/pdf`} download>下载原 PDF</a>
               </section>
               <section aria-label="本机离线副本"><h2>本机离线副本 · {reader.snapshot.mode === "pdf" ? "PDF" : "图片"}</h2>
@@ -818,7 +832,7 @@ function ReaderPageContent() {
         <aside className="annotation-conflicts" aria-label="批注同步异常">
           <strong>{syncStatus.message}</strong>
           <div>
-            <Link className="text-button" to="/diagnostics">查看原因</Link>
+            <Link className="text-button" aria-disabled={editing || undefined} to="/diagnostics">查看原因</Link>
             <Button isDisabled={syncing} onPress={() => void manualSync()}>
               重试同步
             </Button>

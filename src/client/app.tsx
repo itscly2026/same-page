@@ -1,6 +1,6 @@
 import { RouteContent } from "./components/route-content";
-import { lazy, useLayoutEffect } from "react";
-import { BrowserRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { lazy, useLayoutEffect, useState } from "react";
+import { createBrowserRouter, RouterProvider, Outlet, Route, Routes, useLocation } from "react-router-dom";
 
 import { AppFooter } from "./components/app-footer";
 import { ReloadPrompt } from "./components/reload-prompt";
@@ -79,11 +79,14 @@ function RouteScrollReset() {
 }
 
 export function App() {
-  return (
-    <BrowserRouter>
-      <LocalIdentityObserver />
-      <AppRoutes />
-      <ReloadPrompt />
-    </BrowserRouter>
-  );
+  const [router] = useState(() => createBrowserRouter([{ path: "*", element: <AppContent /> }]));
+  return <RouterProvider router={router} />;
+}
+
+function AppContent() {
+  return <>
+    <LocalIdentityObserver />
+    <AppRoutes />
+    <ReloadPrompt />
+  </>;
 }

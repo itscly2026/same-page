@@ -131,3 +131,15 @@ body:has(.reader-edit-layer-popover) .annotation-text-hint { display: none; }
 
 .reader-page-failure { position: absolute; z-index: 25; bottom: 1rem; left: 50%; transform: translateX(-50%); width: min(32rem, calc(100vw - 1rem)); padding: 0.5rem; border-radius: 0.5rem; background: #fff; color: #7d351f; }
 .reader-page-failure button { min-height: 44px; margin-left: 0.5rem; color: #111; background: #fff; border: 1px solid #ddd; border-radius: 0.4rem; }
+
+.reader-more-menu .reader-display-defaults summary { display: flex; align-items: center; min-height: 44px; padding-inline: 0.55rem; font-size: 0.85rem; cursor: pointer; }
+.reader-more-menu .reader-display-defaults summary::after { content: "+"; margin-left: auto; }
+.reader-more-menu .reader-display-defaults[open] summary::after { content: "−"; }
+.reader-display-defaults button { width: 100%; justify-content: start; }
+.reader-save-feedback { max-width: 10rem; padding: 0 0.35rem 0.4rem; color: #555; font-size: 0.7rem; text-align: center; }
+
+.reader-leave-dialog { width: min(28rem, calc(100vw - 2rem)); padding: 1rem; color: #111; background: #fff; border-radius: 0.75rem; }
+.reader-leave-dialog h2 { font-size: 1.1rem; }
+.reader-leave-dialog p { line-height: 1.6; }
+
+.reader-leave-backdrop { z-index: 110; align-items: center; justify-content: center; background: #0003; }

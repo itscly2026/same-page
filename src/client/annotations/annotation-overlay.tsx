@@ -258,10 +258,14 @@ export function AnnotationOverlay({
     if (input && input === document.activeElement) input.blur();
   };
 
-  const cancelTextEditor = () => closeTextEditor();
+  const cancelTextEditor = () => {
+    if (writer.state === "saving") return;
+    if (textEditor) writer.discard(textEditor.id);
+    closeTextEditor();
+  };
 
   const finishTextEditor = async () => {
-    if (!textEditor || !activeLayerId) return;
+    if (!textEditor || !activeLayerId || writer.state === "saving") return;
     const editor = textEditor;
     const text = editorText.trim();
     if (!text) {
@@ -719,6 +723,7 @@ export function AnnotationOverlay({
           <button
             tabIndex={textEditor ? 0 : -1}
             type="button"
+            disabled={writer.state === "saving"}
             onClick={cancelTextEditor}
           >
             取消
@@ -730,6 +735,7 @@ export function AnnotationOverlay({
             aria-label="批注文本"
             autoFocus
             name="text"
+            disabled={writer.state === "saving"}
             ref={textInputRef}
             inputMode="text"
             maxLength={1000}
@@ -769,6 +775,7 @@ export function AnnotationOverlay({
             <input
               aria-label="字号"
               type="range"
+            disabled={writer.state === "saving"}
               min={MIN_TEXT_FONT_SCALE}
               max={MAX_TEXT_FONT_SCALE}
               step="0.001"

@@ -35,5 +35,10 @@ export function useDraftWriter(workspace: LocalWorkspace) {
     window.addEventListener("beforeunload", preventLoss);
     return () => window.removeEventListener("beforeunload", preventLoss);
   }, []);
-  return { state, persist, retry: () => Promise.all([...pending.current.values()].map(input => persist(input))) };
+  const discard = (id: string) => {
+    if (inFlight.current) return;
+    pending.current.delete(id);
+    setState(pending.current.size ? "failed" : "idle");
+  };
+  return { state, persist, discard, retry: () => Promise.all([...pending.current.values()].map(input => persist(input))) };
 }

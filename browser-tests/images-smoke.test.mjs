@@ -39,7 +39,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     await mkdir("artifacts/verification/137", { recursive: true });
     await page.screenshot({ path: `artifacts/verification/137/${engineName}-images.png` });
     await page.setViewportSize({ width: 320, height: 568 });
-    const menu = page.getByRole("complementary", { name: "更多阅读选项" });
+    const menu = page.getByRole("dialog", { name: "更多阅读选项" });
     await expect(menu).toBeVisible();
     const bounds = await menu.boundingBox();
     await page.screenshot({ path: `artifacts/verification/137/${engineName}-images-narrow.png` });

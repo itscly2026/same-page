@@ -42,6 +42,7 @@ export class ReaderSession {
   private source: Source | null = null;
   private lease: ReaderDocumentLease | null = null;
   private generation = 0;
+  private displayPrepared = false;
   private retained: { document: ScoreDocument; mode: ScoreDisplayMode; source: Source | null; lease: ReaderDocumentLease | null } | null = null;
   private retainDisplay() {
     if (this.retained || !this.state.document || this.cloudInvalidated) return;
@@ -49,7 +50,7 @@ export class ReaderSession {
     this.lease = null;
   }
   confirmDisplay = (document: ScoreDocument) => {
-    if (document !== this.state.document) return;
+    if (document !== this.state.document || !this.displayPrepared) return;
     this.retained?.lease?.release();
     this.retained = null;
   };
@@ -62,6 +63,7 @@ export class ReaderSession {
     this.lease = previous.lease;
     this.source = previous.source;
     this.retained = null;
+    this.displayPrepared = true;
     this.pdfFailed = false;
     writeDisplayPreference(this.workspace, previous.mode, "score");
     this.publish({ document: previous.document, mode: previous.mode, status: "ready", error: null, modeMessage: "显示切换未完成，已保留原谱面。可在更多中重试显示方式。" });
@@ -147,7 +149,7 @@ export class ReaderSession {
     if (lookup.state === "active") {
       this.confirmedVersion = lookup.score.currentVersion.id;
       rememberReaderScore(this.identity, lookup.score);
-      this.publish({ score: lookup.score, cloudState: "active", ...(this.pdfFailed ? {} : { error: null }) });
+      this.publish({ score: lookup.score, downloadMessage: this.state.score?.currentVersion.id === lookup.score.currentVersion.id ? this.state.downloadMessage : null, cloudState: "active", ...(this.pdfFailed ? {} : { error: null }) });
       const confirmation = confirmReaderDocumentVersion({ ...this.workspace, sourceKind: "cloud", versionId: this.confirmedVersion });
       if ((this.source?.kind === "offline" || this.state.mode === "images") && this.source?.versionId === this.confirmedVersion) {
         // A matching offline document already owns the display lease.
@@ -182,6 +184,7 @@ export class ReaderSession {
     if (this.disposed) return;
     if (this.state.mode === "images" && source.kind === "cloud" && !this.state.score) return;
     this.retainDisplay();
+    this.displayPrepared = false;
     this.armDeadline();
     this.displayAbort.abort();
     this.displayAbort = new AbortController();
@@ -201,6 +204,7 @@ export class ReaderSession {
         : prepareImageManifest(this.workspace, source.versionId!, score.currentVersion.sha256, signal);
       void manifest.then(async manifest => {
         if (!await this.current() || generation !== this.generation) return;
+        this.displayPrepared = true;
         this.publish({ document: new ImageDocument(manifest, scoreImagesPath(this.workspace.choirId, this.workspace.scoreId, manifest.versionId), local?.blob), status: "ready", modeMessage: null });
       }).catch(error => {
         if (this.disposed || generation !== this.generation) return;
@@ -215,6 +219,7 @@ export class ReaderSession {
     this.lease = lease;
     void lease.promise.then(async (document) => {
       if (!await this.current() || generation !== this.generation) return;
+      this.displayPrepared = true;
       this.publish({ document, status: "ready", modeMessage: null });
       this.resolveFailure();
     }).catch((error) => {
@@ -265,12 +270,17 @@ export class ReaderSession {
   }
   download = async () => {
     if (this.disposed || !this.state.score || this.state.downloading) return;
+    const mode = this.state.mode;
+    const score = this.state.score;
     this.publish({ downloading: true, downloadMessage: null });
     try {
       const { prepareOfflineScore } = await import("../offline/offline-score");
-      const offline = await prepareOfflineScore(this.workspace, this.state.score, this.state.mode, this.abort.signal);
+      const offline = await prepareOfflineScore(this.workspace, score, mode, this.abort.signal);
       if (!await this.current()) return;
-      this.publish({ offline, downloadMessage: "离线副本已完整校验，可以离线打开。" });
+      const current = this.state.mode === mode && this.state.score?.currentVersion.id === score.currentVersion.id;
+      this.publish({ offline, downloadMessage: current
+        ? "离线副本已完整校验，可以离线打开。"
+        : `${mode === "pdf" ? "PDF" : "图片"}副本已校验；当前显示方式或版本已改变，请查看本机离线副本状态。` });
       if (this.source?.kind === "offline" && this.localMatches()) await this.openOffline(offline);
     } catch {
       this.publish({ downloadMessage: "离线下载未完成，现有离线版本没有切换。请重试。" });
@@ -296,6 +306,7 @@ export class ReaderSession {
       return false;
     }
     this.retainDisplay();
+    this.displayPrepared = false;
     if (persist) writeDisplayPreference(this.workspace, mode, "score");
     this.displayAbort.abort();
     this.generation++;
@@ -303,7 +314,7 @@ export class ReaderSession {
     this.lease = null;
     this.source = null;
     this.pdfFailed = false;
-    this.publish({ mode, modeMessage: this.state.document ? "正在准备新的显示方式，原谱面继续保留…" : null, status: this.state.document ? "ready" : "loading", error: null });
+    this.publish({ mode, downloadMessage: null, modeMessage: this.state.document ? "正在准备新的显示方式，原谱面继续保留…" : null, status: this.state.document ? "ready" : "loading", error: null });
     this.armDeadline();
     if (this.localMatches()) void this.openOffline(this.state.offline!);
     else if (this.confirmedVersion) this.openSource({ kind: "cloud", versionId: this.confirmedVersion });
