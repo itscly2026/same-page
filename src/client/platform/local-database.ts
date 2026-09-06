@@ -311,10 +311,6 @@ export function migrateStoredTextPayload(payload: AnnotationPayload | null) {
 
 export const localDatabase = new SamePageDatabase();
 
-export async function verifyLocalDatabase(): Promise<void> {
-  await localDatabase.open();
-}
-
 export async function activateVerifiedOfflineScore(
   record: Omit<OfflineScoreRecord, "active" | "verifiedAt"> & { sessionEpoch?: string },
   expected?: { activeKey: string | null },

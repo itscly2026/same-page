@@ -16,7 +16,6 @@
 .settings-ux .settings-member-row { min-height: 4.25rem; cursor: pointer; }
 .settings-ux .settings-member-row strong { overflow-wrap: anywhere; }
 .settings-ux .settings-member-row input { flex-shrink: 0; }
-.settings-ux .settings-saving { grid-column: 1 / -1; color: var(--muted); font-size: .75rem; }
 .settings-ux :is(button, input, a):focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
 .settings-ux :is(input, button):disabled { cursor: default; }
 .file-menu-popover [role="menu"] [role="menuitem"] { display: flex; align-items: center; min-height: 44px; box-sizing: border-box; color: var(--ink); text-decoration: none; }

@@ -5,7 +5,7 @@ import {
   createExecutionContext,
   waitOnExecutionContext,
 } from "cloudflare:test";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import {
@@ -20,11 +20,7 @@ import {
 } from "vitest";
 
 import worker from "./index";
-import {
-  requireChoirRead,
-  requirePersonalLayerOwner,
-  requireSharedLayerEdit,
-} from "./auth/authorization";
+import { requireChoirRead } from "./auth/authorization";
 import { provisionChoir } from "./choirs/provision";
 import { createDatabase } from "./db/database";
 import {
@@ -32,8 +28,6 @@ import {
   scores,
   scoreVersions,
   choirs,
-  memberships,
-  sharedLayerEditGrants,
   user,
 } from "./db/schema";
 import { hashRateLimitIdentity } from "./security/rate-limit";
@@ -1093,43 +1087,6 @@ describe("authentication and choir boundaries", () => {
         provisioned.choirId,
       ),
     ).resolves.toEqual({ kind: "guest" });
-    await expect(
-      requirePersonalLayerOwner(
-        database,
-        { kind: "user", userId: member!.id },
-        provisioned.choirId,
-        admin!.id,
-      ),
-    ).rejects.toThrow("Forbidden");
-    await expect(
-      requireSharedLayerEdit(
-        database,
-        { kind: "user", userId: member!.id },
-        provisioned.choirId,
-        "E",
-      ),
-    ).rejects.toThrow("Forbidden");
-
-    const memberMembership = await database.query.memberships.findFirst({
-      where: and(
-        eq(memberships.choirId, provisioned.choirId),
-        eq(memberships.userId, member!.id),
-      ),
-    });
-    await database.insert(sharedLayerEditGrants).values({
-      id: crypto.randomUUID(),
-      choirId: provisioned.choirId,
-      slot: "E",
-      membershipId: memberMembership!.id,
-    });
-    await expect(
-      requireSharedLayerEdit(
-        database,
-        { kind: "user", userId: member!.id },
-        provisioned.choirId,
-        "E",
-      ),
-    ).resolves.toMatchObject({ id: memberMembership!.id });
 
     const loggedOutput = consoleSpies.flatMap((spy) => spy.mock.calls).join(" ");
     expect(loggedOutput).not.toContain(adminEmail);

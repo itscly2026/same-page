@@ -63,8 +63,7 @@ h1 {
   letter-spacing: -0.045em;
 }
 
-.hero__copy,
-.reader-placeholder > p:not(.eyebrow) {
+.hero__copy {
   max-width: 42rem;
   margin: 1.75rem 0 0;
   color: var(--muted);
@@ -72,7 +71,6 @@ h1 {
   line-height: 1.7;
 }
 
-.hero__actions,
 .update-prompt__actions {
   display: flex;
   flex-wrap: wrap;
@@ -125,21 +123,6 @@ h1 {
   background: var(--brand-soft);
 }
 
-.status-panel {
-  max-width: 42rem;
-  margin-top: clamp(4rem, 9vw, 8rem);
-  border-top: 1px solid var(--line);
-}
-
-.session-strip {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem 1rem;
-  margin-top: 2rem;
-  color: var(--muted);
-}
-
 .text-button {
   border: 0;
   padding: 0;
@@ -148,26 +131,6 @@ h1 {
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 0.2em;
-}
-
-.join-panel,
-.choir-section {
-  max-width: 48rem;
-  margin-top: clamp(3rem, 8vw, 6rem);
-  border-top: 1px solid var(--line);
-  padding-top: 1.5rem;
-}
-
-.join-panel h2,
-.choir-section h2 {
-  margin: 0;
-  font-size: 1.3rem;
-}
-
-.section-copy {
-  margin: 0.75rem 0 0;
-  color: var(--muted);
-  line-height: 1.6;
 }
 
 .entry-form {
@@ -181,8 +144,7 @@ h1 {
   min-width: 0;
 }
 
-.entry-form label,
-.open-admission-display-name label {
+.entry-form label {
   display: block;
   margin-bottom: 0.45rem;
   color: var(--ink);
@@ -190,8 +152,7 @@ h1 {
   font-weight: 700;
 }
 
-.entry-form input,
-.open-admission-display-name input {
+.entry-form input {
   width: 100%;
   min-height: 3rem;
   border: 1px solid #b9c8c4;
@@ -201,8 +162,7 @@ h1 {
   background: #fff;
 }
 
-.entry-form input:focus-visible,
-.open-admission-display-name input:focus-visible {
+.entry-form input:focus-visible {
   outline: 3px solid rgb(1 70 83 / 22%);
   outline-offset: 2px;
 }
@@ -222,12 +182,6 @@ h1 {
   opacity: 0.6;
 }
 
-.entry-form--inline {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  max-width: none;
-  align-items: end;
-}
-
 .form-message {
   max-width: 36rem;
   margin: 1rem 0 0;
@@ -235,83 +189,8 @@ h1 {
   line-height: 1.6;
 }
 
-.back-link {
-  display: inline-block;
-  margin-top: 2rem;
-  color: var(--brand);
-}
-
-.choir-grid {
-  display: grid;
-  gap: 0.75rem;
-  margin-top: 1rem;
-}
-
-.choir-card {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  border: 1px solid var(--line);
-  border-radius: 0.8rem;
-  padding: 1rem;
-  color: inherit;
-  background: rgb(255 255 255 / 56%);
-  text-decoration: none;
-}
-
-.choir-card span {
-  color: var(--muted);
-}
-
-.choir-card--button {
-  width: 100%;
-  align-items: center;
-  cursor: pointer;
-  text-align: left;
-}
-
-.choir-card--button[disabled] {
-  cursor: wait;
-  opacity: 0.6;
-}
-
-.open-admission-display-name {
-  display: block;
-  max-width: 30rem;
-  margin-top: 1.25rem;
-}
-
-.status-panel h2 {
-  margin: 1.5rem 0 0.75rem;
-  font-size: 1rem;
-}
-
-.status-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 2rem;
-  padding: 0.8rem 0;
-  border-bottom: 1px solid #e7eeec;
-}
-
 .status {
   color: var(--muted);
-}
-
-.status--ready {
-  color: #1f6b46;
-}
-
-.status--unavailable {
-  color: #9e351d;
-}
-
-.reader-placeholder h1 {
-  max-width: 50rem;
-}
-
-.reader-placeholder .primary-link {
-  margin-top: 2rem;
 }
 
 .route-loading {
@@ -328,31 +207,6 @@ h1 {
   padding: 1rem;
   background: #fff;
   box-shadow: 0 1rem 3rem rgb(0 45 52 / 12%);
-}
-
-.logout-dialog {
-  position: fixed;
-  z-index: 20;
-  top: 50%;
-  left: 50%;
-  width: min(30rem, calc(100% - 2rem));
-  border: 1px solid #b9c8c4;
-  border-radius: 1rem;
-  padding: 1.25rem;
-  background: var(--surface);
-  box-shadow: 0 1.5rem 5rem rgb(0 45 52 / 22%);
-  transform: translate(-50%, -50%);
-}
-
-.logout-dialog h2,
-.logout-dialog p {
-  margin: 0;
-}
-
-.logout-dialog p {
-  margin-top: 0.8rem;
-  color: var(--muted);
-  line-height: 1.6;
 }
 
 .update-prompt p,
@@ -2510,31 +2364,6 @@ h1 {
   object-fit: contain;
 }
 
-.shared-layer-editor {
-  margin-left: 0 !important;
-}
-
-.shared-layer-editor form,
-.annotation-grants {
-  display: grid;
-  grid-template-columns: minmax(8rem, 1fr) auto auto;
-  gap: 0.45rem;
-  margin-top: 0.45rem;
-}
-
-.shared-layer-editor input {
-  min-width: 0;
-}
-
-.shared-layer-editor button {
-  grid-column: 1 / -1;
-}
-
-.annotation-grants {
-  grid-template-columns: 1fr;
-  width: 100%;
-}
-
 .annotation-conflicts {
   position: fixed;
   z-index: 8;
@@ -3153,14 +2982,6 @@ h1 {
   .auth-card {
     border-radius: 0.9rem;
     padding: 1.35rem;
-  }
-
-  .hero__actions > * {
-    width: 100%;
-  }
-
-  .entry-form--inline {
-    grid-template-columns: 1fr;
   }
 
   .reader-more-menu {

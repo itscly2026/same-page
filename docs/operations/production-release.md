@@ -46,7 +46,7 @@
 6. 在 GitHub `production` environment 中设置 `CLOUDFLARE_API_TOKEN` 与
    `CLOUDFLARE_ACCOUNT_ID`。
 7. 运行 `npm run verify:deployment -- https://samepage.clyapps.com <expected-source-SHA>`。
-8. 首位管理员完成 OTP 注册后，通过受控命令创建“小红花云盘”。自动化命令不显示
+8. 首位管理员完成 OTP 注册后，按 [云盘初始化命令](../runbooks/local-development.md#创建首个云盘) 使用 `--remote` 创建“小红花云盘”。自动化命令不显示
    初始邀请码；管理员登录后在「管理 → 邀请码」查看，并通过私密渠道交付。
 9. 如需启用“公开体验”，使用 `--guest-admission open --preview-entry` 创建唯一的公开体验云盘；已有开放准入云盘必须通过受控 SQL 明确设置 `is_preview_entry = 1`，不得按名称自动匹配。
 

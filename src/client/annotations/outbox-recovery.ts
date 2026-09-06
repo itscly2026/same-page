@@ -46,24 +46,16 @@ export interface OutboxRecoveryScopeResult {
 }
 
 export interface OutboxRecoverySummary {
-  ownerKey: LocalWorkspaceOwnerKey | null;
-  trigger: OutboxRecoveryTrigger | null;
-  running: boolean;
-  startedAt: number | null;
-  completedAt: number | null;
-  scanOutcome: "idle" | "running" | "completed" | "owner-changed" | "failed";
+  ownerKey: LocalWorkspaceOwnerKey;
+  trigger: OutboxRecoveryTrigger;
+  startedAt: number;
+  completedAt: number;
+  scanOutcome: "completed" | "owner-changed" | "failed";
   discoveredScopes: number;
   remainingOperations: number;
   discoveryLimitReached: boolean;
   results: readonly OutboxRecoveryScopeResult[];
   nextAttemptAt?: number;
-}
-
-let recoverySummary: OutboxRecoverySummary = emptySummary();
-let latestRun = 0;
-
-export function getOutboxRecoverySummary(): OutboxRecoverySummary {
-  return recoverySummary;
 }
 
 export function requestOutboxRecovery() {
@@ -74,25 +66,12 @@ export async function recoverAnnotationOutbox(
   ownerKey: LocalWorkspaceOwnerKey,
   trigger: OutboxRecoveryTrigger,
 ): Promise<OutboxRecoverySummary> {
-  const run = ++latestRun;
   const reportFailure = diagnosticScope();
   const startedAt = Date.now();
-  publish(run, {
-    ownerKey,
-    trigger,
-    running: true,
-    startedAt,
-    completedAt: null,
-    scanOutcome: "running",
-    discoveredScopes: 0,
-    remainingOperations: 0,
-    discoveryLimitReached: false,
-    results: [],
-  });
 
   try {
     if ((await currentLocalOwnerKey()) !== ownerKey) {
-      return complete(run, {
+      return complete({
         ownerKey,
         trigger,
         startedAt,
@@ -148,7 +127,7 @@ export async function recoverAnnotationOutbox(
     }
     if (results.length < OUTBOX_RECOVERY_LIMITS.scopes && discovered.length < OUTBOX_RECOVERY_LIMITS.discoveredScopes) nextAttemptAt = earliestRetry;
     const remainingOperations = await ownerOutbox.count();
-    return complete(run, {
+    return complete({
       ownerKey,
       trigger,
       startedAt,
@@ -163,7 +142,7 @@ export async function recoverAnnotationOutbox(
     });
   } catch {
     reportFailure({ operation: "sync", category: "internal", stage: "prepare" });
-    return complete(run, {
+    return complete({
       ownerKey,
       trigger,
       startedAt,
@@ -217,34 +196,6 @@ async function recoverScope(
   }
 }
 
-function complete(
-  run: number,
-  summary: Omit<OutboxRecoverySummary, "running" | "completedAt">,
-) {
-  const completed: OutboxRecoverySummary = {
-    ...summary,
-    running: false,
-    completedAt: Date.now(),
-  };
-  publish(run, completed);
-  return completed;
-}
-
-function publish(run: number, summary: OutboxRecoverySummary) {
-  if (run === latestRun) recoverySummary = summary;
-}
-
-function emptySummary(): OutboxRecoverySummary {
-  return {
-    ownerKey: null,
-    trigger: null,
-    running: false,
-    startedAt: null,
-    completedAt: null,
-    scanOutcome: "idle",
-    discoveredScopes: 0,
-    remainingOperations: 0,
-    discoveryLimitReached: false,
-    results: [],
-  };
+function complete(summary: Omit<OutboxRecoverySummary, "completedAt">): OutboxRecoverySummary {
+  return { ...summary, completedAt: Date.now() };
 }
