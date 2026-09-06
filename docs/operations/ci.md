@@ -57,6 +57,31 @@ PWA 测试构建 `pwa-e2e-first`、`pwa-e2e-second` 并验证真实 Service Work
 
 `npm run check` 运行所有常规检查；`npm run check:full` 再包含原生渲染、PWA 更新及加载预算，是本地验证超集。Linux Docker 无网络验证在 CI 单独运行。生产身份、准入与锁见 [交付契约](delivery-contract.md) 和 [发布流程](production-release.md)。
 
+## 本地浏览器检查与视觉报告
+
+首次运行浏览器测试或报告前安装两个引擎；Linux/CI 同时使用 `--with-deps` 安装系统依赖：
+
+```bash
+npx playwright install chromium webkit
+```
+
+原生渲染和图片 smoke 需要 `renderer/requirements.txt` 的 Python 依赖。完整检查会启动
+本地 workerd/Vite、临时 D1 和浏览器，并多次构建；不需要生产凭据，不操作生产数据。
+`check:full` 不应与其他构建命令在同一工作目录并行运行，也不生成完整视觉报告。
+
+```bash
+npm run visual:report
+```
+
+报告直接运行当前生产构建的 React 路由、样式和 PDF.js，以浏览器请求 fixture 提供虚构
+身份、云盘和乐谱，不维护另一套页面。每次替换忽略提交的 `artifacts/visual-report/`：
+`index.html` 是报告，`screenshots/` 保存 PNG，`manifest.json` 记录 commit、场景与尺寸。
+
+场景和完成条件在 `visual-report/scenarios.mjs` 声明，请求数据由 `visual-report/fixtures.mjs`
+统一提供；未知 `/api/*` 请求返回 404，避免访问实际业务数据。报告使用 Chromium，其他
+布局门禁同时覆盖 WebKit。iPad 仿真不证明 Safari 工具栏、虚拟键盘、PWA 全屏、安全区或
+Apple Pencil 的实机表现，设备验收见 [发布 runbook](production-release.md#人工验收脚本)。
+
 ## 安装与性能评估
 
 Node 使用 lockfile 和 npm 下载缓存，安装命令为 `npm ci --prefer-offline --no-audit --no-fund`；原生依赖使用 setup-python 的 pip 缓存。不缓存可变测试数据库，不复用未经本次验证的发布产物。

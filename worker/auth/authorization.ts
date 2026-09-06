@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import type { Database } from "../db/database";
-import { choirs, memberships, sharedLayerEditGrants } from "../db/schema";
+import { choirs, memberships } from "../db/schema";
 import type { Principal } from "./principal";
 
 export class AuthorizationError extends Error {
@@ -62,58 +62,6 @@ export async function requireChoirAdmin(
     throw new AuthorizationError();
   }
   return membership;
-}
-
-export async function requireSharedLayerEdit(
-  database: Database,
-  principal: Principal | null,
-  choirId: string,
-  slot: "E" | "S" | "A" | "T" | "B",
-) {
-  if (!principal || principal.kind !== "user") {
-    throw new AuthorizationError();
-  }
-
-  const membership = await findActiveMembership(
-    database,
-    choirId,
-    principal.userId,
-  );
-  if (!membership) {
-    throw new AuthorizationError();
-  }
-  if (membership.role === "admin") {
-    return membership;
-  }
-
-  const grant = await database.query.sharedLayerEditGrants.findFirst({
-    where: and(
-      eq(sharedLayerEditGrants.choirId, choirId),
-      eq(sharedLayerEditGrants.slot, slot),
-      eq(sharedLayerEditGrants.membershipId, membership.id),
-    ),
-  });
-  if (!grant) {
-    throw new AuthorizationError();
-  }
-  return membership;
-}
-
-export async function requirePersonalLayerOwner(
-  database: Database,
-  principal: Principal | null,
-  choirId: string,
-  ownerUserId: string,
-) {
-  if (
-    !principal ||
-    principal.kind !== "user" ||
-    principal.userId !== ownerUserId
-  ) {
-    throw new AuthorizationError();
-  }
-
-  return requireChoirRead(database, principal, choirId);
 }
 
 async function findActiveMembership(

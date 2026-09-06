@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-export const defaultSharedLayerSlots = ["E", "S", "A", "T", "B"] as const;
 export const sharedLayerSlotSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 export type SharedLayerSlot = z.infer<typeof sharedLayerSlotSchema>;
 
