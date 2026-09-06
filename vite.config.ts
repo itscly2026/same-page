@@ -8,6 +8,7 @@ import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 import { navigationFallbackDenylist } from "./src/client/pwa-navigation.ts";
+import { pdfJsAssets } from "./scripts/pdfjs-assets-plugin.ts";
 
 const buildId = process.env.SAME_PAGE_BUILD_ID
   ?? process.env.GITHUB_SHA
@@ -31,6 +32,7 @@ export default defineConfig(({ isPreview }) => ({
     chunkSizeWarningLimit: 600,
   },
   plugins: [
+    pdfJsAssets(),
     {
       name: "same-page-build-identity",
       configurePreviewServer(server) {
@@ -103,7 +105,7 @@ export default defineConfig(({ isPreview }) => ({
         // callbacks carry one-time codes that the application shell cannot
         // process and must never cache or render.
         navigateFallbackDenylist: navigationFallbackDenylist,
-        globPatterns: ["**/*.{js,mjs,css,html,ico,png,webp,woff2}"],
+        globPatterns: ["**/*.{js,mjs,wasm,css,html,ico,png,webp,woff2}"],
         // PDF.js' worker is slightly larger than Workbox's 2 MiB default.
         // It is required to open a verified offline PDF, so keep it in the
         // application-shell precache rather than making offline claims depend
