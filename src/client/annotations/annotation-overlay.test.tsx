@@ -76,6 +76,21 @@ beforeEach(async () => {
 });
 
 describe("AnnotationOverlay", () => {
+  it("stops new edits after layer deletion while saving an open composer to the original layer", async () => {
+    const view = renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页批注层");
+    openNewText(overlay);
+    fireEvent.change(screen.getByLabelText("批注文本"), { target: { value: "尚未完成的输入" } });
+    view.rerender(<AnnotationOverlay editor={editor} pageNumber={1} layers={[layers[1]!]} annotations={[]} editing tool="text" activeLayerId={activeLayerId} />);
+    expect(screen.getByText("此层已停止编辑")).toBeVisible();
+    expect(screen.getByLabelText("批注文本")).toHaveValue("尚未完成的输入");
+    fireEvent.submit(screen.getByRole("form", { name: "文字输入" }));
+    await waitFor(async () => expect(await localDatabase.annotations.toArray()).toEqual([expect.objectContaining({ layerId: activeLayerId, state: "draft", payload: expect.objectContaining({ text: "尚未完成的输入" }) })]));
+    await waitFor(() => expect(screen.queryByRole("form", { name: "文字输入" })).not.toBeInTheDocument());
+    openNewText(overlay);
+    expect(screen.queryByRole("form", { name: "文字输入" })).not.toBeInTheDocument();
+  });
+
   it("shows a concise hint and keeps the centered composer open across blur until cancel", async () => {
     const visualViewport = installVisualViewport();
     const interactions: AnnotationOverlayInteraction[] = [];

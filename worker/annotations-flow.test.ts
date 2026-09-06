@@ -1,3 +1,6 @@
+import { cleanupSharedLayers } from "./annotations/cleanup";
+import { RECOVERY_PERIOD_MS } from "./lifecycle/cleanup";
+import type { SharedLayerManagementSummary } from "../src/shared/annotations";
 import { setupNetwork } from "@msw/cloudflare";
 import { env } from "cloudflare:workers";
 import {
@@ -62,6 +65,85 @@ beforeEach(async () => {
 afterEach(() => network.resetHandlers());
 
 describe("annotation layers and object synchronization", () => {
+  it.each(["E", "custom"])("recycles %s across scores, retaining identity, grants and preferences while rejecting stale actions", async slotKind => {
+    const fixture = await createFixture();
+    const member = await createMember(fixture.joinCode!, "recycle@example.test", "成员");
+    const base = `/api/choirs/${fixture.choirId}`;
+    const slot = slotKind === "E" ? "E" : (await (await callWorker(`${base}/shared-layers`, jsonRequest(fixture.adminCookie, { name: "伴奏", defaultColor: "#123456" }))).json() as { slot: string }).slot;
+    const list = async (state = "current") => (await (await callWorker(`${base}/shared-layers?state=${state}`, { headers: { cookie: fixture.adminCookie } })).json() as { layers: SharedLayerManagementSummary[] }).layers;
+    const change = (action: string, expectedRevision: number, cookie = fixture.adminCookie) => callWorker(`${base}/shared-layers/${slot}/lifecycle`, jsonRequest(cookie, { action, expectedRevision }));
+    const put = (path: string, body: unknown) => callWorker(`${base}${path}`, { ...jsonRequest(fixture.adminCookie, body), method: "PUT" });
+    const members = await (await callWorker(`${base}/shared-layers/${slot}/grants`, { headers: { cookie: fixture.adminCookie } })).json() as { members: { id: string; displayName: string }[] };
+    const memberId = members.members.find(row => row.displayName === "成员")!.id;
+    await put(`/shared-layers/${slot}/grants/${memberId}`, { granted: true });
+    await put(`/shared-layers/${slot}/preference`, { subscribed: false, colorOverride: "#987654" });
+    await put(`/scores/${fixture.scoreId}/shared-layers/${slot}/preference`, { subscribed: true });
+    const layer = await layerBySlot(fixture, fixture.adminCookie, slot);
+    const secondScore = (await (await callWorker(`${base}/scores`, uploadRequest(fixture.adminCookie, "第二首.pdf"))).json() as { score: { id: string } }).score.id;
+    const second = { ...fixture, scoreId: secondScore };
+    const secondLayer = await layerBySlot(second, fixture.adminCookie, slot);
+    const objectId = crypto.randomUUID();
+    const secondId = crypto.randomUUID();
+    await push(fixture, [operation(objectId, String(layer!.id), 0, "第一首提示")]);
+    await push(second, [operation(secondId, String(secondLayer!.id), 0, "第二首提示")]);
+    const original = (await list()).find(row => row.slot === slot)!;
+    expect((await change("delete", original.revision, member.cookie)).status).toBe(403);
+    expect((await callWorker(`${base}/shared-layers/P/lifecycle`, jsonRequest(fixture.adminCookie, { action: "delete", expectedRevision: 0 }))).status).toBe(409);
+    expect((await change("delete", original.revision)).status).toBe(200);
+    expect((await change("delete", original.revision)).status).toBe(409);
+    expect((await list()).some(row => row.slot === slot)).toBe(false);
+    const deleted = (await list("deleted")).find(row => row.slot === slot)!;
+    expect(deleted).toMatchObject({ ...original, revision: original.revision + 1, deletedAt: expect.any(Number), recoverUntil: expect.any(Number) });
+    expect(deleted.recoverUntil! - deleted.deletedAt!).toBe(RECOVERY_PERIOD_MS);
+    expect(await layerBySlot(fixture, member.cookie, slot)).toBeUndefined();
+    expect(await layerBySlot(second, fixture.adminCookie, slot)).toBeUndefined();
+    expect(await (await push(fixture, [operation(objectId, String(layer!.id), 1, "晚到保存")])).json()).toMatchObject({ results: [{ status: "permission_denied" }] });
+    expect((await put(`/shared-layers/${slot}/settings`, { active: true })).status).toBe(404);
+    expect((await put(`/shared-layers/${slot}/grants/${memberId}`, { granted: true })).status).toBe(404);
+    expect((await put(`/shared-layers/${slot}/order`, { direction: "up" })).status).toBe(404);
+    const pullPath = `${base}/scores/${fixture.scoreId}/annotations`;
+    expect(await (await callWorker(pullPath, { headers: { cookie: fixture.adminCookie } })).json()).toMatchObject({ objects: [] });
+    expect((await change("restore", deleted.revision, member.cookie)).status).toBe(403);
+    expect((await change("restore", original.revision)).status).toBe(409);
+    expect((await change("restore", deleted.revision)).status).toBe(200);
+    await cleanupSharedLayers(env.DB, deleted.recoverUntil! + 1);
+    expect(await layerBySlot(fixture, fixture.adminCookie, slot)).toMatchObject({ id: layer!.id, subscribed: true, driveSubscribed: false, driveColorOverride: "#987654" });
+    expect(await layerBySlot(fixture, member.cookie, slot)).toMatchObject({ id: layer!.id, canEdit: true });
+    expect(await layerBySlot(second, fixture.adminCookie, slot)).toMatchObject({ id: secondLayer!.id });
+    expect(await (await callWorker(pullPath, { headers: { cookie: fixture.adminCookie } })).json()).toMatchObject({ objects: [{ id: objectId, version: 1, payload: { text: "第一首提示" } }] });
+    const paused = await put(`/shared-layers/${slot}/settings`, { active: false });
+    expect(paused.status).toBe(200);
+    const beforePauseDelete = (await list()).find(row => row.slot === slot)!;
+    await change("delete", beforePauseDelete.revision);
+    const pausedDeleted = (await list("deleted")).find(row => row.slot === slot)!;
+    await change("restore", pausedDeleted.revision);
+    expect((await list()).find(row => row.slot === slot)).toMatchObject({ active: false, sortOrder: original.sortOrder });
+    expect(await layerBySlot(fixture, fixture.adminCookie, slot)).toBeUndefined();
+    expect(await layerBySlot(fixture, fixture.adminCookie, "S")).toBeDefined();
+  });
+
+  it("rejects expired restoration before cleanup, purges atomically and never reuses a same-name slot", async () => {
+    const fixture = await createFixture();
+    const base = `/api/choirs/${fixture.choirId}`;
+    const layer = await layerBySlot(fixture, fixture.adminCookie, "E");
+    await push(fixture, [operation(crypto.randomUUID(), String(layer!.id), 0, "将被清理")]);
+    await callWorker(`${base}/shared-layers/E/lifecycle`, jsonRequest(fixture.adminCookie, { action: "delete", expectedRevision: 0 }));
+    const expiredAt = Date.now() - RECOVERY_PERIOD_MS - 1;
+    await env.DB.prepare("UPDATE choir_shared_layer_settings SET deleted_at = ? WHERE choir_id = ? AND slot = 'E'").bind(expiredAt, fixture.choirId).run();
+    expect((await callWorker(`${base}/shared-layers/E/lifecycle`, jsonRequest(fixture.adminCookie, { action: "restore", expectedRevision: 1 }))).status).toBe(409);
+    await cleanupSharedLayers(env.DB);
+    await cleanupSharedLayers(env.DB);
+    const list = await (await callWorker(`${base}/shared-layers?state=deleted`, { headers: { cookie: fixture.adminCookie } })).json();
+    expect(list).toMatchObject({ layers: [] });
+    for (const table of ["annotation_layers", "annotation_objects", "annotation_sync_operations", "shared_layer_edit_grants", "user_drive_layer_preferences", "user_score_layer_preferences"]) {
+      expect(await env.DB.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE choir_id = ?`).bind(fixture.choirId).first()).toEqual({ count: table === "annotation_layers" ? 5 : 0 });
+    }
+    const created = await (await callWorker(`${base}/shared-layers`, jsonRequest(fixture.adminCookie, { name: "Ensemble", defaultColor: "#123456" }))).json() as { slot: string };
+    expect(created.slot).not.toBe("E");
+    expect(await (await push(fixture, [operation(crypto.randomUUID(), String(layer!.id), 0, "旧设备草稿")])).json()).toMatchObject({ results: [{ status: "permission_denied" }] });
+    expect(await layerBySlot(fixture, fixture.adminCookie, created.slot)).toBeDefined();
+  });
+
   it("moves a shared layer one position atomically and denies non-admin reordering", async () => {
     const fixture = await createFixture();
     const member = await createMember(fixture.joinCode!, "order-member@example.test", "成员");
@@ -667,7 +749,7 @@ describe("annotation layers and object synchronization", () => {
           name: "Ensemble",
           defaultColor: "#a12652",
           grantedMemberCount: 0,
-          sortOrder: 0, active: true,
+          sortOrder: 0, active: true, revision: 0, deletedAt: null, recoverUntil: null,
         },
       ]),
     });

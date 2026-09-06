@@ -119,6 +119,7 @@ export function AnnotationOverlay({
   const deleteActiveRef = useRef(false);
   const deleteTargetRef = useRef<HTMLDivElement>(null);
   const visualViewport = useVisualViewport(editing);
+  const canStartEdit = editing && layers.some(layer => layer.id === activeLayerId && layer.canEdit);
   const visibleLayerIds = new Set(
     layers
       .filter((layer) => (editing ? layer.id === activeLayerId : layer.subscribed))
@@ -321,7 +322,7 @@ export function AnnotationOverlay({
     annotation: LocalAnnotationRecord,
     payload: TextPayload,
   ) => {
-    if (!editing || annotation.layerId !== activeLayerId || tool !== "text") return;
+    if (!canStartEdit || annotation.layerId !== activeLayerId || tool !== "text") return;
     if (textEditor) return;
     const active = textTransform.current;
     if (active?.id === annotation.id) {
@@ -446,7 +447,7 @@ export function AnnotationOverlay({
   };
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (!editing || !activeLayerId) return;
+    if (!canStartEdit || !activeLayerId) return;
     if (tool === "text") {
       if (textTransform.current) {
         addTransformPointer(event, textTransform.current);
@@ -652,7 +653,7 @@ export function AnnotationOverlay({
               fontSize: `${position.fontScale * 100}cqw`,
             }}
             key={annotation.id}
-            disabled={!editing || annotation.layerId !== activeLayerId}
+            disabled={!canStartEdit || annotation.layerId !== activeLayerId}
             onPointerDown={(event) => beginTextTransform(event, annotation, payload)}
             onPointerMove={updateTextTransform}
             onPointerUp={finishTextTransform}
@@ -676,12 +677,16 @@ export function AnnotationOverlay({
       </div>
       {editing ? createPortal(
         <>
+          {!canStartEdit && <aside className="annotation-storage-error" role="status">
+            <strong>此层已停止编辑</strong>
+            <p>共享层已停用、删除或权限已改变。当前输入可完成并保存在原层的本机草稿中；不会上传或转写其他层。</p>
+          </aside>}
           {persistence === "failed" && <aside className="annotation-storage-error" role="alert">
             <strong>本机保存失败</strong>
             <p>修改仍留在当前编辑器，尚未可靠保存。请保留此页面，释放设备空间后重试。</p>
             <button type="button" onClick={() => void editor?.retry()}>重试本机保存</button>
           </aside>}
-          {editing && tool === "text" && !textEditor && !transformingText ? (
+          {canStartEdit && tool === "text" && !textEditor && !transformingText ? (
             <p className="annotation-text-hint" role="status">轻点任意位置添加文字</p>
           ) : null}
 

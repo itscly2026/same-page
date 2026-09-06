@@ -52,9 +52,28 @@ export async function cacheAnnotationLayers(workspace: LocalWorkspace, layers: A
     localDatabase.annotations, localDatabase.annotationSyncCursors, localDatabase.offlineScores], async () => {
     const previous = await localDatabase.annotationLayers.where("scopeKey").equals(workspace.scopeKey).toArray();
     const ids = new Set(layers.map(layer => layer.id));
+    const editable = new Set(layers.filter(layer => layer.canEdit).map(layer => layer.id));
+    await localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey)
+      .filter(annotation => annotation.syncErrorCode === "permission_denied" && editable.has(annotation.layerId))
+      .modify({ state: "pending", syncErrorCode: null });
     if (layers.some(layer => !previous.some(entry => entry.id === layer.id))) {
       await localDatabase.annotationSyncCursors.delete(workspace.scopeKey);
     }
+    // Shared slots have one lifecycle across the whole drive. Receiving a
+    // revocation on one score also fences already downloaded sibling scores.
+    const sharedSlots = new Set(layers.filter(layer => layer.kind === "shared").map(layer => layer.sharedSlot));
+    const driveLayers = await localDatabase.annotationLayers.where("ownerKey").equals(workspace.ownerKey)
+      .filter(layer => layer.choirId === workspace.choirId && layer.scopeKey !== workspace.scopeKey).toArray();
+    await localDatabase.annotationLayers.bulkDelete(driveLayers
+      .filter(layer => layer.kind === "shared" && !sharedSlots.has(layer.sharedSlot)).map(layer => layer.key));
+    const siblingRecords = await localDatabase.offlineScores.where("ownerKey").equals(workspace.ownerKey)
+      .filter(record => record.choirId === workspace.choirId && record.scopeKey !== workspace.scopeKey).toArray();
+    for (const record of siblingRecords) {
+      record.annotationSnapshot.layers = record.annotationSnapshot.layers.filter(layer => layer.kind !== "shared" || sharedSlots.has(layer.sharedSlot));
+      const readable = new Set(record.annotationSnapshot.layers.map(layer => layer.id));
+      record.annotationSnapshot.annotations = record.annotationSnapshot.annotations.filter(annotation => readable.has(annotation.layerId));
+    }
+    await localDatabase.offlineScores.bulkPut(siblingRecords);
     const offlineRecords = await localDatabase.offlineScores.where("scopeKey").equals(workspace.scopeKey).toArray();
     const previousLayers = [...previous, ...offlineRecords.flatMap(record => record.annotationSnapshot.layers)];
     const revoked = new Set(previousLayers.filter(layer => layer.kind === "personal" && !layer.canEdit && !ids.has(layer.id)).map(layer => layer.id));
@@ -585,7 +604,7 @@ function fromCanonical(
   };
 }
 
-export async function prepareAnnotationPush(workspace: LocalWorkspace, maxOperations: number) {
+export async function prepareAnnotationPush(workspace: LocalWorkspace, maxOperations: number, editableLayerIds?: ReadonlySet<string>) {
   return withLocalWorkspaceTransaction(
       workspace,
       "rw",
@@ -668,6 +687,7 @@ export async function prepareAnnotationPush(workspace: LocalWorkspace, maxOperat
         ]);
         const seenAnnotationIds = new Set<string>();
         const selected = operations
+          .filter(operation => !editableLayerIds || editableLayerIds.has(operation.layerId))
           .filter(
             (operation) => !discardedOperationIds.has(operation.opId),
           )
@@ -703,21 +723,22 @@ export async function restoreOfflineAnnotationSnapshot(
 ) {
   await assertLocalWorkspaceActive(workspace);
   if (record.scopeKey !== workspace.scopeKey) return;
+  await withLocalWorkspaceTransaction(
+    workspace,
+    "rw",
+    [
+      localDatabase.offlineScores,
+      localDatabase.annotationLayers,
+      localDatabase.annotations,
+      localDatabase.annotationSyncCursors,
+    ],
+    async () => {
   const snapshot = (await localDatabase.offlineScores.get(record.key))?.annotationSnapshot ?? record.annotationSnapshot;
   if (!snapshot) return;
   for (const layer of snapshot.layers) annotationLayerSummarySchema.parse(layer);
   for (const annotation of snapshot.annotations) {
     if (annotation.payload) annotationPayloadSchema.parse(annotation.payload);
   }
-  await withLocalWorkspaceTransaction(
-    workspace,
-    "rw",
-    [
-      localDatabase.annotationLayers,
-      localDatabase.annotations,
-      localDatabase.annotationSyncCursors,
-    ],
-    async () => {
       for (const layer of snapshot.layers) {
         if (layer.scopeKey === workspace.scopeKey && layer.ownerKey === workspace.ownerKey && !(await localDatabase.annotationLayers.get(layer.key))) {
           await localDatabase.annotationLayers.put(layer);

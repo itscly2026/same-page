@@ -1,3 +1,4 @@
+import { cleanupSharedLayers } from "./annotations/cleanup";
 import { driveSettingsRoutes } from "./choirs/settings";
 import { convertScoreImages } from "./images/conversion";
 import { imageRoutes } from "./images/routes";
@@ -74,6 +75,10 @@ export default {
     }
   },
   scheduled(_controller, env, context) {
+    context.waitUntil(cleanupSharedLayers(env.DB).catch(() => {
+      logFailure("storage", "cleanup", 500, crypto.randomUUID());
+      throw new Error("shared_layer_cleanup_failed");
+    }));
     context.waitUntil(cleanupDiagnosticReports(env.DB).catch(() => {
       logFailure("storage", "cleanup", 500, crypto.randomUUID());
       throw new Error("diagnostic_report_cleanup_failed");

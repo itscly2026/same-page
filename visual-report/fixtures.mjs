@@ -299,7 +299,7 @@ export function resolveFixtureRequest({
         slot: entry.sharedSlot,
         name: entry.name,
         defaultColor: entry.adminDefaultColor,
-        grantedMemberCount: [2, 1, 0, 1, 0][index], sortOrder: index, active: true,
+        grantedMemberCount: [2, 1, 0, 1, 0][index], sortOrder: index, active: true, revision: 0, deletedAt: null, recoverUntil: null,
       })),
     });
   }

@@ -126,39 +126,16 @@ async function refreshAnnotations(
   startingLayers: () => void,
   layersApplied: (layers: AnnotationLayerSummary[]) => void,
 ): Promise<SyncResult> {
-  await assertLocalWorkspaceActive(workspace);
-  signal.throwIfAborted();
   startingLayers();
-  const base = `/api/choirs/${encodeURIComponent(workspace.choirId)}/scores/${encodeURIComponent(workspace.scoreId)}`;
-  const layerResponse = await refreshRequest(`${base}/layers`, signal);
-  await assertLocalWorkspaceActive(workspace);
-  signal.throwIfAborted();
-  if (!layerResponse.ok) {
-    if ([401, 403, 404].includes(layerResponse.status)) await removeCachedPublications(workspace);
-    throw new Error("annotation_layers_unavailable");
-  }
-  const { layers } = await parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema);
-  await assertLocalWorkspaceActive(workspace);
-  signal.throwIfAborted();
-  if (!hasCompleteOfflineLayers(layers, workspace.ownerKey)) {
-    await removeCachedPublications(workspace);
-    throw new Error("annotation_layer_identity_mismatch");
-  }
-  const previous = await readAnnotationLayers(workspace);
-  const applied = workspace.ownerKey.startsWith("user:") ? layers : layers.map(layer => ({
-    ...layer, subscribed: previous.find(entry => entry.id === layer.id)?.subscribed ?? layer.subscribed,
-  }));
-  signal.throwIfAborted();
-  await cacheAnnotationLayers(workspace, applied);
-  await assertLocalWorkspaceActive(workspace);
-  signal.throwIfAborted();
+  const applied = await refreshLayerCapabilities(workspace, signal);
   layersApplied(applied);
+  const base = `/api/choirs/${encodeURIComponent(workspace.choirId)}/scores/${encodeURIComponent(workspace.scoreId)}`;
 
   // Publish capability before slow pushes or paginated pulls. A rejected push
   // still allows readable cloud changes and revocations to reach this device.
   let pushed = 0;
   let pushError: unknown;
-  try { pushed = await drainAnnotationOutbox(workspace, { signal }); }
+  try { pushed = await drainAnnotationOutbox(workspace, { signal, layers: applied }); }
   catch (error) { pushError = error; }
   signal.throwIfAborted();
   await assertLocalWorkspaceActive(workspace);
@@ -183,6 +160,36 @@ async function refreshAnnotations(
   }
   if (pushError) throw pushError;
   return { pushed, pulled };
+}
+
+async function refreshLayerCapabilities(workspace: LocalWorkspace, signal: AbortSignal) {
+  await assertLocalWorkspaceActive(workspace);
+  signal.throwIfAborted();
+  const base = `/api/choirs/${encodeURIComponent(workspace.choirId)}/scores/${encodeURIComponent(workspace.scoreId)}`;
+  const layerResponse = await refreshRequest(`${base}/layers`, signal);
+  await assertLocalWorkspaceActive(workspace);
+  signal.throwIfAborted();
+  if (!layerResponse.ok) {
+    if ([401, 403, 404].includes(layerResponse.status)) await removeCachedPublications(workspace);
+    throw new Error("annotation_layers_unavailable");
+  }
+  const { layers } = await parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema);
+  await assertLocalWorkspaceActive(workspace);
+  signal.throwIfAborted();
+  if (!hasCompleteOfflineLayers(layers, workspace.ownerKey)) {
+    await removeCachedPublications(workspace);
+    throw new Error("annotation_layer_identity_mismatch");
+  }
+  const previous = await readAnnotationLayers(workspace);
+  const applied = workspace.ownerKey.startsWith("user:") ? layers : layers.map(layer => ({
+    ...layer, subscribed: previous.find(entry => entry.id === layer.id)?.subscribed ?? layer.subscribed,
+  }));
+  signal.throwIfAborted();
+  await cacheAnnotationLayers(workspace, applied);
+  await assertLocalWorkspaceActive(workspace);
+  signal.throwIfAborted();
+  return applied;
+
 }
 
 function refreshRequest(url: string, signal: AbortSignal) {
@@ -219,13 +226,16 @@ export async function pushPendingAnnotations(
 
 async function drainAnnotationOutbox(
   workspace: LocalWorkspace,
-  options: { maxOperations?: number; signal?: AbortSignal } = {},
+  options: { maxOperations?: number; signal?: AbortSignal; layers?: AnnotationLayerSummary[] } = {},
 ) {
   await assertLocalWorkspaceActive(workspace);
+  const layers = options.layers ?? await refreshLayerCapabilities(workspace,
+    options.signal ?? AbortSignal.timeout(30_000));
+  const editableLayerIds = new Set(layers.filter(layer => layer.canEdit).map(layer => layer.id));
   let pushed = 0;
   const maxOperations = options.maxOperations ?? Number.POSITIVE_INFINITY;
   while (pushed < maxOperations) {
-    const batch = await prepareAnnotationPush(workspace, maxOperations - pushed);
+    const batch = await prepareAnnotationPush(workspace, maxOperations - pushed, editableLayerIds);
     if (batch.length === 0) return pushed;
     await assertLocalWorkspaceActive(workspace);
     options.signal?.throwIfAborted();

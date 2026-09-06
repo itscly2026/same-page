@@ -1,8 +1,8 @@
 import { Blob as NodeBlob } from "node:buffer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
-import { cacheAnnotationLayers, readAnnotationLayers, readScoreAnnotationState, restoreOfflineAnnotationSnapshot, saveAnnotationDraft } from "./annotation-state";
-import { getAnnotationSyncActivity, syncAnnotations, withScoreSyncLock } from "./sync";
+import { queueScoreDrafts, cacheAnnotationLayers, readAnnotationLayers, readScoreAnnotationState, restoreOfflineAnnotationSnapshot, saveAnnotationDraft } from "./annotation-state";
+import { pushPendingAnnotations, getAnnotationSyncActivity, syncAnnotations, withScoreSyncLock } from "./sync";
 import { captureOfflineAnnotationSnapshot } from "./offline-snapshot";
 import { findVerifiedOfflineScore, sha256Hex, verifyOfflineScore } from "../offline/offline-score-verification";
 import { activateVerifiedOfflineScore, localDatabase, type OfflineScoreRecord } from "../platform/local-database";
@@ -75,6 +75,54 @@ it("loads older notes on a newly shared layer and removes revoked notes from off
   expect((await readAnnotationLayers(workspace)).some(layer => layer.id === published.id)).toBe(false);
 });
 
+
+it("checks layer status before reconnect uploads, keeps deleted-layer drafts and conflicts, and resumes only the original identity", async () => {
+  const shared: AnnotationLayerSummary = { ...own, id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", kind: "shared", sharedSlot: "piano", name: "钢琴" };
+  serverLayers = [own, shared];
+  await cacheAnnotationLayers(workspace, serverLayers);
+  const draftId = crypto.randomUUID();
+  const personalId = crypto.randomUUID();
+  const draft = { kind: "text" as const, pageNumber: 1, x: .2, y: .3, fontScale: .024, text: "断网时保存的提示" };
+  await saveAnnotationDraft(workspace, { id: draftId, layerId: shared.id, payload: draft });
+  await saveAnnotationDraft(workspace, { id: personalId, layerId: own.id, payload: draft });
+  await queueScoreDrafts(workspace);
+  const oldOperation = (await localDatabase.annotationOutbox.toArray()).find(op => op.annotationId === draftId)!;
+  await localDatabase.annotationConflicts.put({ ...workspace, opId: "other-conflict", annotationId: crypto.randomUUID(), layerId: shared.id, localPayload: draft, localDeleted: false, canonical: null, createdAt: 1 });
+  const snapshot: OfflineScoreRecord = {
+    ...workspace, key: "deleted-layer-offline", versionId: "version", fileName: "谱.pdf", sha256: await sha256Hex(new TextEncoder().encode("test").buffer), pageCount: 1,
+    blob: new Blob(["test"]), active: 1, verifiedAt: 1, annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace),
+  };
+  await localDatabase.offlineScores.put(snapshot);
+  serverLayers = [own];
+  const requests: string[] = [];
+  const uploaded: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push(String(input));
+    if (String(input).endsWith("/layers")) return Response.json({ layers: serverLayers, permissions: { canManageLayers: false } });
+    const body = JSON.parse(String(init?.body)) as { operations: { opId: string; annotationId: string; layerId: string; payload: typeof draft }[] };
+    return Response.json({ results: body.operations.map(op => {
+      uploaded.push(op.layerId);
+      return { opId: op.opId, status: "accepted", object: { id: op.annotationId, layerId: op.layerId, version: 1, deleted: false, payload: op.payload, createdByDisplayName: "我", updatedByDisplayName: "我", updatedAt: 1 } };
+    }) });
+  }));
+  expect(await pushPendingAnnotations(workspace, { maxOperations: 100 })).toBe(1);
+  expect(requests[0]).toMatch(/\/layers$/);
+  expect(uploaded).toEqual([own.id]);
+  expect(await localDatabase.annotationOutbox.get(oldOperation.opId)).toMatchObject({ attemptedAt: null, layerId: shared.id });
+  expect(await localDatabase.annotationConflicts.get("other-conflict")).toMatchObject({ localPayload: draft });
+  expect(await findVerifiedOfflineScore(workspace)).not.toBeNull();
+  await restoreOfflineAnnotationSnapshot(workspace, snapshot);
+  expect((await readAnnotationLayers(workspace)).map(layer => layer.id)).toEqual([own.id]);
+  // Expiry followed by a new identically named slot cannot adopt old work.
+  serverLayers.push({ ...shared, id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", sharedSlot: "new-piano" });
+  expect(await pushPendingAnnotations(workspace, { maxOperations: 100 })).toBe(0);
+  expect(await localDatabase.annotationOutbox.get(oldOperation.opId)).toBeDefined();
+  serverLayers = [own, shared];
+  expect(await pushPendingAnnotations(workspace, { maxOperations: 100 })).toBe(1);
+  expect(uploaded).toEqual([own.id, shared.id]);
+  expect(await localDatabase.annotationOutbox.get(oldOperation.opId)).toBeUndefined();
+  expect(await localDatabase.annotationConflicts.get("other-conflict")).toBeDefined();
+});
 
 it("keeps paused shared notes but does not restore their layer from an older offline snapshot", async () => {
   const shared: AnnotationLayerSummary = { ...own, id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", kind: "shared", sharedSlot: "piano", name: "钢琴", sharing: undefined, canShare: undefined };

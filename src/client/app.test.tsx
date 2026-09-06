@@ -216,6 +216,41 @@ describe("AppRoutes", () => {
     expect(screen.getByRole("checkbox", { name: "E · 全体 默认显示" })).not.toBeChecked();
   });
 
+  it("confirms drive-wide deletion and queries an uncertain result before restoring the original layer", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({ data: { user: { id: "admin-1", email: "admin@example.test" } }, isPending: false } as ReturnType<typeof authClient.useSession>);
+    const layer = { slot: "E", name: "Ensemble", defaultColor: "#a12652", grantedMemberCount: 2, sortOrder: 0, active: false, revision: 0, deletedAt: null as number | null, recoverUntil: null as number | null };
+    const actions: unknown[] = [];
+    let lost = true;
+    vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.endsWith("/lifecycle")) {
+        const body = JSON.parse(String(init?.body)); actions.push(body);
+        if (body.action === "delete") { layer.deletedAt = Date.now(); layer.recoverUntil = Date.now() + 30 * 86400000; }
+        else { layer.deletedAt = null; layer.recoverUntil = null; }
+        layer.revision++;
+        if (lost) { lost = false; throw new TypeError("response_lost"); }
+        return Response.json({ action: body.action, revision: layer.revision });
+      }
+      if (input.includes("/shared-layers")) return Response.json({ drive: { id: "choir-1", name: "测试云盘" }, layers: input.includes("state=deleted") === (layer.deletedAt !== null) ? [layer] : [] });
+      return new Response(null, { status: 404 });
+    }));
+    render(<MemoryRouter initialEntries={["/choirs/choir-1/shared-layers"]}><AppRoutes /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: "删除 E · 全体" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/当前云盘全部乐谱/)).toBeVisible();
+    expect(within(dialog).getByText(/30 天内/)).toBeVisible();
+    expect(actions).toEqual([]);
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除整个共享层" }));
+    await screen.findByText(/未能确认操作结果/);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "删除 E · 全体" })).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "已删除层" }));
+    expect(await screen.findByText(/恢复截止：/)).toHaveTextContent("恢复后停用");
+    fireEvent.click(screen.getByRole("button", { name: "恢复", exact: true }));
+    await screen.findByText("原共享层已恢复，原有启用或停用状态保留。");
+    expect(actions).toEqual([{ action: "delete", expectedRevision: 0 }, { action: "restore", expectedRevision: 1 }]);
+    fireEvent.click(screen.getByRole("button", { name: "当前共享层" }));
+    expect(await screen.findByText("已停用 · 笔记保留")).toBeVisible();
+  });
+
   it("edits member grants from one shared-layer detail page", async () => {
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "admin-1", email: "admin@example.test" } },
@@ -225,7 +260,7 @@ describe("AppRoutes", () => {
       if (input === "/api/choirs/choir-1/shared-layers" && !init?.method) {
         return Promise.resolve(Response.json({
           drive: { id: "choir-1", name: "小红花云盘" },
-          layers: [{ slot: "E", name: "Ensemble", defaultColor: "#a12652", grantedMemberCount: 0, sortOrder: 0, active: true }],
+          layers: [{ slot: "E", name: "Ensemble", defaultColor: "#a12652", grantedMemberCount: 0, sortOrder: 0, active: true, revision: 0, deletedAt: null, recoverUntil: null }],
         }));
       }
       if (input === "/api/choirs/choir-1/shared-layers/E/grants" && !init?.method) {

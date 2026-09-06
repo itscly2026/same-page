@@ -230,6 +230,8 @@ export const choirSharedLayerSettings = sqliteTable(
     name: text("name").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
     active: integer("active", { mode: "boolean" }).notNull().default(true),
+    deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
+    revision: integer("revision").notNull().default(0),
     defaultColor: text("default_color").notNull(),
     updatedByMembershipId: text("updated_by_membership_id").references(
       () => memberships.id,
