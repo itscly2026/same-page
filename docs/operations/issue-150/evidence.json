@@ -1,0 +1,67 @@
+{
+  "implementation": "588ad42",
+  "date": "2026-09-06",
+  "scope": "Local application, synthetic HTTP responses, desktop Chromium/WebKit; no production or real-device acceptance.",
+  "lifecycle": [
+    {
+      "engine": "chromium",
+      "requests": 4,
+      "savedTop": 2461,
+      "currentTop": 900,
+      "checks": [
+        "cached return after DOM commit",
+        "cache does not grant management",
+        "no background scroll jump",
+        "coalesced foreground requests",
+        "failed refresh retains content",
+        "retry preserves search and sort"
+      ],
+      "scope": "local application with synthetic network; desktop browser, no real-device or production claim"
+    },
+    {
+      "engine": "webkit",
+      "requests": 4,
+      "savedTop": 2454,
+      "currentTop": 900,
+      "checks": [
+        "cached return after DOM commit",
+        "cache does not grant management",
+        "no background scroll jump",
+        "coalesced foreground requests",
+        "failed refresh retains content",
+        "retry preserves search and sort"
+      ],
+      "scope": "local application with synthetic network; desktop browser, no real-device or production claim"
+    }
+  ],
+  "responsive": [
+    390,
+    834,
+    1194,
+    1440
+  ],
+  "visualTests": {
+    "passed": 8,
+    "failed": 0,
+    "node": "24.20.0"
+  },
+  "clientTests": {
+    "passed": 297,
+    "files": 39,
+    "workers": 2
+  },
+  "unitTests": {
+    "passed": 72,
+    "files": 18
+  },
+  "review": {
+    "standardsFindings": 0,
+    "specFindings": 0
+  },
+  "lifecycleRegressions": {
+    "navigationLayoutReset": "passed deterministic regression",
+    "identityObserverTransition": "passed real observer guest-to-user transition",
+    "chromiumCpuThrottle": 4,
+    "repeatedBrowserRunsPassed": 5
+  }
+}

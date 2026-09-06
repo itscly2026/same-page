@@ -1,4 +1,3 @@
-import { readLibraryView, rememberLibraryView, type LibraryView } from "./library-view-state";
 import type { ChoirSummary } from "../../shared/choirs";
 import type { ScoreListResponse } from "../../shared/scores";
 import { onReaderIdentityChange } from "../reader/reader-cache-events";
@@ -8,8 +7,6 @@ export type DriveCacheOwnerKey = `user:${string}` | `guest:${string}`;
 export interface DriveLibrarySnapshot {
   choir: ChoirSummary;
   result: ScoreListResponse;
-  search: string;
-  scrollTop: number;
   updatedAt: number;
 }
 
@@ -33,6 +30,7 @@ const libraries = new Map<string, DriveLibrarySnapshot>();
 const summaries = new Map<string, ChoirSummary>();
 const diagnostics: DriveLibraryCacheDiagnostic[] = [];
 let activeOwner: DriveCacheOwnerKey | null = null;
+let ownerController = new AbortController();
 let returningDrive: { ownerKey: DriveCacheOwnerKey; choirId: string } | null = null;
 
 onReaderIdentityChange(() => {
@@ -71,12 +69,9 @@ export function rememberDriveLibrary(
   library: Pick<DriveLibrarySnapshot, "choir" | "result">,
 ) {
   activateOwner(ownerKey);
-  const previous = libraries.get(choirId);
   libraries.delete(choirId);
   libraries.set(choirId, {
     ...library,
-    search: previous?.search ?? "",
-    scrollTop: previous?.scrollTop ?? 0,
     updatedAt: Date.now(),
   });
   rememberSummary(choirId, library.choir);
@@ -101,16 +96,10 @@ export function rememberDriveSummary(
   evictOverflow();
 }
 
-export function rememberDriveView(
-  ownerKey: DriveCacheOwnerKey,
-  choirId: string,
-  view: Pick<DriveLibrarySnapshot, "search" | "scrollTop"> & Partial<Pick<LibraryView, "sort">>,
-) {
+// A late request cannot reactivate an owner after a switch or explicit clear.
+export function captureDriveLibraryOwner(ownerKey: DriveCacheOwnerKey) {
   activateOwner(ownerKey);
-  rememberLibraryView(ownerKey, choirId, { ...readLibraryView(ownerKey, choirId), ...view });
-  const previous = libraries.get(choirId);
-  if (!previous) return;
-  libraries.set(choirId, { ...previous, ...view });
+  return ownerController.signal;
 }
 
 export function invalidateDriveLibrary(
@@ -140,6 +129,8 @@ export function readReturningDriveCacheOwner(choirId: string) {
 }
 
 export function clearDriveLibraryCache() {
+  ownerController.abort();
+  ownerController = new AbortController();
   libraries.clear();
   summaries.clear();
   activeOwner = null;
@@ -152,6 +143,8 @@ export function getDriveLibraryCacheDiagnostics() {
 
 function activateOwner(ownerKey: DriveCacheOwnerKey) {
   if (activeOwner === ownerKey) return;
+  ownerController.abort();
+  ownerController = new AbortController();
   libraries.clear();
   summaries.clear();
   returningDrive = null;

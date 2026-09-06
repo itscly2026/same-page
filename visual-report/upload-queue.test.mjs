@@ -41,7 +41,7 @@ for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {
           return;
         }
         const fixture = resolveFixtureRequest({ pathname, method: request.method(), identity: "admin", cookie: "" });
-        if (pathname === "/api/choirs/visual-choir/scores" && request.method() === "GET") {
+        if (pathname === "/api/choirs/visual-choir/bootstrap" && request.method() === "GET") {
           const body = JSON.parse(fixture.body);
           body.scores.push(...stored);
           fixture.body = JSON.stringify(body);
