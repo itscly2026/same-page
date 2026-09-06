@@ -1,3 +1,4 @@
+import { useReaderFullscreen } from "../reader/use-reader-fullscreen";
 import { ReaderNavigationGuard } from "../reader/reader-navigation-guard";
 import { DisplayRecovery } from "../reader/display-recovery";
 import type { ScoreDocument } from "../reader/image-document";
@@ -6,7 +7,7 @@ import { useReaderSession } from "../reader/use-reader-session";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   ArrowLeft, Download, Ellipsis, Layers, Maximize2, Minus, Pencil, Plus, BookOpen,
-  RefreshCw, Rows3,
+  RefreshCw, Rows3, Expand, Shrink,
 } from "lucide-react";
 import {
   useEffect,
@@ -56,7 +57,6 @@ import { driveCacheOwnerKey } from "../score-library/drive-library-cache";
 import { recordScoreOpened } from "../score-library/library-view-state";
 import {
   type AnnotationPageProps,
-  type ContinuousReaderPosition,
   ContinuousLayout,
   PageLayout,
   PageNavigatorPanel,
@@ -109,6 +109,7 @@ function ReaderPageContent() {
     [resolvedWorkspace?.scopeKey],
     false,
   );
+  const fullscreen = useReaderFullscreen();
   const [zoom, setZoom] = useState(1);
   const [editing, setEditing] = useState(false);
   const [annotationInteraction, setAnnotationInteraction] =
@@ -135,18 +136,6 @@ function ReaderPageContent() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
   const moreTrigger = useRef<HTMLButtonElement>(null);
-  const [editingOrigin, setEditingOrigin] = useState<{
-    layout: ReaderLayout;
-    page: number;
-    zoom: number;
-    continuousPosition: ContinuousReaderPosition | null;
-  } | null>(null);
-  const continuousPosition = useRef<ContinuousReaderPosition>({
-    page: 1,
-    pageOffsetRatio: 0,
-  });
-  const [continuousRestorePosition, setContinuousRestorePosition] =
-    useState<ContinuousReaderPosition | null>(null);
   const [showGestureHint, setShowGestureHint] = useState(
     () => !readBooleanPreference("reader-gesture-hint-seen"),
   );
@@ -292,23 +281,6 @@ function ReaderPageContent() {
       layers.find((layer) => layer.kind === "personal" && layer.canEdit) ??
       layers.find((layer) => layer.canEdit);
     if (!editableLayer) return;
-    setEditingOrigin({
-      layout,
-      page: currentPage,
-      zoom,
-      continuousPosition:
-        layout === "continuous"
-          ? {
-              page: currentPage,
-              pageOffsetRatio:
-                continuousPosition.current.page === currentPage
-                  ? continuousPosition.current.pageOffsetRatio
-                  : 0,
-            }
-          : null,
-    });
-    if (layout === "continuous") setLayout("page");
-    setZoom(1);
     setChromeVisible(true);
     setMoreOpen(false);
     setReaderPanel(null);
@@ -336,13 +308,6 @@ function ReaderPageContent() {
     if (!workspace) return;
     setEditing(false);
     endAnnotationEditSession();
-    if (editingOrigin) {
-      setLayout(editingOrigin.layout);
-      setCurrentPage(editingOrigin.page);
-      setZoom(editingOrigin.zoom);
-      setContinuousRestorePosition(editingOrigin.continuousPosition);
-    }
-    setEditingOrigin(null);
     let queued: number;
     try { queued = await queueScoreDrafts(workspace); }
     catch { setSyncOutcome("failed"); return; }
@@ -662,6 +627,13 @@ function ReaderPageContent() {
             <Dialog className="reader-more-menu" aria-label="更多阅读选项">
               <header className="reader-menu-heading"><strong>阅读选项</strong><Button aria-label="关闭更多阅读选项" onPress={() => setMoreOpen(false)}>关闭</Button></header>
               {!editing && <>
+              <section aria-label="全屏显示"><h2>全屏显示</h2>
+                <Button isDisabled={fullscreen.pending} onPress={() => void fullscreen.toggle()}>
+                  {fullscreen.active ? <Shrink aria-hidden="true" size={18} /> : <Expand aria-hidden="true" size={18} />}
+                  {fullscreen.active ? "退出全屏" : "进入全屏"}
+                </Button>
+                {fullscreen.message && <p role="status">{fullscreen.message}</p>}
+              </section>
               <section aria-label="页面布局与缩放"><h2>页面布局与缩放</h2>
               <div className="segmented-control" aria-label="页面布局">
                 <Button
@@ -870,11 +842,7 @@ function ReaderPageContent() {
             onPageChange={setCurrentPage}
             onToggleChrome={toggleChrome}
             annotationProps={annotationPageProps}
-            restorePosition={continuousRestorePosition}
-            onPositionChange={(position) => {
-              continuousPosition.current = position;
-            }}
-            onRestoreComplete={() => setContinuousRestorePosition(null)}
+
           />
         )}
       </div>

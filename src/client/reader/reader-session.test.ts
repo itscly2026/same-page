@@ -90,6 +90,7 @@ it("opens server page geometry in image mode without starting PDF.js", async () 
     const page = await session.getSnapshot().document!.getPage(1);
     expect(page.getViewport({ scale: 1 })).toMatchObject({ width: 800, height: 600 });
     expect(vi.mocked(loadPdfDocument).mock.calls.length).toBe(before);
+    await vi.waitFor(() => expect(session.getSnapshot().downloading).toBe(false));
     const original = session.getSnapshot().document!;
     session.confirmDisplay(original);
     const offlineModule = await import("../offline/offline-score");
@@ -107,8 +108,7 @@ it("opens server page geometry in image mode without starting PDF.js", async () 
     completeDownload({ ...workspace, key: "verified-image-copy", versionId: "image-version", fileName: "图片.pdf", sha256: "a".repeat(64), pageCount: 1, blob: new Blob(), active: 1, verifiedAt: 1,
       imageManifest: imageManifestSchema.parse(manifest), annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 } });
     await download;
-    expect(session.getSnapshot().downloadMessage).toContain("当前显示方式或版本已改变");
-    expect(session.getSnapshot().downloadMessage).not.toContain("可以离线打开");
+    expect(session.getSnapshot().downloadMessage ?? "").not.toContain("可以离线打开");
     await vi.waitFor(() => expect(rejectPdf).toBeDefined());
     rejectPdf(new Error("decode failed"));
     await vi.waitFor(() => expect(session.getSnapshot().mode).toBe("images"));

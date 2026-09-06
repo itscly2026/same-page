@@ -36,6 +36,8 @@ export class ReaderSession {
   private listeners = new Set<() => void>();
   private disposed = false;
   private deadline: ReturnType<typeof setTimeout> | null = null;
+  private localPriorityTimer: ReturnType<typeof setTimeout> | null = null;
+  private localPriorityExpired = false;
   private abort = new AbortController();
   private displayAbort = new AbortController();
   private started = false;
@@ -80,6 +82,8 @@ export class ReaderSession {
   private lookup: CloudLookup | null = null;
   private layerTask: Promise<void> | null = null;
   private refreshTask: Promise<void> | null = null;
+  private offlineAttempts = new Set<string>();
+  private downloadAbort: AbortController | null = null;
   private readonly identity: string;
 
   constructor(readonly workspace: LocalWorkspace, private authenticatedUserId: string | null) {
@@ -101,10 +105,16 @@ export class ReaderSession {
     this.started = true;
     this.armDeadline();
     this.publish({});
-    queueMicrotask(() => { if (!this.source) this.openSource({ kind: "cloud", versionId: this.confirmedVersion ?? undefined }); });
+    // Give a verified local copy first choice without letting slow local storage
+    // block online reading. Late local results still follow version arbitration.
+    this.localPriorityTimer = setTimeout(() => {
+      this.localPriorityExpired = true;
+      this.startCloudIfNeeded();
+    }, 100);
     void findVerifiedOfflineScore(this.workspace).catch(() => null).then(async (offline) => {
       if (!await this.current()) return;
       this.publish({ offline });
+      this.localSettled = true;
       if (offline) {
         if (this.localMatches() && (!this.state.document || this.state.cloudState !== "active")) await this.openOffline(offline);
         await restoreOfflineAnnotationSnapshot(this.workspace, offline).catch(() => undefined);
@@ -116,10 +126,16 @@ export class ReaderSession {
           await this.openOffline(offline);
         }
       }
-      this.localSettled = true;
+      this.startCloudIfNeeded();
       this.resolveFailure();
+      this.prepareAutomaticOfflineCopy();
     });
     void this.confirmCloud();
+  }
+  private startCloudIfNeeded() {
+    if (!this.disposed && !this.source && (!this.cloudSettled || this.lookup?.state === "active" || this.confirmedVersion)) {
+      this.openSource({ kind: "cloud", versionId: this.confirmedVersion ?? undefined });
+    }
   }
   private armDeadline() {
     if (this.deadline) clearTimeout(this.deadline);
@@ -147,11 +163,14 @@ export class ReaderSession {
     this.cloudSettled = true;
     this.lookup = lookup;
     if (lookup.state === "active") {
+      if (this.confirmedVersion !== lookup.score.currentVersion.id) this.downloadAbort?.abort();
       this.confirmedVersion = lookup.score.currentVersion.id;
       rememberReaderScore(this.identity, lookup.score);
       this.publish({ score: lookup.score, downloadMessage: this.state.score?.currentVersion.id === lookup.score.currentVersion.id ? this.state.downloadMessage : null, cloudState: "active", ...(this.pdfFailed ? {} : { error: null }) });
       const confirmation = confirmReaderDocumentVersion({ ...this.workspace, sourceKind: "cloud", versionId: this.confirmedVersion });
-      if ((this.source?.kind === "offline" || this.state.mode === "images") && this.source?.versionId === this.confirmedVersion) {
+      if (!this.localSettled && !this.localPriorityExpired) {
+        // Inspect the verified local copy before starting a competing cloud PDF.
+      } else if ((this.source?.kind === "offline" || this.state.mode === "images") && this.source?.versionId === this.confirmedVersion) {
         // A matching offline document already owns the display lease.
       } else if (this.localMatches() && !this.state.document) {
         await this.openOffline(this.state.offline!);
@@ -161,6 +180,7 @@ export class ReaderSession {
       void this.retryLayers();
     } else {
       if (!unavailable) {
+        this.downloadAbort?.abort();
         this.cloudInvalidated = true;
         this.confirmedVersion = null;
         forgetReaderScore(this.identity, this.workspace.choirId, this.workspace.scoreId);
@@ -171,6 +191,7 @@ export class ReaderSession {
       if (lookup.state !== "trashed") void this.retryLayers();
     }
     this.resolveFailure();
+    this.prepareAutomaticOfflineCopy();
   }
   private async openOffline(offline: OfflineScoreRecord) {
     if (this.source?.kind === "offline" && this.source.versionId === offline.versionId) return;
@@ -185,7 +206,7 @@ export class ReaderSession {
     if (this.state.mode === "images" && source.kind === "cloud" && !this.state.score) return;
     this.retainDisplay();
     this.displayPrepared = false;
-    this.armDeadline();
+    if (this.source) this.armDeadline();
     this.displayAbort.abort();
     this.displayAbort = new AbortController();
     const generation = ++this.generation;
@@ -206,6 +227,7 @@ export class ReaderSession {
         if (!await this.current() || generation !== this.generation) return;
         this.displayPrepared = true;
         this.publish({ document: new ImageDocument(manifest, scoreImagesPath(this.workspace.choirId, this.workspace.scoreId, manifest.versionId), local?.blob), status: "ready", modeMessage: null });
+        this.prepareAutomaticOfflineCopy();
       }).catch(error => {
         if (this.disposed || generation !== this.generation) return;
         recordFailure({ operation: "pdf", category: pdfFailureCategory(error), stage: "prepare" });
@@ -222,6 +244,7 @@ export class ReaderSession {
       this.displayPrepared = true;
       this.publish({ document, status: "ready", modeMessage: null });
       this.resolveFailure();
+      this.prepareAutomaticOfflineCopy();
     }).catch((error) => {
       if (this.disposed || generation !== this.generation) return;
       recordFailure({ operation: "pdf", category: pdfFailureCategory(error), stage: "decode", pdfReason: pdfFailureReason(error), engineVersion: pdfEngineVersion });
@@ -274,14 +297,33 @@ export class ReaderSession {
       this.publish({ capability: this.state.offline ? (this.state.offline.annotationSnapshot.layers.some((layer) => layer.canEdit) ? "ready" : "read-only") : "failed" });
     }
   }
+  private prepareAutomaticOfflineCopy() {
+    if (!this.started || !this.localSettled || this.state.cloudState !== "active" ||
+        !this.displayPrepared || !navigator.onLine || this.disposed || this.state.downloading || this.localMatches()) return;
+    const key = JSON.stringify([this.confirmedVersion, this.state.mode]);
+    if (this.offlineAttempts.has(key)) return;
+    this.offlineAttempts.add(key);
+    void this.download();
+  }
   download = async () => {
-    if (this.disposed || !this.state.score || this.state.downloading) return;
+    if (this.disposed || !this.state.score || this.state.downloading || this.state.cloudState !== "active") return;
     const mode = this.state.mode;
     const score = this.state.score;
+    this.offlineAttempts.add(JSON.stringify([score.currentVersion.id, mode]));
+    const controller = new AbortController();
+    this.downloadAbort = controller;
+    const signal = AbortSignal.any([this.abort.signal, controller.signal]);
     this.publish({ downloading: true, downloadMessage: null });
     try {
+      // Let the opening pull finish before capturing a complete offline snapshot.
+      await this.retryLayers();
+      signal.throwIfAborted();
       const { prepareOfflineScore } = await import("../offline/offline-score");
-      const offline = await prepareOfflineScore(this.workspace, score, mode, this.abort.signal);
+      const document = this.state.document;
+      const pdfData = mode === "pdf" && this.displayPrepared && this.source?.versionId === score.currentVersion.id && document && "getData" in document
+        ? await document.getData() : undefined;
+      signal.throwIfAborted();
+      const offline = await prepareOfflineScore(this.workspace, score, mode, signal, pdfData);
       if (!await this.current()) return;
       const current = this.state.mode === mode && this.state.score?.currentVersion.id === score.currentVersion.id;
       this.publish({ offline, downloadMessage: current
@@ -289,8 +331,13 @@ export class ReaderSession {
         : `${mode === "pdf" ? "PDF" : "图片"}副本已校验；当前显示方式或版本已改变，请查看本机离线副本状态。` });
       if (this.source?.kind === "offline" && this.localMatches()) await this.openOffline(offline);
     } catch {
-      this.publish({ downloadMessage: "离线下载未完成，现有离线版本没有切换。请重试。" });
-    } finally { this.publish({ downloading: false }); }
+      if (signal.aborted) this.offlineAttempts.delete(JSON.stringify([score.currentVersion.id, mode]));
+      if (!signal.aborted && await this.current()) this.publish({ downloadMessage: "离线下载未完成，仍可在线阅读，现有离线版本没有切换。请重试。" });
+    } finally {
+      this.downloadAbort = null;
+      this.publish({ downloading: false });
+      this.prepareAutomaticOfflineCopy();
+    }
   };
   recoverDisplay = (error: unknown) => {
     if (!this.disposed && this.restoreDisplay()) return true;
@@ -312,6 +359,7 @@ export class ReaderSession {
       return false;
     }
     this.retainDisplay();
+    this.downloadAbort?.abort();
     this.displayPrepared = false;
     if (persist) writeDisplayPreference(this.workspace, mode, "score");
     this.displayAbort.abort();
@@ -325,6 +373,7 @@ export class ReaderSession {
     if (this.localMatches()) void this.openOffline(this.state.offline!);
     else if (this.confirmedVersion) this.openSource({ kind: "cloud", versionId: this.confirmedVersion });
     else void this.confirmCloud();
+    this.prepareAutomaticOfflineCopy();
     return true;
   }
   setDefaultMode = (mode: ScoreDisplayMode | null) => writeDisplayPreference(this.workspace, mode, "default");
@@ -340,6 +389,7 @@ export class ReaderSession {
   dispose() {
     this.disposed = true;
     if (this.deadline) clearTimeout(this.deadline);
+    if (this.localPriorityTimer) clearTimeout(this.localPriorityTimer);
     this.abort.abort();
     this.displayAbort.abort();
     this.generation++;

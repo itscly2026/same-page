@@ -1,0 +1,174 @@
+import assert from "node:assert/strict";
+import path from "node:path";
+import { after, before, test } from "node:test";
+import { fileURLToPath } from "node:url";
+
+import { chromium, webkit } from "playwright";
+
+import { startVisualServer } from "./setup.mjs";
+import { resolveFixtureRequest } from "./fixtures.mjs";
+
+const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+const port = process.env.READER_MOBILE_TEST_PORT ? Number(process.env.READER_MOBILE_TEST_PORT) : undefined;
+let appServer;
+let appOrigin = process.env.LAYOUT_TEST_ORIGIN;
+
+before(async () => {
+  if (!appOrigin) {
+    appServer = await startVisualServer({ script: "dev", port, cwd: repositoryRoot });
+    appOrigin = appServer.origin;
+  }
+});
+
+after(async () => {
+  await appServer?.stop();
+});
+
+for (const [engineName, engine] of Object.entries({chromium, webkit})) {
+ test(`${engineName}: preserves the magnified score and pan when entering and leaving editing`, async (context) => {
+  const browser = await engine.launch({headless:true});
+  context.after(() => browser.close());
+  const page = await openMemberReader(browser, {width:834,height:1000});
+  await showReaderChrome(page);
+  await page.getByRole("button", {name:"更多",exact:true}).click();
+  for (let step = 0; step < 4; step++) await page.getByRole("button", {name:"放大",exact:true}).click();
+  await page.getByRole("button", {name:"更多",exact:true}).click();
+  const viewport = page.locator(".page-reader__viewport");
+  await viewport.evaluate(element => { element.scrollTop = 180; element.scrollLeft = 110; });
+  const before = await readView(page);
+  assert.equal(before.zoom, 2);
+  await page.getByRole("button", {name:"编辑",exact:true}).click();
+  await page.locator(".annotation-controls").waitFor();
+  assertView(await readView(page), before);
+  await page.getByRole("button", {name:"编辑",exact:true}).click();
+  assertView(await readView(page), before);
+ });
+}
+for (const [engineName, engine] of Object.entries({chromium, webkit})) {
+ test(`${engineName}: continuous editing locks one page without changing its scale or position`, async (context) => {
+  const browser = await engine.launch({headless:true});
+  context.after(() => browser.close());
+  const page = await openMemberReader(browser, {width:834,height:700});
+  await showReaderChrome(page);
+  await page.getByRole("button", {name:"更多",exact:true}).click();
+  await page.getByRole("button", {name:"连续滚动",exact:true}).click();
+  await page.getByRole("button", {name:"更多",exact:true}).click();
+  await page.getByRole("button", {name:"放大",exact:true}).click();
+  await page.getByRole("button", {name:"更多",exact:true}).click();
+  await page.locator(".continuous-reader .pdf-page-canvas [data-pdf-canvas-active]").first().waitFor();
+  await page.locator(".continuous-reader").evaluate(element => {element.scrollTop = 170; element.scrollLeft = 90;});
+  const read = () => page.locator('.continuous-reader__page[data-index="0"] .annotated-pdf-page').evaluate(element => {
+   const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
+  });
+  const before = await read();
+  await page.getByRole("button", {name:"编辑",exact:true}).click();
+  await page.locator(".annotation-controls").waitFor();
+  const focused = await page.locator('.annotated-pdf-page:visible').evaluateAll(elements => elements.map(element => {
+   const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
+  }));
+  assert.equal(focused.length,1);
+  assertView(focused[0], before);
+  await page.mouse.move(400,450);
+  await page.mouse.wheel(0,600);
+  assertView((await page.locator('.annotated-pdf-page:visible').evaluateAll(elements => elements.map(element => {
+   const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
+  })))[0],before);
+  await page.getByRole("button", {name:"编辑",exact:true}).click();
+  assertView(await read(), before);
+ });
+}
+
+test("fullscreen entry, browser exit and portalled controls stay usable", async (context) => {
+ const browser = await chromium.launch({headless:true}); context.after(() => browser.close());
+ const page = await openMemberReader(browser, {width:834,height:1000});
+ await showReaderChrome(page);
+ await page.getByRole("button", {name:"更多",exact:true}).click();
+ await page.getByRole("button", {name:"进入全屏",exact:true}).click();
+ await page.waitForFunction(() => document.fullscreenElement === document.documentElement);
+ await page.getByRole("button", {name:"退出全屏",exact:true}).waitFor();
+ await page.evaluate(() => document.exitFullscreen());
+ await page.getByRole("button", {name:"进入全屏",exact:true}).waitFor();
+ await page.getByRole("button", {name:"进入全屏",exact:true}).click();
+ await page.waitForFunction(() => !!document.fullscreenElement);
+ await page.getByRole("button", {name:"退出全屏",exact:true}).click();
+ await page.waitForFunction(() => !document.fullscreenElement);
+});
+for (const [engineName, engine] of Object.entries({chromium, webkit})) {
+ test(`${engineName}: fitted score respects all four safe area edges`, async (context) => {
+  const browser = await engine.launch({headless:true}); context.after(() => browser.close());
+  const page = await openMemberReader(browser, {width:1000,height:700});
+  await page.locator(".reader-shell").evaluate(element => {
+   for (const [side,size] of Object.entries({top:44,right:24,bottom:34,left:59})) element.style.setProperty(`--reader-safe-${side}`,`${size}px`);
+  });
+  await page.waitForFunction(() => {
+   const box = document.querySelector(".page-reader__viewport").getBoundingClientRect();
+   const paper = document.querySelector('[data-page-turn-current] .annotated-pdf-page').getBoundingClientRect();
+   return box.left >= 59 && box.top >= 44 && box.right <= 976 && box.bottom <= 666 && paper.left >= 59 && paper.top >= 43.5 && paper.right <= 976.5 && paper.bottom <= 666.5;
+  });
+  const box = await page.locator('[data-page-turn-current] .annotated-pdf-page').boundingBox();
+  assert.ok(box.x >= 59 && box.y >= 43.5 && box.x+box.width <= 976.5 && box.y+box.height <= 666.5);
+ });
+}
+
+async function readView(page) {
+ return page.locator(".page-reader__viewport").evaluate(element => {
+  const paper = element.querySelector("[data-page-turn-current] .annotated-pdf-page").getBoundingClientRect();
+  return {zoom:Number(element.dataset.zoom), x:paper.x,y:paper.y,width:paper.width};
+ });
+}
+function assertView(actual, expected) {
+ for (const key of Object.keys(expected)) assert.ok(Math.abs(actual[key]-expected[key]) < 1, `${key}: expected ${expected[key]}, got ${actual[key]}`);
+}
+async function openMemberReader(browser, viewport) {
+  const browserContext = await browser.newContext({
+    viewport,
+    colorScheme: "light",
+    locale: "zh-CN",
+    reducedMotion: "reduce",
+    serviceWorkers: "block",
+    timezoneId: "Asia/Shanghai",
+  });
+  await browserContext.route("**/api/**", async (route) => {
+    const request = route.request();
+    const response = resolveFixtureRequest({
+      pathname: new URL(request.url()).pathname,
+      method: request.method(),
+      identity: "member",
+      scenarioId: "reader-controls-narrow",
+      cookie: request.headers().cookie ?? "",
+    });
+    await route.fulfill(response);
+  });
+  await browserContext.addInitScript(() => {
+    localStorage.setItem("reader-gesture-hint-seen", "true");
+  });
+  const page = await browserContext.newPage();
+  await page.goto(`${appOrigin}/choirs/visual-choir/scores/visual-score`, {
+    waitUntil: "domcontentloaded",
+  });
+  await waitForRenderedPdf(page);
+  return page;
+}
+
+async function showReaderChrome(page) {
+  const viewport = page.locator(".page-reader__viewport");
+  const bounds = await viewport.boundingBox();
+  if (!bounds) throw new Error("reader viewport missing");
+  await viewport.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
+  await page.locator(".reader-chrome__actions button[aria-label='编辑']").waitFor({
+    state: "visible",
+  });
+}
+
+async function waitForRenderedPdf(page) {
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector(
+      ".page-reader__sheet[data-page-turn-current] .pdf-page-canvas [data-pdf-canvas-active]",
+    );
+    return canvas instanceof HTMLCanvasElement && canvas.width >= 100 && canvas.height >= 100;
+  });
+}
+
+async function assertEventually(page, predicate) {
+  await page.waitForFunction(predicate);
+}

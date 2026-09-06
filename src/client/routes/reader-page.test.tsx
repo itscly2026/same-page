@@ -378,7 +378,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     vi.restoreAllMocks();
   });
 
-  it("starts the cloud PDF without waiting for the offline lookup", async () => {
+  it("starts the confirmed cloud PDF when local verification stalls", async () => {
     vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
       new Promise(() => {}) as never,
     );
@@ -393,8 +393,8 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
 
     await waitFor(() =>
       expect(loadPdfDocument).toHaveBeenCalledWith(
-        "/api/choirs/choir-1/scores/score-1/pdf",
-        undefined,
+        "/api/choirs/choir-1/scores/score-1/versions/version-1/pdf",
+        "version-1",
       ),
     );
   });
@@ -1882,9 +1882,8 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     await screen.findByText("练声曲.pdf");
     await screen.findByLabelText("翻页阅读");
     openMoreMenu();
-    fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
     expect(
-      await screen.findByText("离线下载未完成，现有离线版本没有切换。请重试。"),
+      await screen.findByText("离线下载未完成，仍可在线阅读，现有离线版本没有切换。请重试。"),
     ).toBeInTheDocument();
     expect(activateVerifiedOfflineScore).not.toHaveBeenCalled();
   });
@@ -2132,7 +2131,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
 
     await screen.findByText("练声曲.pdf");
     await screen.findByLabelText("翻页阅读");
-    const overlay = screen.getByLabelText("第 1 页批注层");
+    const overlay = await screen.findByLabelText("第 1 页批注层");
     fireEvent.pointerDown(overlay, { clientX: 20, clientY: 20 });
     fireEvent.pointerUp(overlay, { clientX: 20, clientY: 20 });
     expect(screen.queryByLabelText("批注文本")).not.toBeInTheDocument();
@@ -2208,7 +2207,7 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     fireEvent.click(within(screen.getByRole("dialog", { name: "故障诊断" })).getByRole("button", { name: "关闭" }));
     expect(editButton).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("dialog", { name: "更多阅读选项" })).not.toBeInTheDocument();
-    expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
+    expect(screen.getByLabelText("当前页编辑")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "下一页" })).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(screen.getByRole("button", { name: "页面位置" })).toHaveTextContent("1 / 3");
@@ -2296,11 +2295,10 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     fireEvent.click(screen.getByRole("button", { name: "重试本机保存" }));
     await waitFor(() => expect(target).toBeEnabled());
 
-    virtualTestState.itemSize = 200;
     fireEvent.click(editButton);
     expect(editButton).toHaveAttribute("aria-pressed", "false");
     const restoredReader = await screen.findByLabelText("连续滚动阅读");
-    await waitFor(() => expect(restoredReader.scrollTop).toBe(80));
+    await waitFor(() => expect(restoredReader.scrollTop).toBe(40));
     expect(screen.getByLabelText("阅读器控制")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.getByText("200%")).toBeInTheDocument();
@@ -2374,7 +2372,6 @@ it("offers an exit and cancellation while the PDF never settles", async () => {
     await screen.findByText("练声曲.pdf");
     await screen.findByLabelText("翻页阅读");
     openMoreMenu();
-    fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
     expect(
       await screen.findByText("离线副本已完整校验，可以离线打开。"),
     ).toBeInTheDocument();

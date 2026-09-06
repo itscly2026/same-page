@@ -143,3 +143,8 @@ body:has(.reader-edit-layer-popover) .annotation-text-hint { display: none; }
 .reader-leave-dialog p { line-height: 1.6; }
 
 .reader-leave-backdrop { z-index: 110; align-items: center; justify-content: center; background: #0003; }
+
+/* Editing keeps the existing page geometry and scroll position. */
+.page-reader__viewport[data-editing],
+.continuous-reader[data-editing] { overflow: hidden; }
+.continuous-reader__page[data-edit-hidden] { visibility: hidden; }

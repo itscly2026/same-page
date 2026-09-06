@@ -26,8 +26,15 @@ for (const engine of [chromium, webkit]) {
     await assertSquare(page, 1);
     await page.getByRole("button", { name: "下一页", exact: true }).press("Enter");
     await assertSquare(page, 2);
+    if (!await page.getByRole("button", { name: "更多", exact: true }).isVisible()) {
+      const viewport = page.locator(".page-reader__viewport");
+      const bounds = await viewport.boundingBox();
+      await viewport.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
+    }
+    await page.getByRole("button", { name: "更多", exact: true }).click();
+    await expect(page.getByRole("status").filter({ hasText: "离线副本已完整校验" })).toBeVisible({ timeout: 30_000 });
     await page.goto(`${fixture.origin}/choirs/${fixture.choirId}`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: /^下载离线副本：/ }).click();
+    await page.getByRole("button", { name: /^离线副本：/ }).click();
     await page.getByRole("status").filter({ hasText: /^可离线使用$/ }).waitFor();
     await page.getByRole("button", { name: "关闭", exact: true }).click();
     await fixture.stop();
