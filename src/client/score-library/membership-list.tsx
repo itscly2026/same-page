@@ -9,6 +9,8 @@ import {
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
 import { startLoadingJourney } from "../performance/loading-performance";
 import { driveCacheOwnerKey, rememberDriveSummary } from "./drive-library-cache";
+import { ContinueReading } from "./continue-reading";
+import { readLastOpenedScore } from "./library-view-state";
 import { SavedScoreLinks } from "./saved-score-links";
 import "./library-ux.css";
 
@@ -21,11 +23,13 @@ export function MembershipList({
   currentChoirId,
   onSelect,
   autoEnter = false,
+  showContinue = false,
 }: {
   userId: string;
   currentChoirId?: string;
   onSelect?: () => void;
   autoEnter?: boolean;
+  showContinue?: boolean;
 }) {
   const [state, setState] = useState<MembershipState>({ userId, kind: "loading" });
   const [retry, setRetry] = useState(0);
@@ -74,10 +78,12 @@ export function MembershipList({
       </p>
     );
   }
-  if (autoEnter && state.memberships.length === 1) {
+  if (autoEnter && state.memberships.length === 1 && !(showContinue && readLastOpenedScore(`user:${userId}`, state.memberships.map(entry => entry.choir.id)))) {
     return <Navigate to={`/choirs/${state.memberships[0].choir.id}`} replace />;
   }
   return (
+    <>
+    {showContinue && <ContinueReading key={userId} userId={userId} memberships={state.memberships} />}
     <div className="membership-list">
       {state.memberships.map((membership) => (
         <Link
@@ -101,5 +107,6 @@ export function MembershipList({
         </Link>
       ))}
     </div>
+    </>
   );
 }

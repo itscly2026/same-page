@@ -59,7 +59,7 @@ test(`${engineName}: keeps the capsule at the right edge above its page hint in 
       };
     });
 
-    assert.deepEqual(result.labels, ["编辑", "图层", "更多"]);
+    assert.deepEqual(result.labels, ["编辑", "看哪些批注", "更多"]);
     assert.equal(result.states[0], "ready");
     assert.ok(result.sizes.every(({ width: buttonWidth, height }) => buttonWidth >= 44 && height >= 44));
     assert.ok(result.actionLeft >= 0 && result.actionRight <= width);
@@ -69,13 +69,13 @@ test(`${engineName}: keeps the capsule at the right edge above its page hint in 
     assert.equal(result.pageBelowActions, true);
     assert.ok(result.centerDelta < 0.5);
 
-    await page.getByRole("button", { name: "编辑", exact: true }).click();
+    await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
     await page.locator(".annotation-controls").waitFor();
     const editingActions = await page.locator(".reader-chrome__actions").boundingBox();
     assert.ok(Math.abs(editingActions.x + editingActions.width - result.actionRight) < 1);
     const editingPage = await page.locator(".reader-page-indicator").boundingBox();
     assert.ok(editingPage.y >= editingActions.y + editingActions.height);
-    await page.getByRole("button", { name: "编辑", exact: true }).click();
+    await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
 
     await page.getByRole("button", { name: "页面位置", exact: true }).click();
     await page.locator(".page-preview-strip").waitFor({ state: "visible" });
@@ -89,7 +89,7 @@ test("grows and caps the real text composer inside an iPad WebKit visual viewpor
   context.after(() => browser.close());
   const page = await openMemberReader(browser, { width: 834, height: 420 });
   await showReaderChrome(page);
-  await page.getByRole("button", { name: "编辑", exact: true }).click();
+  await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
   await page.locator(".annotation-overlay svg").evaluate((element) => {
     const bounds = element.getBoundingClientRect();
     const init = {

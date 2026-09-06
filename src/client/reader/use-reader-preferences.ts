@@ -85,3 +85,7 @@ function readPreferences(key: string): ReaderPreferences {
     return defaultPreferences;
   }
 }
+
+export function readSavedReaderPage(identity: string, choirId: string, scoreId: string, pageCount: number) {
+  return Math.min(readPreferences(`reader-preferences:${identity}:${choirId}:${scoreId}`).page, Math.max(1, pageCount));
+}

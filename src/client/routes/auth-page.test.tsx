@@ -81,7 +81,7 @@ describe("AuthPage", () => {
     expect(screen.queryByLabelText("密码")).not.toBeInTheDocument();
     expect(screen.queryByText("忘记密码")).not.toBeInTheDocument();
     expect(screen.queryByText("显示名")).not.toBeInTheDocument();
-    const emailSubmit = screen.getByRole("button", { name: "登录或注册" });
+    const emailSubmit = screen.getByRole("button", { name: "继续" });
     const google = await screen.findByRole("button", {
       name: "使用 Google 继续",
     });
@@ -94,7 +94,7 @@ describe("AuthPage", () => {
     fireEvent.change(emailField, {
       target: { value: "Singer@Example.Test" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "登录或注册" }));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
 
     const passwordField = await screen.findByLabelText("密码");
     await vi.waitFor(() => {
@@ -269,7 +269,7 @@ describe("AuthPage", () => {
       "暂时无法开始第三方登录，请重试或继续使用邮箱。",
     );
     expect(screen.getByLabelText("邮箱")).toHaveValue("singer@example.test");
-    expect(screen.getByRole("button", { name: "登录或注册" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "继续" })).toBeEnabled();
   });
 
   it("preserves the email draft when a social provider returns an error", async () => {
@@ -683,7 +683,7 @@ async function identify(email: string) {
   fireEvent.change(screen.getByLabelText("邮箱"), {
     target: { value: email },
   });
-  fireEvent.click(screen.getByRole("button", { name: "登录或注册" }));
+  fireEvent.click(screen.getByRole("button", { name: "继续" }));
   await vi.waitFor(() => {
     expect(fetch).toHaveBeenCalledWith(
       "/api/auth/flow",

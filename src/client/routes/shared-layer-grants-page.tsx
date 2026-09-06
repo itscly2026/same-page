@@ -1,3 +1,4 @@
+import { SharedLayerDetailsForm } from "../settings/shared-layer-details-form";
 import { sharedLayerLabel } from "../../shared/annotations";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useRef, useState } from "react";
@@ -111,10 +112,13 @@ function SharedLayerGrants({ choirId, slotParam }: { choirId: string; slotParam:
       <main className="page-shell settings-page settings-ux">
         <header className="settings-heading">
           <p className="eyebrow">云盘管理 · {driveName || "共享层"}</p>
-          <h1>{layerName} 编辑权限</h1>
+          <h1>{layerName}</h1>
           <p className="settings-copy">以下授权对当前云盘中的全部乐谱生效，管理员无需单独授权。停用的共享层暂停所有人的编辑，恢复后授权继续生效。</p>
         </header>
         {slot ? <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} /> : <p role="alert">共享层不存在。</p>}
+        {!loading && !loadError && layer && <SharedLayerDetailsForm choirId={choirId} layer={layer} onSaved={setLayer} />}
+        <h2 className="settings-group-title">编辑权限</h2>
+        <p className="settings-copy">权限开关即时保存。</p>
         <section className="settings-card" aria-label={`${layerName} 编辑成员`} aria-busy={loading}>
           {members.map((member) => (
             <article className="settings-member-item" key={member.id}>

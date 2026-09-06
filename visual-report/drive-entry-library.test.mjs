@@ -49,7 +49,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.goto(server.origin);
     await page.locator(".file-row").first().waitFor();
     assert.equal(new URL(page.url()).pathname, "/choirs/visual-choir");
-    assert.equal(await page.getByRole("link", { name: "访问公开体验云盘" }).count(), 0);
+    assert.equal(await page.getByRole("link", { name: "先看示例" }).count(), 0);
     assert.equal(await page.getByRole("button", { name: "上传 PDF", exact: true }).count(), 0);
     await page.getByRole("searchbox", { name: "搜索乐谱" }).fill("秋日");
     assert.equal(await page.locator(".file-row").count(), 1);

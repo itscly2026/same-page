@@ -85,3 +85,23 @@ it("offers the current display mode download without claiming its copy is ready"
   await waitFor(() => expect(prepareOfflineScore).toHaveBeenCalledTimes(1));
   expect(screen.queryByText("已保存在这台设备上，断网也能打开。")).not.toBeInTheDocument();
 });
+
+it("explains that a failed update leaves only the older offline version available", async () => {
+  state(verified("v1"));
+  vi.mocked(prepareOfflineScore).mockRejectedValueOnce(new Error("network"));
+  render(<OfflineScoreControl score={score} authenticatedUserId="user" />);
+  fireEvent.click(screen.getByRole("button", { name: /下载新版离线副本：/ }));
+  await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("旧版 PDF 仍可离线使用，当前版本尚未准备好"));
+});
+
+it("keeps availability unknown when download fails before inspection completes", async () => {
+  vi.mocked(useOfflineScore).mockReturnValue(undefined);
+  vi.mocked(prepareOfflineScore).mockRejectedValueOnce(new Error("network"));
+  const view = render(<OfflineScoreControl score={score} authenticatedUserId="user" />);
+  fireEvent.click(screen.getByRole("button", { name: /下载离线副本：/ }));
+  await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("尚未确认本机副本"));
+  expect(screen.getByRole("status")).not.toHaveTextContent("尚不可离线使用");
+  state(verified("v1"));
+  view.rerender(<OfflineScoreControl score={score} authenticatedUserId="user" />);
+  expect(screen.getByRole("status")).toHaveTextContent("旧版 PDF 仍可离线使用");
+});

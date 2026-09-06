@@ -13,11 +13,11 @@ function RouteFeedback({ failed = false }: { failed?: boolean }) {
   const { pathname } = useLocation();
   const drive = pathname.match(/^\/choirs\/([^/]+)/)?.[1];
   const title = pathname.includes("/scores/") ? "乐谱阅读器"
-    : pathname.endsWith("/preferences") ? "我的偏好"
+    : pathname.endsWith("/preferences") ? "阅读偏好"
     : pathname.includes("/shared-layers") ? "共享层管理"
     : pathname.endsWith("/memberships") ? "成员管理"
     : pathname === "/login" ? "登录"
-    : pathname === "/user" ? "用户设置"
+    : pathname === "/user" ? "个人设置"
     : pathname === "/diagnostics" ? "故障诊断"
     : pathname === "/privacy" ? "隐私说明" : drive ? "乐谱云盘" : "合谱";
   return <main className="page-shell">

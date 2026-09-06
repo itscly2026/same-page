@@ -527,7 +527,7 @@ export default function AuthPage() {
             <Form className="entry-form" onSubmit={identifyEmail}>
               <EmailField value={email} onChange={setEmail} autoFocus />
               <Button type="submit" isDisabled={submitting}>
-                {submitting ? "正在继续…" : "登录或注册"}
+                {submitting ? "正在继续…" : "继续"}
               </Button>
             </Form>
           ),

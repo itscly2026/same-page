@@ -399,21 +399,23 @@ h1 {
 
 .marketing-hero {
   display: grid;
-  grid-template-rows: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, .85fr);
+  align-items: center;
+  gap: 2rem;
   width: min(76rem, calc(100% - 2.5rem));
-  min-height: calc(100svh - 5rem);
+  min-height: min(46rem, calc(100svh - 5rem));
   margin: 0 auto;
   padding: clamp(3rem, 6vw, 5rem) 0 clamp(4rem, 8vw, 7rem);
 }
 
 .marketing-hero__content {
-  grid-row: 2;
+  min-width: 0;
   width: 100%;
 }
 
 .marketing-more-features {
   display: inline-flex;
-  grid-row: 3;
+  grid-column: 1 / -1;
   align-self: end;
   justify-self: center;
   align-items: center;
@@ -2900,7 +2902,7 @@ h1 {
 
   .marketing-hero {
     width: calc(100% - 2rem);
-    min-height: calc(100svh - 4.5rem);
+    min-height: auto;
     padding: 2.75rem 0 max(1rem, env(safe-area-inset-bottom));
   }
 
@@ -3123,3 +3125,27 @@ h1 {
 .invite-manual-code output { font-family: ui-monospace, monospace; font-size: 20px; letter-spacing: 3px; color: #014653; }
 .invite-sharing-dialog > .drive-management-copy { margin: 0; font-size: 12px; }
 @media (max-width: 380px) { .invite-share-actions { grid-template-columns: 1fr; } }
+
+.hero-description p[lang="zh-CN"] { order: -1; color: var(--ink); font-size: 1.1rem; }
+.hero-description p[lang="en"] { font-size: .85rem; }
+.hero-invite-hint { font-size: .8rem; color: var(--muted); }
+.hero-reader-preview { min-width: 0; margin: 0; padding: .5rem; background: white; border: 1px solid var(--line); border-radius: 1rem; box-shadow: 0 12px 40px #15383d12; }
+.hero-reader-preview img { display: block; width: 100%; height: 25rem; object-fit: cover; object-position: top; border-radius: .6rem; }
+.hero-reader-preview figcaption { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem 1rem; padding: .75rem .25rem .25rem; font-size: .8rem; }
+.hero-reader-preview figcaption span::before { content: ""; display: inline-block; width: .5rem; height: .5rem; margin-right: .4rem; border-radius: 50%; background: #a12652; }
+.hero-reader-preview figcaption span:last-child::before { background: #6f52a5; }
+@media (max-width: 60rem) {
+  .marketing-hero { grid-template-columns: 1fr; gap: 1.5rem; min-height: auto; padding-block: 2.5rem; }
+  .hero-reader-preview { width: min(100%, 30rem); justify-self: center; }
+  .hero-reader-preview img { height: 21rem; }
+  .marketing-more-features { margin-top: .5rem; }
+}
+
+@media (max-width: 40rem) {
+  .marketing-hero { padding-block: 1.5rem; gap: 2rem; }
+  .marketing-hero h1 { font-size: clamp(2.25rem, 9vw, 2.75rem); }
+  .hero-zh { margin-top: .75rem; font-size: 1.5rem; }
+  .hero-actions { position: relative; flex-direction: row; align-items: center; margin-top: 1.25rem; gap: 1rem; }
+  .hero-cta { width: auto; min-width: 8rem; }
+  .hero-invite-hint { position: absolute; left: 0; top: calc(100% + .25rem); }
+}

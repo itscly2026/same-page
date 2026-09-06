@@ -53,7 +53,7 @@ export default function UserLifecyclePage() {
   const admins = state?.memberships.filter((member) => member.lastAdmin === 1) ?? [];
   if (state && !state.deletion && (session.isPending || session.data?.user.id !== state.userId)) return <p role="status">正在核对登录身份…</p>;
   return <div className="app-page"><AppHeader /><main className="page-shell compact-page lifecycle-page">
-    <h1>用户与成员关系</h1>
+    <h1>个人设置</h1>
     {state ? state.deletion ? <section>
       <h2>恢复用户</h2>
       <p>用户已停用，云盘访问与同步已撤销。恢复截止：{new Date(state.deletion.expiresAt).toLocaleString()}。</p>
