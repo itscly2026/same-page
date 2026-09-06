@@ -21,3 +21,13 @@ WHEN NEW.actor_user_id IS NOT NULL AND EXISTS (
 BEGIN
   SELECT RAISE(ABORT, 'annotation_permission_revoked');
 END;
+
+-- Drive-wide ordering survives individual slot expiry and permanently fences
+-- older layer responses arriving from another score or browser tab.
+ALTER TABLE choirs ADD COLUMN shared_layer_revision INTEGER NOT NULL DEFAULT 0;
+CREATE TRIGGER shared_layer_revision_insert AFTER INSERT ON choir_shared_layer_settings
+BEGIN UPDATE choirs SET shared_layer_revision = shared_layer_revision + 1 WHERE id = NEW.choir_id; END;
+CREATE TRIGGER shared_layer_revision_update AFTER UPDATE ON choir_shared_layer_settings
+BEGIN UPDATE choirs SET shared_layer_revision = shared_layer_revision + 1 WHERE id = NEW.choir_id; END;
+CREATE TRIGGER shared_layer_revision_delete AFTER DELETE ON choir_shared_layer_settings
+BEGIN UPDATE choirs SET shared_layer_revision = shared_layer_revision + 1 WHERE id = OLD.choir_id; END;

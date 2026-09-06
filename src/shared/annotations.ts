@@ -237,6 +237,7 @@ export const annotationPushResponseSchema = z.object({
 });
 
 export const annotationLayerListResponseSchema = z.object({
+  sharedLayerRevision: z.number().int().nonnegative(),
   layers: z.array(annotationLayerSummarySchema),
   permissions: z.object({ canManageLayers: z.boolean() }),
 });
@@ -286,7 +287,12 @@ export type SharedLayerManagementSummary = z.infer<
   typeof sharedLayerManagementSummarySchema
 >;
 
-export const sharedLayerManagementResponseSchema = z.object({
+export const sharedLayerAvailabilitySchema = z.object({
+  sharedLayerRevision: z.number().int().nonnegative(),
+  activeSharedSlots: z.array(sharedLayerSlotSchema),
+});
+
+export const sharedLayerManagementResponseSchema = sharedLayerAvailabilitySchema.extend({
   drive: driveIdentitySchema,
   layers: z.array(sharedLayerManagementSummarySchema),
 });

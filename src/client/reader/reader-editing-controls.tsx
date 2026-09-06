@@ -139,7 +139,7 @@ function LayerSlotButton({
   const label = slot === "P" ? "P，我的笔记" : sharedLayerLabel(slot, layer?.name ?? "", "，");
   const button = (
     <Button
-      isDisabled={isDisabled || !selectedLayer?.canEdit}
+      isDisabled={isDisabled}
       aria-label={`${label}${layer?.canEdit ? "" : "，只读，查看权限说明"}`}
       aria-pressed={layer?.id === activeLayerId}
       className="annotation-layer-slot"

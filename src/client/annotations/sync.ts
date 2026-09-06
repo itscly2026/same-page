@@ -173,7 +173,7 @@ async function refreshLayerCapabilities(workspace: LocalWorkspace, signal: Abort
     if ([401, 403, 404].includes(layerResponse.status)) await removeCachedPublications(workspace);
     throw new Error("annotation_layers_unavailable");
   }
-  const { layers } = await parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema);
+  const { layers, sharedLayerRevision } = await parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema);
   await assertLocalWorkspaceActive(workspace);
   signal.throwIfAborted();
   if (!hasCompleteOfflineLayers(layers, workspace.ownerKey)) {
@@ -185,7 +185,7 @@ async function refreshLayerCapabilities(workspace: LocalWorkspace, signal: Abort
     ...layer, subscribed: previous.find(entry => entry.id === layer.id)?.subscribed ?? layer.subscribed,
   }));
   signal.throwIfAborted();
-  await cacheAnnotationLayers(workspace, applied);
+  if (!await cacheAnnotationLayers(workspace, applied, sharedLayerRevision)) throw new Error("shared_layer_state_changed");
   await assertLocalWorkspaceActive(workspace);
   signal.throwIfAborted();
   return applied;

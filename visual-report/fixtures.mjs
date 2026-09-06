@@ -273,7 +273,7 @@ export function resolveFixtureRequest({
           : {}),
         canEdit: entry.kind === "personal" || identity === "admin",
       })),
-      permissions: { canManageLayers: identity === "admin" },
+      sharedLayerRevision: 0, permissions: { canManageLayers: identity === "admin" },
     });
   }
 
@@ -295,6 +295,7 @@ export function resolveFixtureRequest({
   if (method === "GET" && pathname === `/api/choirs/${choir.id}/shared-layers`) {
     return json({
       drive: { id: choir.id, name: choir.name },
+      sharedLayerRevision: 0, activeSharedSlots: layers.filter(entry => entry.kind === "shared").map(entry => entry.sharedSlot),
       layers: layers.filter((entry) => entry.kind === "shared").map((entry, index) => ({
         slot: entry.sharedSlot,
         name: entry.name,

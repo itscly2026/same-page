@@ -34,7 +34,7 @@ beforeEach(async () => {
   serverLayers = [{ ...own }, { ...published }];
   await cacheAnnotationLayers(workspace, serverLayers);
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/layers")
-    ? Response.json({ layers: serverLayers, permissions: { canManageLayers: false } }) : emptyPull()));
+    ? Response.json({ layers: serverLayers, sharedLayerRevision: 0, permissions: { canManageLayers: false } }) : emptyPull()));
 });
 afterEach(() => {
   vi.unstubAllGlobals(); vi.restoreAllMocks();
@@ -47,7 +47,7 @@ it("loads older notes on a newly shared layer and removes revoked notes from off
   const cursors: number[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith("/layers")) return Response.json({ layers: serverLayers, permissions: { canManageLayers: false } });
+    if (url.endsWith("/layers")) return Response.json({ layers: serverLayers, sharedLayerRevision: 0, permissions: { canManageLayers: false } });
     const cursor = Number(new URL(url, "https://example.test").searchParams.get("cursor")); cursors.push(cursor);
     return Response.json({ cursor: 100, objects: serverLayers.length > 1 && cursor === 0 ? [{
       id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", layerId: published.id, version: 1, deleted: false,
@@ -76,6 +76,34 @@ it("loads older notes on a newly shared layer and removes revoked notes from off
 });
 
 
+it("rejects an older sibling-score response after a drive-wide revocation", async () => {
+  const sibling = await captureLocalWorkspaceSession(createLocalWorkspace(workspace.ownerKey, workspace.choirId, "sibling"));
+  const shared: AnnotationLayerSummary = { ...own, id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", kind: "shared", sharedSlot: "E", name: "Ensemble" };
+  await cacheAnnotationLayers(workspace, [own, shared], 1);
+  await cacheAnnotationLayers(sibling, [own, shared], 1);
+  const staleSnapshot: OfflineScoreRecord = {
+    ...sibling, key: "sibling-offline", versionId: "version", fileName: "谱.pdf", sha256: await sha256Hex(new TextEncoder().encode("test").buffer), pageCount: 1,
+    blob: new Blob(["test"]), active: 1, verifiedAt: 1, annotationSnapshot: await captureOfflineAnnotationSnapshot(sibling),
+  };
+  await localDatabase.offlineScores.put(staleSnapshot);
+  const response = deferred<Response>();
+  let siblingStarted = false;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes("/sibling/")) { siblingStarted = true; return response.promise; }
+    return Response.json({ layers: [own], sharedLayerRevision: 2, permissions: { canManageLayers: false } });
+  }));
+  const staleRefresh = syncAnnotations(sibling, { pull: true });
+  const rejected = expect(staleRefresh).rejects.toThrow("shared_layer_state_changed");
+  await vi.waitFor(() => expect(siblingStarted).toBe(true));
+  await pushPendingAnnotations(workspace, { maxOperations: 100 });
+  response.resolve(Response.json({ layers: [own, shared], sharedLayerRevision: 1, permissions: { canManageLayers: false } }));
+  await rejected;
+  await restoreOfflineAnnotationSnapshot(sibling, staleSnapshot);
+  expect((await readAnnotationLayers(sibling)).map(layer => layer.id)).toEqual([own.id]);
+  expect((await localDatabase.offlineScores.get(staleSnapshot.key))?.annotationSnapshot.layers.map(layer => layer.id)).toEqual([own.id]);
+  expect(await findVerifiedOfflineScore(sibling)).not.toBeNull();
+});
+
 it("checks layer status before reconnect uploads, keeps deleted-layer drafts and conflicts, and resumes only the original identity", async () => {
   const shared: AnnotationLayerSummary = { ...own, id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", kind: "shared", sharedSlot: "piano", name: "钢琴" };
   serverLayers = [own, shared];
@@ -98,7 +126,7 @@ it("checks layer status before reconnect uploads, keeps deleted-layer drafts and
   const uploaded: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     requests.push(String(input));
-    if (String(input).endsWith("/layers")) return Response.json({ layers: serverLayers, permissions: { canManageLayers: false } });
+    if (String(input).endsWith("/layers")) return Response.json({ layers: serverLayers, sharedLayerRevision: 0, permissions: { canManageLayers: false } });
     const body = JSON.parse(String(init?.body)) as { operations: { opId: string; annotationId: string; layerId: string; payload: typeof draft }[] };
     return Response.json({ results: body.operations.map(op => {
       uploaded.push(op.layerId);
@@ -181,7 +209,7 @@ it.each(["Web Locks", "lease"])("shares a refresh under %s and detaches only the
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input).endsWith("/layers")) {
       layerRequests++;
-      return Response.json({ layers: serverLayers, permissions: { canManageLayers: false } });
+      return Response.json({ layers: serverLayers, sharedLayerRevision: 0, permissions: { canManageLayers: false } });
     }
     pullSignal = init?.signal;
     return gate.promise;
@@ -213,7 +241,7 @@ it("queues fresh access after an earlier request and shares the queued refresh",
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     if (String(input).endsWith("/layers")) {
       layerRequests++;
-      return Response.json({ layers: serverLayers, permissions: { canManageLayers: false } });
+      return Response.json({ layers: serverLayers, sharedLayerRevision: 0, permissions: { canManageLayers: false } });
     }
     return layerRequests === 1 ? gate.promise : emptyPull();
   }));
@@ -237,7 +265,7 @@ it("cancels an unneeded transport without blocking a new caller or applying its 
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     if (!String(input).endsWith("/layers")) return emptyPull();
     requests++;
-    return requests === 1 ? gate.promise : Response.json({ layers: [own], permissions: { canManageLayers: false } });
+    return requests === 1 ? gate.promise : Response.json({ layers: [own], sharedLayerRevision: 0, permissions: { canManageLayers: false } });
   }));
   const controller = new AbortController();
   const notified = vi.fn();
@@ -247,7 +275,7 @@ it("cancels an unneeded transport without blocking a new caller or applying its 
   controller.abort();
   await rejected;
   await syncAnnotations(workspace, { pull: true, freshLayers: false });
-  gate.resolve(Response.json({ layers: [own, published], permissions: { canManageLayers: false } }));
+  gate.resolve(Response.json({ layers: [own, published], sharedLayerRevision: 0, permissions: { canManageLayers: false } }));
   expect(notified).not.toHaveBeenCalled();
   expect(await readAnnotationLayers(workspace)).toEqual([expect.objectContaining(own)]);
 });
@@ -258,7 +286,7 @@ it("never shares an old epoch after A to B to A, even while its response is pend
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     if (!String(input).endsWith("/layers")) return emptyPull();
     requests++;
-    return requests === 1 ? gate.promise : Response.json({ layers: [own], permissions: { canManageLayers: false } });
+    return requests === 1 ? gate.promise : Response.json({ layers: [own], sharedLayerRevision: 0, permissions: { canManageLayers: false } });
   }));
   const notified = vi.fn();
   const first = syncAnnotations(workspace, { pull: true, onLayersApplied: notified });
@@ -269,7 +297,7 @@ it("never shares an old epoch after A to B to A, even while its response is pend
   const current = await captureLocalWorkspaceSession(createLocalWorkspace(workspace.ownerKey, "drive", "score"));
   await syncAnnotations(current, { pull: true, freshLayers: false });
   await rejected;
-  gate.resolve(Response.json({ layers: [own, published], permissions: { canManageLayers: false } }));
+  gate.resolve(Response.json({ layers: [own, published], sharedLayerRevision: 0, permissions: { canManageLayers: false } }));
   expect(requests).toBe(2);
   expect(notified).not.toHaveBeenCalled();
   expect(await readAnnotationLayers(current)).toEqual([expect.objectContaining(own)]);
@@ -284,7 +312,7 @@ it.each([0, 1])("keeps committed revocations and local drafts when content page 
     payload: { kind: "text", pageNumber: 1, x: .2, y: .3, fontScale: .024, text: "分享内容" } });
   let page = 0;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    if (String(input).endsWith("/layers")) return Response.json({ layers: [own], permissions: { canManageLayers: false } });
+    if (String(input).endsWith("/layers")) return Response.json({ layers: [own], sharedLayerRevision: 0, permissions: { canManageLayers: false } });
     return page++ === failingPage ? new Response(null, { status: 503 }) : Response.json({ cursor: 1, hasMore: true, objects: [] });
   }));
   const applied = vi.fn();
@@ -301,7 +329,7 @@ it.each([401, 403, 404, 503, "network", "identity"])("handles layer refresh fail
     payload: { kind: "text", pageNumber: 1, x: .2, y: .3, fontScale: .024, text: "我的草稿" } });
   vi.stubGlobal("fetch", vi.fn(async () => {
     if (failure === "network") throw new TypeError("offline");
-    if (failure === "identity") return Response.json({ layers: [], permissions: { canManageLayers: false } });
+    if (failure === "identity") return Response.json({ layers: [], sharedLayerRevision: 0, permissions: { canManageLayers: false } });
     return new Response(null, { status: Number(failure) });
   }));
   await expect(syncAnnotations(workspace, { pull: true })).rejects.toThrow();
@@ -360,7 +388,7 @@ it("rejects an old fallback holder after an expired lease has been taken over", 
     return true;
   });
   await acquired.promise;
-  oldResponse.resolve(Response.json({ layers: [own, published], permissions: { canManageLayers: false } }));
+  oldResponse.resolve(Response.json({ layers: [own, published], sharedLayerRevision: 0, permissions: { canManageLayers: false } }));
   await rejected;
   expect(getAnnotationSyncActivity(workspace.scopeKey)).toBe("running");
   expect(await readAnnotationLayers(workspace)).toEqual([expect.objectContaining(own)]);

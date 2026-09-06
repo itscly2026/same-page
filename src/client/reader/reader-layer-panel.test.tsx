@@ -46,7 +46,7 @@ beforeEach(async () => {
       if (url.endsWith("/subscription")) serverLayers[1] = { ...serverLayers[1], subscribed: body.subscribed };
       return Response.json(body);
     }
-    if (url.endsWith("/layers")) return Response.json({ layers: serverLayers, permissions: { canManageLayers: false } });
+    if (url.endsWith("/layers")) return Response.json({ layers: serverLayers, sharedLayerRevision: 0, permissions: { canManageLayers: false } });
     return Response.json({ cursor: 0, objects: [] });
   }));
 });

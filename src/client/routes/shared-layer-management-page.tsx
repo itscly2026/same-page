@@ -1,8 +1,10 @@
+import { captureLocalWorkspaceSession, resolveLocalWorkspace, type LocalWorkspace } from "../platform/local-workspace";
+import { applySharedLayerAvailability } from "../annotations/annotation-state";
 import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
-import { sharedLayerLabel, sharedLayerManagementResponseSchema, type SharedLayerManagementSummary } from "../../shared/annotations";
+import { sharedLayerAvailabilitySchema, sharedLayerLabel, sharedLayerManagementResponseSchema, type SharedLayerManagementSummary } from "../../shared/annotations";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { AppHeader } from "../components/app-header";
 import { authClient } from "../auth/auth-client";
@@ -13,10 +15,11 @@ import { useSettingsLifetime } from "../settings/use-settings-lifetime";
 export default function SharedLayerManagementPage() {
   const { choirId = "" } = useParams();
   const session = authClient.useSession();
-  return <SharedLayerManagement key={`${session.data?.user.id ?? "guest"}:${choirId}`} choirId={choirId} />;
+  return <SharedLayerManagement key={`${session.data?.user.id ?? "guest"}:${choirId}`} choirId={choirId} userId={session.data?.user.id ?? null} />;
 }
 
-function SharedLayerManagement({ choirId }: { choirId: string }) {
+function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: string | null }) {
+  const workspaceRef = useRef<LocalWorkspace | null>(null);
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const [view, setView] = useState<"current" | "deleted">("current");
@@ -35,26 +38,38 @@ function SharedLayerManagement({ choirId }: { choirId: string }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    void diagnosticFetch(`/api/choirs/${choirId}/shared-layers?state=${view}`, { signal: controller.signal })
-      .then(settingsResponse).then(value => {
-        const body = sharedLayerManagementResponseSchema.parse(value);
-        if (controller.signal.aborted) return;
-        setDriveName(body.drive.name); setLayers(body.layers); setLoading(false);
-      }).catch(error => {
-        if (!controller.signal.aborted) { setLoadError(settingsError(error, "暂时无法读取共享层管理设置。")); setLoading(false); }
-      });
+    void (async () => {
+      if (!userId) throw new Error("authentication_required");
+      const workspace = await captureLocalWorkspaceSession(await resolveLocalWorkspace({ choirId, scoreId: "shared-layer-management", authenticatedUserId: userId, signal: controller.signal }));
+      controller.signal.throwIfAborted();
+      workspaceRef.current = workspace;
+      const value = await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/shared-layers?state=${view}`, { signal: controller.signal }));
+      const body = sharedLayerManagementResponseSchema.parse(value);
+      if (controller.signal.aborted) return;
+      if (!await applySharedLayerAvailability(workspace, body)) throw new Error("shared_layer_state_changed");
+      if (controller.signal.aborted) return;
+      setDriveName(body.drive.name); setLayers(body.layers); setLoading(false);
+    })().catch(error => {
+      if (!controller.signal.aborted) { setLoadError(settingsError(error, "暂时无法读取共享层管理设置。")); setLoading(false); }
+    });
     return () => controller.abort();
-  }, [choirId, loadAttempt, view]);
+  }, [choirId, loadAttempt, view, userId]);
 
   const change = async (path: string, method: "POST" | "PUT", body: object, message: string) => {
     if (busy.current) return;
     const lifetime = generation.current;
+    const workspace = workspaceRef.current;
     busy.current = true; setPending(true); setFeedback({ message: "正在保存…" });
     try {
-      await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/shared-layers${path}`, {
+      const result = await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/shared-layers${path}`, {
         method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       }));
       if (lifetime !== generation.current) return;
+      if (path.endsWith("/lifecycle")) {
+        const state = sharedLayerAvailabilitySchema.parse(result);
+        if (!workspace || !await applySharedLayerAvailability(workspace, state)) throw new Error("shared_layer_state_changed");
+        if (lifetime !== generation.current) return;
+      }
       setFeedback({ message });
       if (method === "POST") setNewName("");
       setDeleting(null);

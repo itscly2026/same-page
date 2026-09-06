@@ -1,3 +1,4 @@
+import { readSharedLayerAvailability, readSharedLayerSnapshot } from "./shared-layer-state";
 import { RECOVERY_PERIOD_MS } from "../lifecycle/cleanup";
 import { createSharedLayerInstances } from "./shared-layer-instances";
 import { AnnotationScopeAccessError, synchronizeOperations } from "./synchronize";
@@ -46,7 +47,7 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
     ).bind(crypto.randomUUID(), choirId, scoreId, userId, access.membership?.id ?? null, now, now).run();
   }
 
-  const rows = await context.env.DB.prepare(
+  const query = context.env.DB.prepare(
     `SELECT layers.id, layers.kind, layers.default_slot, COALESCE(settings.name, layers.name) AS name, COALESCE(settings.sort_order, layers.sort_order) AS sort_order,
             layers.sharing, owner.display_name AS owner_name,
             CASE WHEN subscriptions.user_id IS NULL THEN 0 ELSE 1 END AS personal_subscribed,
@@ -83,10 +84,12 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
      ORDER BY CASE layers.kind WHEN 'shared' THEN 0 ELSE 1 END,
               sort_order, layers.created_at`,
   ).bind(userId, access.membership?.role === "admin" ? 1 : 0, userId, userId,
-    access.membership?.id ?? null, userId, choirId, scoreId, userId, access.membership?.id ?? null).all<LayerRow>();
+    access.membership?.id ?? null, userId, choirId, scoreId, userId, access.membership?.id ?? null);
+  const snapshot = await readSharedLayerSnapshot<LayerRow>(context.env.DB, choirId, query);
 
   return context.json({
-    layers: rows.results.map(row => ({ ...serializeLayer(row), canShare: row.kind === "personal" && row.can_edit === 1 && !!access.membership })),
+    sharedLayerRevision: snapshot.sharedLayerRevision,
+    layers: snapshot.rows.map(row => ({ ...serializeLayer(row), canShare: row.kind === "personal" && row.can_edit === 1 && !!access.membership })),
     permissions: { canManageLayers: access.membership?.role === "admin" },
   });
 });
@@ -132,7 +135,7 @@ annotationRoutes.get("/choirs/:choirId/shared-layers", async (context) => {
   const drive = await readDriveIdentity(context, choirId);
   if (!drive) return context.json({ error: "choir_not_found" }, 404);
   const state = context.req.query("state") === "deleted" ? "deleted" : "current";
-  const rows = await context.env.DB.prepare(
+  const query = context.env.DB.prepare(
     `SELECT settings.slot, settings.name, settings.sort_order, settings.active, settings.default_color, settings.deleted_at, settings.revision,
             COUNT(granted_members.id) AS granted_member_count
      FROM choir_shared_layer_settings AS settings
@@ -145,7 +148,8 @@ annotationRoutes.get("/choirs/:choirId/shared-layers", async (context) => {
       AND granted_members.role = 'member'
      WHERE settings.choir_id = ? AND ((? = 'deleted' AND settings.deleted_at IS NOT NULL) OR (? = 'current' AND settings.deleted_at IS NULL))
      GROUP BY settings.slot ORDER BY settings.sort_order, settings.slot`,
-  ).bind(choirId, state, state).all<{
+  ).bind(choirId, state, state);
+  const snapshot = await readSharedLayerSnapshot<{
     slot: string;
     name: string;
     default_color: string;
@@ -154,8 +158,8 @@ annotationRoutes.get("/choirs/:choirId/shared-layers", async (context) => {
     active: number;
     deleted_at: number | null;
     revision: number;
-  }>();
-  return context.json({ drive, layers: rows.results.map(row => ({
+  }>(context.env.DB, choirId, query);
+  return context.json({ drive, sharedLayerRevision: snapshot.sharedLayerRevision, activeSharedSlots: snapshot.activeSharedSlots, layers: snapshot.rows.map(row => ({
     slot: row.slot, name: row.name, defaultColor: row.default_color,
     sortOrder: row.sort_order, active: row.active === 1,
     revision: row.revision, deletedAt: row.deleted_at,
@@ -181,7 +185,8 @@ annotationRoutes.post("/choirs/:choirId/shared-layers/:slot/lifecycle", async co
     .bind(deleting ? now : null, now, member.id, choirId, slot.data, parsed.data.expectedRevision,
       ...(!deleting ? [RECOVERY_PERIOD_MS] : []), member.id, member.lifecycleRevision).run();
   if (!result.meta.changes) return context.json({ error: "layer_lifecycle_conflict" }, 409);
-  return context.json({ action: parsed.data.action, revision: parsed.data.expectedRevision + 1 });
+  return context.json({ action: parsed.data.action, revision: parsed.data.expectedRevision + 1,
+    ...await readSharedLayerAvailability(context.env.DB, choirId) });
 });
 
 annotationRoutes.post("/choirs/:choirId/shared-layers", async context => {
