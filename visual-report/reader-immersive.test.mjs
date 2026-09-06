@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import path from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { chromium, webkit } from "playwright";
+import { expect } from "@playwright/test";
 
 import { startVisualServer } from "./setup.mjs";
 import { resolveFixtureRequest } from "./fixtures.mjs";
@@ -49,32 +51,41 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
   const browser = await engine.launch({headless:true});
   context.after(() => browser.close());
   const page = await openMemberReader(browser, {width:834,height:700});
-  await showReaderChrome(page);
-  await page.getByRole("button", {name:"更多",exact:true}).click();
-  await page.getByRole("button", {name:"连续滚动",exact:true}).click();
-  await page.getByRole("button", {name:"更多",exact:true}).click();
-  await page.getByRole("button", {name:"放大",exact:true}).click();
-  await page.getByRole("button", {name:"更多",exact:true}).click();
-  await page.locator(".continuous-reader .pdf-page-canvas [data-pdf-canvas-active]").first().waitFor();
-  await page.locator(".continuous-reader").evaluate(element => {element.scrollTop = 170; element.scrollLeft = 90;});
-  const read = () => page.locator('.continuous-reader__page[data-index="0"] .annotated-pdf-page').evaluate(element => {
-   const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
-  });
-  const before = await read();
-  await page.getByRole("button", {name:"编辑",exact:true}).click();
-  await page.locator(".annotation-controls").waitFor();
-  const focused = await page.locator('.annotated-pdf-page:visible').evaluateAll(elements => elements.map(element => {
-   const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
-  }));
-  assert.equal(focused.length,1);
-  assertView(focused[0], before);
-  await page.mouse.move(400,450);
-  await page.mouse.wheel(0,600);
-  assertView((await page.locator('.annotated-pdf-page:visible').evaluateAll(elements => elements.map(element => {
-   const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
-  })))[0],before);
-  await page.getByRole("button", {name:"完成编辑",exact:true}).click();
-  assertView(await read(), before);
+  try {
+    await showReaderChrome(page);
+    await page.getByRole("button", {name:"更多",exact:true}).click();
+    await page.getByRole("button", {name:"连续滚动",exact:true}).click();
+    await page.getByRole("button", {name:"更多",exact:true}).click();
+    await page.getByRole("button", {name:"放大",exact:true}).click();
+    await page.getByRole("button", {name:"更多",exact:true}).click();
+    await page.locator(".continuous-reader .pdf-page-canvas [data-pdf-canvas-active]").first().waitFor();
+    await page.locator(".continuous-reader").evaluate(element => {element.scrollTop = 170; element.scrollLeft = 90;});
+    const read = () => page.locator('.continuous-reader__page[data-index="0"] .annotated-pdf-page').evaluate(element => {
+     const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
+    });
+    const before = await read();
+    await page.getByRole("button", {name:"编辑",exact:true}).click();
+    await page.locator(".annotation-controls").waitFor();
+    // Toolbar readiness is independent of WebKit's next style update. Wait for
+    // the page-lock invariant itself; a persistently visible neighbour still fails.
+    const visiblePages = page.locator('.annotated-pdf-page:visible');
+    await expect(visiblePages).toHaveCount(1, { timeout: 3000 });
+    const focused = await visiblePages.evaluateAll(elements => elements.map(element => {
+     const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
+    }));
+    assert.equal(focused.length,1);
+    assertView(focused[0], before);
+    await page.mouse.move(400,450);
+    await page.mouse.wheel(0,600);
+    assertView((await page.locator('.annotated-pdf-page:visible').evaluateAll(elements => elements.map(element => {
+     const box = element.getBoundingClientRect(); return {x:box.x,y:box.y,width:box.width};
+    })))[0],before);
+    await page.getByRole("button", {name:"完成编辑",exact:true}).click();
+    assertView(await read(), before);
+  } catch (error) {
+    await recordContinuousEditFailure(page, engineName).catch(evidenceError => console.error("Could not capture reader failure evidence", evidenceError));
+    throw error;
+  }
  });
 }
 
@@ -171,4 +182,29 @@ async function waitForRenderedPdf(page) {
 
 async function assertEventually(page, predicate) {
   await page.waitForFunction(predicate);
+}
+
+async function recordContinuousEditFailure(page, engineName) {
+  const directory = "artifacts/verification/reader-immersive";
+  await mkdir(directory, { recursive: true });
+  const state = await page.evaluate(() => {
+    const reader = document.querySelector(".continuous-reader");
+    return {
+      editing: reader?.getAttribute("data-editing"),
+      scroll: reader ? { top: reader.scrollTop, left: reader.scrollLeft } : null,
+      pages: [...document.querySelectorAll(".continuous-reader__page")].map(element => {
+        const paper = element.querySelector(".annotated-pdf-page");
+        return {
+          index: element.getAttribute("data-index"),
+          hidden: element.getAttribute("data-edit-hidden"),
+          inert: element.hasAttribute("inert"),
+          visibility: getComputedStyle(element).visibility,
+          paperVisibility: paper ? getComputedStyle(paper).visibility : null,
+          paperRect: paper?.getBoundingClientRect().toJSON(),
+        };
+      }),
+    };
+  });
+  await writeFile(`${directory}/${engineName}-continuous-edit.json`, JSON.stringify(state, null, 2));
+  await page.screenshot({ path: `${directory}/${engineName}-continuous-edit.png`, fullPage: true });
 }
