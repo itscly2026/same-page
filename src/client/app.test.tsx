@@ -245,14 +245,14 @@ describe("AppRoutes", () => {
       return new Response(null, { status: 404 });
     }));
     render(<MemoryRouter initialEntries={["/choirs/choir-1/shared-layers"]}><AppRoutes /></MemoryRouter>);
-    fireEvent.click(await screen.findByRole("button", { name: "删除 E · 全体" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除 E · Ensemble" }));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText(/当前云盘全部乐谱/)).toBeVisible();
     expect(within(dialog).getByText(/30 天内/)).toBeVisible();
     expect(actions).toEqual([]);
     fireEvent.click(within(dialog).getByRole("button", { name: "删除整个共享层" }));
     await screen.findByText(loseResponse ? /未能确认操作结果/ : "共享层已删除，可在已删除层入口查看并恢复。");
-    await waitFor(() => expect(screen.queryByRole("button", { name: "删除 E · 全体" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "删除 E · Ensemble" })).not.toBeInTheDocument());
     await waitFor(async () => expect(await readAnnotationLayers(workspace)).toEqual([]));
     expect((await localDatabase.offlineScores.get("management-offline"))?.annotationSnapshot.layers).toEqual([]);
     expect((await localDatabase.offlineScores.get("management-offline"))?.blob.size).toBe(3);

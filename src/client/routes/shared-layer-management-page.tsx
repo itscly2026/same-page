@@ -134,7 +134,7 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
       </>}
     </main>
     <ModalOverlay className="modal-overlay" isOpen={deleting !== null} isDismissable={!pending} onOpenChange={open => { if (!open && !pending) setDeleting(null); }}>
-      <Modal className="app-modal app-modal--compact"><Dialog className="app-dialog">
+      <Modal className="app-modal app-modal--compact"><Dialog className="app-dialog" exitDisabled={pending}>
         <Heading slot="title">删除共享层「{deleting ? sharedLayerLabel(deleting.slot, deleting.name) : ""}」？</Heading>
         <p>这会删除当前云盘全部乐谱上的此共享层，并立即隐藏其批注、停止云端编辑。</p>
         <p>30 天内可在“已删除层”恢复原层、批注、授权和阅读偏好；到期后永久清理。停用则保留内容且没有清理期限。</p>

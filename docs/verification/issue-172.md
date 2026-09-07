@@ -1,6 +1,6 @@
 # #172 本地验收记录
 
-本轮在 `codex/issue-172` 独立 worktree 验证。以下均为本地证据，不代表生产发布或真实移动设备验收。
+本轮在 `codex/issue-172` 独立 worktree 验证，已 rebase 到 `main` 的 `0015b15`，保留 #176 的共享层删除与恢复行为。以下均为本地证据，不代表生产发布或真实移动设备验收。
 
 ## 实现边界
 
@@ -14,13 +14,16 @@
 ## 自动化证据
 
 - `npm run lint`、`npm run typecheck`、`npm run build` 通过；PWA 预缓存校验通过。
+- CI 范围测试 19 项及完整历史 schema 迁移验证通过。
 - Node 单元测试：21 个文件、78 项通过。
-- 客户端测试：45 个文件、355 项通过；覆盖实际路由退出、最新导航意图、保存失败重试、输入中的文字、本机存储界面、持久化删除 fence、身份和登出边界。
-- Worker 测试：单元 5 个文件/10 项、集成 10 个文件/85 项通过。
+- 客户端测试：45 个文件、360 项通过；覆盖实际路由退出、最新导航意图、保存失败重试、输入中的文字、本机存储界面、持久化删除 fence、身份和登出边界。
+- Worker 测试：单元 5 个文件/10 项、集成 10 个文件/88 项通过。
+- 真实 Worker/D1/R2/PDFium 烟雾测试：11 项通过，包含 Chromium/WebKit 图片恢复、非空内容、断网重开、批注与诊断。
+- 完整视觉回归：37 项通过，包含新合入的共享层删除确认与恢复。
 - Chromium/WebKit 深链接验证：从站外进入云盘，打开抽屉，第一次系统返回关闭抽屉并留在云盘，第二次返回原站外文档；两种引擎均通过。
 - 阅读器浏览器测试使用非空页面像素检查与批注几何检查，不能以 canvas 存在或网络 200 代替内容证明。
 
-本机 Node 25 使用 `NODE_OPTIONS=--no-experimental-webstorage` 避免 Node 原生 localStorage 占位实现干扰 jsdom。Node 进程生命周期测试曾遇到环境 `kill EPERM`，单 worker 重试通过；客户端默认高并发曾超出 Testing Library 等待时间，限制两个 worker 后完整通过，未修改断言或放宽超时。CI 使用 Node 24。
+本机 Node 25 使用 `NODE_OPTIONS=--no-experimental-webstorage` 避免 Node 原生 localStorage 占位实现干扰 jsdom。Node 进程生命周期测试曾遇到环境 `kill EPERM`，单 worker 重试通过；图片烟雾测试也曾遇到同类进程清理错误，完整顺序重跑 11 项通过；客户端高并发及重型套件并行曾超出测试等待时间；客户端限制两个 worker、重型套件顺序运行后完整通过，未修改断言或放宽超时。CI 使用 Node 24。
 
 真实图片恢复链路使用独立 Python venv 的 `pypdfium2`/Pillow 与本地 Worker/D1/R2；通过禁用测试页的 `Iterator` 模拟实际 PDF.js 初始化不兼容，不把网络失败伪装成引擎失败。
 
