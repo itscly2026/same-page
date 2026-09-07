@@ -104,7 +104,8 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
     }
     return null;
   });
-  if (!access) return context.json({ error: "forbidden" }, 403);
+  if (!access) return context.json({ error: drive.membership_status === "removed"
+    ? "membership_requires_admin" : !userId && !candidates.guest ? "authentication_required" : "forbidden" }, 403);
   const serialized = rows.results
     .filter((row): row is DriveBootstrapScoreRow =>
       row.score_id !== null && row.version_id !== null)

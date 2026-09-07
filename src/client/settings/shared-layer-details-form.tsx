@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import type { SharedLayerManagementSummary } from "../../shared/annotations";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
-import { settingsError, settingsResponse } from "./settings-request";
+import { runSettingsMutation, settingsMutationMessage } from "./settings-mutation";
 import { useSettingsLifetime } from "./use-settings-lifetime";
 
 export function SharedLayerDetailsForm({ choirId, layer, onSaved }: {
@@ -18,18 +18,14 @@ export function SharedLayerDetailsForm({ choirId, layer, onSaved }: {
     if (busy.current || !name.trim()) return;
     const lifetime = generation.current;
     busy.current = true; setPending(true); setFeedback({ message: "正在保存…" });
-    try {
-      const changes = { name: name.trim(), defaultColor: color, active };
-      await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/shared-layers/${layer.slot}/settings`, {
-        method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(changes),
-      }));
-      if (lifetime !== generation.current) return;
-      onSaved({ ...layer, ...changes }); setFeedback({ message: "共享层设置已保存。" });
-    } catch (error) {
-      if (lifetime === generation.current) setFeedback({ message: settingsError(error, "保存失败，修改仍保留在表单中，请重试。"), failed: true });
-    } finally {
-      if (lifetime === generation.current) { busy.current = false; setPending(false); }
-    }
+    const changes = { name: name.trim(), defaultColor: color, active };
+    const result = await runSettingsMutation(() => diagnosticFetch(`/api/choirs/${choirId}/shared-layers/${layer.slot}/settings`, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(changes),
+    }));
+    if (lifetime !== generation.current) return;
+    if (result.kind === "saved") onSaved({ ...layer, ...changes });
+    setFeedback({ message: settingsMutationMessage(result, "共享层设置已保存。"), failed: result.kind !== "saved" });
+    busy.current = false; setPending(false);
   };
   return <form className="settings-card layer-details-form" aria-label="共享层设置" onSubmit={event => { event.preventDefault(); void save(); }}>
     <label>名称<input type="text" value={name} required maxLength={60} disabled={pending} onChange={event => setName(event.target.value)} /></label>

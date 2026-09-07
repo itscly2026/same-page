@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { saveAnnotationDraft, visibleLocalAnnotations } from "../annotations/annotation-state";
 import { activateAuthenticatedLocalOwner, createLocalWorkspace, currentLocalOwnerKey } from "../platform/local-workspace";
+import PersonalSettingsPage from "./personal-settings-page";
 import UserLifecyclePage from "./user-lifecycle-page";
 
 const identity = vi.hoisted(() => ({ id: "user-a" }));
@@ -18,7 +19,7 @@ function api() {
     : Response.json({ userId: identity.id, deletion: null, reauthenticated: true, methods: ["credential"], memberships: [] }));
   vi.stubGlobal("fetch", fetch); return fetch;
 }
-const page = () => <MemoryRouter initialEntries={["/user?view=delete"]}><UserLifecyclePage /></MemoryRouter>;
+const page = () => <MemoryRouter initialEntries={["/user/lifecycle"]}><UserLifecyclePage /></MemoryRouter>;
 
 describe("user deletion confirmation and local drafts", () => {
   it("preserves the original user's draft while disconnecting identity and isolates a subsequent user", async () => {
@@ -50,7 +51,26 @@ describe("user deletion confirmation and local drafts", () => {
 });
 
 it("keeps deletion behind a secondary entry", async () => {
-  api(); render(<MemoryRouter initialEntries={["/user"]}><UserLifecyclePage /></MemoryRouter>);
+  api(); render(<MemoryRouter initialEntries={["/user"]}><Routes><Route path="/user" element={<PersonalSettingsPage />} /><Route path="/user/lifecycle" element={<UserLifecyclePage />} /></Routes></MemoryRouter>);
   fireEvent.click(await screen.findByRole("link", { name: "删除用户" }));
   expect(await screen.findByRole("checkbox")).toBeVisible();
+});
+
+it("keeps ordinary personal settings available when lifecycle service fails", () => {
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
+  render(<MemoryRouter><PersonalSettingsPage /></MemoryRouter>);
+  expect(screen.getByRole("link", { name: "帮助与诊断" })).toHaveAttribute("href", "/diagnostics");
+  expect(screen.getByRole("link", { name: "删除用户" })).toHaveAttribute("href", "/user/lifecycle");
+  expect(fetch).not.toHaveBeenCalled();
+});
+it("explains expired deletion verification without losing the user's confirmation", async () => {
+  const fetch = api();
+  fetch.mockImplementation(async (_url, init) => init?.method === "POST"
+    ? Response.json({ error: "reauthentication_required" }, { status: 409 })
+    : Response.json({ userId: "user-a", deletion: null, reauthenticated: true, methods: ["credential"], memberships: [] }));
+  render(page());
+  fireEvent.click(await screen.findByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button", { name: "确认删除用户" }));
+  expect(await screen.findByText("请重新验证原登录方式，并在十分钟内确认删除。")).toBeVisible();
+  expect(screen.getByRole("checkbox")).toBeChecked();
 });

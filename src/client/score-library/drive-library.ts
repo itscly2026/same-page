@@ -1,5 +1,8 @@
-import { captureLocalWorkspaceSession, createLocalWorkspace, authenticatedLocalOwnerKey, type LocalWorkspace } from "../platform/local-workspace";
-import { readLocalDriveDirectories, rememberLocalDriveDirectory, renameLocalDriveDirectory, removeLocalDriveScore } from "./local-drive-directory";
+import { localDatabase } from "../platform/local-database";
+import { liveQuery } from "dexie";
+import { readRetainedScores } from "../offline/retained-scores";
+import { captureLocalWorkspaceSession, createLocalWorkspace, currentLocalOwnerKey, authenticatedLocalOwnerKey, type LocalWorkspace } from "../platform/local-workspace";
+import { readLocalDriveDirectories, rememberLocalDriveDirectory, rememberDriveAccessRevoked, renameLocalDriveDirectory, removeLocalDriveScore } from "./local-drive-directory";
 import { noCapabilities, hasManagement } from "../../shared/drive-permissions";
 import type { ScoreSummary } from "../../shared/scores";
 import {
@@ -34,6 +37,7 @@ const refreshFailed = "暂时无法更新乐谱列表，当前内容已保留。
 // One lifetime owns local/remote directory ordering, persistence, authority and view.
 // The React adapter only supplies browser events and committed-list scrolling.
 export class DriveLibrary {
+  private retainedSubscription: { unsubscribe(): void } | null = null;
   private authenticated = false;
   setAuthenticated(value: boolean) {
     if (this.authenticated === value) return;
@@ -78,7 +82,7 @@ export class DriveLibrary {
     this.ownerSignal = AbortSignal.any([captureDriveLibraryOwner(this.ownerKey), this.lifetimeController.signal]);
     this.workspace = this.ownerKey.startsWith("user:")
       ? captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey(this.ownerKey.slice(5)), this.choirId, "")).catch(() => null)
-      : Promise.resolve(null);
+      : currentLocalOwnerKey().then(owner => owner?.startsWith("guest:") ? captureLocalWorkspaceSession(createLocalWorkspace(owner, this.choirId, "")) : null).catch(() => null);
     const cached = readDriveLibrary(this.ownerKey, this.choirId);
     this.publish({
       access: cached
@@ -96,6 +100,8 @@ export class DriveLibrary {
 
   stop = () => {
     this.active = false;
+    this.retainedSubscription?.unsubscribe();
+    this.retainedSubscription = null;
     this.lifetimeController.abort();
     this.localController?.abort();
     this.request?.controller.abort();
@@ -192,13 +198,14 @@ export class DriveLibrary {
     this.request = pending;
     pending.done = Promise.resolve().then(() => {
       signal.throwIfAborted();
+      if (!authenticated && this.snapshot.access.kind === "opened" && this.snapshot.access.retained) return this.snapshot.access;
       if (!authenticated && this.ownerKey.startsWith("user:")) return this.readLocal(signal);
       return this.transport.load(signal, allowAdmission, authenticated);
     })
       .then(async (access) => {
         if (this.request !== pending || !this.isActive() || controller.signal.aborted) return;
         if (!access || access.kind === "failed") {
-          this.failed();
+          await this.failed(signal);
           return;
         }
         if (access.kind === "opened" && !access.local) {
@@ -212,19 +219,57 @@ export class DriveLibrary {
           invalidateDriveLibrary(this.ownerKey, this.choirId);
         }
         this.localController?.abort();
-        this.publish({ access, refreshMessage: null });
+        if ((access.kind === "denied" || access.kind === "not-found") ) {
+          const captured = await workspace;
+          if (captured) await rememberDriveAccessRevoked(captured, signal).catch(() => undefined);
+          const scores = captured ? await readRetainedScores(captured).catch(() => []) : [];
+          if (signal.aborted) return;
+          const retained = this.retainedAccess(scores);
+          this.publish({ access: retained, refreshMessage: null });
+          this.watchRetained(captured, ownerSignal);
+        } else {
+          if (access.kind === "opened" && !access.retained) {
+            this.retainedSubscription?.unsubscribe(); this.retainedSubscription = null;
+          }
+          if (access.kind === "opened" && access.retained) this.watchRetained(await workspace, ownerSignal);
+          this.publish({ access, refreshMessage: null });
+        }
       })
-      .catch(() => {
-        if (this.request === pending && !controller.signal.aborted) this.failed();
+      .catch(async () => {
+        if (this.request === pending && !controller.signal.aborted) await this.failed(signal);
       })
       .finally(() => { if (this.request === pending) this.request = null; });
     return pending.done;
   }
 
+  private retainedAccess(scores: ScoreSummary[]): OpenedAccess {
+    return { kind: "opened", local: true, retained: true, isMember: false,
+      choir: { id: this.choirId, name: "本机保留的乐谱", guestAdmissionMode: "invite" },
+      result: { scores, permissions: { capabilities: noCapabilities() }, storage: { usedBytes: 0, limitBytes: 1 } } };
+  }
+
+  private watchRetained(captured: LocalWorkspace | null, ownerSignal: AbortSignal) {
+          this.retainedSubscription?.unsubscribe();
+          if (captured) this.retainedSubscription = liveQuery(() => readRetainedScores(captured)).subscribe({
+            next: scores => {
+              const current = this.snapshot.access;
+              if (!ownerSignal.aborted && current.kind === "opened" && current.retained) this.publish({ access: { ...current, result: { ...current.result, scores } } });
+            },
+            error: () => {
+              const current = this.snapshot.access;
+              if (!ownerSignal.aborted && current.kind === "opened" && current.retained) this.publish({ access: { ...current, result: { ...current.result, scores: [] } }, refreshMessage: "无法读取本机副本，请重试。" });
+            },
+          });
+  }
+
   private async readLocal(signal: AbortSignal): Promise<OpenedAccess | null> {
-    if (!this.ownerKey.startsWith("user:")) return null;
-    const directory = (await readLocalDriveDirectories(this.ownerKey.slice(5))).find(entry => entry.choirId === this.choirId);
+    const captured = await this.workspace;
+    const directory = this.ownerKey.startsWith("user:")
+      ? (await readLocalDriveDirectories(this.ownerKey.slice(5))).find(entry => entry.choirId === this.choirId)
+      : captured ? await localDatabase.driveDirectories.get(JSON.stringify([captured.ownerKey, this.choirId])) : null;
     signal.throwIfAborted();
+    if (directory?.accessRevoked && captured) return this.retainedAccess(await readRetainedScores(captured));
+    if (!this.ownerKey.startsWith("user:")) return null;
     return { kind: "opened", local: true, isMember: false,
       rememberedMembership: directory?.membership ?? false,
       managementVisible: hasManagement(directory?.capabilities ?? noCapabilities()), rememberedCapabilities: directory?.capabilities,
@@ -233,10 +278,17 @@ export class DriveLibrary {
     };
   }
 
-  private failed() {
-    this.publish(this.snapshot.access.kind === "opened"
-      ? { access: localAccess(this.snapshot.access), refreshMessage: refreshFailed }
-      : { access: { kind: "failed" }, refreshMessage: null });
+  private async failed(signal: AbortSignal) {
+    const current = this.snapshot.access;
+    if (current.kind === "opened") {
+      this.publish({ access: localAccess(current), refreshMessage: refreshFailed });
+      return;
+    }
+    const local = await this.readLocal(signal).catch(() => null);
+    if (signal.aborted) return;
+    this.publish({ access: local ?? { kind: "opened", local: true, isMember: false,
+      choir: readDriveSummary(this.ownerKey, this.choirId) ?? { id: this.choirId, name: "云盘", guestAdmissionMode: "invite" },
+      result: { scores: [], permissions: { capabilities: noCapabilities() }, storage: { usedBytes: 0, limitBytes: 1 } } }, refreshMessage: refreshFailed });
   }
 
   private updateView(update: Partial<LibraryView>) {

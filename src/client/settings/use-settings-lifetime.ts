@@ -7,3 +7,8 @@ export function useSettingsLifetime() {
   useEffect(() => () => { generation.current += 1; }, []);
   return generation;
 }
+
+export function captureSettingsLifetime(lifetime: { current: number }) {
+  const generation = lifetime.current;
+  return () => generation === lifetime.current;
+}

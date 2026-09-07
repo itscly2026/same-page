@@ -6,7 +6,6 @@ import { ScoreLink } from "../score-library/score-link";
 import { useNetworkStatus } from "../platform/use-network-status";
 import { DriveSettingsDialog } from "../score-library/drive-settings-dialog";
 import { rememberLastDrive, forgetLastDrive } from "../score-library/last-drive";
-import { LocalLibrary } from "../score-library/local-library";
 import { useApplicationIdentity } from "../auth/application-identity";
 import { IdentityNotice } from "../auth/local-entry";
 import type { ApplicationIdentity } from "../auth/application-identity";
@@ -83,7 +82,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
   useEffect(() => {
     if (!userId) return;
     if (access.kind === "opened" && !access.choir.isPreviewEntry && (access.isMember || access.rememberedMembership)) rememberLastDrive(userId, choirId);
-    if (access.kind === "denied" || access.kind === "not-found") forgetLastDrive(userId, choirId);
+    if (access.kind === "denied" || access.kind === "not-found" || (access.kind === "opened" && access.retained)) forgetLastDrive(userId, choirId);
   }, [access, userId, choirId]);
 
   useEffect(() => {
@@ -144,53 +143,6 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
     );
   }
 
-  if (access.kind === "denied") {
-    return (
-      <div className="app-page">
-        <AppHeader actions={headerActions} />
-        <main className="page-shell compact-page access-page">
-          <p className="eyebrow">云盘</p>
-          <h1>无法访问这个云盘</h1>
-          <p className="hero__copy">请返回首页输入当前邀请码，或使用有成员关系的邮箱登录。</p>
-          <BackButton className="primary-link" to="/drives">返回首页</BackButton>
-          {userId && <LocalLibrary userId={userId} choirId={choirId} />}
-        </main>
-      </div>
-    );
-  }
-
-  if (access.kind === "not-found") {
-    return (
-      <div className="app-page">
-        <AppHeader actions={headerActions} />
-        <main className="page-shell compact-page access-page">
-          <p className="eyebrow">云盘</p>
-          <h1>这个云盘不存在</h1>
-          <p className="hero__copy">链接可能已经失效，请返回首页重新选择云盘。</p>
-          <BackButton className="primary-link" to="/drives">返回首页</BackButton>
-          {userId && <LocalLibrary userId={userId} choirId={choirId} />}
-        </main>
-      </div>
-    );
-  }
-
-  if (access.kind === "failed") {
-    return (
-      <div className="app-page">
-        <AppHeader actions={headerActions} />
-        <main className="page-shell compact-page access-page">
-          <p className="eyebrow">云盘</p>
-          <h1>暂时无法打开云盘</h1>
-          <p className="hero__copy">网络或服务暂时不可用，请稍后重试。</p>
-          {userId && <LocalLibrary userId={userId} choirId={choirId} />}
-          <Button className="primary-button" onPress={() => void refresh()}>
-            重试
-          </Button>
-        </main>
-      </div>
-    );
-  }
-
   if (access.kind === "loading") {
     return (
       <div className="app-page drive-page">
@@ -200,13 +152,14 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
     );
   }
 
+  if (access.kind !== "opened") return null;
   const { choir, result } = access;
   const capabilities = result.permissions.capabilities;
   const visibleCapabilities = access.local ? access.rememberedCapabilities ?? capabilities : capabilities;
   const visible = (operation: Operation) => visibleCapabilities.operations.operations.includes(operation);
   const can = (operation: Operation) => capabilities.operations.operations.includes(operation);
   const managementVisible = hasManagement(capabilities) || access.managementVisible;
-  const localFilesOnly = Boolean(access.local) && (!online || Boolean(searchMessage) || (Boolean(userId) && identity.onlineState !== "authenticated"));
+  const localFilesOnly = Boolean(access.local);
   const storageRatio = result.storage.usedBytes / result.storage.limitBytes;
 
   return (
@@ -231,7 +184,8 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
         </section> : undefined}
       />
       <main className="page-shell file-library">
-        <h1 className="visually-hidden">{choir.name}</h1>
+        <h1 className={access.retained ? undefined : "visually-hidden"}>{choir.name}</h1>
+        {access.retained && <p role="status">已无法访问此云盘，以下为本机保留内容</p>}
         <InstallSuggestion />
         {(!online || identity.onlineState === "signed-out" || identity.onlineState === "unreachable" || searchMessage) && <details className="drive-connection-notice"><summary>{!online ? "离线" : searchMessage ? "列表更新失败" : identity.onlineState === "unreachable" ? "连接暂不可用" : "需要重新登录"}</summary>
           <IdentityNotice identity={identity} />
@@ -312,7 +266,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
               ))}
             </section>
           ) : (
-            <div className="library-empty-state">{search.trim() ? <><p>没有找到包含「{search}」的乐谱。</p><Button className="secondary-button" onPress={() => updateSearch("")}>清除搜索</Button></> : <><p>{access.local ? "本机尚未保存这个云盘的目录或乐谱，请联网后下载。" : "这个云盘还没有乐谱。"}</p><p>{can("uploadFiles") ? "上传第一份 PDF，开始准备排练。" : access.isMember ? "有上传权限的成员上传乐谱后，会显示在这里。" : "暂时没有可浏览的乐谱，请稍后再来。"}</p>{can("uploadFiles") ? <Button className="secondary-button" onPress={() => setUploadOpen(true)}>上传第一份 PDF</Button> : null}</>}</div>
+            <div className="library-empty-state">{access.retained && <BackButton className="secondary-link" to="/drives">返回所有云盘</BackButton>}{search.trim() ? <><p>没有找到包含「{search}」的乐谱。</p><Button className="secondary-button" onPress={() => updateSearch("")}>清除搜索</Button></> : <><p>{access.retained ? "本机没有可用的保留副本。" : access.local ? "本机尚未保存这个云盘的目录或乐谱，请联网后下载。" : "这个云盘还没有乐谱。"}</p><p>{can("uploadFiles") ? "上传第一份 PDF，开始准备排练。" : access.isMember ? "有上传权限的成员上传乐谱后，会显示在这里。" : "暂时没有可浏览的乐谱，请稍后再来。"}</p>{can("uploadFiles") ? <Button className="secondary-button" onPress={() => setUploadOpen(true)}>上传第一份 PDF</Button> : null}</>}</div>
           )}
         </section>
       </main>

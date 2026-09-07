@@ -145,6 +145,7 @@ export interface LocalAnnotationLayerRecord extends AnnotationLayerSummary {
 }
 
 export interface LocalDriveDirectory {
+  accessRevoked?: boolean;
   storage?: { usedBytes: number; limitBytes: number };
   membership?: boolean;
   capabilities?: DriveCapabilities;

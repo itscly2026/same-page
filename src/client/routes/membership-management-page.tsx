@@ -1,3 +1,6 @@
+import { runSettingsMutation, settingsMutationMessage } from "../settings/settings-mutation";
+import { SettingsRequestError, settingsError } from "../settings/settings-request";
+import { useSettingsLifetime } from "../settings/use-settings-lifetime";
 import { PermissionMatrix } from "../settings/permission-matrix";
 import { ConfirmDialog, type Confirmation } from "../settings/confirm-dialog";
 import { authClient } from "../auth/auth-client";
@@ -9,7 +12,6 @@ import { managedMembershipsSchema } from "../../shared/lifecycle";
 import { allPermissions, isDelegated, operationLabels, type PermissionSet } from "../../shared/drive-permissions";
 import { AppHeader } from "../components/app-header";
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
-import { lifecycleError } from "../auth/lifecycle-error";
 
 type State = ReturnType<typeof managedMembershipsSchema.parse>;
 type Member = State["memberships"][number];
@@ -20,6 +22,8 @@ export default function MembershipManagementPage() {
   return <MembershipManagement key={`${session.data?.user.id ?? "guest"}:${choirId}`} choirId={choirId} />;
 }
 function MembershipManagement({ choirId }: { choirId: string }) {
+  const lifetime = useSettingsLifetime();
+  const [needsRefresh, setNeedsRefresh] = useState(false);
   const [state, setState] = useState<State | null>(null);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [message, setMessage] = useState<string | null>(null);
@@ -27,32 +31,49 @@ function MembershipManagement({ choirId }: { choirId: string }) {
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const load = useCallback(async () => {
     const response = await diagnosticFetch(`/api/choirs/${choirId}/memberships`);
-    if (!response.ok) throw new Error("membership_access_denied");
+    if (!response.ok) throw new SettingsRequestError(response.status);
     const next = await parseDiagnosticResponse(response, managedMembershipsSchema);
     const definitions = await diagnosticFetch(`/api/choirs/${choirId}/permission-layers`);
-    if (!definitions.ok) throw new Error("membership_access_denied");
+    if (!definitions.ok) throw new SettingsRequestError(definitions.status);
     return { next, layers: (await definitions.json()).layers as Layer[] };
   }, [choirId]);
   useEffect(() => {
     let active = true;
     void load().then(({ next, layers }) => { if (active) { setState(next); setLayers(layers); } })
-      .catch(() => { if (active) setMessage("成员列表加载失败或权限已撤销，请重试。"); });
+      .catch(error => { if (active) { setNeedsRefresh(true); setMessage(settingsError(error, "成员列表加载失败，请重试。")); } });
     return () => { active = false; };
   }, [load]);
-  const reload = async () => { const next = await load(); setState(next.next); setLayers(next.layers); };
-  const mutate = async (path: string, body: unknown, method = "POST") => {
-    setBusy(true); setMessage(null);
+  const reload = async () => {
+    const generation = lifetime.current;
     try {
-      const response = await diagnosticFetch(`/api/choirs/${choirId}/${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      if (!response.ok) setMessage(lifecycleError((await response.json()).error));
-      else setMessage("已保存。");
-      await reload();
-    } catch { setState(null); setMessage("操作结果未确认，请重新读取成员列表。"); }
-    finally { setBusy(false); }
+      const next = await load();
+      if (generation !== lifetime.current) return;
+      setState(next.next); setLayers(next.layers); setNeedsRefresh(false);
+    } catch (error) {
+      if (generation === lifetime.current) {
+        setNeedsRefresh(true);
+        if (error instanceof SettingsRequestError && [401, 403].includes(error.status)) setState(null);
+      }
+      throw error;
+    }
+  };
+  const mutate = async (path: string, body: unknown, method = "POST") => {
+    if (busy || needsRefresh) return;
+    const generation = lifetime.current;
+    setBusy(true); setMessage(null);
+    const result = await runSettingsMutation(
+      () => diagnosticFetch(`/api/choirs/${choirId}/${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+      async () => { if (generation === lifetime.current) await reload(); },
+    );
+    if (generation !== lifetime.current) return;
+    setMessage(settingsMutationMessage(result));
+    if (result.kind === "revoked") setState(null);
+    if (["unconfirmed", "revoked", "saved-refresh-failed"].includes(result.kind)) setNeedsRefresh(true);
+    setBusy(false);
   };
   return <div className="app-page"><AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回云盘</BackButton>} /><main className="page-shell settings-page settings-ux lifecycle-page">
     <header className="settings-heading"><h1>成员与权限</h1><p>分别设置本人可以做什么，以及可以向他人授予哪些权限。</p></header>
-    {state?.memberships.map(member => <MemberEditor key={`${member.id}:${member.revision}:${state.capabilities.isOwner}`} member={member} state={state} layers={layers} busy={busy}
+    {state?.memberships.map(member => <MemberEditor key={`${member.id}:${member.revision}:${state.capabilities.isOwner}`} member={member} state={state} layers={layers} busy={busy || needsRefresh}
       save={(operations, management) => void mutate(`memberships/${member.id}/permissions`, { expectedRevision: member.revision, operations, management }, "PUT")}
       change={action => setConfirmation({ title: action === "restore" ? "恢复成员关系" : "移除成员", action: action === "restore" ? "确认恢复" : "确认移除", message: action === "restore" ? "恢复成员关系和保留期内的个人层，不恢复旧权限、管理范围或分享。" : "立即撤销成员权限；断网设备已下载的内容无法即时撤回。", onConfirm: () => mutate(`memberships/${member.id}`, { action, expectedRevision: member.revision }) })}
       transfer={() => {
@@ -61,7 +82,7 @@ function MembershipManagement({ choirId }: { choirId: string }) {
       }} />)}
     {state?.capabilities.isOwner && <AuditLog choirId={choirId!} revision={state.memberships.map(m => m.revision).join(":")} />}
     {message && <p role="status">{message}</p>}
-    {!state && <Button className="secondary-button" isDisabled={busy} onPress={() => void reload().catch(() => { setState(null); setMessage("成员列表加载失败，请重试。"); })}>重新读取成员列表</Button>}
+    {(!state || needsRefresh) && <Button className="secondary-button" isDisabled={busy} onPress={() => void reload().catch(() => { setMessage("成员列表加载失败，请重试。"); })}>重新读取成员列表</Button>}
     <ConfirmDialog confirmation={confirmation} busy={busy} onClose={() => setConfirmation(null)} />
   </main></div>;
 }
@@ -91,8 +112,11 @@ function MemberEditor({ member, state, layers, busy, save, change, transfer }: {
 }
 function AuditLog({ choirId, revision }: { choirId: string; revision: string }) {
   const [entries, setEntries] = useState<Array<{ id: string; actorName: string; targetName: string; before: string; after: string; createdAt: number }>>([]);
-  useEffect(() => { let active = true; void diagnosticFetch(`/api/choirs/${choirId}/permission-changes`).then(response => response.ok ? response.json() : Promise.reject()).then(data => { if (active) setEntries(data.changes); }).catch(() => { if (active) setEntries([]); }); return () => { active = false; }; }, [choirId, revision]);
-  return <details><summary>最近权限变更记录</summary>{entries.map(entry => <article key={entry.id}><p>{entry.actorName} → {entry.targetName} · {new Date(entry.createdAt).toLocaleString()}</p><p>变更前：{auditDescription(entry.before)}</p><p>变更后：{auditDescription(entry.after)}</p></article>)}</details>;
+  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => { let active = true; void diagnosticFetch(`/api/choirs/${choirId}/permission-changes`).then(response => response.ok ? response.json() : Promise.reject()).then(data => { if (active) { setEntries(data.changes); setLoading(false); } }).catch(() => { if (active) { setError(true); setLoading(false); } }); return () => { active = false; }; }, [choirId, revision, attempt]);
+  return <details><summary>最近权限变更记录</summary>{loading ? <p role="status">正在读取权限记录…</p> : error ? <p role="alert">权限记录读取失败。<button onClick={() => { setLoading(true); setError(false); setAttempt(value => value + 1); }}>重新读取记录</button></p> : !entries.length ? <p>暂无权限变更记录。</p> : null}{!loading && !error && entries.map(entry => <article key={entry.id}><p>{entry.actorName} → {entry.targetName} · {new Date(entry.createdAt).toLocaleString()}</p><p>变更前：{auditDescription(entry.before)}</p><p>变更后：{auditDescription(entry.after)}</p></article>)}</details>;
 }
 function auditDescription(json: string): string {
   const entry = JSON.parse(json);

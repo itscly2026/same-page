@@ -1,10 +1,12 @@
+import { Blob as NodeBlob } from "node:buffer";
+import { sha256Hex } from "../offline/offline-score-verification";
 import { effectiveCapabilities, emptyPermissions, noCapabilities } from "../../shared/drive-permissions";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DriveLibrary } from "./drive-library";
 import { clearDriveLibraryCache, readDriveLibrary, readReturningDriveCacheOwner, rememberDriveLibrary } from "./drive-library-cache";
 import { type DriveLibraryAccess, type DriveLibraryTransport } from "./drive-library-transport";
 import * as directoryStorage from "./local-drive-directory";
-import { localDatabase } from "../platform/local-database";
+import { localDatabase, type OfflineScoreRecord } from "../platform/local-database";
 import { activateAuthenticatedLocalOwner, authenticatedLocalOwnerKey, createLocalWorkspace } from "../platform/local-workspace";
 import { readLibraryView, rememberLibraryView } from "./library-view-state";
 
@@ -38,7 +40,7 @@ function create(load: DriveLibraryTransport["load"], ownerKey: `user:${string}` 
   return { library, transport };
 }
 beforeEach(async () => { clearDriveLibraryCache(); window.sessionStorage.clear(); await localDatabase.open(); });
-afterEach(() => { sessions.forEach(library => library.stop()); sessions.length = 0; vi.restoreAllMocks(); });
+afterEach(() => { sessions.forEach(library => library.stop()); sessions.length = 0; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("DriveLibrary interface", () => {
   it("reopens its persisted directory without authority before the next remote response", async () => {
@@ -86,7 +88,7 @@ describe("DriveLibrary interface", () => {
     expect(scroll).toHaveBeenCalledTimes(1);
     transport.load.mockResolvedValueOnce({ kind: "denied" });
     await library.changed();
-    expect(library.getSnapshot().access.kind).toBe("denied");
+    expect(library.getSnapshot().access).toMatchObject({ kind: "opened", local: true, retained: true });
     expect(library.getSnapshot().scores).toEqual([]);
   });
 
@@ -175,7 +177,7 @@ describe("DriveLibrary interface", () => {
     local.resolve(saved);
     await local.promise;
     await Promise.resolve();
-    expect(library.getSnapshot().access.kind).toBe("denied");
+    expect(library.getSnapshot().access).toMatchObject({ kind: "opened", local: true, retained: true });
     expect(library.getSnapshot().scores).toEqual([]);
   });
 
@@ -211,7 +213,7 @@ describe("DriveLibrary interface", () => {
     rememberDriveLibrary(owner, choirId, opened());
     const { library } = create(async () => ({ kind }));
     await library.refresh();
-    expect(library.getSnapshot().access).toEqual({ kind });
+    expect(library.getSnapshot().access).toMatchObject({ kind: "opened", local: true, retained: true });
     expect(library.getSnapshot().scores).toEqual([]);
     expect(readDriveLibrary(owner, choirId)).toBeNull();
   });
@@ -242,7 +244,7 @@ describe("DriveLibrary interface", () => {
     await library.changed();
     first.resolve(opened());
     await pending;
-    expect(library.getSnapshot().access.kind).toBe("denied");
+    expect(library.getSnapshot().access).toMatchObject({ kind: "opened", local: true, retained: true });
     expect(readDriveLibrary(owner, choirId)).toBeNull();
   });
 
@@ -336,7 +338,7 @@ describe("DriveLibrary interface", () => {
   it("retries an initial failure and refreshes after successful admission", async () => {
     const { library, transport } = create(async () => ({ kind: "failed" }));
     await library.refresh();
-    expect(library.getSnapshot().access.kind).toBe("failed");
+    expect(library.getSnapshot().access).toMatchObject({ kind: "opened", local: true });
     transport.load.mockResolvedValueOnce({ kind: "join-required", choir: opened().choir });
     await library.refresh();
     expect(library.getSnapshot().access.kind).toBe("join-required");
@@ -348,4 +350,31 @@ describe("DriveLibrary interface", () => {
     expect(library.getSnapshot()).toMatchObject({ joining: false, joinMessage: null, access: { kind: "opened", isMember: true } });
     expect(transport.load.mock.lastCall?.[1]).toBe(false);
   });
+});
+
+it("keeps only verified retained copies after confirmed denial, observes corruption, and remembers denial offline", async () => {
+  vi.stubGlobal("Blob", NodeBlob);
+  await activateAuthenticatedLocalOwner("one");
+  const { library, transport } = create(async () => opened());
+  await library.refresh();
+  const workspace = createLocalWorkspace(authenticatedLocalOwnerKey("one"), choirId, "retained-only");
+  const blob = new Blob(["verified retained content"]);
+  const record: OfflineScoreRecord = { ...workspace, key: "retained-only", versionId: "retained-v1", fileName: "保留.pdf", sha256: await sha256Hex(await blob.arrayBuffer()), pageCount: 1, blob, active: 1, verifiedAt: 1,
+    annotationSnapshot: { annotations: [], cursor: 0, verifiedAt: 1, layers: [{ ...workspace, key: "personal", id: "00000000-0000-4000-8000-000000000001", kind: "personal" as const, sharedSlot: null, name: "我的笔记", sortOrder: 10000, subscribed: true, subscriptionSource: "personal" as const, displayColor: "#6750a4", colorSource: "product" as const, adminDefaultColor: "#6750a4", driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }] } };
+  await localDatabase.offlineScores.put(record);
+  // An active flag with invalid content must never become an available row.
+  await localDatabase.offlineScores.put({ ...record, key: "invalid", scoreId: "invalid", scopeKey: "invalid", sha256: "invalid" });
+  library.setSort("updated");
+  transport.load.mockResolvedValue({ kind: "denied" });
+  await library.changed();
+  expect(library.getSnapshot().scores.map(score => score.id)).toEqual(["retained-only"]);
+  expect(library.getSnapshot().access).toMatchObject({ retained: true, isMember: false, result: { permissions: { capabilities: noCapabilities() } } });
+  library.stop(); clearDriveLibraryCache();
+  const { library: offline } = create(async () => opened(), owner, choirId, false);
+  await offline.refresh();
+  expect(offline.getSnapshot().access).toMatchObject({ retained: true });
+  expect(offline.getSnapshot().view.sort).toBe("updated");
+  expect(offline.getSnapshot().scores.map(score => score.id)).toEqual(["retained-only"]);
+  await localDatabase.offlineScores.update(record.key, { blob: new Blob(["corrupt"] ) });
+  await vi.waitFor(() => expect(offline.getSnapshot().scores).toEqual([]));
 });

@@ -13,8 +13,6 @@ export function PersonalMenu({ email }: { email?: string | null }) {
     <Popover className="file-menu-popover account-menu-popover"><Menu aria-label="我的">
       <MenuItem isDisabled>{realEmail ?? "已登录"}</MenuItem>
       <MenuItem href="/user">个人设置</MenuItem>
-      <MenuItem href="/diagnostics">帮助与诊断</MenuItem>
-      <MenuItem href="/about">关于与更新</MenuItem>
       <MenuItem onAction={() => void logout.request()}>退出登录</MenuItem>
     </Menu></Popover>
   </MenuTrigger>;

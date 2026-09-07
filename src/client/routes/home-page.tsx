@@ -1,3 +1,5 @@
+import { enterDrive, joinDrive } from "../auth/drive-entry";
+import { useSettingsLifetime } from "../settings/use-settings-lifetime";
 import { InstallButton } from "../install/install-entry";
 import { useApplicationIdentity } from "../auth/application-identity";
 import { LocalEntry } from "../auth/local-entry";
@@ -19,8 +21,6 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 
 import { PersonalMenu } from "../components/personal-menu";
 import {
-  guestJoinStateResponseSchema,
-  guestSessionResponseSchema,
   previewChoirResponseSchema,
   type ChoirSummary,
 } from "../../shared/choirs";
@@ -155,65 +155,22 @@ function HomeContent({ session, startup }: { session: ReturnType<typeof authClie
     finishJoinDialog();
   };
 
+  const entryLifetime = useSettingsLifetime();
   const enterInviteDrive = async (event?: FormEvent) => {
     event?.preventDefault();
-    if (clearingGuestSession) return;
-    setSubmitting(true);
-    setJoinMessage(null);
-    let createdGuestSession = false;
-
-    try {
-      const response = await diagnosticFetch("/api/guest/session", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ admission: "invite", joinCode }),
-      });
-
-      if (!response.ok) {
-        setJoinMessage(
-          response.status === 429
-            ? "尝试次数过多，请稍后再试。"
-            : "邀请码无效或已失效。",
-        );
-        return;
-      }
-      createdGuestSession = true;
-
-      const admitted = guestSessionResponseSchema.parse(await response.json());
-      if (!userId) {
-        finishJoinDialog();
-        await navigate(`/choirs/${admitted.choir.id}`);
-        return;
-      }
-
-      const joinStateResponse = await diagnosticFetch("/api/choirs/current-guest/join-state");
-      if (!joinStateResponse.ok) {
-        await clearActiveGuestSession();
-        createdGuestSession = false;
-        setJoinMessage(
-          joinStateResponse.status === 403
-            ? "该成员关系需要有成员恢复权限的人恢复。"
-            : "暂时无法进入这个云盘，请稍后再试。",
-        );
-        return;
-      }
-      const joinState = guestJoinStateResponseSchema.parse(
-        await joinStateResponse.json(),
-      );
-      if (joinState.status === "joined") {
-        await clearActiveGuestSession();
-        createdGuestSession = false;
-        finishJoinDialog();
-        await navigate(`/choirs/${joinState.choir.id}`);
-        return;
-      }
-      setJoinStep({ kind: "display-name", choir: joinState.choir });
-    } catch {
-      if (createdGuestSession) await clearActiveGuestSession();
-      setJoinMessage("暂时无法进入这个云盘，请稍后再试。");
-    } finally {
-      setSubmitting(false);
-    }
+    if (clearingGuestSession || submitting) return;
+    const generation = entryLifetime.current;
+    setSubmitting(true); setJoinMessage(null);
+    const result = await enterDrive({ admission: "invite", joinCode }, Boolean(userId));
+    if (generation !== entryLifetime.current) return;
+    setSubmitting(false);
+    if (result.kind === "enter") {
+      finishJoinDialog();
+      await navigate(`/choirs/${result.choir.id}`);
+    } else if (result.kind === "display-name") {
+      setJoinCode("");
+      setJoinStep({ kind: "display-name", choir: result.choir });
+    } else if (result.kind === "failed") setJoinMessage(result.message);
   };
 
   const enterLinkedDrive = useEffectEvent(() => {
@@ -231,35 +188,17 @@ function HomeContent({ session, startup }: { session: ReturnType<typeof authClie
 
   const joinValidatedDrive = async (event: FormEvent) => {
     event.preventDefault();
-    if (joinStep.kind !== "display-name") return;
-    setSubmitting(true);
-    setJoinMessage(null);
-
-    try {
-      const response = await diagnosticFetch("/api/choirs/join-current-guest", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ displayName }),
-      });
-      if (!response.ok) {
-        if (response.status === 403) {
-          await clearActiveGuestSession();
-          setJoinStep({ kind: "invite" });
-        }
-        setJoinMessage(
-          response.status === 403
-            ? "该成员关系需要有成员恢复权限的人恢复。"
-            : "暂时无法加入这个云盘，请稍后再试。",
-        );
-        return;
-      }
-      const choirId = joinStep.choir.id;
-      finishJoinDialog();
-      await navigate(`/choirs/${choirId}`);
-    } catch {
-      setJoinMessage("暂时无法加入这个云盘，请稍后再试。");
-    } finally {
-      setSubmitting(false);
+    if (joinStep.kind !== "display-name" || submitting) return;
+    const generation = entryLifetime.current;
+    setSubmitting(true); setJoinMessage(null);
+    const result = await joinDrive({ kind: "guest", choirId: joinStep.choir.id }, displayName);
+    if (generation !== entryLifetime.current) return;
+    setSubmitting(false);
+    if (result.kind === "enter") {
+      finishJoinDialog(); await navigate(`/choirs/${result.choir.id}`);
+    } else if (result.kind === "failed") {
+      if (result.restart) setJoinStep({ kind: "invite" });
+      setJoinMessage(result.message);
     }
   };
 
