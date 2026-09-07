@@ -33,7 +33,7 @@ jobs:
       browserGroup: ${{ steps.scope.outputs.browserGroup }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
       - name: CI scope regression tests
@@ -49,9 +49,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Use Node.js 24
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
           cache: npm
@@ -80,9 +80,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Use Node.js 24
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
           cache: npm
@@ -94,7 +94,7 @@ jobs:
         run: node scripts/run-browser-tests.mjs visual "${{ needs.scope.outputs.browserGroup }}"
       - name: Preserve synthetic test evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: visual-${{ github.sha }}-${{ github.run_attempt }}
           path: artifacts/verification/
@@ -113,9 +113,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Use Node.js 24
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
           cache: npm
@@ -123,7 +123,7 @@ jobs:
         run: npm ci --prefer-offline --no-audit --no-fund
       - name: Use Python for native PDF runtime
         if: needs.scope.outputs.smoke == 'true' || needs.scope.outputs.renderer == 'true'
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.14'
           cache: pip
@@ -180,7 +180,7 @@ jobs:
       - name: Upload verified release
         if: github.event_name == 'push' && needs.scope.outputs.deploy == 'true'
         id: artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-${{ github.sha }}
           overwrite: true
@@ -196,7 +196,7 @@ jobs:
           ARTIFACT_DIGEST: ${{ steps.artifact.outputs.artifact-digest }}
       - name: Preserve synthetic test evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: integration-${{ github.sha }}-${{ github.run_attempt }}
           path: artifacts/verification/
@@ -249,7 +249,7 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
@@ -259,7 +259,7 @@ jobs:
 
       - name: Download verified release
         if: steps.admission.outputs.proceed == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: release-${{ github.sha }}
 
@@ -271,7 +271,7 @@ jobs:
 
       - name: Use Node.js 24
         if: steps.admission.outputs.proceed == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
           cache: npm
@@ -282,7 +282,7 @@ jobs:
 
       - name: Authenticate Google Cloud deployment
         if: steps.admission.outputs.proceed == 'true'
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           project_id: same-page-clyapps
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -290,7 +290,7 @@ jobs:
 
       - name: Use Google Cloud SDK
         if: steps.admission.outputs.proceed == 'true'
-        uses: google-github-actions/setup-gcloud@v3
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
 
       - name: Deploy and verify the sealed renderer image
         if: steps.admission.outputs.proceed == 'true'
@@ -346,7 +346,7 @@ jobs:
 
       - name: Deploy Worker and assets
         if: steps.admission.outputs.proceed == 'true'
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

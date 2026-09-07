@@ -34,7 +34,7 @@ function main(mode, snapshotPath) {
     const snapshot = query(lifecycleSnapshotSql)[0].results[0];
     assert(Number.isSafeInteger(snapshot.sync_high_water), "Missing pre-migration cursor");
     writeFileSync(snapshotPath, JSON.stringify(snapshot), { mode: 0o600 });
-    console.log(JSON.stringify(snapshot));
+    console.log("Captured production lifecycle recovery snapshot.");
     return;
   }
   // Selecting the new columns also makes a missing migration fail before deploy.
