@@ -61,7 +61,7 @@ export function driveLibraryTransport(choirId: string): DriveLibraryTransport {
         body: JSON.stringify({ admission: "open", choirId, displayName }),
       });
       return response.ok ? null : response.status === 403
-        ? "该成员关系需要云盘管理员恢复。"
+        ? "该成员关系需要有成员恢复权限的人恢复。"
         : "暂时无法加入这个云盘，请稍后再试。";
     },
   };

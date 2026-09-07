@@ -21,7 +21,8 @@ test("literal search, verified offline read and failed/successful immutable PDF 
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
   await page.getByRole("searchbox").fill("%_");
   await expect(page.locator(".file-row__open")).toHaveCount(1);
-  await page.getByRole("button", { name: /^下载离线副本：/ }).click();
+  await page.getByRole("button", { name: /^离线副本：/ }).click();
+    await page.getByRole("button", { name: "下载离线副本", exact: true }).click();
   await page.getByRole("status").filter({ hasText: /^可离线使用$/ }).waitFor();
   await page.getByRole("button", { name: "关闭", exact: true }).click();
   await page.locator(".file-row__open").click();
@@ -38,10 +39,10 @@ test("literal search, verified offline read and failed/successful immutable PDF 
   await page.goto(`${fixture.origin}/choirs/${fixture.choirId}`);
   await page.getByRole("status").filter({ hasText: /旧版可离线使用/ }).waitFor();
   await context.setOffline(true);
-  await expect(page.getByRole("button", { name: /^下载新版离线副本：/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /^离线副本：/ })).toBeDisabled();
   await context.setOffline(false);
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
-  await expect(page.getByRole("button", { name: /^下载新版离线副本：/ })).toBeEnabled();
+  await expect(page.getByRole("button", { name: /^离线副本：/ })).toBeEnabled();
   // Fail just this download after submission, while retaining the real offline
   // browser refresh above and all subsequent storage/checksum verification.
   await page.evaluate(() => {
@@ -51,7 +52,8 @@ test("literal search, verified offline read and failed/successful immutable PDF 
       return original(...args);
     };
   });
-  await page.getByRole("button", { name: /^下载新版离线副本：/ }).click();
+  await page.getByRole("button", { name: /^离线副本：/ }).click();
+    await page.getByRole("button", { name: "下载新版离线副本", exact: true }).click();
   await page.getByRole("status").filter({ hasText: /下载未完成/ }).waitFor();
   await expect(page.getByRole("status").filter({ hasText: /下载未完成/ })).toContainText("旧版 PDF 仍可离线使用");
   await context.setOffline(false);

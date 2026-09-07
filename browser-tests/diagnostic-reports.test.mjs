@@ -66,6 +66,7 @@ test("diagnostic feedback survives lost receipts and preserves reader editing in
       await viewport.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
       const more = page.getByRole("button", { name: "更多", exact: true });
       await more.click();
+      await page.getByText("阅读帮助", { exact: true }).click();
       await page.getByRole("button", { name: "故障诊断", exact: true }).click();
       const readingDialog = page.getByRole("dialog", { name: "故障诊断" });
       const closeReadingDialog = readingDialog.getByRole("button", { name: "关闭", exact: true });
@@ -82,6 +83,7 @@ test("diagnostic feedback survives lost receipts and preserves reader editing in
       await page.getByRole("button", { name: "更多", exact: true }).click();
       assert.equal(await page.getByRole("button", { name: "连续滚动", exact: true }).count(), 0);
       const readerUrl = page.url();
+      await page.getByText("阅读帮助", { exact: true }).click();
       await page.getByRole("button", { name: "故障诊断", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "故障诊断" });
       await expect(dialog).toBeVisible();

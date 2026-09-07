@@ -40,7 +40,7 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
       const search = await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).boundingBox();
       const sort = await page.getByRole("combobox", { name: "乐谱排序" }).boundingBox();
       const menu = await page.getByRole("button", { name: "打开云盘菜单" }).boundingBox();
-      const avatar = await page.getByRole("button", { name: "用户菜单" }).boundingBox();
+      const avatar = await page.getByRole("button", { name: "此云盘设置" }).boundingBox();
       assert.ok(menu.x + menu.width <= search.x && search.x + search.width <= avatar.x, `${width}: search sits between navigation and avatar`);
       assert.ok(Math.abs(search.y + search.height / 2 - avatar.y - avatar.height / 2) < 2, `${width}: header controls share a row`);
       assert.ok(sort.x >= toolbar.x && sort.x + sort.width <= toolbar.x + toolbar.width, "sort remains inside the toolbar");

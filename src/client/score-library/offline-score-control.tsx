@@ -55,14 +55,13 @@ export function OfflineScoreControl({ score, authenticatedUserId, authenticatedS
       <Button
         ref={triggerRef}
         className="offline-score-button"
-        aria-label={`${needsDownload && !downloading ? actionLabel : "离线副本"}：${scoreDisplayName(score.fileName)} · ${description}`}
+        aria-label={`离线副本：${scoreDisplayName(score.fileName)} · ${description}`}
         aria-haspopup="dialog"
         aria-expanded={detailsOpen}
         aria-controls={detailsOpen ? detailsId : undefined}
         isDisabled={disabled || !workspace}
         onPress={() => {
           setDetailsOpen(true);
-          if (needsDownload && !explicitDownload) void prepare();
         }}
       >
         <Icon aria-hidden="true" size={20} />
@@ -75,8 +74,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, authenticatedS
       <Dialog id={detailsId} className="offline-score-details">
         <Heading slot="title"><HardDriveDownload aria-hidden="true" size={18} />离线副本</Heading>
         <p role="status">{description}</p>
-        <p>保存在合谱中，供这台设备离线使用。</p>
-        {state === "ready" && <p>已保存在这台设备上，断网也能打开。</p>}
+        <p>保存在这台设备上，供断网时打开。</p>
         {needsDownload && <Button className="secondary-button" isDisabled={disabled || !workspace || explicitDownload} onPress={() => void prepare()}>{downloading ? explicitDownload ? "正在下载…" : "继续下载（切换页面不中断）" : actionLabel}</Button>}
         <Button className="text-button" onPress={() => setDetailsOpen(false)}>关闭</Button>
       </Dialog>

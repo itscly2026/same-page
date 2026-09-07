@@ -1,3 +1,4 @@
+import { BackButton } from "../navigation/back-button";
 import { scoreDisplayName } from "../../shared/score-display-name";
 import { Link, useParams } from "react-router-dom";
 import { useState } from "react";
@@ -5,7 +6,6 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Button, Heading, Modal, ModalOverlay } from "react-aria-components";
 import { AppHeader } from "../components/app-header";
 import { Dialog } from "../navigation/overlays";
-import { useAppNavigation } from "../navigation/navigation-context";
 import { clearLocalFiles, listLocalFiles, type LocalFileScope } from "../offline/local-files";
 import { formatBytes } from "../score-library/library-format";
 
@@ -13,7 +13,6 @@ export default function LocalStoragePage() {
   const { choirId = "" } = useParams();
   const [revision, refresh] = useState(0);
   const files = useLiveQuery(() => listLocalFiles().then(files => files.filter(file => file.choirId === choirId)).catch(() => null), [revision, choirId]);
-  const navigation = useAppNavigation();
   const [selection, setSelection] = useState<{ label: string; scopes: LocalFileScope[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -28,8 +27,8 @@ export default function LocalStoragePage() {
     setMessage(failures ? `已清理 ${formatBytes(bytes)}；${failures} 项未完成，请重试。` : `已清理 ${formatBytes(bytes)} 本机谱面文件。`);
     setBusy(false); setSelection(null);
   };
-  return <div className="app-page"><AppHeader /><main className="page-shell compact-page">
-    <Button className="text-button" onPress={() => navigation.back(`/choirs/${choirId}`)}>返回</Button><h1>本机存储</h1>
+  return <div className="app-page"><AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回云盘</BackButton>} /><main className="page-shell settings-page settings-ux">
+    <header className="settings-heading"><h1>本机存储</h1></header>
     <p>仅清理这台设备已下载的 PDF 和图片谱面，不删除云端文件、个人草稿、待同步操作或冲突，也不退出登录。云盘目录保留，再次打开需联网下载。</p>
     {files === null ? <p role="alert">无法读取本机文件。<Button onPress={() => refresh(value => value + 1)}>重试</Button></p> : files === undefined ? <p role="status">正在统计本机文件…</p> : <>
       <p>已下载谱面文件：{formatBytes(files.reduce((sum, file) => sum + file.blob.size, 0))}</p>

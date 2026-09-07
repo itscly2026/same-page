@@ -153,7 +153,7 @@ function LayerSlotButton({
       {layer && !layer.canEdit ? (
         <Lock aria-hidden="true" className="annotation-layer-slot__lock" size={11} />
       ) : null}
-      {layer && !layer.canEdit ? <small>需管理员授权</small> : null}
+      {layer && !layer.canEdit ? <small>需获得此层编辑权</small> : null}
     </Button>
   );
   if (!layer || layer.canEdit) return button;
@@ -182,8 +182,8 @@ function LayerPermissionContent({
         <Lock aria-hidden="true" size={20} />
       </div>
       <h2>仅可查看</h2>
-      <p>{sharedLayerPrefix(layer.sharedSlot) ? `${layer.sharedSlot} · ` : ""}{sharedLayerDisplayName(layer.sharedSlot, layer.name)} 可以查看，但只有云盘管理员和被授权成员可以编辑。</p>
-      <p>如需编辑权限，请联系云盘管理员。</p>
+      <p>{sharedLayerPrefix(layer.sharedSlot) ? `${layer.sharedSlot} · ` : ""}{sharedLayerDisplayName(layer.sharedSlot, layer.name)} 可以查看，但只有云盘拥有者和获得此层编辑权的成员可以编辑。</p>
+      <p>如需编辑权限，请联系云盘拥有者。</p>
       <Button className="primary-button" onPress={onClose}>知道了</Button>
     </>
   );

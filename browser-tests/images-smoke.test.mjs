@@ -100,7 +100,8 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     if (engineName === "chromium") {
       await context.setOffline(false);
       await page.getByRole("button", { name: "更多", exact: true }).click();
-      await page.getByRole("button", { name: "立即同步", exact: true }).click();
+      // Reconnection automatically syncs; the normal state has no manual action.
+      await page.evaluate(() => window.dispatchEvent(new Event("online")));
       const annotations = `${fixture.origin}/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/annotations`;
       await expect.poll(async () => (await (await context.request.get(annotations)).json()).objects.some(o => o.payload?.text === "图片离线批注")).toBe(true);
       await page.reload();

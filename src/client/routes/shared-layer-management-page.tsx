@@ -78,7 +78,7 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
       retryLoad();
     } catch (error) {
       if (lifetime === generation.current) {
-        setFeedback({ message: settingsError(error, "未能确认操作结果，正在重新查询。请核对当前列表后重试；可能已由其他管理员更改或超过恢复期限。"), failed: true });
+        setFeedback({ message: settingsError(error, "未能确认操作结果，正在重新查询。请核对当前列表后重试；可能已由其他有权成员更改或超过恢复期限。"), failed: true });
         setDeleting(null);
         retryLoad();
       }
@@ -92,7 +92,7 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
     <main className="page-shell settings-page settings-ux">
       <header className="settings-heading">
         <p className="eyebrow">云盘管理 · {driveName}</p><h1>共享层管理</h1>
-        <p className="settings-copy">适用于此云盘的所有乐谱。选择一个层，修改名称、颜色和编辑权限。</p>
+        <p className="settings-copy">适用于此云盘的所有乐谱。选择一个层，修改名称、颜色或启用状态。编辑权限在“成员与权限”设置。</p>
       </header>
       <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} />
       {feedback && <p role={feedback.failed ? "alert" : "status"}>{feedback.message}</p>}

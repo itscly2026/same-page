@@ -1,3 +1,4 @@
+import { ReaderNoteSharing } from "./reader-note-sharing";
 import { useAnnotationEditor } from "../annotations/use-annotation-editor";
 import { useLiveQuery } from "dexie-react-hooks";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -24,7 +25,7 @@ let requests: Array<{ url: string; body: unknown }>;
 function Reader() {
   const { editor } = useAnnotationEditor(workspace);
   const layers = useLiveQuery(() => readAnnotationLayers(workspace), [], []);
-  return <><ReaderLayerPanel workspace={workspace} layers={layers} signedIn />
+  return <><ReaderNoteSharing workspace={workspace} layer={layers.find(layer => layer.canEdit)} /><ReaderLayerPanel workspace={workspace} layers={layers} signedIn />
     <ReaderEditingControls editor={editor!} layers={layers} isDisabled={false} activeLayerId={own.id} tool="text" onLayerChange={() => undefined} onToolChange={() => undefined} /></>;
 }
 
@@ -54,20 +55,19 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 it("shares just the current score with a clear audience and supports cancellation", async () => {
   render(<Reader />);
-  const toggle = await screen.findByRole("checkbox", { name: "向云盘成员分享这份谱的个人层" });
-  expect(toggle).not.toBeChecked();
-  expect(screen.getByText(/这份谱的现有个人笔记及后续修改/)).toBeVisible();
-  fireEvent.click(toggle);
-  await waitFor(() => expect(toggle).toBeChecked());
-  await waitFor(() => expect(toggle).not.toBeDisabled());
+  const share = await screen.findByRole("button", { name: "向云盘成员分享" });
+  expect(screen.getByText(/云盘成员可以查看现有笔记/)).toBeVisible();
+  fireEvent.click(share);
+  const stop = await screen.findByRole("button", { name: "停止分享" });
+  await waitFor(() => expect(stop).not.toBeDisabled());
   expect(requests).toEqual([{ url: "/api/choirs/drive/scores/score/personal-layer/sharing", body: { sharing: true } }]);
-  fireEvent.click(toggle);
-  await waitFor(() => expect(toggle).not.toBeChecked());
+  fireEvent.click(stop);
+  await screen.findByRole("button", { name: "向云盘成员分享" });
 });
 
 it("subscribes to a member's notes without offering their layer as an editing target", async () => {
   render(<Reader />);
-  const toggle = await screen.findByRole("checkbox", { name: "订阅 声部长的笔记" });
+  const toggle = await screen.findByRole("checkbox", { name: "显示 声部长的笔记" });
   expect(toggle).not.toBeChecked();
   fireEvent.click(toggle);
   await waitFor(() => expect(toggle).toBeChecked());

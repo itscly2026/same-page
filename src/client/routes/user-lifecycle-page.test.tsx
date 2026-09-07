@@ -18,7 +18,7 @@ function api() {
     : Response.json({ userId: identity.id, deletion: null, reauthenticated: true, methods: ["credential"], memberships: [] }));
   vi.stubGlobal("fetch", fetch); return fetch;
 }
-const page = () => <MemoryRouter><UserLifecyclePage /></MemoryRouter>;
+const page = () => <MemoryRouter initialEntries={["/user?view=delete"]}><UserLifecyclePage /></MemoryRouter>;
 
 describe("user deletion confirmation and local drafts", () => {
   it("preserves the original user's draft while disconnecting identity and isolates a subsequent user", async () => {
@@ -47,4 +47,10 @@ describe("user deletion confirmation and local drafts", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "确认删除用户" })).toBeDisabled());
     expect(screen.getByRole("checkbox")).not.toBeChecked();
   });
+});
+
+it("keeps deletion behind a secondary entry", async () => {
+  api(); render(<MemoryRouter initialEntries={["/user"]}><UserLifecyclePage /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("link", { name: "删除用户" }));
+  expect(await screen.findByRole("checkbox")).toBeVisible();
 });

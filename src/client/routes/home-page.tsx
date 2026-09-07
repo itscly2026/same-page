@@ -192,7 +192,7 @@ function HomeContent({ session, startup }: { session: ReturnType<typeof authClie
         createdGuestSession = false;
         setJoinMessage(
           joinStateResponse.status === 403
-            ? "该成员关系需要云盘管理员恢复。"
+            ? "该成员关系需要有成员恢复权限的人恢复。"
             : "暂时无法进入这个云盘，请稍后再试。",
         );
         return;
@@ -248,7 +248,7 @@ function HomeContent({ session, startup }: { session: ReturnType<typeof authClie
         }
         setJoinMessage(
           response.status === 403
-            ? "该成员关系需要云盘管理员恢复。"
+            ? "该成员关系需要有成员恢复权限的人恢复。"
             : "暂时无法加入这个云盘，请稍后再试。",
         );
         return;
