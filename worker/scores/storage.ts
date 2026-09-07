@@ -158,7 +158,7 @@ export async function stageScoreVersion(options: {
      WHERE id = ?
        AND choir_id = ?
        AND current_version_id = ? AND version_revision = ? AND trashed_at IS NULL
-       AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND role = 'admin' AND status = 'active')
+       AND EXISTS (SELECT 1 FROM membership_capabilities WHERE id = ? AND modifyFiles = 1)
        AND (replacement_lock_id IS NULL OR replacement_lock_expires_at <= ?)
      RETURNING last_version_number`,
   )

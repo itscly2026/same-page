@@ -1,3 +1,4 @@
+import { effectiveCapabilities, emptyPermissions } from "../../shared/drive-permissions";
 import { Blob as NodeBlob } from "node:buffer";
 import { sha256Hex } from "../offline/offline-score-verification";
 import { LocalIdentityObserver } from "../platform/local-identity-observer";
@@ -59,7 +60,7 @@ function authenticatedResponse(userId = "a") {
 }
 const bootstrap = { choir: { id: "drive", name: "排练云盘", guestAdmissionMode: "invite" },
   scores: [{ id: "remote", choirId: "drive", fileName: "cloud.pdf", updatedAt: 1, currentVersion: { id: "v", versionNumber: 1, sizeBytes: 1, sha256: "sha", etag: "etag", pageCount: 1, createdAt: 1 } }],
-  storage: { usedBytes: 1, limitBytes: 1000 }, permissions: { access: "membership", canManage: true } };
+  storage: { usedBytes: 1, limitBytes: 1000 }, permissions: { access: "membership", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()) } };
 it("retains navigation metadata across a cold start without claiming cloud files are downloaded", async () => {
   await saved();
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

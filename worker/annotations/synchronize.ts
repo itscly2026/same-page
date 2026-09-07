@@ -22,13 +22,13 @@ const inputCte = `WITH input AS (SELECT value AS op FROM json_each(?)),
     SELECT l.id, l.kind, l.owner_user_id,
       CASE WHEN l.kind = 'personal' THEN l.owner_user_id = scope.actor AND
         (m.id IS NOT NULL OR (c.is_preview_entry = 1 AND c.guest_admission_mode = 'open'))
-      ELSE m.id IS NOT NULL AND (m.role = 'admin' OR g.id IS NOT NULL)
+      ELSE m.id IS NOT NULL AND g.id IS NOT NULL
         AND EXISTS (SELECT 1 FROM choir_shared_layer_settings WHERE choir_id = l.choir_id AND slot = l.default_slot AND active = 1 AND deleted_at IS NULL) END AS editable
     FROM annotation_layers l JOIN scope
     JOIN choirs c ON c.id = scope.choir
     JOIN scores s ON s.id = scope.score AND s.choir_id = c.id AND s.trashed_at IS NULL
     LEFT JOIN memberships m ON m.user_id = scope.actor AND m.choir_id = c.id AND m.status = 'active'
-    LEFT JOIN shared_layer_edit_grants g ON g.choir_id = c.id AND g.membership_id = m.id AND g.slot = l.default_slot
+    LEFT JOIN effective_shared_layer_permissions g ON g.choir_id = c.id AND g.membership_id = m.id AND g.slot = l.default_slot
     WHERE l.choir_id = c.id AND l.score_id = s.id
       AND l.id IN (SELECT json_extract(op, '$.layerId') FROM input)
       AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = scope.actor)

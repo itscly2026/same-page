@@ -15,6 +15,7 @@ export const choirs = sqliteTable(
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
+    ownerMembershipId: text("owner_membership_id").notNull(),
     sharedLayerRevision: integer("shared_layer_revision").notNull().default(0),
     nameRevision: integer("name_revision").notNull().default(0),
     guestAdmissionMode: text("guest_admission_mode", {
@@ -169,9 +170,8 @@ export const memberships = sqliteTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     displayName: text("display_name").notNull(),
-    role: text("role", { enum: ["admin", "member"] })
-      .notNull()
-      .default("member"),
+    permissions: text("permissions").notNull().default('{"operations":[],"sharedLayers":[]}'),
+    managementScope: text("management_scope").notNull().default('{"operations":[],"sharedLayers":[]}'),
     status: text("status", { enum: ["active", "removed"] })
       .notNull()
       .default("active"),
@@ -189,34 +189,9 @@ export const memberships = sqliteTable(
       table.userId,
     ),
     index("memberships_user_status_idx").on(table.userId, table.status),
-    check("memberships_role_valid", sql`${table.role} in ('admin', 'member')`),
     check(
       "memberships_status_valid",
       sql`${table.status} in ('active', 'removed')`,
-    ),
-  ],
-);
-
-export const sharedLayerEditGrants = sqliteTable(
-  "shared_layer_edit_grants",
-  {
-    id: text("id").primaryKey(),
-    choirId: text("choir_id")
-      .notNull()
-      .references(() => choirs.id, { onDelete: "cascade" }),
-    slot: text("slot").notNull(),
-    membershipId: text("membership_id")
-      .notNull()
-      .references(() => memberships.id, { onDelete: "cascade" }),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
-      .notNull()
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
-  },
-  (table) => [
-    uniqueIndex("shared_layer_edit_grants_slot_membership_uidx").on(
-      table.choirId,
-      table.slot,
-      table.membershipId,
     ),
   ],
 );

@@ -39,14 +39,24 @@ async function reauthenticate(user: Awaited<ReturnType<typeof person>>) {
 }
 const state = async (cookie: string) => (await callWorker("/api/user/lifecycle", { headers: { cookie } })).json() as Promise<{
   deletion: { deletionId: string; expiresAt: number; authMethod: string } | null;
-  memberships: { id: string; revision: number; status: string; role: string }[];
+  memberships: { id: string; revision: number; status: string; isOwner: number }[];
   reauthenticated: boolean;
 }>;
 async function drive(admin: Awaited<ReturnType<typeof person>>, member?: Awaited<ReturnType<typeof person>>) {
-  const { choirId } = await provisionChoir({ binding: env.DB, adminUserId: admin.id, adminDisplayName: "管理员甲", inviteSecret: env.INVITE_SECRET });
+  const { choirId } = await provisionChoir({ binding: env.DB, ownerUserId: admin.id, ownerDisplayName: "管理员甲", inviteSecret: env.INVITE_SECRET });
   if (member) await env.DB.prepare("INSERT INTO memberships (id, choir_id, user_id, display_name) VALUES (?, ?, ?, '成员乙')").bind(crypto.randomUUID(), choirId, member.id).run();
   return choirId;
 }
+
+it("transfers unique drive ownership without granting the former owner implicit powers", async () => {
+  const owner = await person("owner@example.test"); const member = await person("member@example.test");
+  const choirId = await drive(owner, member);
+  const target = (await state(member.cookie)).memberships[0];
+  expect((await post(`/api/choirs/${choirId}/ownership`, owner.cookie, { membershipId: target.id, confirm: true })).status).toBe(204);
+  expect((await post(`/api/choirs/${choirId}/ownership`, owner.cookie, { membershipId: target.id, confirm: true })).status).toBe(403);
+  expect((await callWorker(`/api/choirs/${choirId}/join-code`, { headers: { cookie: owner.cookie } })).status).toBe(403);
+  expect((await callWorker(`/api/choirs/${choirId}/join-code`, { headers: { cookie: member.cookie } })).status).toBe(200);
+});
 
 describe("user and membership lifecycle", () => {
   it("requires a new verification and blocks deletion until every last-admin position is handed off", async () => {
@@ -58,7 +68,7 @@ describe("user and membership lifecycle", () => {
     expect((await post("/api/user/lifecycle/delete", fresh, { confirm: true, expectedUserId: admin.id })).status).toBe(409);
     expect((await state(fresh)).deletion).toBeNull();
     const membership = (await state(member.cookie)).memberships[0];
-    expect((await post(`/api/choirs/${choirId}/memberships/${membership.id}`, fresh, { action: "promote", expectedRevision: 0 })).status).toBe(204);
+    expect((await post(`/api/choirs/${choirId}/ownership`, fresh, { membershipId: membership.id, confirm: true })).status).toBe(204);
     // An administrator in another drive is still required.
     expect((await post("/api/user/lifecycle/delete", fresh, { confirm: true, expectedUserId: admin.id })).status).toBe(409);
     expect((await callWorker(`/api/choirs/${choirId}/scores`, { headers: { cookie: fresh } })).status).toBe(200);
@@ -81,7 +91,7 @@ describe("user and membership lifecycle", () => {
     expect((await post(`/api/choirs/${choirId}/memberships/${memberRow.id}`, admin.cookie, { action: "restore", expectedRevision: memberRow.revision })).status).toBe(409);
     expect((await post("/api/user/lifecycle/restore", cookieFrom(login), { confirm: true, deletionId: deleted.deletion!.deletionId })).status).toBe(204);
     const restoredLogin = await signInWithPassword({ callWorker, email: member.email });
-    expect((await state(cookieFrom(restoredLogin))).memberships[0]).toMatchObject({ id: memberRow.id, status: "active", role: "member" });
+    expect((await state(cookieFrom(restoredLogin))).memberships[0]).toMatchObject({ id: memberRow.id, status: "active", isOwner: 0 });
     await env.DB.prepare("DELETE FROM rate_limits").run();
     const again = await reauthenticate({ ...member, cookie: cookieFrom(restoredLogin) });
     expect((await post("/api/user/lifecycle/delete", again, { confirm: true, expectedUserId: member.id })).status).toBe(204);
@@ -108,15 +118,14 @@ describe("user and membership lifecycle", () => {
     expect((await post(path, admin.cookie, { action: "restore", expectedRevision: 3 })).status).toBe(404);
   });
 
-  it("serializes simultaneous administrator exits so a drive retains one administrator", async () => {
+  it("serializes simultaneous member exits so the owner cannot leave", async () => {
     const a = await person("a@example.test"); const b = await person("b@example.test");
     const choirId = await drive(a, b);
     const bMember = (await state(b.cookie)).memberships[0];
-    expect((await post(`/api/choirs/${choirId}/memberships/${bMember.id}`, a.cookie, { action: "promote", expectedRevision: 0 })).status).toBe(204);
     const aMember = (await state(a.cookie)).memberships[0];
     const results = await Promise.all([
       post(`/api/choirs/${choirId}/memberships/${aMember.id}`, a.cookie, { action: "remove", expectedRevision: 0 }),
-      post(`/api/choirs/${choirId}/memberships/${bMember.id}`, b.cookie, { action: "remove", expectedRevision: 1 }),
+      post(`/api/choirs/${choirId}/memberships/${bMember.id}`, b.cookie, { action: "remove", expectedRevision: 0 }),
     ]);
     expect(results.map((response) => response.status).sort()).toEqual([204, 409]);
   });
@@ -214,20 +223,74 @@ it("updates only the caller's drive display name and guards administrator renami
   expect((await patch(`${path}/name`, admin.cookie, { name: "  ", expectedRevision: after.nameRevision })).status).toBe(400);
 });
 
-it("retains an administrator through concurrent demotions and supports handoff", async () => {
-  const a = await person("handoff-a@example.test");
-  const b = await person("handoff-b@example.test");
+it("allows only one concurrent ownership transfer and protects the new owner", async () => {
+  const a = await person("handoff-a@example.test"); const b = await person("handoff-b@example.test");
+  const c = await person("handoff-c@example.test");
   const choirId = await drive(a, b);
-  const membershipA = (await state(a.cookie)).memberships[0];
-  const membershipB = (await state(b.cookie)).memberships[0];
-  const route = (id: string) => `/api/choirs/${choirId}/memberships/${id}`;
-  expect((await post(route(membershipA.id), a.cookie, { action: "demote", expectedRevision: 0 })).status).toBe(409);
-  expect((await post(route(membershipB.id), a.cookie, { action: "promote", expectedRevision: 0 })).status).toBe(204);
-  const results = await Promise.all([
-    post(route(membershipA.id), a.cookie, { action: "demote", expectedRevision: 0 }),
-    post(route(membershipB.id), b.cookie, { action: "demote", expectedRevision: 1 }),
-  ]);
-  expect(results.map(response => response.status).sort()).toEqual([204, 409]);
-  const current = [...(await state(a.cookie)).memberships, ...(await state(b.cookie)).memberships];
-  expect(current.filter(member => member.role === "admin" && member.status === "active")).toHaveLength(1);
+  await env.DB.prepare("INSERT INTO memberships (id, choir_id, user_id, display_name) VALUES (?, ?, ?, '丙')").bind(crypto.randomUUID(), choirId, c.id).run();
+  const bMember = (await state(b.cookie)).memberships[0]; const cMember = (await state(c.cookie)).memberships[0];
+  const responses = await Promise.all([bMember, cMember].map(member => post(`/api/choirs/${choirId}/ownership`, a.cookie, { membershipId: member.id, confirm: true })));
+  expect(responses.filter(response => response.status === 204)).toHaveLength(1);
+  const current = [...(await state(a.cookie)).memberships, ...(await state(b.cookie)).memberships, ...(await state(c.cookie)).memberships];
+  expect(current.filter(member => member.isOwner === 1 && member.status === "active")).toHaveLength(1);
+});
+
+it("delegates only a bounded grant scope, protects trustees and keeps issued grants after revocation", async () => {
+  const owner = await person("permissions-owner@example.test");
+  const trustee = await person("permissions-trustee@example.test");
+  const target = await person("permissions-target@example.test");
+  const choirId = await drive(owner, trustee);
+  await env.DB.prepare("INSERT INTO memberships (id, choir_id, user_id, display_name) VALUES (?, ?, ?, '目标')").bind(crypto.randomUUID(), choirId, target.id).run();
+  const trusteeId = (await state(trustee.cookie)).memberships[0].id;
+  const targetId = (await state(target.cookie)).memberships[0].id;
+  const empty = { operations: [], sharedLayers: [] };
+  const update = (cookie: string, id: string, expectedRevision: number, operations: object, management: object = empty) => callWorker(`/api/choirs/${choirId}/memberships/${id}/permissions`, {
+    method: "PUT", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ expectedRevision, operations, management }),
+  });
+  expect((await update(owner.cookie, trusteeId, 0, empty, { operations: ["manageInvites"], sharedLayers: ["S"] })).status).toBe(204);
+  expect((await callWorker(`/api/choirs/${choirId}/join-code`, { headers: { cookie: trustee.cookie } })).status).toBe(403);
+  expect((await update(trustee.cookie, trusteeId, 1, { operations: ["manageInvites"], sharedLayers: [] })).status).toBe(403);
+  expect((await update(trustee.cookie, targetId, 0, { operations: ["modifyFiles"], sharedLayers: [] })).status).toBe(403);
+  expect((await update(trustee.cookie, targetId, 0, { operations: [], sharedLayers: "all" })).status).toBe(403);
+  expect((await update(trustee.cookie, targetId, 0, empty, { operations: ["manageInvites"], sharedLayers: [] })).status).toBe(403);
+  expect((await update(trustee.cookie, targetId, 0, { operations: ["manageInvites"], sharedLayers: ["S"] })).status).toBe(204);
+  expect((await update(owner.cookie, trusteeId, 1, empty)).status).toBe(204);
+  expect((await callWorker(`/api/choirs/${choirId}/join-code`, { headers: { cookie: target.cookie } })).status).toBe(200);
+  expect((await update(trustee.cookie, targetId, 1, empty)).status).toBe(403);
+  const audit = await callWorker(`/api/choirs/${choirId}/permission-changes`, { headers: { cookie: owner.cookie } });
+  const history = await audit.json() as { changes: unknown[] };
+  expect(history.changes).toHaveLength(3);
+  expect((await post(`/api/choirs/${choirId}/memberships/${targetId}`, owner.cookie, { action: "remove", expectedRevision: 1 })).status).toBe(204);
+  expect((await post(`/api/choirs/${choirId}/memberships/${targetId}`, owner.cookie, { action: "restore", expectedRevision: 2 })).status).toBe(204);
+  expect((await callWorker(`/api/choirs/${choirId}/join-code`, { headers: { cookie: target.cookie } })).status).toBe(403);
+});
+
+it("rejects future revisions before authorizing a permission update", async () => {
+  const owner = await person("future-owner@example.test"); const target = await person("future-target@example.test");
+  const choirId = await drive(owner, target); const member = (await state(target.cookie)).memberships[0];
+  const response = await callWorker(`/api/choirs/${choirId}/memberships/${member.id}/permissions`, { method: "PUT", headers: { cookie: owner.cookie, "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: member.revision + 1, operations: { operations: ["uploadFiles"], sharedLayers: [] }, management: { operations: [], sharedLayers: [] } }) });
+  expect(response.status).toBe(409);
+});
+
+it("rejects an owner's permission write when ownership changed between authorization reads", async () => {
+  const owner = await person("race-owner@example.test"); const successor = await person("race-successor@example.test");
+  const choirId = await drive(owner, successor);
+  const own = (await state(owner.cookie)).memberships[0]; const target = (await state(successor.cookie)).memberships[0];
+  let transferred = false;
+  const DB = new Proxy(env.DB, { get(db, key) {
+    if (key === "prepare") return (sql: string) => {
+      if (sql === "SELECT owner_membership_id FROM choirs WHERE id = ?") return { bind: (...args: unknown[]) => ({ first: async () => {
+        transferred = true;
+        expect((await post(`/api/choirs/${choirId}/ownership`, owner.cookie, { membershipId: target.id, confirm: true })).status).toBe(204);
+        return db.prepare(sql).bind(...args).first();
+      } }) };
+      return db.prepare(sql);
+    };
+    const value = Reflect.get(db, key); return typeof value === "function" ? value.bind(db) : value;
+  }});
+  const execution = createExecutionContext();
+  const response = await worker.fetch(new Request(`https://same-page.test/api/choirs/${choirId}/memberships/${own.id}/permissions`, { method: "PUT", headers: { cookie: owner.cookie, "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: own.revision, operations: { operations: ["manageInvites"], sharedLayers: [] }, management: { operations: ["manageInvites"], sharedLayers: [] } }) }), { ...env, DB }, execution);
+  await waitOnExecutionContext(execution);
+  expect(transferred).toBe(true); expect(response.status).toBe(409);
+  expect((await callWorker(`/api/choirs/${choirId}/join-code`, { headers: { cookie: owner.cookie } })).status).toBe(403);
 });

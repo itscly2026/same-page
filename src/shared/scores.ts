@@ -1,3 +1,4 @@
+import { driveCapabilitiesSchema } from "./drive-permissions";
 import { z } from "zod";
 
 import { choirSummarySchema } from "./choirs";
@@ -54,14 +55,14 @@ export const scoreListResponseSchema = z.object({
   scores: z.array(scoreSummarySchema),
   storage: scoreStorageSchema,
   permissions: z.object({
-    canManage: z.boolean(),
+    capabilities: driveCapabilitiesSchema,
   }),
 });
 
 export const driveBootstrapResponseSchema = scoreListResponseSchema.extend({
   choir: choirSummarySchema,
   permissions: z.object({
-    canManage: z.boolean(),
+    capabilities: driveCapabilitiesSchema,
     access: z.enum(["membership", "preview", "guest"]),
   }),
 });
@@ -80,7 +81,7 @@ export const readerScoreBootstrapSchema = z.discriminatedUnion("state", [
   z.object({
     state: z.literal("active"),
     score: scoreSummarySchema,
-    permissions: z.object({ canManage: z.boolean() }),
+    permissions: z.object({ capabilities: driveCapabilitiesSchema }),
   }),
   z.object({
     state: z.literal("trashed"),

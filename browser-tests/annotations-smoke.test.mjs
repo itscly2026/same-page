@@ -91,9 +91,9 @@ test("annotation commands retain offline and in-flight edits with real Worker/D1
   const admin = fixture.accounts[0];
   assert.equal((await adminContext.request.post(`${fixture.origin}/api/auth/sign-in/email`, { headers: { origin: fixture.origin }, data: { email: admin.email, password: admin.password } })).status(), 200);
   const { memberships } = await (await adminContext.request.get(`${fixture.origin}/api/choirs/${fixture.choirId}/memberships`)).json();
-  const membership = memberships.find(m => m.role === "member");
-  const grantPath = `${fixture.origin}/api/choirs/${fixture.choirId}/shared-layers/E/grants/${membership.id}`;
-  assert.equal((await adminContext.request.put(grantPath, { headers: { origin: fixture.origin }, data: { granted: true } })).status(), 200);
+  const membership = memberships.find(m => !m.isOwner);
+  const grantPath = `${fixture.origin}/api/choirs/${fixture.choirId}/memberships/${membership.id}/permissions`;
+  assert.equal((await adminContext.request.put(grantPath, { headers: { origin: fixture.origin }, data: { expectedRevision: membership.revision, operations: { operations: [], sharedLayers: ["E"] }, management: { operations: [], sharedLayers: [] } } })).status(), 204);
   await page.evaluate(async () => { const { state, sync, workspace } = window.annotationTest; await state.retryScoreSyncErrors(workspace); await state.queueScoreDrafts(workspace); await sync.syncAnnotations(workspace, { pull: true }); });
   await expect.poll(async () => (await readCloud()).filter(o => o.payload?.text === "mixed").length).toBe(2);
   // A drive-wide deletion preserves a disconnected device's work on the same
@@ -122,7 +122,7 @@ test("annotation commands retain offline and in-flight edits with real Worker/D1
   assert.equal((await readCloud()).filter(object => object.payload?.text === "mixed").length, 2, "original shared object and personal object both survive restoration");
 
   // Revoke again so the actual reader can demonstrate the durable blocked state.
-  assert.equal((await adminContext.request.put(grantPath, { headers: { origin: fixture.origin }, data: { granted: false } })).status(), 200);
+  assert.equal((await adminContext.request.put(grantPath, { headers: { origin: fixture.origin }, data: { expectedRevision: membership.revision + 1, operations: { operations: [], sharedLayers: [] }, management: { operations: [], sharedLayers: [] } } })).status(), 204);
   await page.evaluate(async payload => {
     const { state, sync, workspace, layers } = window.annotationTest;
     await state.saveAnnotationDraft(workspace, { id: crypto.randomUUID(), layerId: layers.find(l => l.sharedSlot === "E").id, payload });

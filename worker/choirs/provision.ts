@@ -7,8 +7,8 @@ export const CHOIR_STORAGE_LIMIT_BYTES = 1_073_741_824;
 
 export async function provisionChoir(options: {
   binding: D1Database;
-  adminUserId: string;
-  adminDisplayName: string;
+  ownerUserId: string;
+  ownerDisplayName: string;
   inviteSecret: string;
   choirName?: string;
   guestAdmissionMode?: "invite" | "open";
@@ -36,12 +36,13 @@ export async function provisionChoir(options: {
     options.binding
       .prepare(
         `INSERT INTO choirs
-          (id, name, guest_admission_mode, guest_session_version,
+          (id, owner_membership_id, name, guest_admission_mode, guest_session_version,
            is_preview_entry, join_code_hash, join_code_ciphertext, storage_limit_bytes)
-         VALUES (?, ?, ?, 1, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)`,
       )
       .bind(
         choirId,
+        membershipId,
         options.choirName ?? DEFAULT_CHOIR_NAME,
         guestAdmissionMode,
         options.isPreviewEntry ? 1 : 0,
@@ -52,14 +53,14 @@ export async function provisionChoir(options: {
     options.binding
       .prepare(
         `INSERT INTO memberships
-          (id, choir_id, user_id, display_name, role, status)
-         VALUES (?, ?, ?, ?, 'admin', 'active')`,
+          (id, choir_id, user_id, display_name, status)
+         VALUES (?, ?, ?, ?, 'active')`,
       )
       .bind(
         membershipId,
         choirId,
-        options.adminUserId,
-        options.adminDisplayName,
+        options.ownerUserId,
+        options.ownerDisplayName,
       ),
     ...defaultSharedLayers.map((layer) =>
       options.binding.prepare(

@@ -1,3 +1,4 @@
+import { effectiveCapabilities, emptyPermissions, noCapabilities } from "../src/shared/drive-permissions";
 import { setupNetwork } from "@msw/cloudflare";
 import { env } from "cloudflare:workers";
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
@@ -35,10 +36,8 @@ beforeEach(async () => {
       "DELETE FROM user_score_layer_preferences",
       "DELETE FROM user_drive_layer_preferences",
       "DELETE FROM annotation_layers",
-      "DELETE FROM shared_layer_edit_grants",
       "DELETE FROM score_versions",
       "DELETE FROM scores",
-      "DELETE FROM memberships",
       "DELETE FROM choirs",
       "DELETE FROM rate_limits",
       "DELETE FROM session",
@@ -179,9 +178,9 @@ describe("PDF file library and delivery", () => {
     });
     const guestPayload = (await guestList.json()) as {
       scores: Array<{ id: string; fileName: string }>;
-      permissions: { canManage: boolean };
+      permissions: { capabilities: ReturnType<typeof noCapabilities> };
     };
-    expect(guestPayload.permissions).toEqual({ canManage: false });
+    expect(guestPayload.permissions).toEqual({ capabilities: noCapabilities() });
     expect(guestList.headers.get("Server-Timing")).toMatch(
       /auth;dur=.*access;dur=.*d1;dur=.*total;dur=/,
     );
@@ -196,7 +195,7 @@ describe("PDF file library and delivery", () => {
     expect(await driveBootstrap.json()).toMatchObject({
       choir: { id: choirId, name: "小红花云盘", guestAdmissionMode: "invite" },
       scores: [{ fileName: "练习 2.pdf" }, { fileName: "练习 10.pdf" }],
-      permissions: { canManage: false, access: "guest" },
+      permissions: { capabilities: noCapabilities(), access: "guest" },
     });
     expect(driveBootstrap.headers.get("Server-Timing")).toMatch(
       /auth;dur=.*access;dur=.*d1;dur=.*total;dur=/,
@@ -224,7 +223,7 @@ describe("PDF file library and delivery", () => {
       { headers: { cookie: adminCookie } },
     );
     expect(await adminDriveBootstrap.json()).toMatchObject({
-      permissions: { canManage: true, access: "membership" },
+      permissions: { capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), access: "membership" },
     });
 
     const bootstrap = await callWorker(
@@ -234,7 +233,7 @@ describe("PDF file library and delivery", () => {
     expect(await bootstrap.json()).toMatchObject({
       state: "active",
       score: { id: tenUpload.id, fileName: "练习 10.pdf" },
-      permissions: { canManage: false },
+      permissions: { capabilities: noCapabilities() },
     });
     const adminBootstrap = await callWorker(
       `/api/choirs/${choirId}/scores/${tenUpload.id}/bootstrap`,
@@ -242,7 +241,7 @@ describe("PDF file library and delivery", () => {
     );
     expect(await adminBootstrap.json()).toMatchObject({
       state: "active",
-      permissions: { canManage: true },
+      permissions: { capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()) },
     });
     const missingBootstrap = await callWorker(
       `/api/choirs/${choirId}/scores/missing/bootstrap`,
@@ -434,14 +433,14 @@ trailer << /Root 1 0 R >>
       headers: { cookie: `${adminCookie}; ${guestCookie}` },
     });
     expect(await memberPriority.json()).toMatchObject({
-      permissions: { canManage: true, access: "membership" },
+      permissions: { capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), access: "membership" },
     });
 
     const guestFallback = await callWorker(`/api/choirs/${choirId}/bootstrap`, {
       headers: { cookie: `${nonmember.cookie}; ${guestCookie}` },
     });
     expect(await guestFallback.json()).toMatchObject({
-      permissions: { canManage: false, access: "guest" },
+      permissions: { capabilities: noCapabilities(), access: "guest" },
     });
 
     const rotation = await callWorker(`/api/choirs/${choirId}/join-code/rotate`, {
@@ -459,8 +458,9 @@ trailer << /Root 1 0 R >>
     const currentGuestCookie = await createGuestCookie(rotated.joinCode);
     const successor = await env.DB.prepare("SELECT id FROM user WHERE email = 'score-nonmember@example.test'").first<{ id: string }>();
     // Keep an administrator while testing revocation of the original member.
-    await env.DB.prepare("INSERT INTO memberships (id, choir_id, user_id, display_name, role) VALUES (?, ?, ?, '接任管理员', 'admin')")
+    await env.DB.prepare("INSERT INTO memberships (id, choir_id, user_id, display_name) VALUES (?, ?, ?, '接任拥有者')")
       .bind(crypto.randomUUID(), choirId, successor!.id).run();
+    await env.DB.prepare("UPDATE choirs SET owner_membership_id = (SELECT id FROM memberships WHERE choir_id = ? AND user_id = ?) WHERE id = ?").bind(choirId, successor!.id, choirId).run();
     await env.DB.prepare("UPDATE memberships SET status = 'removed' WHERE choir_id = ? AND user_id <> ?")
       .bind(choirId, successor!.id).run();
     expect(
@@ -671,8 +671,8 @@ async function createAdminChoir() {
   const admin = await database.query.user.findFirst({ where: eq(user.email, email) });
   const provisioned = await provisionChoir({
     binding: env.DB,
-    adminUserId: admin!.id,
-    adminDisplayName: "管理员",
+    ownerUserId: admin!.id,
+    ownerDisplayName: "管理员",
     inviteSecret: env.INVITE_SECRET,
   });
   return {
@@ -752,3 +752,37 @@ function publishVersion(choirId: string, scoreId: string, versionId: string, coo
     body: JSON.stringify({ expectedRevision }),
   });
 }
+
+it("enforces independent upload, modification and trash/restore permissions", async () => {
+  const { adminCookie, choirId, joinCode } = await createAdminChoir();
+  const registration = await registerWithPassword({ callWorker, email: "file-operator@example.test", latestOtp: () => deliveredOtp });
+  const cookie = registration.cookie;
+  const joined = await callWorker("/api/choirs/join", { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ admission: "invite", joinCode, displayName: "文件操作员" }) });
+  expect(joined.status).toBe(201);
+  const member = (await joined.json() as { membership: { id: string } }).membership;
+  let revision = 0;
+  const grant = async (operations: string[]) => {
+    const response = await callWorker(`/api/choirs/${choirId}/memberships/${member.id}/permissions`, { method: "PUT", headers: { cookie: adminCookie, "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: revision++, operations: { operations, sharedLayers: [] }, management: { operations: [], sharedLayers: [] } }) });
+    expect(response.status).toBe(204);
+  };
+  const pdf = createMinimalPdf(200, 200);
+  await grant(["uploadFiles"]);
+  const score = await upload(choirId, cookie, "独立权限.pdf", pdf);
+  const base = `/api/choirs/${choirId}/scores/${score.id}`;
+  expect((await renameScore(choirId, score.id, cookie, "改名.pdf")).status).toBe(403);
+  expect((await callWorker(`${base}/versions`, uploadRequest(pdf, cookie, "候选.pdf"))).status).toBe(403);
+  expect((await callWorker(base, { method: "DELETE", headers: { cookie } })).status).toBe(403);
+  await grant(["modifyFiles"]);
+  expect((await callWorker(`/api/choirs/${choirId}/scores`, uploadRequest(pdf, cookie, "新增.pdf"))).status).toBe(403);
+  expect((await renameScore(choirId, score.id, cookie, "改名.pdf")).status).toBe(200);
+  const candidate = await callWorker(`${base}/versions`, uploadRequest(pdf, cookie, "候选.pdf"));
+  expect(candidate.status).toBe(201);
+  const version = (await candidate.json() as { version: { id: string } }).version;
+  expect((await callWorker(`${base}/versions/${version.id}/pdf`, { headers: { cookie } })).status).toBe(200);
+  expect((await callWorker(`${base}/versions/${version.id}`, { method: "DELETE", headers: { cookie } })).status).toBe(204);
+  expect((await callWorker(base, { method: "DELETE", headers: { cookie } })).status).toBe(403);
+  await grant(["trashFiles"]);
+  expect((await callWorker(`${base}/versions`, { headers: { cookie } })).status).toBe(403);
+  expect((await callWorker(base, { method: "DELETE", headers: { cookie } })).status).toBe(204);
+  expect((await callWorker(`${base}/restore`, { method: "POST", headers: { cookie } })).status).toBe(204);
+});

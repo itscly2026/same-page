@@ -11,7 +11,7 @@ it("retains the draft after a revision conflict and requires a deliberate resave
       writes.push(JSON.parse(init.body));
       return writes.length === 1 ? new Response(null, { status: 409 }) : Response.json({ revision: 2 });
     }
-    return Response.json({ name: "云盘", nameRevision: 0, displayName: revision++ ? "其他设备的新名" : "旧名", membershipRevision: revision - 1, canManage: false });
+    return Response.json({ name: "云盘", nameRevision: 0, displayName: revision++ ? "其他设备的新名" : "旧名", membershipRevision: revision - 1, canEditDriveInfo: false });
   }));
   const onSaved = vi.fn(async () => {});
   const onClose = vi.fn();

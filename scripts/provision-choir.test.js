@@ -19,9 +19,9 @@ describe("choir provisioning output", () => {
     await expect(decryptJoinCode(ciphertext, "drive-one", "wrong-secret")).rejects.toThrow();
   });
   const baseArguments = [
-    "--admin-email",
+    "--owner-email",
     "admin@example.test",
-    "--admin-display-name",
+    "--owner-display-name",
     "管理员",
   ];
 

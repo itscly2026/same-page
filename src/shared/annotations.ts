@@ -296,17 +296,4 @@ export const sharedLayerManagementResponseSchema = sharedLayerAvailabilitySchema
   layers: z.array(sharedLayerManagementSummarySchema),
 });
 
-export const sharedLayerGrantMemberSchema = z.object({
-  id: z.string(),
-  displayName: z.string(),
-  role: z.enum(["admin", "member"]),
-  granted: z.boolean(),
-});
-
-export type SharedLayerGrantMember = z.infer<typeof sharedLayerGrantMemberSchema>;
-
-export const sharedLayerGrantListResponseSchema = z.object({
-  members: z.array(sharedLayerGrantMemberSchema),
-});
-
 export const sharedLayerOrderUpdateSchema = z.object({ direction: z.enum(["up", "down"]) });

@@ -1,8 +1,7 @@
 import { Hono } from "hono";
 import { versionPublicationRequestSchema } from "../../src/shared/scores";
-import { requireChoirAdmin } from "../auth/authorization";
+import { requireOperation } from "../permissions/access";
 import { resolveContextPrincipal } from "../auth/context-principal";
-import { createDatabase } from "../db/database";
 import type { AppEnvironment } from "../env";
 
 export const versionRoutes = new Hono<AppEnvironment>();
@@ -10,7 +9,7 @@ const path = "/choirs/:choirId/scores/:scoreId/versions";
 
 versionRoutes.get(path, async (context) => {
   const { choirId, scoreId } = context.req.param();
-  await requireChoirAdmin(createDatabase(context.env.DB), await resolveContextPrincipal(context), choirId);
+  await requireOperation(context.env.DB, await resolveContextPrincipal(context), choirId, "modifyFiles");
   const score = await context.env.DB.prepare(
     `SELECT current_version_id AS currentVersionId, version_revision AS revision
      FROM scores WHERE id = ? AND choir_id = ? AND trashed_at IS NULL`,
@@ -31,7 +30,7 @@ versionRoutes.get(path, async (context) => {
 // Both publishing a candidate and selecting a retained version use the same CAS.
 versionRoutes.post(`${path}/:versionId/publish`, async (context) => {
   const { choirId, scoreId, versionId } = context.req.param();
-  const membership = await requireChoirAdmin(createDatabase(context.env.DB), await resolveContextPrincipal(context), choirId);
+  const membership = await requireOperation(context.env.DB, await resolveContextPrincipal(context), choirId, "modifyFiles");
   const parsed = versionPublicationRequestSchema.safeParse(await context.req.json().catch(() => null));
   if (!parsed.success) return context.json({ error: "invalid_revision" }, 400);
   const now = Date.now();
@@ -39,7 +38,7 @@ versionRoutes.post(`${path}/:versionId/publish`, async (context) => {
     `UPDATE scores SET current_version_id = ?, updated_at = ?
      WHERE id = ? AND choir_id = ? AND trashed_at IS NULL AND version_revision = ?
        AND current_version_id <> ?
-       AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND role = 'admin')
+       AND EXISTS (SELECT 1 FROM membership_capabilities WHERE id = ? AND modifyFiles = 1)
        AND EXISTS (SELECT 1 FROM score_versions WHERE id = ? AND score_id = scores.id
          AND state = 'ready' AND etag IS NOT NULL
          AND (retention_expires_at IS NULL OR retention_expires_at > ?)
@@ -59,11 +58,11 @@ versionRoutes.post(`${path}/:versionId/publish`, async (context) => {
 
 versionRoutes.delete(`${path}/:versionId`, async (context) => {
   const { choirId, scoreId, versionId } = context.req.param();
-  const membership = await requireChoirAdmin(createDatabase(context.env.DB), await resolveContextPrincipal(context), choirId);
+  const membership = await requireOperation(context.env.DB, await resolveContextPrincipal(context), choirId, "modifyFiles");
   await context.env.DB.prepare(
     `DELETE FROM score_versions WHERE id = ? AND score_id = ? AND choir_id = ?
        AND candidate_expires_at IS NOT NULL
-       AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND role = 'admin')
+       AND EXISTS (SELECT 1 FROM membership_capabilities WHERE id = ? AND modifyFiles = 1)
        AND NOT EXISTS (SELECT 1 FROM scores WHERE current_version_id = score_versions.id)`,
   ).bind(versionId, scoreId, choirId, membership.id).run();
   return context.body(null, 204);

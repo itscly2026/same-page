@@ -1,3 +1,4 @@
+import type { DriveCapabilities } from "../../shared/drive-permissions";
 import { offlineFileFenceKeys } from "../offline/offline-file-fence";
 import type { ChoirSummary } from "../../shared/choirs";
 import type { ScoreSummary } from "../../shared/scores";
@@ -145,7 +146,7 @@ export interface LocalAnnotationLayerRecord extends AnnotationLayerSummary {
 export interface LocalDriveDirectory {
   storage?: { usedBytes: number; limitBytes: number };
   membership?: boolean;
-  canManage?: boolean;
+  capabilities?: DriveCapabilities;
   key: string;
   ownerKey: LocalWorkspaceOwnerKey;
   choirId: string;

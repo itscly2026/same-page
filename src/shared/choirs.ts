@@ -72,7 +72,7 @@ export const previewChoirResponseSchema = z.object({
 export const membershipSummarySchema = z.object({
   id: z.string(),
   displayName: z.string(),
-  role: z.enum(["admin", "member"]),
+  isOwner: z.boolean(),
   choir: choirSummarySchema,
 });
 
@@ -91,5 +91,5 @@ export const driveNameSchema = z.string().trim().min(1).max(100);
 export const driveNameRequestSchema = z.object({ name: driveNameSchema, expectedRevision: z.number().int().nonnegative() }).strict();
 export const memberDisplayNameRequestSchema = z.object({ displayName: displayNameSchema, expectedRevision: z.number().int().nonnegative() }).strict();
 export const driveSettingsSchema = z.object({
-  name: z.string(), nameRevision: z.number().int(), displayName: z.string(), membershipRevision: z.number().int(), canManage: z.boolean(),
+  name: z.string(), nameRevision: z.number().int(), displayName: z.string(), membershipRevision: z.number().int(), canEditDriveInfo: z.boolean(),
 });

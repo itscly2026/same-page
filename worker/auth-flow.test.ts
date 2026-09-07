@@ -1,3 +1,4 @@
+import { effectiveCapabilities, emptyPermissions, noCapabilities } from "../src/shared/drive-permissions";
 import { setupNetwork } from "@msw/cloudflare";
 import { hashPassword } from "better-auth/crypto";
 import { env } from "cloudflare:workers";
@@ -82,8 +83,6 @@ beforeEach(async () => {
       "DELETE FROM score_object_deletions",
       "DELETE FROM score_versions",
       "DELETE FROM scores",
-      "DELETE FROM shared_layer_edit_grants",
-      "DELETE FROM memberships",
       "DELETE FROM choirs",
       "DELETE FROM rate_limits",
       "DELETE FROM session",
@@ -463,9 +462,9 @@ describe("authentication and choir boundaries", () => {
   });
 
   it("allows exactly one open-admission preview entry", async () => {
-    const adminUserId = crypto.randomUUID();
+    const ownerUserId = crypto.randomUUID();
     await createDatabase(env.DB).insert(user).values({
-      id: adminUserId,
+      id: ownerUserId,
       name: "Preview admin",
       email: "preview-admin@example.test",
       emailVerified: true,
@@ -474,8 +473,8 @@ describe("authentication and choir boundaries", () => {
     await expect(
       provisionChoir({
         binding: env.DB,
-        adminUserId,
-        adminDisplayName: "管理员",
+        ownerUserId,
+        ownerDisplayName: "管理员",
         guestAdmissionMode: "invite",
         isPreviewEntry: true,
         inviteSecret: env.INVITE_SECRET,
@@ -484,8 +483,8 @@ describe("authentication and choir boundaries", () => {
 
     await provisionChoir({
       binding: env.DB,
-      adminUserId,
-      adminDisplayName: "管理员",
+      ownerUserId,
+      ownerDisplayName: "管理员",
       choirName: "公开体验云盘",
       guestAdmissionMode: "open",
       isPreviewEntry: true,
@@ -494,8 +493,8 @@ describe("authentication and choir boundaries", () => {
     await expect(
       provisionChoir({
         binding: env.DB,
-        adminUserId,
-        adminDisplayName: "管理员",
+        ownerUserId,
+        ownerDisplayName: "管理员",
         choirName: "另一个体验入口",
         guestAdmissionMode: "open",
         isPreviewEntry: true,
@@ -678,8 +677,8 @@ describe("authentication and choir boundaries", () => {
 
     const provisioned = await provisionChoir({
       binding: env.DB,
-      adminUserId: admin!.id,
-      adminDisplayName: "管理员",
+      ownerUserId: admin!.id,
+      ownerDisplayName: "管理员",
       inviteSecret: env.INVITE_SECRET,
       getRandomValues(array) {
         array.fill(0);
@@ -774,9 +773,9 @@ describe("authentication and choir boundaries", () => {
     });
     expect(joinResponse.status).toBe(201);
     const joined = (await joinResponse.json()) as {
-      membership: { id: string; role: string };
+      membership: { id: string; isOwner: boolean };
     };
-    expect(joined.membership.role).toBe("member");
+    expect(joined.membership.isOwner).toBe(false);
     expect(joinResponse.headers.get("set-cookie")).toContain(
       "same_page_guest=",
     );
@@ -788,7 +787,7 @@ describe("authentication and choir boundaries", () => {
       memberships: [
         {
           displayName: "小花",
-          role: "member",
+          isOwner: false,
           choir: { id: provisioned.choirId, name: "小红花云盘" },
         },
       ],
@@ -796,8 +795,8 @@ describe("authentication and choir boundaries", () => {
 
     const secondChoir = await provisionChoir({
       binding: env.DB,
-      adminUserId: admin!.id,
-      adminDisplayName: "管理员",
+      ownerUserId: admin!.id,
+      ownerDisplayName: "管理员",
       choirName: "第二云盘",
       inviteSecret: env.INVITE_SECRET,
       getRandomValues(array) {
@@ -841,8 +840,8 @@ describe("authentication and choir boundaries", () => {
 
     const choirWithOpenGuestAdmission = await provisionChoir({
       binding: env.DB,
-      adminUserId: admin!.id,
-      adminDisplayName: "管理员",
+      ownerUserId: admin!.id,
+      ownerDisplayName: "管理员",
       choirName: "公开体验云盘",
       guestAdmissionMode: "open",
       isPreviewEntry: true,
@@ -954,7 +953,7 @@ describe("authentication and choir boundaries", () => {
     expect(scoreListWithOpenAdmissionResponse.status).toBe(200);
     expect(await scoreListWithOpenAdmissionResponse.json()).toMatchObject({
       scores: [],
-      permissions: { canManage: false },
+      permissions: { capabilities: noCapabilities() },
     });
     const signedInPreviewResponse = await callWorker(
       `/api/choirs/${choirWithOpenGuestAdmission.choirId}/scores`,
@@ -962,14 +961,14 @@ describe("authentication and choir boundaries", () => {
     );
     expect(signedInPreviewResponse.status).toBe(200);
     expect(await signedInPreviewResponse.json()).toMatchObject({
-      permissions: { canManage: false },
+      permissions: { capabilities: noCapabilities() },
     });
     const previewAdminResponse = await callWorker(
       `/api/choirs/${choirWithOpenGuestAdmission.choirId}/scores`,
       { headers: { cookie: `${adminCookie}; ${guestWithOpenAdmissionCookie}` } },
     );
     expect(await previewAdminResponse.json()).toMatchObject({
-      permissions: { canManage: true },
+      permissions: { capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()) },
     });
     const signedInPreviewUpload = await callWorker(
       `/api/choirs/${choirWithOpenGuestAdmission.choirId}/scores`,
@@ -1102,7 +1101,7 @@ describe("authentication and choir boundaries", () => {
     const read = (path: string, cookie: string) => callWorker(path, { headers: { cookie } });
     const originalSession = await (await read("/api/auth/get-session", googleCookie)).json() as { user: { id: string } };
     const userId = originalSession.user.id;
-    const { choirId } = await provisionChoir({ binding: env.DB, adminUserId: userId, adminDisplayName: "原显示名", inviteSecret: env.INVITE_SECRET });
+    const { choirId } = await provisionChoir({ binding: env.DB, ownerUserId: userId, ownerDisplayName: "原显示名", inviteSecret: env.INVITE_SECRET });
     const database = createDatabase(env.DB);
     const scoreId = crypto.randomUUID();
     const versionId = crypto.randomUUID();
@@ -1120,7 +1119,7 @@ describe("authentication and choir boundaries", () => {
     expect(await push.json()).toMatchObject({ results: [{ status: "accepted" }] });
     const membershipsBefore = await (await read("/api/choirs", googleCookie)).json();
     const annotationsBefore = await (await read(`${base}/annotations`, googleCookie)).json();
-    expect(membershipsBefore).toMatchObject({ memberships: [expect.objectContaining({ displayName: "原显示名", role: "admin", choir: expect.objectContaining({ id: choirId }) })] });
+    expect(membershipsBefore).toMatchObject({ memberships: [expect.objectContaining({ displayName: "原显示名", isOwner: true, choir: expect.objectContaining({ id: choirId }) })] });
     expect(annotationsBefore).toMatchObject({ objects: [expect.objectContaining({ id: annotationId, payload: expect.objectContaining({ text: "原个人批注" }) })] });
     const post = (path: string, body: unknown) => callWorker(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     expect((await post("/api/auth/email-otp/request-password-reset", { email })).status).toBe(200);

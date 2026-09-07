@@ -44,36 +44,19 @@ export async function requireChoirRead(
   return { kind: "membership" as const, membership };
 }
 
-export async function requireChoirAdmin(
-  database: Database,
-  principal: Principal | null,
-  choirId: string,
-) {
-  if (!principal || principal.kind !== "user") {
-    throw new AuthorizationError();
-  }
-
-  const membership = await findActiveMembership(
-    database,
-    choirId,
-    principal.userId,
-  );
-  if (!membership || membership.role !== "admin") {
-    throw new AuthorizationError();
-  }
-  return membership;
-}
-
 async function findActiveMembership(
   database: Database,
   choirId: string,
   userId: string,
 ) {
-  return database.query.memberships.findFirst({
+  const member = await database.query.memberships.findFirst({
     where: and(
       eq(memberships.choirId, choirId),
       eq(memberships.userId, userId),
       eq(memberships.status, "active"),
     ),
   });
+  if (!member) return undefined;
+  const drive = await database.query.choirs.findFirst({ where: eq(choirs.id, choirId), columns: { ownerMembershipId: true } });
+  return { ...member, isOwner: drive?.ownerMembershipId === member.id };
 }

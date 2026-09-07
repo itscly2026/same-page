@@ -1,3 +1,6 @@
+const operations = ["uploadFiles", "modifyFiles", "trashFiles", "manageInvites", "removeMembers", "configureLayers", "editDriveInfo"];
+const emptyPermissions = () => ({ operations: [], sharedLayers: [] });
+const capabilities = (owner = false) => ({ isOwner: owner, operations: owner ? { operations, sharedLayers: "all" } : emptyPermissions(), management: owner ? { operations, sharedLayers: "all" } : emptyPermissions() });
 import { createHash } from "node:crypto";
 
 const FIXED_TIME = Date.parse("2026-08-31T12:00:00.000Z");
@@ -97,6 +100,12 @@ export function resolveFixtureRequest({
 }) {
   const score = selectedScore;
   const samplePdf = pdf;
+  if (method === "GET" && pathname === `/api/choirs/${choir.id}/memberships`) return json({ actorId: "visual-membership-admin", capabilities: capabilities(true), memberships: [
+    { id: "visual-membership-admin", displayName: "林老师", isOwner: 1, status: "active", revision: 0, removedAt: null, userDeleted: 0, recoverable: 0, operations: emptyPermissions(), management: emptyPermissions() },
+    { id: "visual-membership-member", displayName: "周宁", isOwner: 0, status: "active", revision: 0, removedAt: null, userDeleted: 0, recoverable: 0, operations: { operations: ["uploadFiles"], sharedLayers: ["S"] }, management: emptyPermissions() },
+  ] });
+  if (method === "GET" && pathname === `/api/choirs/${choir.id}/permission-layers`) return json({ layers: layers.filter(layer => layer.kind === "shared").map(layer => ({ slot: layer.sharedSlot, name: layer.name })) });
+  if (method === "GET" && pathname === `/api/choirs/${choir.id}/permission-changes`) return json({ changes: [] });
   if (method === "DELETE" && pathname === "/api/guest/session") {
     return { status: 204, body: "", contentType: "text/plain", headers: { "set-cookie": "same_page_guest=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax" } };
   }
@@ -153,7 +162,7 @@ export function resolveFixtureRequest({
               {
                 id: `visual-membership-${identity}`,
                 displayName: identity === "admin" ? "林老师" : "周宁",
-                role: identity === "admin" ? "admin" : "member",
+                isOwner: identity === "admin",
                 choir,
               },
             ],
@@ -178,7 +187,7 @@ export function resolveFixtureRequest({
     return json({
       scores: [score, ...otherScores],
       storage: { usedBytes: 1_572_864, limitBytes: 1_073_741_824 },
-      permissions: { canManage: identity === "admin" },
+      permissions: { capabilities: capabilities(identity === "admin") },
     });
   }
 
@@ -188,7 +197,7 @@ export function resolveFixtureRequest({
       scores: [score, ...otherScores],
       storage: { usedBytes: 1_572_864, limitBytes: 1_073_741_824 },
       permissions: {
-        canManage: identity === "admin",
+        capabilities: capabilities(identity === "admin"),
         access: "membership",
       },
     });
@@ -205,7 +214,7 @@ export function resolveFixtureRequest({
       choir: previewChoir,
       scores: [{ ...score, choirId: previewChoir.id }],
       storage: { usedBytes: score.currentVersion.sizeBytes, limitBytes: 1_073_741_824 },
-      permissions: { canManage: false, access: identity === "guest" ? "guest" : "preview" },
+      permissions: { capabilities: capabilities(), access: identity === "guest" ? "guest" : "preview" },
     });
   }
 
@@ -216,7 +225,7 @@ export function resolveFixtureRequest({
     return json({
       state: "active",
       score,
-      permissions: { canManage: identity === "admin" },
+      permissions: { capabilities: capabilities(identity === "admin") },
     });
   }
 
@@ -228,7 +237,7 @@ export function resolveFixtureRequest({
     return json({
       scores: [{ ...score, choirId: previewChoir.id }],
       storage: { usedBytes: score.currentVersion.sizeBytes, limitBytes: 1_073_741_824 },
-      permissions: { canManage: false },
+      permissions: { capabilities: capabilities() },
     });
   }
 
@@ -302,19 +311,6 @@ export function resolveFixtureRequest({
         defaultColor: entry.adminDefaultColor,
         grantedMemberCount: [2, 1, 0, 1, 0][index], sortOrder: index, active: true, revision: 0, deletedAt: null, recoverUntil: null,
       })),
-    });
-  }
-
-  if (
-    method === "GET" &&
-    /^\/api\/choirs\/visual-choir\/shared-layers\/[ESATB]\/grants$/.test(pathname)
-  ) {
-    return json({
-      members: [
-        { id: "visual-membership-admin", displayName: "林老师", role: "admin", granted: true },
-        { id: "visual-membership-member", displayName: "周宁", role: "member", granted: true },
-        { id: "visual-membership-guest", displayName: "陈夏", role: "member", granted: false },
-      ],
     });
   }
 

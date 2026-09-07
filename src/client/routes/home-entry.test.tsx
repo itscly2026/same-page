@@ -1,3 +1,4 @@
+import { effectiveCapabilities, emptyPermissions, noCapabilities } from "../../shared/drive-permissions";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -10,7 +11,7 @@ vi.mock("../auth/auth-client", () => ({ authClient: {
   useSession: vi.fn(), signOut: vi.fn(), signIn: { email: vi.fn(), social: vi.fn() },
 } }));
 
-const membership = (id: string): MembershipSummary => ({ id: `membership-${id}`, role: "member", displayName: "排练者",
+const membership = (id: string): MembershipSummary => ({ id: `membership-${id}`, isOwner: false, displayName: "排练者",
   choir: { id, name: `云盘 ${id}`, guestAdmissionMode: "invite" } });
 let memberships: MembershipSummary[];
 function session(userId: string | null, isPending = false) {
@@ -36,7 +37,7 @@ beforeEach(() => {
     if (input === "/api/auth/flow") return Response.json({ flow: "sign-in" });
     if (input.endsWith("/bootstrap")) {
       const id = input.split("/")[3];
-      return Response.json({ choir: membership(id).choir, scores: [], storage: { usedBytes: 0, limitBytes: 1073741824 }, permissions: { access: "membership", canManage: false } });
+      return Response.json({ choir: membership(id).choir, scores: [], storage: { usedBytes: 0, limitBytes: 1073741824 }, permissions: { access: "membership", capabilities: noCapabilities() } });
     }
     return new Response(null, { status: 404 });
   }));
@@ -54,11 +55,11 @@ it("replaces the default entry with the only membership, even with a remembered 
 });
 
 it.each([0, 2])("keeps %i memberships at the selection entry without injecting preview", async (count) => {
-  memberships = count ? [membership("one"), { ...membership("two"), role: "admin" }] : [];
+  memberships = count ? [membership("one"), { ...membership("two"), isOwner: true }] : [];
   render(tree());
   if (count) {
     await screen.findByRole("link", { name: /云盘 one.*成员/ });
-    expect(screen.getByRole("link", { name: /云盘 two.*管理员/ })).toHaveAttribute("href", "/choirs/two");
+    expect(screen.getByRole("link", { name: /云盘 two.*拥有者/ })).toHaveAttribute("href", "/choirs/two");
   } else await screen.findByText(/还没有已加入的云盘/);
   expectPath("/");
   expect(screen.getByRole("button", { name: "加入新云盘" })).toBeInTheDocument();
@@ -202,7 +203,7 @@ it("does not put a saved public preview into offline drive selection or default 
 it("does not remember the public preview as a startup drive even for its administrator", async () => {
   const original = vi.mocked(fetch).getMockImplementation()!;
   vi.mocked(fetch).mockImplementation(async (input, init) => {
-    if (String(input).endsWith("/preview/bootstrap")) return Response.json({ choir: { ...membership("preview").choir, isPreviewEntry: true }, scores: [], storage: { usedBytes: 0, limitBytes: 1000 }, permissions: { access: "membership", canManage: true } });
+    if (String(input).endsWith("/preview/bootstrap")) return Response.json({ choir: { ...membership("preview").choir, isPreviewEntry: true }, scores: [], storage: { usedBytes: 0, limitBytes: 1000 }, permissions: { access: "membership", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()) } });
     return original(input, init);
   });
   memberships = [membership("one"), membership("two")];

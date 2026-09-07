@@ -8,7 +8,7 @@ import {
   joinChoirRequestSchema,
   joinCurrentGuestRequestSchema,
 } from "../../src/shared/choirs";
-import { requireChoirAdmin } from "../auth/authorization";
+import { requireOperation } from "../permissions/access";
 import {
   resolveContextGuestPrincipal,
   resolveContextPrincipal,
@@ -160,7 +160,7 @@ choirRoutes.get("/choirs", async (context) => {
     database.select({
       id: memberships.id,
       displayName: memberships.displayName,
-      role: memberships.role,
+      isOwner: sql<boolean>`${choirs.ownerMembershipId} = ${memberships.id}`,
       choirId: choirs.id,
       choirName: choirs.name,
       guestAdmissionMode: choirs.guestAdmissionMode,
@@ -179,7 +179,7 @@ choirRoutes.get("/choirs", async (context) => {
     memberships: rows.map((row) => ({
       id: row.id,
       displayName: row.displayName,
-      role: row.role,
+      isOwner: Boolean(row.isOwner),
       choir: {
         id: row.choirId,
         name: row.choirName,
@@ -239,7 +239,6 @@ choirRoutes.post("/choirs/join", async (context) => {
     choirId: choir.id,
     userId: principal.userId,
     displayName: parsed.data.displayName,
-    role: "member" as const,
     status: "active" as const,
   };
   await database.insert(memberships).values(membership);
@@ -334,7 +333,6 @@ choirRoutes.post("/choirs/join-current-guest", async (context) => {
     choirId: choir.id,
     userId: principal.userId,
     displayName: parsed.data.displayName,
-    role: "member" as const,
     status: "active" as const,
   };
   await database.insert(memberships).values(membership);
@@ -349,7 +347,7 @@ choirRoutes.post("/choirs/join-current-guest", async (context) => {
 choirRoutes.get("/choirs/:choirId/join-code", async (context) => {
   const database = createDatabase(context.env.DB);
   const choirId = context.req.param("choirId");
-  await requireChoirAdmin(database, await resolveContextPrincipal(context), choirId);
+  await requireOperation(context.env.DB, await resolveContextPrincipal(context), choirId, "manageInvites");
   const choir = await database.query.choirs.findFirst({ where: eq(choirs.id, choirId) });
   if (!choir || choir.guestAdmissionMode !== "invite") {
     return context.json({ error: "join_code_not_available" }, 409);
@@ -365,14 +363,14 @@ choirRoutes.get("/choirs/:choirId/join-code", async (context) => {
 choirRoutes.put("/choirs/:choirId/join-code", async (context) => {
   const database = createDatabase(context.env.DB);
   const choirId = context.req.param("choirId");
-  await requireChoirAdmin(database, await resolveContextPrincipal(context), choirId);
+  const actor = await requireOperation(context.env.DB, await resolveContextPrincipal(context), choirId, "manageInvites");
   const body = await context.req.json().catch(() => null);
   const parsed = joinCodeSchema.safeParse(body?.joinCode);
   if (!parsed.success) return context.json({ error: "invalid_join_code" }, 400);
   const hash = await hashJoinCode(parsed.data, context.env.INVITE_SECRET);
   const ciphertext = await encryptJoinCode(parsed.data, choirId, context.env.INVITE_SECRET);
   const [updated] = await database.update(choirs).set({ joinCodeCiphertext: ciphertext })
-    .where(and(eq(choirs.id, choirId), eq(choirs.guestAdmissionMode, "invite"), eq(choirs.joinCodeHash, hash)))
+    .where(and(eq(choirs.id, choirId), eq(choirs.guestAdmissionMode, "invite"), eq(choirs.joinCodeHash, hash), sql`exists (select 1 from membership_capabilities where id = ${actor.id} and manageInvites = 1)`))
     .returning({ id: choirs.id });
   if (!updated) return context.json({ error: "join_code_mismatch" }, 409);
   context.header("Cache-Control", "no-store");
@@ -383,7 +381,7 @@ choirRoutes.post("/choirs/:choirId/join-code/rotate", async (context) => {
   const database = createDatabase(context.env.DB);
   const principal = await resolveContextPrincipal(context);
   const choirId = context.req.param("choirId");
-  await requireChoirAdmin(database, principal, choirId);
+  const actor = await requireOperation(context.env.DB, principal, choirId, "manageInvites");
   const choir = await database.query.choirs.findFirst({
     where: eq(choirs.id, choirId),
     columns: { guestAdmissionMode: true },
@@ -407,7 +405,7 @@ choirRoutes.post("/choirs/:choirId/join-code/rotate", async (context) => {
       joinCodeCiphertext: await encryptJoinCode(joinCode, choirId, context.env.INVITE_SECRET),
       guestSessionVersion: sql`${choirs.guestSessionVersion} + 1`,
     })
-    .where(eq(choirs.id, choirId))
+    .where(and(eq(choirs.id, choirId), sql`exists (select 1 from membership_capabilities where id = ${actor.id} and manageInvites = 1)`))
     .returning({ id: choirs.id });
 
   if (!updated) {
@@ -450,7 +448,7 @@ function serializeMembership(
   membership: {
     id: string;
     displayName: string;
-    role: "admin" | "member";
+    isOwner?: boolean;
   },
   choir: {
     id: string;
@@ -461,7 +459,7 @@ function serializeMembership(
   return {
     id: membership.id,
     displayName: membership.displayName,
-    role: membership.role,
+    isOwner: membership.isOwner ?? false,
     choir: {
       id: choir.id,
       name: choir.name,

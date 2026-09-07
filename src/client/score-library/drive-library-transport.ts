@@ -1,10 +1,11 @@
+import type { DriveCapabilities } from "../../shared/drive-permissions";
 import { guestSessionResponseSchema, type ChoirSummary } from "../../shared/choirs";
 import { driveBootstrapResponseSchema, type ScoreListResponse } from "../../shared/scores";
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
 
 export type DriveLibraryAccess =
   | { kind: "loading"; choir?: ChoirSummary }
-  | { kind: "opened"; choir: ChoirSummary; result: ScoreListResponse; isMember: boolean; local?: boolean; rememberedMembership?: boolean; managementVisible?: boolean }
+  | { kind: "opened"; choir: ChoirSummary; result: ScoreListResponse; isMember: boolean; local?: boolean; rememberedMembership?: boolean; managementVisible?: boolean; rememberedCapabilities?: DriveCapabilities }
   | { kind: "join-required"; choir: ChoirSummary }
   | { kind: "denied" }
   | { kind: "not-found" }
@@ -32,7 +33,7 @@ export function driveLibraryTransport(choirId: string, signedIn: boolean): Drive
     }
     return {
       kind: "opened", choir: payload.choir, isMember: payload.permissions.access === "membership",
-      result: { scores: payload.scores, storage: payload.storage, permissions: { canManage: payload.permissions.canManage } },
+      result: { scores: payload.scores, storage: payload.storage, permissions: { capabilities: payload.permissions.capabilities } },
     };
   };
   return {

@@ -1,3 +1,4 @@
+import { memberCapabilities } from "../permissions/access";
 import { Hono } from "hono";
 import { and, eq, sql } from "drizzle-orm";
 import { driveNameRequestSchema, memberDisplayNameRequestSchema } from "../../src/shared/choirs";
@@ -16,7 +17,7 @@ driveSettingsRoutes.get("/choirs/:choirId/settings", async context => {
   const choir = await database.query.choirs.findFirst({ where: eq(choirs.id, choirId) });
   return context.json({ name: choir!.name, nameRevision: choir!.nameRevision,
     displayName: access.membership.displayName, membershipRevision: access.membership.lifecycleRevision,
-    canManage: access.membership.role === "admin" });
+    canEditDriveInfo: memberCapabilities(access.membership).operations.operations.includes("editDriveInfo") });
 });
 
 driveSettingsRoutes.patch("/choirs/:choirId/display-name", async context => {
@@ -42,10 +43,10 @@ driveSettingsRoutes.patch("/choirs/:choirId/name", async context => {
   const choirId = context.req.param("choirId");
   const principal = await resolveContextPrincipal(context);
   const access = await requireChoirRead(database, principal, choirId);
-  if (access.kind !== "membership" || access.membership.role !== "admin" || principal?.kind !== "user") throw new AuthorizationError();
+  if (access.kind !== "membership" || !memberCapabilities(access.membership).operations.operations.includes("editDriveInfo") || principal?.kind !== "user") throw new AuthorizationError();
   const changed = await database.update(choirs).set({ name: parsed.data.name, nameRevision: sql`${choirs.nameRevision} + 1` }).where(and(
     eq(choirs.id, choirId), eq(choirs.nameRevision, parsed.data.expectedRevision),
-    sql`exists (select 1 from memberships m where m.choir_id = ${choirs.id} and m.user_id = ${principal.userId} and m.status = 'active' and m.role = 'admin')`,
+    sql`exists (select 1 from membership_capabilities m where m.choir_id = ${choirs.id} and m.user_id = ${principal.userId} and m.status = 'active' and m.editDriveInfo = 1)`,
   )).returning({ revision: choirs.nameRevision });
   return changed.length ? context.json({ revision: changed[0].revision }) : context.json({ error: "revision_conflict" }, 409);
 });

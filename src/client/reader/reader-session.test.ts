@@ -1,3 +1,4 @@
+import { noCapabilities } from "../../shared/drive-permissions";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ReaderSession } from "./reader-session";
 import { localDatabase } from "../platform/local-database";
@@ -75,7 +76,7 @@ it("opens server page geometry in image mode without starting PDF.js", async () 
   };
   vi.stubGlobal("fetch", vi.fn(async (input: string) => {
     if (input.endsWith("/images")) return Response.json({ state: "ready", manifest });
-    if (input.endsWith("/bootstrap")) return Response.json({ state: "active", permissions: { canManage: false }, score: { id: "image-score", choirId: "image-drive", fileName: "图片.pdf", updatedAt: 1,
+    if (input.endsWith("/bootstrap")) return Response.json({ state: "active", permissions: { capabilities: noCapabilities() }, score: { id: "image-score", choirId: "image-drive", fileName: "图片.pdf", updatedAt: 1,
       currentVersion: { id: "image-version", versionNumber: 1, sizeBytes: 10, sha256: "a".repeat(64), etag: "test", pageCount: 1, createdAt: 1 } } });
     return new Response(null, { status: 503 });
   }));
@@ -141,7 +142,7 @@ it("requires confirmed identity before user-owned offline preparation and cancel
   const downloadState: { signal?: AbortSignal | null } = {};
   vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
     requested.push(input);
-    if (input.endsWith("/bootstrap")) return Response.json({ state: "active", permissions: { canManage: false }, score: { id: "score", choirId: "auth-drive", fileName: "谱.pdf", updatedAt: 1,
+    if (input.endsWith("/bootstrap")) return Response.json({ state: "active", permissions: { capabilities: noCapabilities() }, score: { id: "score", choirId: "auth-drive", fileName: "谱.pdf", updatedAt: 1,
       currentVersion: { id: "version", versionNumber: 1, sizeBytes: 10, sha256: "a".repeat(64), etag: "test", pageCount: 1, createdAt: 1 } } });
     if (input.endsWith("/pdf") && downloadState.signal !== undefined) {
       downloadState.signal = init?.signal;

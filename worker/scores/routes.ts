@@ -8,7 +8,8 @@ import {
   scoreFileNameSchema,
   scoreRenameRequestSchema,
 } from "../../src/shared/scores";
-import { requireChoirAdmin } from "../auth/authorization";
+import { requireOperation, memberCapabilities, operationPredicate } from "../permissions/access";
+import { noCapabilities, effectiveCapabilities, permissionSetSchema, type Operation } from "../../src/shared/drive-permissions";
 import { resolveContextChoirReadAccess } from "../auth/choir-read-access";
 import {
   resolveContextPrincipal,
@@ -51,7 +52,7 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
               choirs.guest_admission_mode, choirs.storage_used_bytes,
               choirs.storage_limit_bytes, choirs.is_preview_entry,
               memberships.id AS membership_id,
-              memberships.role AS membership_role,
+              memberships.permissions, memberships.management_scope, choirs.owner_membership_id,
               memberships.status AS membership_status,
               CASE WHEN choirs.id = ? AND choirs.guest_session_version = ?
                 THEN 1 ELSE 0 END AS guest_access,
@@ -91,15 +92,15 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
     if (drive.membership_id && drive.membership_status === "active") {
       return {
         kind: "membership" as const,
-        canManage: drive.membership_role === "admin",
+        capabilities: effectiveCapabilities(drive.owner_membership_id === drive.membership_id, permissionSetSchema.parse(JSON.parse(drive.permissions!)), permissionSetSchema.parse(JSON.parse(drive.management_scope!))),
       };
     }
     if (userId && drive.is_preview_entry === 1 && drive.guest_admission_mode === "open") {
-      return { kind: "preview" as const, canManage: false };
+      return { kind: "preview" as const, capabilities: noCapabilities() };
     }
     if (drive.membership_status === "removed") return null;
     if (drive.guest_access === 1) {
-      return { kind: "guest" as const, canManage: false };
+      return { kind: "guest" as const, capabilities: noCapabilities() };
     }
     return null;
   });
@@ -135,7 +136,7 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
       limitBytes: drive.storage_limit_bytes,
     },
     permissions: {
-      canManage: access.canManage,
+      capabilities: access.capabilities,
       access: access.kind,
     },
   });
@@ -167,13 +168,13 @@ scoreRoutes.get("/choirs/:choirId/scores", async (context) => {
   return context.json({
     scores: serialized,
     storage,
-    permissions: { canManage: access.canManage },
+    permissions: { capabilities: access.capabilities },
   });
 });
 
 scoreRoutes.get("/choirs/:choirId/scores/trash", async (context) => {
   const choirId = context.req.param("choirId");
-  await requireAdmin(context, choirId);
+  await requireAction(context, choirId, "trashFiles");
   const result = await context.env.DB.prepare(
     `SELECT scores.id, scores.choir_id, scores.file_name, scores.updated_at,
             scores.trashed_at, scores.trash_expires_at,
@@ -240,13 +241,13 @@ scoreRoutes.get("/choirs/:choirId/scores/:scoreId/bootstrap", async (context) =>
   return context.json({
     state: "active" as const,
     score: serializeScoreRow(row),
-    permissions: { canManage: access.canManage },
+    permissions: { capabilities: access.capabilities },
   });
 });
 
 scoreRoutes.post("/choirs/:choirId/scores", async (context) => {
   const choirId = context.req.param("choirId");
-  const { membership } = await requireAdmin(context, choirId);
+  const { membership } = await requireAction(context, choirId, "uploadFiles");
   const parsed = await parsePdfUpload(context);
   if (parsed instanceof Response) return parsed;
 
@@ -284,7 +285,7 @@ scoreRoutes.post("/choirs/:choirId/scores", async (context) => {
 scoreRoutes.post("/choirs/:choirId/scores/:scoreId/versions", async (context) => {
   const choirId = context.req.param("choirId");
   const scoreId = context.req.param("scoreId");
-  const { membership } = await requireAdmin(context, choirId);
+  const { membership } = await requireAction(context, choirId, "modifyFiles");
   const parsed = await parsePdfUpload(context);
   if (parsed instanceof Response) return parsed;
 
@@ -326,7 +327,7 @@ scoreRoutes.post("/choirs/:choirId/scores/:scoreId/versions", async (context) =>
 scoreRoutes.patch("/choirs/:choirId/scores/:scoreId", async (context) => {
   const choirId = context.req.param("choirId");
   const scoreId = context.req.param("scoreId");
-  await requireAdmin(context, choirId);
+  const { membership } = await requireAction(context, choirId, "modifyFiles");
   const parsed = scoreRenameRequestSchema.safeParse(
     await context.req.json().catch(() => null),
   );
@@ -337,7 +338,7 @@ scoreRoutes.patch("/choirs/:choirId/scores/:scoreId", async (context) => {
   try {
     const updated = await context.env.DB.prepare(
       `UPDATE scores SET file_name = ?, file_name_key = ?, updated_at = ?
-       WHERE id = ? AND choir_id = ? RETURNING id, trashed_at`,
+       WHERE id = ? AND choir_id = ? AND ${operationPredicate("modifyFiles")} RETURNING id, trashed_at`,
     )
       .bind(
         parsed.data.fileName,
@@ -345,6 +346,7 @@ scoreRoutes.patch("/choirs/:choirId/scores/:scoreId", async (context) => {
         Date.now(),
         scoreId,
         choirId,
+        membership.id,
       )
       .first<{ id: string; trashed_at: number | null }>();
     if (!updated) return context.json({ error: "score_not_found" }, 404);
@@ -366,13 +368,13 @@ scoreRoutes.patch("/choirs/:choirId/scores/:scoreId", async (context) => {
 scoreRoutes.delete("/choirs/:choirId/scores/:scoreId", async (context) => {
   const choirId = context.req.param("choirId");
   const scoreId = context.req.param("scoreId");
-  await requireAdmin(context, choirId);
+  const { membership } = await requireAction(context, choirId, "trashFiles");
   const now = Date.now();
   const moved = await context.env.DB.prepare(
     `UPDATE scores SET trashed_at = ?, trash_expires_at = ?, updated_at = ?
-     WHERE id = ? AND choir_id = ? AND trashed_at IS NULL`,
+     WHERE id = ? AND choir_id = ? AND trashed_at IS NULL AND ${operationPredicate("trashFiles")}`,
   )
-    .bind(now, now + TRASH_RETENTION_MS, now, scoreId, choirId)
+    .bind(now, now + TRASH_RETENTION_MS, now, scoreId, choirId, membership.id)
     .run();
   if (moved.meta.changes !== 1) {
     return context.json({ error: "score_not_found" }, 404);
@@ -383,15 +385,15 @@ scoreRoutes.delete("/choirs/:choirId/scores/:scoreId", async (context) => {
 scoreRoutes.post("/choirs/:choirId/scores/:scoreId/restore", async (context) => {
   const choirId = context.req.param("choirId");
   const scoreId = context.req.param("scoreId");
-  await requireAdmin(context, choirId);
+  const { membership } = await requireAction(context, choirId, "trashFiles");
   const now = Date.now();
   try {
     const restored = await context.env.DB.prepare(
       `UPDATE scores
        SET trashed_at = NULL, trash_expires_at = NULL, updated_at = ?
-       WHERE id = ? AND choir_id = ? AND trashed_at IS NOT NULL AND trash_expires_at > ?`,
+       WHERE id = ? AND choir_id = ? AND trashed_at IS NOT NULL AND trash_expires_at > ? AND ${operationPredicate("trashFiles")}`,
     )
-      .bind(now, scoreId, choirId, now)
+      .bind(now, scoreId, choirId, now, membership.id)
       .run();
     if (restored.meta.changes !== 1) {
       return context.json({ error: "score_not_found" }, 404);
@@ -488,7 +490,7 @@ export async function resolveScorePdfVersion(context: Context<AppEnvironment>, r
        AND (versions.retention_expires_at IS NULL OR versions.retention_expires_at > ?)
      LIMIT 1`,
   )
-    .bind(scoreId, choirId, requestedVersionId ?? null, access.canManage ? 1 : 0, Date.now(), Date.now())
+    .bind(scoreId, choirId, requestedVersionId ?? null, access.capabilities.operations.operations.includes("modifyFiles") ? 1 : 0, Date.now(), Date.now())
     .first<PdfRow>());
   return row;
 }
@@ -500,16 +502,17 @@ async function resolveChoirAccess(
   const { access } = await resolveContextChoirReadAccess(context, choirId);
   return {
     kind: access.kind,
-    canManage: access.kind === "membership" && access.membership.role === "admin",
+    capabilities: access.kind === "membership" ? memberCapabilities(access.membership) : noCapabilities(),
   };
 }
 
-async function requireAdmin(context: Context<AppEnvironment>, choirId: string) {
+async function requireAction(context: Context<AppEnvironment>, choirId: string, operation: Operation) {
   const principal = await resolveContextPrincipal(context);
-  const membership = await requireChoirAdmin(
-    createDatabase(context.env.DB),
+  const membership = await requireOperation(
+    context.env.DB,
     principal,
     choirId,
+    operation,
   );
   return { membership };
 }
@@ -664,7 +667,7 @@ interface DriveBootstrapRow {
   storage_used_bytes: number;
   storage_limit_bytes: number;
   membership_id: string | null;
-  membership_role: "admin" | "member" | null;
+  permissions: string | null; management_scope: string | null; owner_membership_id: string;
   membership_status: "active" | "removed" | null;
   guest_access: 0 | 1;
   score_id: string | null;

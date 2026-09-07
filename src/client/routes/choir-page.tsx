@@ -1,3 +1,4 @@
+import { hasManagement, isDelegated, type Operation } from "../../shared/drive-permissions";
 import { useLogout } from "../auth/logout-context";
 import { BackButton } from "../navigation/back-button";
 import { ScoreLink } from "../score-library/score-link";
@@ -235,7 +236,11 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
   }
 
   const { choir, result } = access;
-  const managementVisible = result.permissions.canManage || access.managementVisible;
+  const capabilities = result.permissions.capabilities;
+  const visibleCapabilities = access.local ? access.rememberedCapabilities ?? capabilities : capabilities;
+  const visible = (operation: Operation) => visibleCapabilities.operations.operations.includes(operation);
+  const can = (operation: Operation) => capabilities.operations.operations.includes(operation);
+  const managementVisible = hasManagement(capabilities) || access.managementVisible;
   const localFilesOnly = Boolean(access.local) && (!online || Boolean(searchMessage) || (Boolean(userId) && identity.onlineState !== "authenticated"));
   const storageRatio = result.storage.usedBytes / result.storage.limitBytes;
 
@@ -244,17 +249,17 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
       <DriveHeader choirId={choirId} choirName={choir.name} userId={userId} localOnly={Boolean(access.local)} avatarRevision={avatarRevision} onEditDisplayName={access.isMember && !access.local ? () => setSettingsField("display-name") : undefined} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
         management={managementVisible ? close => <section className="drive-drawer-management">
           <h3>云盘管理</h3>
-          <Menu aria-label="管理员菜单" disabledKeys={access.local ? ["name", "memberships", "layers", "trash", "invite"] : []} onAction={key => {
+          <Menu aria-label="云盘管理菜单" disabledKeys={access.local ? ["name", "memberships", "layers", "trash", "invite"] : []} onAction={key => {
             close();
             if (key === "name") setSettingsField("name");
             if (key === "trash") setTrashOpen(true);
             if (key === "invite") setInviteManagementOpen(true);
           }}>
-            <MenuItem id="name">云盘名称</MenuItem>
-            <MenuItem id="memberships" href={`/choirs/${choirId}/memberships`}>成员与管理员</MenuItem>
-            <MenuItem id="layers" href={`/choirs/${choirId}/shared-layers`}>共享层</MenuItem>
-            <MenuItem id="trash">回收站</MenuItem>
-            {choir.guestAdmissionMode === "invite" && <MenuItem id="invite">邀请码</MenuItem>}
+            {visible("editDriveInfo") && <MenuItem id="name">云盘名称</MenuItem>}
+            {(visibleCapabilities.isOwner || isDelegated(visibleCapabilities.management) || visible("removeMembers")) && <MenuItem id="memberships" href={`/choirs/${choirId}/memberships`}>成员与权限</MenuItem>}
+            {visible("configureLayers") && <MenuItem id="layers" href={`/choirs/${choirId}/shared-layers`}>共享层</MenuItem>}
+            {visible("trashFiles") && <MenuItem id="trash">回收站</MenuItem>}
+            {visible("manageInvites") && choir.guestAdmissionMode === "invite" && <MenuItem id="invite">邀请码</MenuItem>}
           </Menu>
           {access.local && <p role="status">管理操作需联网并确认权限后使用。</p>}
           <p className="drive-storage">云盘存储：{formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}</p>
@@ -291,7 +296,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           </div>
           {search.trim() ? <p className="library-results-summary" role="status">找到 {visibleScores.length} 份，共 {result.scores.length} 份乐谱</p> : null}
 
-          {result.permissions.canManage && (storageRatio >= 0.8 || quotaBlocked) ? (
+          {can("uploadFiles") && (storageRatio >= 0.8 || quotaBlocked) ? (
             <p className="storage-warning" role="status">
               云盘存储已使用 {formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}。
               {quotaBlocked ? " 请先释放空间后再上传。" : " 接近上限，请留意后续上传。"}
@@ -331,10 +336,10 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
                         >
                           <MenuItem id="info">文件信息</MenuItem>
                           {managementVisible && <>
-                          <MenuItem id="rename">重命名</MenuItem>
-                          <MenuItem id="replace">替换 PDF</MenuItem>
-                          <MenuItem id="history">历史 PDF 版本</MenuItem>
-                          <MenuItem id="trash">移到回收站</MenuItem>
+                          {visible("modifyFiles") && <MenuItem id="rename">重命名</MenuItem>}
+                          {visible("modifyFiles") && <MenuItem id="replace">替换 PDF</MenuItem>}
+                          {visible("modifyFiles") && <MenuItem id="history">历史 PDF 版本</MenuItem>}
+                          {visible("trashFiles") && <MenuItem id="trash">移到回收站</MenuItem>}
                           </>}
                         </Menu>
                       </Popover>
@@ -343,15 +348,15 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
               ))}
             </section>
           ) : (
-            <div className="library-empty-state">{search.trim() ? <><p>没有找到包含「{search}」的乐谱。</p><Button className="secondary-button" onPress={() => updateSearch("")}>清除搜索</Button></> : <><p>{access.local ? "本机尚未保存这个云盘的目录或乐谱，请联网后下载。" : "这个云盘还没有乐谱。"}</p><p>{result.permissions.canManage ? "上传第一份 PDF，开始准备排练。" : access.isMember ? "管理员上传乐谱后，会显示在这里。" : "暂时没有可浏览的乐谱，请稍后再来。"}</p>{result.permissions.canManage ? <Button className="secondary-button" onPress={() => setUploadOpen(true)}>上传第一份 PDF</Button> : null}</>}</div>
+            <div className="library-empty-state">{search.trim() ? <><p>没有找到包含「{search}」的乐谱。</p><Button className="secondary-button" onPress={() => updateSearch("")}>清除搜索</Button></> : <><p>{access.local ? "本机尚未保存这个云盘的目录或乐谱，请联网后下载。" : "这个云盘还没有乐谱。"}</p><p>{can("uploadFiles") ? "上传第一份 PDF，开始准备排练。" : access.isMember ? "管理员上传乐谱后，会显示在这里。" : "暂时没有可浏览的乐谱，请稍后再来。"}</p>{can("uploadFiles") ? <Button className="secondary-button" onPress={() => setUploadOpen(true)}>上传第一份 PDF</Button> : null}</>}</div>
           )}
         </section>
       </main>
 
-      {settingsField && !access.local && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async value => { if (settingsField === "name") await library.confirmName(value); await refreshAfterMutation(); setAvatarRevision(value => value + 1); setMessage("已保存。"); }} />}
-      {managementVisible && <UploadFab disabled={Boolean(access.local)} onPress={() => setUploadOpen(true)} />}
+      {settingsField && !access.local && (settingsField === "display-name" || can("editDriveInfo")) && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async value => { if (settingsField === "name") await library.confirmName(value); await refreshAfterMutation(); setAvatarRevision(value => value + 1); setMessage("已保存。"); }} />}
+      {visible("uploadFiles") && <UploadFab disabled={Boolean(access.local)} onPress={() => setUploadOpen(true)} />}
 
-      {inviteManagementOpen && result.permissions.canManage ? (
+      {inviteManagementOpen && can("manageInvites") ? (
         <InviteCodeDialog
           key={`${choirId}:${userId}`}
           choirId={choirId}
@@ -360,7 +365,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
         />
       ) : null}
 
-      {userId && result.permissions.canManage ? <UploadDialog
+      {userId && can("uploadFiles") ? <UploadDialog
         key={`upload:${choirId}:${userId}`}
         choirId={choirId}
         isOpen={uploadOpen}
@@ -373,7 +378,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           void refreshAfterMutation();
         }}
       /> : null}
-      {scoreAction ? (
+      {scoreAction && (scoreAction.action === "info" || can(scoreAction.action === "trash" ? "trashFiles" : "modifyFiles")) ? (
         <ScoreActionDialog
           key={`${scoreAction.score.id}:${scoreAction.action}`}
           choirId={choirId}
@@ -386,7 +391,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           }}
         />
       ) : null}
-      {trashOpen ? (
+      {trashOpen && can("trashFiles") ? (
         <TrashDialog
           choirId={choirId}
           onClose={() => setTrashOpen(false)}

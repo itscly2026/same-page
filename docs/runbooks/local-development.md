@@ -25,8 +25,8 @@ Wrangler 为本地 D1 和 `SCORES_BUCKET` 使用本地存储，不需要访问�
 
 ```bash
 npm run provision:choir -- \
-  --admin-email admin@example.com \
-  --admin-display-name 管理员 \
+  --owner-email admin@example.com \
+  --owner-display-name 管理员 \
   --local
 ```
 
@@ -56,3 +56,11 @@ Better Auth 定义由官方 CLI 生成。认证模型变化时运行 `npm run au
 `worker/db/auth-schema.generated.ts`；实际 D1 变更仍通过 `migrations/` 执行。
 
 验证命令及浏览器/Python 依赖见 [CI 检查与开发反馈](../operations/ci.md)。
+
+### 云盘拥有权迁移（0020）
+
+部署创建云盘必须使用 `--owner-email` 和 `--owner-display-name` 指定拥有者。公开体验及访客准入由部署配置指定，产品成员权限不能改变这些配置。
+
+升级既有数据库前运行 `node scripts/prepare-drive-owners.mjs --local`（生产使用 `--remote`）。只有一位有效管理员时可自动映射；多位或零位有效管理员必须提供 JSON 文件，格式为 `{ "云盘ID": "同云盘有效成员的用户ID" }`，并运行 `node scripts/prepare-drive-owners.mjs --remote --mapping /path/to/owners.json`。该操作保存显式映射，不迁移数据库；CI 再次核验映射后执行 migration。无效成员、缺失映射均会阻止迁移，不能任选管理员。
+
+迁移后唯一拥有者获得隐含全部能力，其他原管理员保留全部操作和授权管理范围，普通成员保留原稳定槽位编辑权。原拥有者转让后只保留显式授权，成员移除及恢复不会恢复旧特权。迁移和本地验证不代表生产已升级。
