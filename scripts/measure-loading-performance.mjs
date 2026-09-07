@@ -78,7 +78,7 @@ try {
   });
   await page.locator(".page-reader__viewport").click({ position: { x: 250, y: 250 } });
   returningToDrive = true;
-  await page.getByRole("link", { name: "返回云盘", exact: true }).click();
+  await page.getByRole("button", { name: "返回云盘", exact: true }).click();
   await page.locator(".file-list").waitFor({ state: "visible" });
   await page.waitForFunction(() =>
     window.__SAME_PAGE_DIAGNOSTICS__?.loadingPerformance().records.some(
