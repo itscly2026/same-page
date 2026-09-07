@@ -55,3 +55,9 @@ npm run visual:report    # 当前产品的视觉报告
 领域规则在 CONTEXT 中维护，决策理由在 ADR 中维护，操作步骤在对应 runbook 中维护。`docs/operations/verification-*` 和测试审查记录保留各自提交基线的历史证据。
 
 浏览器仿真不能证明真实 iPad/Pencil、PWA 存储驱逐、中国大陆网络或邮件投递表现；这些验收按发布 runbook 单独记录。
+
+## 许可证
+
+本项目原创代码采用 [GNU Affero General Public License v3.0](LICENSE)（SPDX：`AGPL-3.0-only`）。允许在遵守许可证的前提下使用、修改和商业运营。分发以及修改后提供网络服务时，应按许可证要求提供对应源码；完整权利和义务以 LICENSE 为准。
+
+第三方代码、字体及素材继续适用各自的许可证，例如 [Bravura 字体许可](renderer/fixtures/Bravura-LICENSE.txt)。代码许可不授予以本项目名称或标识冒充官方服务的权利，也不授予用户上传谱面或其他用户内容的使用权。
