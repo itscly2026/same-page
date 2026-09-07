@@ -1,3 +1,5 @@
 # Use a filename-first library with recoverable trash
 
 Same Page treats every validated upload as an immediately visible score whose initial display name is the PDF filename, without separate work metadata or draft and publication states; this keeps choir file management aligned with a familiar cloud-drive model while preserving a stable score identity across rename and PDF replacement. Deletion moves the complete score to an administrator-only thirty-day trash that supports restoration but not immediate permanent deletion, so accidental removal remains recoverable while one automatic expiry path consistently purges PDF versions and annotations.
+
+Visible score names omit the final case-insensitive `.pdf` suffix. Stored filenames, uniqueness and downloads retain the extension; rename inputs add it when omitted. The `/` startup entry may reopen the last accessible drive, while `/drives` expresses explicit selection and never automatically redirects after returning or closing admission.

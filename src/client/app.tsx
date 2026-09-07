@@ -11,6 +11,7 @@ import { LocalIdentityObserver } from "./platform/local-identity-observer";
 import { ReaderPage } from "./reader/reader-runtime";
 import { HomePage } from "./routes/home-page";
 
+const AboutPage = lazy(() => import("./routes/about-page"));
 const UserLifecyclePage = lazy(() => import("./routes/user-lifecycle-page"));
 const MembershipManagementPage = lazy(() => import("./routes/membership-management-page"));
 const AuthPage = lazy(() => import("./routes/auth-page"));
@@ -37,10 +38,13 @@ export function AppRoutes() {
         <Routes>
           <Route element={<PageWithFooter />}>
             <Route path="/" element={<RouteContent><HomePage /></RouteContent>} />
+            <Route path="/drives" element={<RouteContent><HomePage /></RouteContent>} />
+            <Route path="/choirs/:choirId/storage" element={<RouteContent><LocalStoragePage /></RouteContent>} />
+            <Route path="/choirs/:choirId/me" element={<RouteContent><UserLifecyclePage /></RouteContent>} />
+            <Route path="/about" element={<RouteContent><AboutPage /></RouteContent>} />
             <Route path="/user" element={<RouteContent><UserLifecyclePage /></RouteContent>} />
             <Route path="/choirs/:choirId/memberships" element={<RouteContent><MembershipManagementPage /></RouteContent>} />
             <Route path="/login" element={<RouteContent><AuthPage /></RouteContent>} />
-            <Route path="/storage" element={<RouteContent><LocalStoragePage /></RouteContent>} />
             <Route path="/privacy" element={<RouteContent><PrivacyPage /></RouteContent>} />
             <Route path="/diagnostics" element={<RouteContent><DiagnosticsPage /></RouteContent>} />
             <Route path="/choirs/:choirId" element={<RouteContent><ChoirPage /></RouteContent>} />

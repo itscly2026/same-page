@@ -338,7 +338,7 @@ describe("AppRoutes", () => {
     expect(
       screen.queryByText("wechat-unionid@wechat.placeholder.invalid"),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "退出登录" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "我的" })).toBeInTheDocument();
     home.unmount();
 
     render(
@@ -667,7 +667,7 @@ describe("AppRoutes", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "进入" }));
 
-    await screen.findByRole("searchbox", { name: "搜索乐谱" });
+    await screen.findByRole("searchbox", { name: /搜索.*中的乐谱/ });
     expect(screen.getByRole("heading", { name: "小红花云盘" })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", {
       method: "DELETE",
@@ -962,7 +962,7 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByRole("searchbox", { name: "搜索乐谱" });
+    await screen.findByRole("searchbox", { name: /搜索.*中的乐谱/ });
     fireEvent.click(await screen.findByRole("button", { name: "用户菜单" }));
     expect(await screen.findByRole("menuitem", { name: "阅读偏好" })).toHaveAttribute(
       "href",
@@ -1078,7 +1078,7 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    const scoreLink = await screen.findByRole("link", { name: /排练 10\.pdf/ });
+    const scoreLink = await screen.findByRole("link", { name: /排练 10/ });
     expect(scoreLink).toHaveAttribute(
       "href",
       "/choirs/choir-1/scores/score-10",
@@ -1102,7 +1102,7 @@ describe("AppRoutes", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "搜索" })).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole("searchbox", { name: "搜索乐谱" }), {
+    fireEvent.change(screen.getByRole("searchbox", { name: /搜索.*中的乐谱/ }), {
       target: { value: "排练" },
     });
     expect(screen.getByText("找到 1 份，共 1 份乐谱")).toBeInTheDocument();
@@ -1115,8 +1115,8 @@ describe("AppRoutes", () => {
     expect(
       await screen.findByText("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。"),
     ).toBeInTheDocument();
-    expect(screen.getByText("排练 10.pdf")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /排练 10\.pdf/ })).not.toBeInTheDocument();
+    expect(screen.getByText("排练 10")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /排练 10/ })).not.toBeInTheDocument();
 
   });
 
@@ -1194,7 +1194,8 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+    fireEvent.click(screen.getByRole("button", { name: "我的" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "退出登录" }));
     expect(await screen.findByRole("dialog", { name: "确认退出登录" })).toHaveTextContent(
       "本机还有 1 项待同步操作",
     );
@@ -1237,7 +1238,8 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+    fireEvent.click(screen.getByRole("button", { name: "我的" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "退出登录" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "退出并清除" }),
     );

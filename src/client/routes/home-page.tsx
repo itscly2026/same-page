@@ -16,7 +16,7 @@ import {
 import { Dialog } from "../navigation/overlays";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
-import { isInternalAuthEmail } from "../../shared/auth";
+import { PersonalMenu } from "../components/personal-menu";
 import {
   guestJoinStateResponseSchema,
   guestSessionResponseSchema,
@@ -34,7 +34,6 @@ import {
   clearGuestSession,
   clearPreviewGuestSession,
 } from "../auth/preview-guest-session";
-import { useLogout } from "../auth/logout-context";
 import { AppHeader } from "../components/app-header";
 import { JoinCodeField } from "../components/join-code-field";
 import { readInviteLink } from "../components/invite-link";
@@ -97,6 +96,7 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
   const location = useLocation();
   const [linkInvite] = useState(() => readInviteLink(location.hash));
   const linkHandled = useRef(false);
+  const [startupIntent, setStartupIntent] = useState(location.pathname === "/" && !location.search && !location.hash);
   const [joinOpen, setJoinOpen] = useState(searchParams.get("join") === "1" || linkInvite !== null);
   const [joinStep, setJoinStep] = useState<JoinStep>({ kind: "invite" });
   const [joinCode, setJoinCode] = useState(linkInvite?.code ?? "");
@@ -105,7 +105,6 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
   const [submitting, setSubmitting] = useState(false);
   const [clearingGuestSession, setClearingGuestSession] = useState(false);
   const [joinMessage, setJoinMessage] = useState<string | null>(null);
-  const logout = useLogout();
   const userId = session.data?.user.id;
   useEffect(() => {
     if (session.isPending || userId) return;
@@ -138,6 +137,7 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
   };
 
   const finishJoinDialog = () => {
+    setStartupIntent(false);
     setJoinOpen(false);
     resetJoinFlow();
   };
@@ -268,18 +268,7 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
       <AppHeader
         actions={
           session.data?.user ? (
-            <>
-              {!isInternalAuthEmail(session.data.user.email) ? (
-                <span className="account-email">{session.data.user.email}</span>
-              ) : null}
-              <Link className="header-action" to="/user">个人设置</Link>
-              <Button
-                className="header-action"
-                onPress={() => void logout.request()}
-              >
-                退出登录
-              </Button>
-            </>
+            <PersonalMenu email={session.data.user.email} />
           ) : session.isPending ? null : (
             <Link className="header-action header-action--primary" to="/login">
               登录
@@ -291,7 +280,7 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
       {!session.isPending && userId ? (
         <main className="page-shell my-drives-page">
           <div className="my-drives-heading"><div><h1>我已加入的云盘</h1><p>选择云盘，继续排练。</p></div><Button className="secondary-button" onPress={() => setJoinOpen(true)}>加入新云盘</Button></div>
-          <MembershipList userId={userId} autoEnter={!joinOpen && searchParams.size === 0} />
+          <MembershipList userId={userId} autoEnter={startupIntent && location.pathname === "/" && !joinOpen && searchParams.size === 0} />
             </main>
       ) : session.isPending ? <main className="page-shell"><p role="status">正在加载…</p></main> : <main className="marketing-content">
         <section className="marketing-hero" aria-labelledby="page-title">

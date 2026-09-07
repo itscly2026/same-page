@@ -12,15 +12,15 @@ it("offers only the active user's saved files as recovery links, without claimin
       versionId: "version", fileName: `${id}.pdf`, sha256: "unverified", pageCount: 1, blob: new Blob(["unverified"]), active: 1, verifiedAt: 1, annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 } });
   }
   const view = render(<MemoryRouter><LocalLibrary userId="a" /></MemoryRouter>);
-  expect(await screen.findByRole("link", { name: /a.pdf/ })).toHaveAttribute("href", "/choirs/drive/scores/score");
-  expect(screen.queryByText("b.pdf")).not.toBeInTheDocument();
+  expect(await screen.findByRole("link", { name: /a本机/ })).toHaveAttribute("href", "/choirs/drive/scores/score");
+  expect(screen.queryByText("b")).not.toBeInTheDocument();
   expect(screen.queryByText("可离线使用")).not.toBeInTheDocument();
   view.rerender(<MemoryRouter><LocalLibrary userId="b" /></MemoryRouter>);
-  expect(screen.queryByText("a.pdf")).not.toBeInTheDocument();
-  expect(screen.queryByText("b.pdf")).not.toBeInTheDocument();
+  expect(screen.queryByText("a")).not.toBeInTheDocument();
+  expect(screen.queryByText("b")).not.toBeInTheDocument();
   await activateAuthenticatedLocalOwner("b");
-  await waitFor(() => expect(screen.getByRole("link", { name: /b.pdf/ })).toBeInTheDocument());
-  expect(screen.queryByText("a.pdf")).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole("link", { name: /b本机/ })).toBeInTheDocument());
+  expect(screen.queryByText("a")).not.toBeInTheDocument();
 });
 
 it("rejects a directory response captured before an A to B to A identity change", async () => {
@@ -35,4 +35,18 @@ it("rejects a directory response captured before an A to B to A identity change"
   render(<MemoryRouter><LocalLibrary userId="a" /></MemoryRouter>);
   await screen.findByText(/本机尚未保存/);
   expect(screen.queryByText("旧响应中的云盘")).not.toBeInTheDocument();
+});
+
+it("keeps a retained copy discoverable without resurrecting it in a confirmed empty directory", async () => {
+  const { readLocalDriveDirectories, rememberLocalDriveDirectory } = await import("./local-drive-directory");
+  const { captureLocalWorkspaceSession } = await import("../platform/local-workspace");
+  await localDatabase.open();
+  await activateAuthenticatedLocalOwner("retained");
+  const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey("retained"), "drive", "removed"));
+  await localDatabase.offlineScores.put({ ...workspace, key: "retained", versionId: "version", fileName: "保留.pdf", sha256: "unverified", pageCount: 1, blob: new Blob(["PDF"]), active: 1, verifiedAt: 1, annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 } });
+  await rememberLocalDriveDirectory(workspace, { id: "drive", name: "排练", guestAdmissionMode: "invite" }, [], new AbortController().signal, true);
+  expect((await readLocalDriveDirectories("retained"))[0].scores).toEqual([]);
+  render(<MemoryRouter><LocalLibrary userId="retained" /></MemoryRouter>);
+  expect(await screen.findByRole("link", { name: /保留/ })).toHaveAttribute("href", "/choirs/drive/scores/removed");
+  expect(await localDatabase.offlineScores.get("retained")).toBeDefined();
 });

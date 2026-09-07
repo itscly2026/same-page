@@ -1,194 +1,80 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "react-aria-components";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useRegisterSW } from "virtual:pwa-register/react";
+import { canApplyUpdate, noteUpdateInteraction, setUpdateRoute } from "../updates/update-safety";
+import { setUpdateStatus, useUpdateStatus } from "../updates/update-status";
 
 export function ReloadPrompt() {
-  const [registrationAttempt, setRegistrationAttempt] = useState(0);
-  const retryRegistration = useCallback(() => setRegistrationAttempt((value) => value + 1), []);
-  return <RegisteredReloadPrompt key={registrationAttempt} retryRegistration={retryRegistration} />;
+  const [attempt, setAttempt] = useState(0);
+  const retryRegistration = useCallback(() => setAttempt(value => value + 1), []);
+  return <RegisteredReloadPrompt key={attempt} retryRegistration={retryRegistration} />;
 }
 
-function RegisteredReloadPrompt({ retryRegistration }: { retryRegistration: () => void }) {
-  const [registration, setRegistration] =
-    useState<ServiceWorkerRegistration | null>(null);
-  const [updateState, setUpdateState] = useState<
-    | { phase: "idle" }
-    | { phase: "updating" }
-    | { phase: "checking" }
-    | { phase: "error"; message: string }
-  >({ phase: "idle" });
-  const updateTimeout = useRef<number | null>(null);
-  const checkingUpdate = useRef(false);
-  const applyingUpdate = useRef(false);
-  const dismissedError = useRef(false);
-  const actionEpoch = useRef(0);
-  const clearUpdateTimeout = useCallback(() => {
-    if (updateTimeout.current === null) return;
-    window.clearTimeout(updateTimeout.current);
-    updateTimeout.current = null;
-  }, []);
+function RegisteredReloadPrompt({ retryRegistration }: { retryRegistration(): void }) {
+  const { pathname } = useLocation();
+  const [registration, setRegistration] = useState<ServiceWorkerRegistration>();
+  const reloadPending = useRef(false);
+  const applying = useRef(false);
+  const failed = useRef(false);
   const onNeedReload = useCallback(() => {
-    clearUpdateTimeout();
-    window.location.reload();
-  }, [clearUpdateTimeout]);
-  const onRegisteredSW = useCallback(
-    (_swUrl: string, nextRegistration: ServiceWorkerRegistration | undefined) => {
-      setRegistration(nextRegistration ?? null);
-    },
-    [],
-  );
-  const {
-    needRefresh: [needRefresh, setNeedRefresh],
-    updateServiceWorker,
-  } = useRegisterSW({
-    onNeedReload,
-    onRegisteredSW,
-    onRegisterError: () => {
-      setUpdateState({
-        phase: "error",
-        message: "应用离线资源准备失败，请重试",
-      });
-    },
+    reloadPending.current = true;
+    // Also check on this side of activation: a user may have started interacting
+    // after the worker's probe. Never refresh a reader or an unsaved operation.
+    if (canApplyUpdate()) window.location.reload();
+  }, []);
+  const onRegisteredSW = useCallback((_url: string, value?: ServiceWorkerRegistration) => setRegistration(value), []);
+  const { needRefresh: [ready] } = useRegisterSW({ onNeedReload, onRegisteredSW,
+    onRegisterError: () => { failed.current = true; setUpdateStatus("应用离线资源准备失败，请稍后重试"); },
   });
-
-  const checkForUpdate = useCallback(async (explicit = false) => {
-    if (explicit && !navigator.onLine) {
-      setUpdateState({ phase: "error", message: "当前离线，联网后可重试更新" });
-      return;
-    }
-    if (explicit && !registration) {
-      retryRegistration();
-      return;
-    }
-    if (
-      !registration ||
-      applyingUpdate.current ||
-      checkingUpdate.current ||
-      registration.installing ||
-      !navigator.onLine
-    ) {
-      return;
-    }
-    const epoch = actionEpoch.current;
-    checkingUpdate.current = true;
-    if (explicit) { dismissedError.current = false; setUpdateState({ phase: "checking" }); }
-    try {
-      await registration.update();
-      if (epoch !== actionEpoch.current) return;
-      setUpdateState((current) =>
-        explicit && (current.phase === "error" || current.phase === "checking") ? { phase: "idle" } : current,
-      );
-    } catch {
-      if (epoch === actionEpoch.current && (explicit || !dismissedError.current)) setUpdateState({
-        phase: "error",
-        message: "更新检查失败，请稍后重试",
-      });
-    } finally {
-      checkingUpdate.current = false;
-    }
+  useLayoutEffect(() => setUpdateRoute(pathname), [pathname]);
+  const check = useCallback(async () => {
+    if (!navigator.onLine) { setUpdateStatus("当前离线，继续使用当前版本"); return; }
+    if (!registration) { setUpdateStatus("正在重新准备离线资源…"); retryRegistration(); return; }
+    failed.current = false;
+    setUpdateStatus("正在检查更新…");
+    try { await registration.update(); setUpdateStatus(registration.waiting ? "新版本已准备，将在安全时应用" : "检查完成，当前版本继续运行"); }
+    catch { failed.current = true; setUpdateStatus("更新检查失败，请稍后重试"); }
   }, [registration, retryRegistration]);
-
   useEffect(() => {
-    if (!registration) return;
-    let active = true;
-    const onVisibilityChange = () => {
-      if (active && document.visibilityState === "visible") void checkForUpdate();
+    if (ready) setUpdateStatus("新版本已准备，将在安全时应用");
+  }, [ready]);
+  useEffect(() => {
+    if (registration) void check();
+    const visible = () => { if (document.visibilityState === "visible") void check(); };
+    document.addEventListener("visibilitychange", visible);
+    window.addEventListener("same-page-check-update", check);
+    return () => { document.removeEventListener("visibilitychange", visible); window.removeEventListener("same-page-check-update", check); };
+  }, [registration, check]);
+  useEffect(() => {
+    const events = ["pointerdown", "pointerup", "keydown", "input", "focusin", "wheel", "scroll"] as const;
+    events.forEach(event => document.addEventListener(event, noteUpdateInteraction, true));
+    const probe = (event: MessageEvent) => {
+      if (event.data?.type === "SAME_PAGE_UPDATE_PROBE") event.ports[0]?.postMessage(canApplyUpdate());
     };
+    navigator.serviceWorker?.addEventListener("message", probe);
+    const timer = window.setInterval(() => {
+      if (!canApplyUpdate()) return;
+      if (reloadPending.current) { window.location.reload(); return; }
+      if (!ready || !registration?.waiting || applying.current || failed.current) return;
+      applying.current = true;
+      const channel = new MessageChannel();
+      const timeout = window.setTimeout(() => {
+        applying.current = false; failed.current = true; channel.port1.close();
+        setUpdateStatus("更新未完成，当前版本继续运行；可重新检查更新");
+      }, 10000);
+      channel.port1.onmessage = event => {
+        if (event.data?.safe === true) { setUpdateStatus("正在应用更新…"); return; }
+        clearTimeout(timeout); channel.port1.close(); applying.current = false;
+        setUpdateStatus("新版本待应用，请先完成其他窗口中的操作");
+      };
+      registration.waiting.postMessage({ type: "SAME_PAGE_SAFE_UPDATE" }, [channel.port2]);
+    }, 1000);
+    return () => { clearInterval(timer); events.forEach(event => document.removeEventListener(event, noteUpdateInteraction, true)); navigator.serviceWorker?.removeEventListener("message", probe); };
+  }, [ready, registration]);
+  return null;
+}
 
-    const initialCheck = window.setTimeout(() => void checkForUpdate(), 0);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      active = false;
-      window.clearTimeout(initialCheck);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
-  }, [checkForUpdate, registration]);
-
-  useEffect(() => clearUpdateTimeout, [clearUpdateTimeout]);
-
-  if (!needRefresh && updateState.phase !== "error" && updateState.phase !== "checking") {
-    return null;
-  }
-
-  const close = () => {
-    actionEpoch.current += 1;
-    clearUpdateTimeout();
-    setUpdateState({ phase: "idle" });
-    setNeedRefresh(false);
-    dismissedError.current = true;
-    applyingUpdate.current = false;
-  };
-
-  const applyUpdate = async () => {
-    if (applyingUpdate.current) return;
-    const epoch = actionEpoch.current;
-    if (!navigator.onLine) {
-      setUpdateState({
-        phase: "error",
-        message: "当前离线，联网后可重试更新",
-      });
-      return;
-    }
-    if (!registration?.waiting) {
-      await checkForUpdate(true);
-      if (epoch !== actionEpoch.current) return;
-      if (registration?.waiting) return applyUpdate();
-      setUpdateState({
-        phase: "error",
-        message: "更新尚未准备好，请重试",
-      });
-      return;
-    }
-
-    clearUpdateTimeout();
-    applyingUpdate.current = true;
-    setUpdateState({ phase: "updating" });
-    updateTimeout.current = window.setTimeout(() => {
-      updateTimeout.current = null;
-      applyingUpdate.current = false;
-      setUpdateState({
-        phase: "error",
-        message: "更新接管超时，请重试",
-      });
-    }, 10_000);
-    try {
-      await updateServiceWorker(true);
-    } catch {
-      if (epoch !== actionEpoch.current) return;
-      applyingUpdate.current = false;
-      clearUpdateTimeout();
-      setUpdateState({
-        phase: "error",
-        message: "更新失败，请重试",
-      });
-    }
-  };
-
-  const message = updateState.phase === "updating"
-    ? "正在更新…"
-    : updateState.phase === "checking" ? "正在检查应用更新…"
-    : updateState.phase === "error"
-      ? updateState.message
-      : needRefresh
-        ? "有新版本可用"
-        : "应用资源已准备好";
-
-  return (
-    <aside className="update-prompt" aria-live="polite">
-      <p>{message}</p>
-      <div className="update-prompt__actions">
-        {needRefresh ? (
-          <Button
-            isDisabled={updateState.phase === "updating" || updateState.phase === "checking"}
-            onPress={() => void applyUpdate()}
-          >
-            {updateState.phase === "error" ? "重试" : "更新"}
-          </Button>
-        ) : updateState.phase === "error" ? (
-          <Button onPress={() => void checkForUpdate(true)}>重试</Button>
-        ) : null}
-        <Button onPress={close}>关闭</Button>
-      </div>
-    </aside>
-  );
+export function UpdateDetails() {
+  const status = useUpdateStatus();
+  return <section><h2>版本更新</h2><p role="status">{status}</p><button className="secondary-button" onClick={() => window.dispatchEvent(new Event("same-page-check-update"))}>检查更新</button></section>;
 }

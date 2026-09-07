@@ -58,11 +58,8 @@ async function measureUpdatedPwa() {
       if (!registration) throw new Error("service_worker_registration_missing");
       await registration.update();
     });
-    await page.getByText("有新版本可用", { exact: true }).waitFor({ timeout: 30_000 });
-    await Promise.all([
-      page.waitForEvent("domcontentloaded"),
-      page.getByRole("button", { name: "更新", exact: true }).click(),
-    ]);
+    await page.waitForFunction(previous => document.documentElement.dataset.buildId !== previous,
+      priorEvidence.buildId, { timeout: 30_000 });
     const activeBuild = await readActiveBuild(page);
     const activeAssets = await documentAssets(page);
     assert.ok(
@@ -77,7 +74,7 @@ async function measureUpdatedPwa() {
         priorBuildId: priorEvidence.buildId,
         activeBuildId: activeBuild.buildId,
         oldAssetsWereCached: oldAssetsStillCached,
-        userConfirmed: true,
+        automaticallyApplied: true,
         controllerState: result.serviceWorker,
       },
     };

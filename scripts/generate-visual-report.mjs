@@ -212,8 +212,8 @@ async function runActions(page, actions, fixture) {
     if (action.type === "scrollIntoView") { await page.locator(action.selector).scrollIntoViewIfNeeded(); continue; }
     if (action.type === "uploadSamples") {
       await page.locator('input[type="file"]').setInputFiles([
-        { name: "已上传示例1.pdf", mimeType: "application/pdf", buffer: fixture.pdf },
-        { name: "示例失败.pdf", mimeType: "application/pdf", buffer: fixture.pdf },
+        { name: "已上传示例1", mimeType: "application/pdf", buffer: fixture.pdf },
+        { name: "示例失败", mimeType: "application/pdf", buffer: fixture.pdf },
       ]);
       continue;
     }

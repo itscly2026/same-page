@@ -47,9 +47,12 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.getByRole("dialog", { name: "云盘菜单" }).waitFor();
     assert.equal(await page.getByRole("menuitem", { name: "成员与权限" }).getAttribute("href"), "/choirs/visual-choir/memberships");
     await page.screenshot({ path: `${output}/${name}-drawer.png` });
-    await page.getByRole("button", { name: "切换云盘", exact: true }).click();
-    await page.getByRole("dialog", { name: "切换云盘" }).waitFor();
-    await page.getByRole("link", { name: /当前云盘/ }).click();
+    await page.getByRole("link", { name: "返回所有云盘", exact: true }).click();
+    await page.getByRole("heading", { name: "我已加入的云盘" }).waitFor();
+    assert.equal(new URL(page.url()).pathname, "/drives");
+    await page.getByRole("link", { name: "合谱 Same Page 首页" }).click();
+    await page.getByRole("heading", { name: "我已加入的云盘" }).waitFor();
+    await page.getByRole("link", { name: /示例云盘/ }).click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });
     await page.getByRole("button", { name: "打开云盘菜单" }).focus();
     await page.keyboard.press("Enter");
@@ -67,7 +70,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await fab.click();
     await page.getByRole("dialog", { name: "上传 PDF" }).waitFor();
     await page.getByRole("button", { name: "关闭", exact: true }).click();
-    await page.getByRole("searchbox", { name: "搜索乐谱" }).fill("不存在");
+    await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).fill("不存在");
     await page.getByText(/没有找到包含/).waitFor();
     await fab.waitFor();
     for (const width of [320]) {

@@ -77,7 +77,7 @@ export async function cacheAnnotationLayers(workspace: LocalWorkspace, layers: A
     // Metadata is authoritative for every saved PDF version too. Keep paused shared
     // notes in the main annotation store, but snapshots contain only readable layers.
     for (const record of offlineRecords) {
-      record.annotationSnapshot.layers = layers.map(layer => ({ ...layer,
+      record.annotationSnapshot.layers = layers.filter(layer => record.annotationSnapshot.layers.some(saved => saved.id === layer.id)).map(layer => ({ ...layer,
         key: localWorkspaceRecordKey(workspace, layer.id), ...workspace }));
       record.annotationSnapshot.annotations = record.annotationSnapshot.annotations.filter(annotation => ids.has(annotation.layerId));
     }

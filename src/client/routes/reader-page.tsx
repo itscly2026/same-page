@@ -1,3 +1,5 @@
+import { ExportDialog } from "../reader/export-dialog";
+import { scoreDisplayName } from "../../shared/score-display-name";
 import { BackButton } from "../navigation/back-button";
 import { ReaderLoading } from "../navigation/reader-loading";
 import { useAppNavigation, useExitLayer } from "../navigation/navigation-context";
@@ -190,6 +192,7 @@ function ReaderPageContent() {
       : null;
   const { editor, persistence } = useAnnotationEditor(workspace);
   const editing = editor !== null && editor === editingEditor;
+  const [exportOpen, setExportOpen] = useState(false);
   const [visibleDisplay, setVisibleDisplay] = useState<ScoreDocument | null>(null);
   const [failedDisplay, setFailedDisplay] = useState<ScoreDocument | null>(null);
   const reader = useReaderSession(workspace, identity.authenticatedUserId);
@@ -464,7 +467,7 @@ function ReaderPageContent() {
     conflictCount: conflicts.length,
     syncErrorCount,
   });
-  const readerTitle = displayReaderTitle(score.fileName);
+  const readerTitle = scoreDisplayName(score.fileName);
 
   return (
     <DisplayRecovery.Provider value={{
@@ -485,7 +488,7 @@ function ReaderPageContent() {
           if (!open) requestAnimationFrame(() => moreTrigger.current?.focus());
         }}
       />
-      <h1 className="visually-hidden">{score.fileName}</h1>
+      <h1 className="visually-hidden">{scoreDisplayName(score.fileName)}</h1>
       {cloudState === "trashed" ? (
         <aside className="reader-alert reader-alert--trash" role="alert">
           乐谱已移入回收站。本机离线副本和未同步批注仍保留，恢复后可继续同步。
@@ -610,9 +613,6 @@ function ReaderPageContent() {
                 </Button>
               </div>
               </section>
-              <section aria-label="原文件"><h2>原文件</h2>
-              <a href={`/api/choirs/${encodeURIComponent(choirId)}/scores/${encodeURIComponent(scoreId)}/versions/${encodeURIComponent(score.currentVersion.id)}/pdf`} download>下载原 PDF</a>
-              </section>
               <section aria-label="本机离线副本"><h2>本机离线副本 · {reader.snapshot.mode === "pdf" ? "PDF" : "图片"}</h2>
               <p className="reader-more-menu__status" role="status">
                 {downloading ? "正在下载并校验…" : downloadMessage?.includes("未完成") ? (!offlineStatus ? "离线下载未完成，尚未确认本机副本，请重试校验。" : offlineDownloadFailure(offline, score.currentVersion.id, offlineStatus.invalid, reader.snapshot.mode)) : !offlineStatus ? "正在校验本机副本…" : offlineScoreLabel(offline, score.currentVersion.id, offlineStatus.invalid, reader.snapshot.mode)}
@@ -634,6 +634,9 @@ function ReaderPageContent() {
                 </Button>
               </section>
               </>}
+              <section aria-label="原文件"><h2>原文件</h2>
+              <Button onPress={() => navigation.afterEditing(() => { setMoreOpen(false); setExportOpen(true); })}>导出 PDF</Button>
+              </section>
               <section aria-label="阅读帮助"><h2>帮助</h2>
                 <p className="reader-more-menu__status">轻点中央显示工具；点按两侧或左右滑动翻页。编辑时锁定当前页，点勾号完成后继续翻页。批注同步与离线副本分别准备。</p>
                 <Button onPress={() => { setMoreOpen(false); setDiagnosticOpen(true); }}>故障诊断</Button>
@@ -682,6 +685,7 @@ function ReaderPageContent() {
           云端已有新版本；完整下载并校验前，原离线副本会继续保留。
         </aside>
       ) : null}
+      {exportOpen && workspace && <ExportDialog layers={layers} workspace={workspace} source={document} versionId={score.currentVersion.id} fileName={score.fileName} authenticatedUserId={identity.authenticatedUserId} onClose={() => setExportOpen(false)} />}
       {readerPanel === "layers" ? (
         <ModalOverlay className="reader-panel-backdrop" isOpen isDismissable
           onOpenChange={(open) => { if (!open) setReaderPanel(null); }}>
@@ -794,10 +798,7 @@ function readBooleanPreference(key: string) {
   }
 }
 
-function displayReaderTitle(fileName: string) {
-  const title = fileName.replace(/\.pdf$/i, "");
-  return title || fileName;
-}
+
 
 function readStringPreference(key: string) {
   try {

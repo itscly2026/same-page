@@ -47,7 +47,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     const page = await context.newPage();
     await page.goto(`${server.origin}/choirs/visual-choir`);
     await expect(page.locator(".file-row")).toHaveCount(60);
-    await page.getByRole("searchbox", { name: "搜索乐谱" }).fill("秋日");
+    await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).fill("秋日");
     const score = page.locator('a.file-row__open[href$="/scores/visual-score"]');
     await score.scrollIntoViewIfNeeded();
     const savedTop = await page.evaluate(() => window.scrollY);
@@ -77,17 +77,18 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
       window.dispatchEvent(new Event("focus"));
     });
     await expect.poll(() => requests).toBe(before + 1);
-    await page.getByRole("searchbox", { name: "搜索乐谱" }).fill("040");
+    await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).fill("040");
     await page.getByRole("combobox", { name: "乐谱排序" }).selectOption("updated");
     unavailable = true;
     release(); waiting = null;
+    await page.getByText("列表更新失败", { exact: true }).click();
     await expect(page.getByText(/暂时无法更新乐谱列表，当前内容已保留/)).toBeVisible();
     await expect(page.locator(".file-row")).toHaveCount(1);
     await page.screenshot({ path: path.join(evidence, `${name}-refresh-failed.png`) });
     unavailable = false;
     await page.getByRole("button", { name: "重试", exact: true }).click();
     await expect(page.getByText(/暂时无法更新乐谱列表，当前内容已保留/)).toHaveCount(0);
-    await expect(page.getByRole("searchbox", { name: "搜索乐谱" })).toHaveValue("040");
+    await expect(page.getByRole("searchbox", { name: /搜索.*中的乐谱/ })).toHaveValue("040");
     await expect(page.getByRole("combobox", { name: "乐谱排序" })).toHaveValue("updated");
     await page.screenshot({ path: path.join(evidence, `${name}-refreshed.png`) });
     await writeFile(path.join(evidence, `${name}-lifecycle.json`), JSON.stringify({

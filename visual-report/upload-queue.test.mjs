@@ -66,7 +66,7 @@ for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {
       // Simulate a response lost after the server may already have committed.
       await pending.shift()(503);
       await page.getByRole("alert").filter({ hasText: "队列已暂停" }).waitFor();
-      assert.equal(await page.getByRole("button", { name: "重试 b.pdf" }).count(), 0);
+      assert.equal(await page.getByRole("button", { name: "重试 b" }).count(), 0);
       assert.equal(files.length, 2);
       await page.getByRole("button", { name: "继续等待项" }).click();
       await page.waitForFunction(() => document.querySelector('.upload-list li[data-status="uploading"]')?.textContent.includes("c.pdf"));
@@ -78,9 +78,9 @@ for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       const actionSizes = await page.locator(".upload-list button").evaluateAll((buttons) => buttons.map((button) => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height })));
       assert.ok(actionSizes.every((size) => size.width >= 44 && size.height >= 44));
-      await page.getByRole("button", { name: "核对 b.pdf" }).click();
-      await page.getByRole("searchbox", { name: "搜索乐谱" }).waitFor();
-      assert.equal(await page.getByRole("searchbox", { name: "搜索乐谱" }).inputValue(), "b.pdf");
+      await page.getByRole("button", { name: "核对 b" }).click();
+      await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).waitFor();
+      assert.equal(await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).inputValue(), "b.pdf");
       await page.getByText(/请核对同名文件/).waitFor();
       await page.getByRole("link", { name: /b\.pdf/ }).waitFor();
       assert.equal(files.length, 3);
