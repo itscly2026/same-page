@@ -60,7 +60,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     if (!await page.getByRole("button", { name: "更多", exact: true }).isVisible()) await page.locator(".page-reader__viewport").click({ position: { x: 510, y: 300 } });
     if (!await page.getByRole("dialog", { name: "更多阅读选项" }).isVisible()) await page.getByRole("button", { name: "更多", exact: true }).click();
     // Image-mode preparation now automatically saves its verified offline copy.
-    await expect(page.getByRole("status").filter({ hasText: "离线副本已完整校验" })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("region", { name: "本机离线副本", exact: true }).getByRole("status")).toHaveText("可离线使用", { timeout: 30_000 });
     await mkdir("artifacts/verification/137", { recursive: true });
     await page.screenshot({ path: `artifacts/verification/137/${engineName}-images.png` });
     await page.setViewportSize({ width: 320, height: 568 });
