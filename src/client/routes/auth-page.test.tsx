@@ -674,7 +674,7 @@ describe("AuthPage", () => {
       expect(screen.getByRole("heading", { name: "登录完成" })).toHaveFocus();
     });
     expect(screen.getByRole("status")).toHaveTextContent(
-      "该成员关系需要云盘管理员恢复",
+      "该成员关系需要有成员恢复权限的人恢复",
     );
   });
 });

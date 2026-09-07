@@ -80,7 +80,7 @@ export function MembershipList({
   if (!state.memberships.length) {
     return (
       <p className="membership-empty">{missingLastDrive && "上次使用的云盘已不在可访问列表中。"}
-        还没有已加入的云盘。请使用管理员提供的邀请码加入。
+        还没有已加入的云盘。请使用云盘提供的邀请码加入。
       </p>
     );
   }

@@ -156,7 +156,7 @@ async function uploadOne(choirId: string, file: File, signal: AbortSignal): Prom
       return { status: "success", message: "上传完成" };
     }
   } else if (response.status === 401 || response.status === 403) {
-    return { status: "error", message: "登录已失效或没有上传权限，请重新登录或联系云盘管理员。", pause: "permission" };
+    return { status: "error", message: "登录已失效或没有上传权限，请重新登录或联系云盘拥有者。", pause: "permission" };
   } else if (error === "storage_quota_exceeded" && response.status === 409) {
     return { status: "error", message: uploadMessage(response.status, payload), pause: "quota" };
   } else if (response.status === 429) {

@@ -69,7 +69,6 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
   const { access, view: { search, sort }, scores: visibleScores, refreshMessage: searchMessage, joining: busy } = snapshot;
   const [openAdmissionDisplayName, setOpenAdmissionDisplayName] = useState("");
   const [settingsField, setSettingsField] = useState<"name" | "display-name" | null>(null);
-  const [avatarRevision, setAvatarRevision] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [inviteManagementOpen, setInviteManagementOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -212,7 +211,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
 
   return (
     <div className="app-page drive-page">
-      <DriveHeader choirId={choirId} choirName={choir.name} userId={userId} localOnly={Boolean(access.local)} avatarRevision={avatarRevision} onEditDisplayName={access.isMember && !access.local ? () => setSettingsField("display-name") : undefined} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
+      <DriveHeader choirId={choirId} choirName={choir.name} userId={userId} localOnly={Boolean(access.local)} onEditDisplayName={access.isMember && !access.local ? () => setSettingsField("display-name") : undefined} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
         management={managementVisible ? close => <section className="drive-drawer-management">
           <h3>云盘管理</h3>
           <Menu aria-label="云盘管理菜单" disabledKeys={access.local ? ["name", "memberships", "layers", "trash", "invite"] : []} onAction={key => {
@@ -313,12 +312,12 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
               ))}
             </section>
           ) : (
-            <div className="library-empty-state">{search.trim() ? <><p>没有找到包含「{search}」的乐谱。</p><Button className="secondary-button" onPress={() => updateSearch("")}>清除搜索</Button></> : <><p>{access.local ? "本机尚未保存这个云盘的目录或乐谱，请联网后下载。" : "这个云盘还没有乐谱。"}</p><p>{can("uploadFiles") ? "上传第一份 PDF，开始准备排练。" : access.isMember ? "管理员上传乐谱后，会显示在这里。" : "暂时没有可浏览的乐谱，请稍后再来。"}</p>{can("uploadFiles") ? <Button className="secondary-button" onPress={() => setUploadOpen(true)}>上传第一份 PDF</Button> : null}</>}</div>
+            <div className="library-empty-state">{search.trim() ? <><p>没有找到包含「{search}」的乐谱。</p><Button className="secondary-button" onPress={() => updateSearch("")}>清除搜索</Button></> : <><p>{access.local ? "本机尚未保存这个云盘的目录或乐谱，请联网后下载。" : "这个云盘还没有乐谱。"}</p><p>{can("uploadFiles") ? "上传第一份 PDF，开始准备排练。" : access.isMember ? "有上传权限的成员上传乐谱后，会显示在这里。" : "暂时没有可浏览的乐谱，请稍后再来。"}</p>{can("uploadFiles") ? <Button className="secondary-button" onPress={() => setUploadOpen(true)}>上传第一份 PDF</Button> : null}</>}</div>
           )}
         </section>
       </main>
 
-      {settingsField && !access.local && (settingsField === "display-name" || can("editDriveInfo")) && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async value => { if (settingsField === "name") await library.confirmName(value); await refreshAfterMutation(); setAvatarRevision(value => value + 1); setMessage("已保存。"); }} />}
+      {settingsField && !access.local && (settingsField === "display-name" || can("editDriveInfo")) && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async value => { if (settingsField === "name") await library.confirmName(value); await refreshAfterMutation(); setMessage("已保存。"); }} />}
       {visible("uploadFiles") && <UploadFab disabled={Boolean(access.local)} onPress={() => setUploadOpen(true)} />}
 
       {inviteManagementOpen && can("manageInvites") ? (

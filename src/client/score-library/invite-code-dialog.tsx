@@ -1,3 +1,4 @@
+import { ConfirmDialog } from "../settings/confirm-dialog";
 import { Copy, Download, Link as LinkIcon } from "lucide-react";
 import { InviteCard } from "./invite-card";
 import { saveInviteCard } from "./save-invite-card";
@@ -13,6 +14,7 @@ import { JOIN_CODE_LENGTH } from "../components/join-code";
 
 export function InviteCodeDialog({ choirId, choirName, onClose }: { choirId: string; choirName: string; onClose: () => void }) {
   const cardRef = useRef<SVGSVGElement>(null);
+  const [confirmRotation, setConfirmRotation] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [currentCode, setCurrentCode] = useState<string | null>(null);
   const [originalCode, setOriginalCode] = useState("");
@@ -63,7 +65,6 @@ export function InviteCodeDialog({ choirId, choirName, onClose }: { choirId: str
   }
 
   async function rotate() {
-    if (!window.confirm("轮换后当前邀请码、邀请链接和二维码会立即失效。确认继续吗？")) return;
     setBusy(true);
     setMessage(null);
     try {
@@ -107,7 +108,7 @@ export function InviteCodeDialog({ choirId, choirName, onClose }: { choirId: str
   return (
     <ModalOverlay className="modal-overlay" isOpen onOpenChange={(open) => { if (!open) onClose(); }} isDismissable={!busy}>
       <Modal className="app-modal app-modal--compact">
-        <Dialog className="app-dialog drive-management-dialog invite-sharing-dialog">
+        <Dialog className="app-dialog drive-management-dialog invite-sharing-dialog" exitDisabled={busy}>
           <div className="dialog-heading">
             <div><p className="dialog-eyebrow">分享云盘</p><Heading slot="title">邀请加入云盘</Heading></div>
             <Button className="icon-button" aria-label="关闭" isDisabled={busy} onPress={onClose}>×</Button>
@@ -134,9 +135,10 @@ export function InviteCodeDialog({ choirId, choirName, onClose }: { choirId: str
             </>
           ) : !message ? <p role="status">正在读取邀请码…</p> : null}
           <p className="drive-management-copy">轮换后，旧邀请码、邀请链接和二维码将一同失效。</p>
-          <Button className="secondary-button" isDisabled={busy || sharing || !loaded} onPress={() => void rotate()}>
+          <Button className="secondary-button" isDisabled={busy || sharing || !loaded} onPress={() => setConfirmRotation(true)}>
             {busy ? "正在保存…" : "轮换邀请码"}
           </Button>
+          <ConfirmDialog confirmation={confirmRotation ? { title: "轮换邀请码", action: "确认轮换", message: "当前邀请码、邀请链接和二维码会立即失效。请将新邀请方式发给需要加入的人。", onConfirm: rotate } : null} busy={busy} onClose={() => setConfirmRotation(false)} />
           {message ? <p className="library-message" role="status">{message}</p> : null}
           {!loaded && message ? <Button onPress={() => setReload((value) => value + 1)}>重试</Button> : null}
         </Dialog>

@@ -38,14 +38,14 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     });
     await page.goto(`${app.origin}/choirs/visual-choir`);
     await page.getByRole("button", { name: "上传 PDF", exact: true }).waitFor();
-    await page.getByRole("button", { name: "用户菜单", exact: true }).click();
+    await page.getByRole("button", { name: "此云盘设置", exact: true }).click();
     await page.getByRole("menuitem", { name: "我在此云盘的显示名", exact: true }).click();
     await page.getByLabel("我在此云盘的显示名", { exact: true }).getByRole("textbox").fill("新名字");
     await mkdir("artifacts/verification/issue-170", { recursive: true });
     await page.screenshot({ path: `artifacts/verification/issue-170/${name}-display-name.png` });
     await page.getByRole("button", { name: "保存", exact: true }).click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });
-    await expect(page.getByRole("button", { name: "用户菜单", exact: true })).toHaveText("新");
+    await expect(page.getByRole("button", { name: "此云盘设置", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "打开云盘菜单" }).click();
     await page.getByRole("menuitem", { name: "云盘名称", exact: true }).click();
     await page.getByRole("textbox", { name: "云盘名称", exact: true }).fill("周末排练云盘");

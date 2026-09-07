@@ -280,11 +280,9 @@ describe("AppRoutes", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<MemoryRouter initialEntries={["/choirs/choir-1/memberships"]}><AppRoutes /></MemoryRouter>);
     fireEvent.click(await screen.findByRole("heading", { name: "小林" }));
-    const operationFields = screen.getByRole("group", { name: "可以做什么" });
-    const managementFields = screen.getByRole("group", { name: "可以管理哪些授权" });
-    fireEvent.click(within(operationFields).getByRole("checkbox", { name: "上传文件" }));
-    expect(within(managementFields).getByRole("checkbox", { name: "上传文件" })).not.toBeChecked();
-    fireEvent.click(within(managementFields).getByRole("checkbox", { name: "Soprano" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "上传文件：可以操作" }));
+    expect(screen.getByRole("checkbox", { name: "上传文件：可以授权他人" })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "编辑 Soprano：可以授权他人" }));
     fireEvent.click(screen.getByRole("button", { name: "保存 小林 的权限" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/choirs/choir-1/memberships/member/permissions", expect.objectContaining({ method: "PUT", body: JSON.stringify({ expectedRevision: 0, operations: { operations: ["uploadFiles"], sharedLayers: [] }, management: { operations: [], sharedLayers: ["S"] } }) })));
   });
@@ -908,7 +906,6 @@ describe("AppRoutes", () => {
       },
     );
     vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal("confirm", vi.fn(() => true));
 
     render(
       <MemoryRouter initialEntries={["/choirs/choir-1"]}>
@@ -925,6 +922,7 @@ describe("AppRoutes", () => {
     expect(await screen.findByRole("dialog", { name: "邀请加入云盘" })).toBeInTheDocument();
     expect(await screen.findByLabelText("当前有效邀请码")).toHaveTextContent("HGFEDCBA");
     fireEvent.click(screen.getByRole("button", { name: "轮换邀请码" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认轮换" }));
 
     expect(
       await screen.findByText("邀请码已轮换，可随时在这里查看。"),
@@ -963,7 +961,7 @@ describe("AppRoutes", () => {
     );
 
     await screen.findByRole("searchbox", { name: /搜索.*中的乐谱/ });
-    fireEvent.click(await screen.findByRole("button", { name: "用户菜单" }));
+    fireEvent.click(await screen.findByRole("button", { name: "此云盘设置" }));
     expect(await screen.findByRole("menuitem", { name: "阅读偏好" })).toHaveAttribute(
       "href",
       "/choirs/choir-1/preferences",

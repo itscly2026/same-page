@@ -57,7 +57,9 @@ it("downloads once and does not claim offline availability before verified data 
   let finish!: () => void;
   downloadPdf.mockImplementation(() => new Promise<Response>((resolve) => { finish = () => resolve(new Response(bytes)); }));
   const view = render(<OfflineScoreControl score={score} authenticatedUserId="user" authenticatedSessionId="session" />);
-  fireEvent.click(screen.getByRole("button", { name: /下载离线副本：/ }));
+  fireEvent.click(screen.getByRole("button", { name: /离线副本：/ }));
+  expect(downloadPdf).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
   await waitFor(() => expect(downloadPdf).toHaveBeenCalledTimes(1));
   expect(screen.getByRole("status")).toHaveTextContent("正在下载并校验");
   fireEvent.click(screen.getByRole("button", { name: "关闭" }));
@@ -77,7 +79,7 @@ it("opens ready details on tap without downloading again", async () => {
   render(<OfflineScoreControl score={score} authenticatedUserId="user" authenticatedSessionId="session" />);
   fireEvent.click(screen.getByRole("button", { name: /离线副本：.*可离线使用/ }));
   const dialog = await screen.findByRole("dialog", { name: "离线副本" });
-  expect(within(dialog).getByText("已保存在这台设备上，断网也能打开。")).toBeInTheDocument();
+  expect(within(dialog).getByText("保存在这台设备上，供断网时打开。")).toBeInTheDocument();
   expect(downloadPdf).not.toHaveBeenCalled();
   fireEvent.click(within(dialog).getByRole("button", { name: "关闭" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
@@ -87,14 +89,18 @@ it.each(["stale", "invalid"])("makes a %s copy downloadable without a ready mark
   state(kind === "stale" ? verified("v1") : null, kind === "invalid");
   const { container } = render(<OfflineScoreControl score={score} authenticatedUserId="user" authenticatedSessionId="session" />);
   expect(container.querySelector('[data-state="ready"]')).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: /下载.*离线副本：/ }));
+  fireEvent.click(screen.getByRole("button", { name: /离线副本：/ }));
+  expect(downloadPdf).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: /^下载.*离线副本$/ }));
   await waitFor(() => expect(downloadPdf).toHaveBeenCalledTimes(1));
 });
 
 it("exposes download failure and allows retry inside the details", async () => {
   downloadPdf.mockRejectedValueOnce(new Error("network"));
   render(<OfflineScoreControl score={score} authenticatedUserId="user" authenticatedSessionId="session" />);
-  fireEvent.click(screen.getByRole("button", { name: /下载离线副本：/ }));
+  fireEvent.click(screen.getByRole("button", { name: /离线副本：/ }));
+  expect(downloadPdf).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
   await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("下载未完成"));
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "重试下载" }));
   await waitFor(() => expect(downloadPdf).toHaveBeenCalledTimes(2));
@@ -106,7 +112,9 @@ it("explains that a failed update leaves only the older offline version availabl
   state(verified("v1"));
   downloadPdf.mockRejectedValueOnce(new Error("network"));
   render(<OfflineScoreControl score={score} authenticatedUserId="user" authenticatedSessionId="session" />);
-  fireEvent.click(screen.getByRole("button", { name: /下载新版离线副本：/ }));
+  fireEvent.click(screen.getByRole("button", { name: /离线副本：/ }));
+  expect(downloadPdf).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "下载新版离线副本" }));
   await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("旧版 PDF 仍可离线使用，当前版本尚未准备好"));
 });
 
@@ -114,7 +122,9 @@ it("keeps availability unknown when download fails before inspection completes",
   vi.mocked(useOfflineScore).mockReturnValue(undefined);
   downloadPdf.mockRejectedValueOnce(new Error("network"));
   const view = render(<OfflineScoreControl score={score} authenticatedUserId="user" authenticatedSessionId="session" />);
-  fireEvent.click(screen.getByRole("button", { name: /下载离线副本：/ }));
+  fireEvent.click(screen.getByRole("button", { name: /离线副本：/ }));
+  expect(downloadPdf).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
   await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("尚未确认本机副本"));
   expect(screen.getByRole("status")).not.toHaveTextContent("尚不可离线使用");
   state(verified("v1"));
@@ -127,7 +137,9 @@ it("list download continues through navigation and the reader shares its prepara
   let finish!: () => void;
   downloadPdf.mockImplementation(() => new Promise<Response>(resolve => { finish = () => resolve(new Response(bytes)); }));
   const view = render(<OfflineScoreControl score={score} authenticatedUserId="user" authenticatedSessionId="session" />);
-  fireEvent.click(screen.getByRole("button", { name: /下载离线副本：/ }));
+  fireEvent.click(screen.getByRole("button", { name: /离线副本：/ }));
+  expect(downloadPdf).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
   await waitFor(() => expect(downloadPdf).toHaveBeenCalledOnce());
   view.unmount();
   const reader = new ReaderSession(workspace, "user");
@@ -150,6 +162,7 @@ it("clicking download in the list retains an automatic reader task after the rea
     render(<OfflineScoreControl score={score} authenticatedUserId="user" authenticatedSessionId="session" />);
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("正在下载"));
     fireEvent.click(screen.getByRole("button", { name: /离线副本：/ }));
+    fireEvent.click(screen.getByRole("button", { name: "继续下载（切换页面不中断）" }));
     reader.dispose();
     finish();
     await vi.waitFor(async () => expect((await findVerifiedOfflineScore(workspace))?.versionId).toBe("v2"));
@@ -160,7 +173,9 @@ it("clicking download in the list retains an automatic reader task after the rea
 it("a newly confirmed session of the same user can retry from the mounted list", async () => {
   downloadPdf.mockRejectedValueOnce(new Error("network"));
   const view = render(<OfflineScoreControl score={score} authenticatedUserId="user" authenticatedSessionId="old" />);
-  fireEvent.click(screen.getByRole("button", { name: /下载离线副本：/ }));
+  fireEvent.click(screen.getByRole("button", { name: /离线副本：/ }));
+  expect(downloadPdf).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "下载离线副本" }));
   await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("下载未完成"));
   revokeOfflinePreparationIdentity("user");
   view.rerender(<OfflineScoreControl score={score} authenticatedUserId="user" authenticatedSessionId="new" />);

@@ -1,3 +1,4 @@
+import { ReaderNoteSharing } from "../reader/reader-note-sharing";
 import { offlinePreparationDescription } from "../offline/offline-score-status";
 import { ExportDialog } from "../reader/export-dialog";
 import { scoreDisplayName } from "../../shared/score-display-name";
@@ -80,7 +81,7 @@ import {
 import type { DiagnosticReader } from "../../shared/diagnostic-report";
 import { DiagnosticReportDialog, DiagnosticReportModal } from "../diagnostics/diagnostic-report-dialog";
 
-type ReaderPanel = "layers" | "pages";
+type ReaderPanel = "layers" | "pages" | "sharing";
 
 const ReaderEditingControls = lazy(() =>
   import("../reader/reader-editing-controls").then((module) => ({
@@ -614,10 +615,11 @@ function ReaderPageContent() {
                 </Button>
               </div>
               </section>
-              <section aria-label="本机离线副本"><h2>本机离线副本 · {reader.snapshot.mode === "pdf" ? "PDF" : "图片"}</h2>
+              <section aria-label="本机离线副本"><h2>离线使用</h2>
               <p className="reader-more-menu__status" role="status">
                 {offlinePreparationDescription(preparation, offlineStatus ? { record: offline, invalid: offlineStatus.invalid } : null, score.currentVersion.id, reader.snapshot.mode)}
               </p>
+              {(!offlineStatus || !offline || offlineStatus.invalid || hasNewOfflineVersion || preparation.phase === "failed" || downloading || (offline.imageManifest ? "images" : "pdf") !== reader.snapshot.mode) && (
               <Button
                 isDisabled={(preparation.phase === "preparing" && preparation.intent === "explicit") || cloudState === "trashed"}
                 onPress={() => void downloadOffline()}
@@ -625,23 +627,29 @@ function ReaderPageContent() {
                 <Download aria-hidden="true" size={18} />
                 {downloading ? preparation.phase === "preparing" && preparation.intent === "automatic" ? "继续下载（切换页面不中断）" : "正在下载并校验…" : preparation.phase === "failed" ? "重试下载离线副本" : hasNewOfflineVersion ? "下载新版离线副本" : "下载离线副本"}
               </Button>
-              {downloadMessage && preparation.phase !== "failed" && <p className="reader-more-menu__status" role="status">{downloadMessage}</p>}
+              )}
+              {downloadMessage && preparation.phase === "idle" && <p className="reader-more-menu__status" role="status">{downloadMessage}</p>}
               </section>
               <section aria-label="批注保存与同步"><h2>批注保存与同步</h2>
                 <p className="reader-more-menu__status" data-kind={syncStatus.kind} role="status">{syncStatus.message}</p>
+                {(syncStatus.kind === "failed" || syncStatus.kind === "pending") && (
                 <Button className="reader-sync-action" isDisabled={syncing || syncActivity === "running" || cloudState === "trashed"} onPress={() => void manualSync()}>
                   <RefreshCw aria-hidden="true" size={18} />
                   {syncing || syncActivity === "running" ? "同步中…" : syncStatus.kind === "failed" ? "重试同步" : "立即同步"}
                 </Button>
+                )}
               </section>
               </>}
-              <section aria-label="原文件"><h2>原文件</h2>
+              {layers.some(layer => layer.kind === "personal" && layer.canEdit && layer.canShare) && <section aria-label="我的笔记"><h2>我的笔记</h2>
+                <Button onPress={() => navigation.afterEditing(() => { setMoreOpen(false); setReaderPanel("sharing"); })}>分享我的笔记</Button>
+              </section>}
+              <section aria-label="导出"><h2>导出</h2>
               <Button onPress={() => navigation.afterEditing(() => { setMoreOpen(false); setExportOpen(true); })}>导出 PDF</Button>
               </section>
-              <section aria-label="阅读帮助"><h2>帮助</h2>
+              <details className="reader-help"><summary>阅读帮助</summary>
                 <p className="reader-more-menu__status">轻点中央显示工具；点按两侧或左右滑动翻页。编辑时锁定当前页，点勾号完成后继续翻页。批注同步与离线副本分别准备。</p>
                 <Button onPress={() => { setMoreOpen(false); setDiagnosticOpen(true); }}>故障诊断</Button>
-              </section>
+              </details>
             </Dialog>
             </Popover>
           ) : null}
@@ -687,24 +695,24 @@ function ReaderPageContent() {
         </aside>
       ) : null}
       {exportOpen && workspace && <ExportDialog layers={layers} workspace={workspace} source={document} versionId={score.currentVersion.id} fileName={score.fileName} authenticatedUserId={identity.authenticatedUserId} onClose={() => setExportOpen(false)} />}
-      {readerPanel === "layers" ? (
+      {readerPanel === "layers" || readerPanel === "sharing" ? (
         <ModalOverlay className="reader-panel-backdrop" isOpen isDismissable
           onOpenChange={(open) => { if (!open) setReaderPanel(null); }}>
           <Modal className="reader-panel reader-layers-dialog">
-            <Dialog aria-label="看哪些批注" className="reader-layers-content">
+            <Dialog aria-label={readerPanel === "sharing" ? "分享我的笔记" : "看哪些批注"} className="reader-layers-content">
               <header className="reader-panel__header">
-                <strong>看哪些批注</strong>
+                <strong>{readerPanel === "sharing" ? "分享我的笔记" : "看哪些批注"}</strong>
                 <Button aria-label="关闭批注显示" onPress={() => setReaderPanel(null)}>
                   关闭
                 </Button>
               </header>
               <Suspense fallback={<p role="status">正在准备图层…</p>}>
-                <ReaderLayerPanel
+                {readerPanel === "sharing" ? <ReaderNoteSharing key={workspace.scopeKey} workspace={workspace} layer={layers.find(layer => layer.kind === "personal" && layer.canEdit)} /> : <ReaderLayerPanel
                   key={workspace.scopeKey}
                   workspace={workspace}
                   layers={layers}
                   signedIn={Boolean(identity.authenticatedUserId)}
-                />
+                />}
               </Suspense>
             </Dialog>
           </Modal>

@@ -65,7 +65,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
     setPending(false);
   };
 
-    const changePersonal = async (path: string, body: { sharing: boolean } | { subscribed: boolean }, layer: AnnotationLayerSummary) => {
+    const changePersonal = async (path: string, body: { subscribed: boolean }, layer: AnnotationLayerSummary) => {
     if (busy.current) return;
     busy.current = true; setPending(true); setFailed([]); setMessage("正在保存…");
     try {
@@ -132,18 +132,12 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
             <span aria-hidden="true" className="layer-card__separator">·</span>我的笔记</strong></div>
           <span className="reader-layer-help">始终显示<br />{personalLayer.sharing ? "云盘成员可见" : "仅自己可见"}</span>
         </div>
-        {personalLayer.canShare ? <div className="reader-sharing-control">
-          <p>分享后，这份谱的现有个人笔记及后续修改对云盘成员可见，只有你能编辑。其他乐谱仍保持原来的分享设置。</p>
-          <label><input type="checkbox" checked={personalLayer.sharing ?? false} disabled={pending}
-            onChange={event => void changePersonal("personal-layer/sharing", { sharing: event.target.checked }, personalLayer)} />向云盘成员分享这份谱的个人层</label>
-          {personalLayer.sharing ? <p>取消分享会停止在线访问；已下载的离线笔记在对方设备重新联网后移除。</p> : null}
-        </div> : null}
         </article>
       </div> : null}
       {publishedLayers.length ? <div className="layer-section"><h3>成员分享</h3>
-        <p className="reader-layer-help">订阅后显示作者的最新笔记，仅供阅读。</p>
+        <p className="reader-layer-help">显示作者的最新笔记，仅供阅读。</p>
         {publishedLayers.map(layer => <label className="reader-layer-toggle" key={layer.id}>
-          <input type="checkbox" aria-label={`订阅 ${layer.name}`} checked={layer.subscribed} disabled={pending}
+          <input type="checkbox" aria-label={`显示 ${layer.name}`} checked={layer.subscribed} disabled={pending}
             onChange={event => void changePersonal(`personal-layers/${layer.id}/subscription`, { subscribed: event.target.checked }, layer)} />
           <span className="layer-color-preview" style={{ background: layer.displayColor }} />{layer.name}
         </label>)}

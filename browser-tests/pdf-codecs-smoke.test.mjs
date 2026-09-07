@@ -32,7 +32,7 @@ for (const engine of [chromium, webkit]) {
       await viewport.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
     }
     await page.getByRole("button", { name: "更多", exact: true }).click();
-    await expect(page.getByRole("status").filter({ hasText: "离线副本已完整校验" })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("region", { name: "本机离线副本", exact: true }).getByRole("status")).toHaveText("可离线使用", { timeout: 30_000 });
     await page.goto(`${fixture.origin}/choirs/${fixture.choirId}`, { waitUntil: "domcontentloaded" });
     await page.getByRole("button", { name: /^离线副本：/ }).click();
     await page.getByRole("status").filter({ hasText: /^可离线使用$/ }).waitFor();

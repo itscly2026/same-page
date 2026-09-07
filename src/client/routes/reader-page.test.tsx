@@ -1,3 +1,4 @@
+import { useOfflineScore } from "../offline/use-offline-score";
 import { noCapabilities } from "../../shared/drive-permissions";
 import Dexie from "dexie";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
@@ -178,7 +179,7 @@ vi.mock("../offline/offline-score-verification", async (importOriginal) => {
 // Reactive storage verification is exercised with its own real IndexedDB fixtures.
 vi.mock("../offline/use-offline-score", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../offline/use-offline-score")>();
-  return { ...actual, useOfflineScore: () => undefined };
+  return { ...actual, useOfflineScore: vi.fn<typeof actual.useOfflineScore>(() => undefined) };
 });
 
 vi.mock("../annotations/annotation-state", async (importOriginal) => {
@@ -327,6 +328,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       ),
     );
     vi.clearAllMocks();
+    vi.mocked(useOfflineScore).mockReturnValue(undefined);
     vi.mocked(loadPdfDocument).mockReset().mockImplementation((_source, versionId) =>
       ({
         promise: Promise.resolve({
@@ -2193,7 +2195,8 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(screen.getByRole("button", { name: "更多" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.queryByRole("button", { name: "连续滚动" })).not.toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole("region", { name: "阅读帮助" })).getByRole("button", { name: "故障诊断" }));
+    fireEvent.click(screen.getByText("阅读帮助", { selector: "summary" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "更多阅读选项" })).getByRole("button", { name: "故障诊断" }));
     const report = screen.getByLabelText<HTMLTextAreaElement>("可发送给支持人员的诊断内容");
     expect(JSON.parse(report.value).reader.interactionMode).toBe("editing");
     fireEvent.click(within(screen.getByRole("dialog", { name: "故障诊断" })).getByRole("button", { name: "关闭" }));
@@ -2327,6 +2330,7 @@ it("keeps a single exit while the PDF never settles", async () => {
   it("marks an offline copy only after app shell, layer and annotation snapshot verification", async () => {
     vi.mocked(activateVerifiedOfflineScore).mockImplementationOnce(async (record) => {
       vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({ ...record, active: 1, verifiedAt: 1 });
+      vi.mocked(useOfflineScore).mockReturnValue({ scopeKey: record.scopeKey, record: { ...record, active: 1, verifiedAt: 1 }, invalid: false });
     });
     vi.spyOn(crypto.subtle, "digest").mockResolvedValue(
       new Uint8Array(32).fill(0xaa).buffer,
@@ -2385,7 +2389,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     await screen.findByLabelText("翻页阅读");
     openMoreMenu();
     expect(
-      await screen.findByText("离线副本已完整校验，可以离线打开。"),
+      await screen.findByText("可离线使用"),
     ).toBeInTheDocument();
     expect(activateVerifiedOfflineScore).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2586,7 +2590,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       "status",
     );
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
-    expect(screen.getByRole("button", { name: "立即同步" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "立即同步" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "下载离线副本" })).toBeDisabled();
     expect(await localDatabase.annotationOutbox.count()).toBe(1);
     expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).endsWith("/annotations/push"))).toBe(false);

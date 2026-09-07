@@ -399,7 +399,7 @@ export default function AuthPage() {
   const finishAuthentication = useCallback(async () => {
     const lifecycle = await diagnosticFetch("/api/user/lifecycle").then(async (response) => response.ok ? response.json() : null).catch(() => null);
     if (lifecycle?.deletion || lifecycle?.reauthenticated) {
-      await navigate("/user");
+      await navigate(lifecycle.deletion ? "/user" : "/user?view=delete");
       return;
     }
     const guestResponse = await diagnosticFetch("/api/guest/session").catch(() => null);
@@ -427,7 +427,7 @@ export default function AuthPage() {
       setView("join-result");
       setMessage(
         joinStateResponse?.status === 403
-          ? "已经登录，但该成员关系需要云盘管理员恢复。"
+          ? "已经登录，但该成员关系需要有成员恢复权限的人恢复。"
           : "已经登录，但暂时无法继续加入云盘。",
       );
       return;
@@ -500,7 +500,7 @@ export default function AuthPage() {
     if (!response?.ok) {
       setMessage(
         response?.status === 403
-          ? "该成员关系需要云盘管理员恢复。"
+          ? "该成员关系需要有成员恢复权限的人恢复。"
           : "暂时无法加入这个云盘，请稍后再试。",
       );
       return;
