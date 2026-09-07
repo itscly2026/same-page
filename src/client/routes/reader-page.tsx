@@ -1,3 +1,4 @@
+import { offlinePreparationDescription } from "../offline/offline-score-status";
 import { ExportDialog } from "../reader/export-dialog";
 import { scoreDisplayName } from "../../shared/score-display-name";
 import { BackButton } from "../navigation/back-button";
@@ -56,7 +57,7 @@ import {
   resolveLocalWorkspace,
   type LocalWorkspace,
 } from "../platform/local-workspace";
-import { offlineScoreLabel, offlineDownloadFailure, useOfflineScore } from "../offline/use-offline-score";
+import { useOfflineScore } from "../offline/use-offline-score";
 import { driveCacheOwnerKey } from "../score-library/drive-library-cache";
 import { recordScoreOpened } from "../score-library/library-view-state";
 import {
@@ -195,8 +196,8 @@ function ReaderPageContent() {
   const [exportOpen, setExportOpen] = useState(false);
   const [visibleDisplay, setVisibleDisplay] = useState<ScoreDocument | null>(null);
   const [failedDisplay, setFailedDisplay] = useState<ScoreDocument | null>(null);
-  const reader = useReaderSession(workspace, identity.authenticatedUserId);
-  const { score, document, offline: loadedOffline, cloudState, downloading, downloadMessage } = reader.snapshot;
+  const reader = useReaderSession(workspace, identity.authenticatedUserId, identity.authenticatedSessionId);
+  const { score, document, offline: loadedOffline, cloudState, downloading, downloadMessage, preparation } = reader.snapshot;
   const documentScopeKey = document ? workspace?.scopeKey ?? null : null;
   const offlineStatus = useOfflineScore(workspace);
   const offline = offlineStatus?.scopeKey === workspace?.scopeKey ? offlineStatus?.record ?? null : loadedOffline;
@@ -615,16 +616,16 @@ function ReaderPageContent() {
               </section>
               <section aria-label="本机离线副本"><h2>本机离线副本 · {reader.snapshot.mode === "pdf" ? "PDF" : "图片"}</h2>
               <p className="reader-more-menu__status" role="status">
-                {downloading ? "正在下载并校验…" : downloadMessage?.includes("未完成") ? (!offlineStatus ? "离线下载未完成，尚未确认本机副本，请重试校验。" : offlineDownloadFailure(offline, score.currentVersion.id, offlineStatus.invalid, reader.snapshot.mode)) : !offlineStatus ? "正在校验本机副本…" : offlineScoreLabel(offline, score.currentVersion.id, offlineStatus.invalid, reader.snapshot.mode)}
+                {offlinePreparationDescription(preparation, offlineStatus ? { record: offline, invalid: offlineStatus.invalid } : null, score.currentVersion.id, reader.snapshot.mode)}
               </p>
               <Button
-                isDisabled={downloading || cloudState === "trashed"}
+                isDisabled={(preparation.phase === "preparing" && preparation.intent === "explicit") || cloudState === "trashed"}
                 onPress={() => void downloadOffline()}
               >
                 <Download aria-hidden="true" size={18} />
-                {downloading ? "正在下载并校验…" : downloadMessage?.includes("未完成") ? "重试下载离线副本" : hasNewOfflineVersion ? "下载新版离线副本" : "下载离线副本"}
+                {downloading ? preparation.phase === "preparing" && preparation.intent === "automatic" ? "继续下载（切换页面不中断）" : "正在下载并校验…" : preparation.phase === "failed" ? "重试下载离线副本" : hasNewOfflineVersion ? "下载新版离线副本" : "下载离线副本"}
               </Button>
-              {downloadMessage && !downloadMessage.includes("未完成") && <p className="reader-more-menu__status" role="status">{downloadMessage}</p>}
+              {downloadMessage && preparation.phase !== "failed" && <p className="reader-more-menu__status" role="status">{downloadMessage}</p>}
               </section>
               <section aria-label="批注保存与同步"><h2>批注保存与同步</h2>
                 <p className="reader-more-menu__status" data-kind={syncStatus.kind} role="status">{syncStatus.message}</p>

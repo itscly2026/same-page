@@ -1,6 +1,9 @@
+import { useEffect, useRef, useState } from "react";
+import type { ScoreSummary } from "../../shared/scores";
+import { OfflinePreparation, type OfflinePreparationState } from "./offline-score";
 import { useLiveQuery } from "dexie-react-hooks";
 import { localDatabase, type OfflineScoreRecord } from "../platform/local-database";
-import { isLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
+import { createLocalWorkspace, isLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
 import { inspectOfflineScore } from "./offline-score-verification";
 
 export function useOfflineScore(workspace: LocalWorkspace | null) {
@@ -21,18 +24,18 @@ export function useOfflineScore(workspace: LocalWorkspace | null) {
   }, [workspace?.scopeKey]);
 }
 
-export function offlineScoreLabel(record: OfflineScoreRecord | null, currentVersionId: string, invalid = false, mode?: "pdf" | "images") {
-  if (invalid) return "本地副本不可用，请重新下载";
-  if (!record) return "尚未下载离线副本";
-  if (mode && (record.imageManifest ? "images" : "pdf") !== mode) return `当前显示方式尚未下载 · ${record.imageManifest ? "图片" : "PDF"}副本可离线使用`;
-  return record.versionId === currentVersionId ? "可离线使用" : "旧版可离线使用 · 新版待下载";
-}
-
-export function offlineDownloadFailure(record: OfflineScoreRecord | null, currentVersionId: string, invalid = false, mode?: "pdf" | "images") {
-  const prefix = "离线下载未完成。";
-  if (invalid || !record) return `${prefix}当前乐谱尚不可离线使用，请联网重试。`;
-  const format = record.imageManifest ? "图片" : "PDF";
-  if (record.versionId !== currentVersionId) return `${prefix}旧版 ${format} 仍可离线使用，当前版本尚未准备好。`;
-  if (mode && (record.imageManifest ? "images" : "pdf") !== mode) return `${prefix}${format} 副本仍可离线使用，当前显示方式尚未准备好。`;
-  return `${prefix}当前 ${format} 仍可离线使用，现有副本不受影响。`;
+export function useOfflinePreparation(workspace: LocalWorkspace | null, score: ScoreSummary, authenticatedUserId: string | null, sessionId: string | null) {
+  const ownerKey = workspace?.ownerKey;
+  const key = JSON.stringify([workspace?.scopeKey, score.currentVersion.id, authenticatedUserId, sessionId]);
+  const current = useRef<OfflinePreparation | null>(null);
+  const [observed, setObserved] = useState<{ key: string; state: OfflinePreparationState } | null>(null);
+  useEffect(() => {
+    if (!ownerKey) return;
+    const preparation = new OfflinePreparation(createLocalWorkspace(ownerKey, score.choirId, score.id), score, "pdf", authenticatedUserId);
+    current.current = preparation;
+    const unsubscribe = preparation.subscribe(() => setObserved({ key, state: preparation.getSnapshot() }));
+    return () => { unsubscribe(); preparation.dispose(); current.current = null; };
+  }, [ownerKey, score, authenticatedUserId, key]);
+  return { state: observed?.key === key ? observed.state : { phase: "idle" } as OfflinePreparationState,
+    prepare: () => current.current?.prepare("explicit") };
 }
