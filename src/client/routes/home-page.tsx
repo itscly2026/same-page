@@ -4,7 +4,7 @@ import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { type FormEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   Button,
-  Dialog,
+
   Form,
   Heading,
   Input,
@@ -13,6 +13,7 @@ import {
   ModalOverlay,
   TextField,
 } from "react-aria-components";
+import { Dialog } from "../navigation/overlays";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { isInternalAuthEmail } from "../../shared/auth";
@@ -33,11 +34,7 @@ import {
   clearGuestSession,
   clearPreviewGuestSession,
 } from "../auth/preview-guest-session";
-import {
-  clearPrivateLocalDataAfterLogout,
-  getLogoutLocalSummary,
-  type LogoutLocalSummary,
-} from "../auth/logout-local-data";
+import { useLogout } from "../auth/logout-context";
 import { AppHeader } from "../components/app-header";
 import { JoinCodeField } from "../components/join-code-field";
 import { readInviteLink } from "../components/invite-link";
@@ -48,7 +45,6 @@ import {
   rememberDriveSummary,
 } from "../score-library/drive-library-cache";
 
-import { clearLibraryDeviceState } from "../score-library/library-view-state";
 import { MembershipList } from "../score-library/membership-list";
 
 type JoinStep =
@@ -109,10 +105,7 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
   const [submitting, setSubmitting] = useState(false);
   const [clearingGuestSession, setClearingGuestSession] = useState(false);
   const [joinMessage, setJoinMessage] = useState<string | null>(null);
-  const [pageMessage, setPageMessage] = useState<string | null>(null);
-  const [logoutSummary, setLogoutSummary] =
-    useState<LogoutLocalSummary | null>(null);
-  const [loggingOut, setLoggingOut] = useState(false);
+  const logout = useLogout();
   const userId = session.data?.user.id;
   useEffect(() => {
     if (session.isPending || userId) return;
@@ -270,29 +263,6 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
     }
   };
 
-  const finishLogout = async () => {
-    if (!navigator.onLine) {
-      setPageMessage("请联网后退出，以确保服务端会话同时失效。");
-      setLogoutSummary(null);
-      return;
-    }
-
-    setLoggingOut(true);
-    try {
-      const result = await authClient.signOut();
-      if (result.error) throw new Error("sign_out_failed");
-      await clearPreviewGuestSession();
-      await clearPrivateLocalDataAfterLogout();
-      clearLibraryDeviceState();
-      setLogoutSummary(null);
-    } catch {
-      setPageMessage("退出未完成，本机数据没有清除。请重试。");
-      setLogoutSummary(null);
-    } finally {
-      setLoggingOut(false);
-    }
-  };
-
   return (
     <div className="marketing-page">
       <AppHeader
@@ -305,7 +275,7 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
               <Link className="header-action" to="/user">个人设置</Link>
               <Button
                 className="header-action"
-                onPress={() => void getLogoutLocalSummary().then(setLogoutSummary)}
+                onPress={() => void logout.request()}
               >
                 退出登录
               </Button>
@@ -322,8 +292,7 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
         <main className="page-shell my-drives-page">
           <div className="my-drives-heading"><div><h1>我已加入的云盘</h1><p>选择云盘，继续排练。</p></div><Button className="secondary-button" onPress={() => setJoinOpen(true)}>加入新云盘</Button></div>
           <MembershipList userId={userId} autoEnter={!joinOpen && searchParams.size === 0} />
-          {pageMessage ? <p role="alert">{pageMessage}</p> : null}
-        </main>
+            </main>
       ) : session.isPending ? <main className="page-shell"><p role="status">正在加载…</p></main> : <main className="marketing-content">
         <section className="marketing-hero" aria-labelledby="page-title">
           <div className="marketing-hero__content">
@@ -359,11 +328,6 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
                 </Link>
               ) : null}
             </div>
-            {pageMessage ? (
-              <p className="form-message page-message" role="alert">
-                {pageMessage}
-              </p>
-            ) : null}
           </div>
           <figure className="hero-reader-preview">
             <img src={readerPreview} alt="乐谱批注示例：全体排练要求与个人换气提醒显示在同一份谱上" width={720} height={920} fetchPriority="high" />
@@ -507,49 +471,6 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
         </Modal>
       </ModalOverlay>
 
-      <ModalOverlay
-        className="modal-overlay"
-        isOpen={Boolean(logoutSummary)}
-        onOpenChange={(open) => {
-          if (!open) setLogoutSummary(null);
-        }}
-        isDismissable={!loggingOut}
-      >
-        <Modal className="app-modal app-modal--compact">
-          <Dialog className="app-dialog">
-            <Heading slot="title">确认退出登录</Heading>
-            {logoutSummary?.pendingOperations ||
-            logoutSummary?.conflicts ||
-            logoutSummary?.syncErrors ? (
-              <p className="dialog-copy">
-                本机还有 {logoutSummary?.pendingOperations ?? 0} 项待同步操作和{" "}
-                {logoutSummary?.conflicts ?? 0} 项本地冲突、
-                {logoutSummary?.syncErrors ?? 0} 项同步异常。继续会永久丢弃这些内容。
-              </p>
-            ) : (
-              <p className="dialog-copy">
-                退出后会清除本机个人层、编辑权限和用户偏好；已下载的共享内容可以保留。
-              </p>
-            )}
-            <div className="dialog-actions">
-              <Button className="secondary-button" onPress={() => setLogoutSummary(null)}>
-                返回处理
-              </Button>
-              <Button
-                className="primary-button"
-                isDisabled={loggingOut}
-                onPress={() => void finishLogout()}
-              >
-                {logoutSummary?.pendingOperations ||
-                logoutSummary?.conflicts ||
-                logoutSummary?.syncErrors
-                  ? "丢弃并退出"
-                  : "退出并清除"}
-              </Button>
-            </div>
-          </Dialog>
-        </Modal>
-      </ModalOverlay>
     </div>
   );
 }

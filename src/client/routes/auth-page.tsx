@@ -1,3 +1,4 @@
+import { BackButton } from "../navigation/back-button";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import {
   type FormEvent,
@@ -14,7 +15,7 @@ import {
   Label,
   TextField,
 } from "react-aria-components";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import {
   AUTH_OTP_COOLDOWN_SECONDS,
@@ -778,9 +779,9 @@ export default function AuthPage() {
           title: "登录完成",
           description: "你已经登录，但本次加入云盘没有完成。",
           form: (
-            <Link className="primary-link auth-primary-link" to="/">
+            <BackButton className="primary-link auth-primary-link" to="/">
               返回首页
-            </Link>
+            </BackButton>
           ),
         };
     }
@@ -790,9 +791,9 @@ export default function AuthPage() {
     <div className="app-page auth-page">
       <AppHeader
         actions={
-          <Link className="header-action" to="/">
+          <BackButton className="header-action" to="/">
             返回首页
-          </Link>
+          </BackButton>
         }
       />
       <main className="auth-layout">

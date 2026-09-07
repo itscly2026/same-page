@@ -21,9 +21,8 @@ export function sharedLayerPrefix(slot: string | null | undefined) {
 }
 
 export function sharedLayerDisplayName(slot: string | null | undefined, name: string) {
-  const names = { E: "全体", S: "女高音", A: "女低音", T: "男高音", B: "男低音" };
-  const original = defaultSharedLayers.find(layer => layer.slot === slot && layer.name === name);
-  return original ? names[original.slot as keyof typeof names] : name;
+  void slot;
+  return name;
 }
 
 export function sharedLayerLabel(slot: string | null | undefined, name: string, separator = " · ") {

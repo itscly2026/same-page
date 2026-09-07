@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { OutboxRecoveryCoordinator } from "../annotations/outbox-recovery-coordinator";
 import { useApplicationIdentity } from "../auth/application-identity";
@@ -51,7 +51,7 @@ export function LocalIdentityObserver() {
     return () => controller.abort();
   }, [identityState.activation, userId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (readerIdentity.current === identity.localUserId) return;
     readerIdentity.current = identity.localUserId;
     clearDiagnostics();

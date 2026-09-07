@@ -1,3 +1,4 @@
+import { BackButton } from "../navigation/back-button";
 import { sharedLayerLabel } from "../../shared/annotations";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useRef, useState } from "react";
@@ -104,9 +105,9 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
 
   return (
     <div className="app-page">
-      <AppHeader actions={<Link className="header-action" to={colors ? `/choirs/${choirId}/preferences` : `/choirs/${choirId}`}>
+      <AppHeader actions={<BackButton className="header-action" to={colors ? `/choirs/${choirId}/preferences` : `/choirs/${choirId}`}>
         {colors ? "返回阅读偏好" : "返回云盘"}
-      </Link>} />
+      </BackButton>} />
       <main className="page-shell settings-page settings-ux reading-preferences">
         <header className="settings-heading">
           <h1>{colors ? "批注颜色" : "阅读偏好"}</h1>

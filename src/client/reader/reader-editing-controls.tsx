@@ -1,7 +1,8 @@
 import { sharedLayerLabel, sharedLayerDisplayName, sharedLayerPrefix } from "../../shared/annotations";
 import { useState } from "react";
 import { ChevronDown, Eraser, Lock, Pencil, Redo2, Type, Undo2, X } from "lucide-react";
-import { Button, Dialog, DialogTrigger, Popover } from "react-aria-components";
+import { Button,  DialogTrigger, Popover } from "react-aria-components";
+import { Dialog } from "../navigation/overlays";
 
 import {
   type AnnotationLayerSummary,

@@ -1,4 +1,3 @@
-import { imageManifestSchema } from "../../shared/score-images";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ReaderSession } from "./reader-session";
 import { localDatabase } from "../platform/local-database";
@@ -82,7 +81,7 @@ it("opens server page geometry in image mode without starting PDF.js", async () 
   }));
   const before = vi.mocked(loadPdfDocument).mock.calls.length;
   const session = new ReaderSession(workspace, null);
-  session.selectMode("images");
+  session.recoverDisplay(Object.assign(new Error("decode failure"), { name: "InvalidPDFException" }));
   session.open();
   try {
     await vi.waitFor(() => expect(session.getSnapshot().status).toBe("ready"));
@@ -91,29 +90,11 @@ it("opens server page geometry in image mode without starting PDF.js", async () 
     expect(page.getViewport({ scale: 1 })).toMatchObject({ width: 800, height: 600 });
     expect(vi.mocked(loadPdfDocument).mock.calls.length).toBe(before);
     await vi.waitFor(() => expect(session.getSnapshot().downloading).toBe(false));
-    const original = session.getSnapshot().document!;
-    session.confirmDisplay(original);
-    const offlineModule = await import("../offline/offline-score");
-    let completeDownload!: (value: Awaited<ReturnType<typeof offlineModule.prepareOfflineScore>>) => void;
-    const prepare = vi.spyOn(offlineModule, "prepareOfflineScore").mockImplementationOnce(() => new Promise(resolve => { completeDownload = resolve; }));
-    const download = session.download();
-    await vi.waitFor(() => expect(prepare).toHaveBeenCalled());
-    let rejectPdf!: (reason: Error) => void;
-    vi.mocked(loadPdfDocument).mockReturnValueOnce({ promise: new Promise((_resolve, reject) => { rejectPdf = reject; }), destroy: vi.fn().mockResolvedValue(undefined) });
-    session.selectMode("pdf");
-    expect(session.getSnapshot().document).toBe(original);
-    expect(session.getSnapshot().status).toBe("ready");
-    // A zoom/page repaint of the retained document must not release rollback.
-    session.confirmDisplay(original);
-    completeDownload({ ...workspace, key: "verified-image-copy", versionId: "image-version", fileName: "图片.pdf", sha256: "a".repeat(64), pageCount: 1, blob: new Blob(), active: 1, verifiedAt: 1,
-      imageManifest: imageManifestSchema.parse(manifest), annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 } });
-    await download;
-    expect(session.getSnapshot().downloadMessage ?? "").not.toContain("可以离线打开");
-    await vi.waitFor(() => expect(rejectPdf).toBeDefined());
-    rejectPdf(new Error("decode failed"));
-    await vi.waitFor(() => expect(session.getSnapshot().mode).toBe("images"));
-    expect(session.getSnapshot().document).toBe(original);
-    expect(session.getSnapshot().modeMessage).toContain("已保留原谱面");
+    const readable = session.getSnapshot().document;
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    expect(session.retryPdf()).toBe(true);
+    expect(session.getSnapshot().document).toBe(readable);
+    expect(session.getSnapshot()).toMatchObject({ mode: "images", status: "ready", modeMessage: expect.stringContaining("当前副本仍可使用") });
   } finally { session.dispose(); }
 });
 
@@ -126,7 +107,7 @@ it("ignores a late PDF when selecting images before version confirmation", async
   session.open();
   try {
     await vi.waitFor(() => expect(finish).toBeDefined());
-    session.selectMode("images");
+    session.recoverDisplay(Object.assign(new Error("decode failure"), { name: "InvalidPDFException" }));
     // Only document identity is consumed; PDF.js is the external engine boundary.
     finish({ document: { numPages: 99 } as Awaited<ReturnType<typeof loadPdfDocument>["promise"]>["document"], versionId: "late-version" });
     await new Promise(resolve => setTimeout(resolve, 30));
@@ -134,7 +115,7 @@ it("ignores a late PDF when selecting images before version confirmation", async
   } finally { session.dispose(); }
 });
 
-it("keeps automatic recovery temporary and persists only an explicit choice", async () => {
+it("keeps automatic recovery temporary across subsequent opens", async () => {
   const workspace = await resolveLocalWorkspace({ authenticatedUserId: null, choirId: "automatic-mode-drive", scoreId: "score" });
   const values = new Map<string, string>();
   vi.stubGlobal("localStorage", { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
@@ -142,14 +123,14 @@ it("keeps automatic recovery temporary and persists only an explicit choice", as
   vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
   const session = new ReaderSession(workspace, null);
   try {
-    expect(session.recoverDisplay(new Error("render failure"))).toBe(true);
+    expect(session.recoverDisplay(Object.assign(new Error("render failure"), { name: "PdfPageRenderError" }))).toBe(true);
     expect(session.getSnapshot().mode).toBe("images");
     const reopened = new ReaderSession(workspace, null);
     expect(reopened.getSnapshot().mode).toBe("pdf");
-    session.selectMode("images");
+    session.recoverDisplay(Object.assign(new Error("decode failure"), { name: "InvalidPDFException" }));
     reopened.dispose();
     const explicit = new ReaderSession(workspace, null);
-    expect(explicit.getSnapshot().mode).toBe("images");
+    expect(explicit.getSnapshot().mode).toBe("pdf");
     explicit.dispose();
   } finally { session.dispose(); }
 });
@@ -182,5 +163,17 @@ it("requires confirmed identity before user-owned offline preparation and cancel
     await download;
     expect(downloadState.signal).toMatchObject({ aborted: true });
     expect(session.getSnapshot().downloading).toBe(false);
+  } finally { session.dispose(); }
+});
+
+it("does not recover transport, permission, timeout or unclassified failures and only tries once", async () => {
+  const workspace = await resolveLocalWorkspace({ authenticatedUserId: null, choirId: "classification", scoreId: "score" });
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+  const session = new ReaderSession(workspace, null);
+  try {
+    for (const error of [new TypeError("Failed to fetch"), Object.assign(new Error(), { status: 403 }), Object.assign(new Error(), { name: "TimeoutError" }), Object.assign(new Error(), { name: "UnknownErrorException", details: "TypeError: Failed to fetch" })]) expect(session.recoverDisplay(error)).toBe(false);
+    const failure = Object.assign(new Error(), { name: "InvalidPDFException" });
+    expect(session.recoverDisplay(failure)).toBe(true);
+    expect(session.recoverDisplay(failure)).toBe(false);
   } finally { session.dispose(); }
 });

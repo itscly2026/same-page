@@ -3,7 +3,8 @@ import { InviteCard } from "./invite-card";
 import { saveInviteCard } from "./save-invite-card";
 import { createInviteLink } from "../components/invite-link";
 import { useRef, useEffect, useState, type FormEvent } from "react";
-import { Button, Dialog, Form, Heading, Modal, ModalOverlay } from "react-aria-components";
+import { Button,  Form, Heading, Modal, ModalOverlay } from "react-aria-components";
+import { Dialog } from "../navigation/overlays";
 
 import { currentJoinCodeResponseSchema, rotateJoinCodeResponseSchema } from "../../shared/choirs";
 import { JoinCodeField } from "../components/join-code-field";

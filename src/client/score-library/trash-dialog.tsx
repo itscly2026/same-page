@@ -2,7 +2,7 @@ import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { type FormEvent, useEffect, useState } from "react";
 import {
   Button,
-  Dialog,
+
   Form,
   Input,
   Label,
@@ -10,6 +10,7 @@ import {
   ModalOverlay,
   TextField,
 } from "react-aria-components";
+import { Dialog } from "../navigation/overlays";
 
 import {
   scoreTrashResponseSchema,

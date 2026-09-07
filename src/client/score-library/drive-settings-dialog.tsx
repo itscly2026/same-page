@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Button, Dialog, Form, Heading, Input, Label, Modal, ModalOverlay, TextField } from "react-aria-components";
+import { Button,  Form, Heading, Input, Label, Modal, ModalOverlay, TextField } from "react-aria-components";
+import { Dialog } from "../navigation/overlays";
 import { driveNameSchema, displayNameSchema, driveSettingsSchema } from "../../shared/choirs";
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
 

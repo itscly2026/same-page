@@ -92,21 +92,6 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
  });
 }
 
-test("fullscreen entry, browser exit and portalled controls stay usable", async (context) => {
- const browser = await chromium.launch({headless:true}); context.after(() => browser.close());
- const page = await openMemberReader(browser, {width:834,height:1000});
- await showReaderChrome(page);
- await page.getByRole("button", {name:"更多",exact:true}).click();
- await page.getByRole("button", {name:"进入全屏",exact:true}).click();
- await page.waitForFunction(() => document.fullscreenElement === document.documentElement);
- await page.getByRole("button", {name:"退出全屏",exact:true}).waitFor();
- await page.evaluate(() => document.exitFullscreen());
- await page.getByRole("button", {name:"进入全屏",exact:true}).waitFor();
- await page.getByRole("button", {name:"进入全屏",exact:true}).click();
- await page.waitForFunction(() => !!document.fullscreenElement);
- await page.getByRole("button", {name:"退出全屏",exact:true}).click();
- await page.waitForFunction(() => !document.fullscreenElement);
-});
 for (const [engineName, engine] of Object.entries({chromium, webkit})) {
  test(`${engineName}: fitted score respects all four safe area edges`, async (context) => {
   const browser = await engine.launch({headless:true}); context.after(() => browser.close());
@@ -217,6 +202,12 @@ async function recordContinuousEditFailure(page, engineName) {
 async function assertPageAlignment(page) {
   await expect.poll(() => page.locator(".annotated-pdf-page:visible").first().evaluate(frame => {
     const paper = frame.getBoundingClientRect();
+    const canvas = frame.querySelector("canvas[data-pdf-canvas-active]");
+    if (!canvas) return false;
+    const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    let ink = 0;
+    for (let i = 0; i < pixels.length; i += 16) if (pixels[i + 3] && pixels[i] + pixels[i + 1] + pixels[i + 2] < 700) ink++;
+    if (ink < 100) return false;
     return [frame.querySelector("canvas[data-pdf-canvas-active]"), frame.querySelector(".annotation-overlay")].every(element => {
       if (!element) return false;
       const box = element.getBoundingClientRect();

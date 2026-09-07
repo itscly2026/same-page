@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Dialog, Modal, ModalOverlay } from "react-aria-components";
+import { Button,  Modal, ModalOverlay } from "react-aria-components";
+import { Dialog } from "../navigation/overlays";
 import { scoreVersionHistorySchema, scoreVersionSummarySchema, type ScoreSummary, type ScoreVersionHistory } from "../../shared/scores";
 import { authClient } from "../auth/auth-client";
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";

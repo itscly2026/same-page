@@ -34,7 +34,11 @@ export function loadPdfDocument(
   const promise = (async () => {
     let engine: typeof import("pdfjs-dist");
     try { engine = await import("pdfjs-dist"); }
-    catch { throw new PdfEngineUnavailableError(); }
+    catch (error) {
+      // Dynamic-import transport failures must stay retryable network errors.
+      if (error instanceof Error && /fetch|network|loading chunk|module script|load failed|timeout/i.test(error.message)) throw error;
+      throw new PdfEngineUnavailableError();
+    }
     if (destroyed) throw new DOMException("PDF load cancelled", "AbortError");
     engine.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
     let resolvedSource = source;

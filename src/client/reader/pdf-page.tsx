@@ -126,7 +126,7 @@ export function PdfPageCanvas({
         if (active && !(reason instanceof Error && reason.name === "RenderingCancelledException")) {
           recordFailure({ operation: "pdf", category: pdfFailureCategory(reason), stage: "decode", pdfReason: pdfFailureReason(reason, true), engineVersion: "kind" in document ? document.manifest.engine : pdfEngineVersion });
           setError(true);
-          if (className === "pdf-page-canvas") recoveryRef.current?.failed(pageNumber, reason);
+          if (className === "pdf-page-canvas") recoveryRef.current?.failed(pageNumber, reason instanceof Error && reason.name === "Error" && pdfFailureCategory(reason) === "internal" ? Object.assign(new Error("pdf_page_render_failed"), { name: "PdfPageRenderError" }) : reason);
           lease?.failed?.();
         }
       });

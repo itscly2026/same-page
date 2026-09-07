@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect } from "react";
-import { Button, Dialog, Modal, ModalOverlay } from "react-aria-components";
+import { Button,  Modal, ModalOverlay } from "react-aria-components";
+import { Dialog } from "../navigation/overlays";
 
 import { LibraryDialogHeading } from "./library-dialog-heading";
 import { useUploadQueue } from "./use-upload-queue";

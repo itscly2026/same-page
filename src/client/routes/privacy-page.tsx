@@ -1,3 +1,4 @@
+import { BackButton } from "../navigation/back-button";
 import { Link } from "react-router-dom";
 
 import { AppHeader } from "../components/app-header";
@@ -153,9 +154,9 @@ export default function PrivacyPage() {
           </p>
         </section>
 
-        <Link className="privacy-document__home" to="/">
+        <BackButton className="privacy-document__home" to="/">
           返回合谱首页
-        </Link>
+        </BackButton>
       </main>
     </div>
   );

@@ -3149,3 +3149,9 @@ h1 {
   .hero-cta { width: auto; min-width: 8rem; }
   .hero-invite-hint { position: absolute; left: 0; top: calc(100% + .25rem); }
 }
+
+.drive-picker-join { display: flex; align-items: center; justify-content: center; min-height: 44px; width: 100%; margin-top: 1rem; text-decoration: none; box-sizing: border-box; }
+.drive-picker-join:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.drive-picker-join:active { opacity: .75; }
+.navigation-error { position: fixed; z-index: 10000; bottom: max(1rem, env(safe-area-inset-bottom)); left: 1rem; right: 1rem; padding: 1rem; background: #fff5ec; color: #653419; border: 1px solid #d9af87; border-radius: .75rem; }
+.reader-shell > .reader-loading { position: fixed; inset: 0; z-index: 5; }

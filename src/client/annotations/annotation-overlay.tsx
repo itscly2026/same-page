@@ -263,7 +263,8 @@ export function AnnotationOverlay({
   };
 
   const finishTextEditor = async () => {
-    if (!textEditor || !activeLayerId || persistence === "saving") return;
+    if (!textEditor) return true;
+    if (!activeLayerId || persistence === "saving") return false;
     const textDraft = textEditor;
     const text = editorText.trim();
     if (!text) {
@@ -274,10 +275,10 @@ export function AnnotationOverlay({
           payload: null,
           deleted: true,
         });
-        if (!saved) return;
+        if (!saved) return false;
       }
       closeTextEditor();
-      return;
+      return true;
     }
     const saved = await editor?.persist({
       id: textDraft.id,
@@ -292,7 +293,10 @@ export function AnnotationOverlay({
       },
     });
     if (saved) closeTextEditor();
+    return Boolean(saved);
   };
+
+  useEffect(() => { if (editing && textEditor) return editor?.registerTextCommit(finishTextEditor); });
 
   const addTransformPointer = (
     event: ReactPointerEvent<Element>,

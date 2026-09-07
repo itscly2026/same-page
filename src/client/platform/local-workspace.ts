@@ -1,3 +1,4 @@
+import { readLogoutFence } from "../auth/logout-fence";
 import type { Table } from "dexie";
 
 import {
@@ -36,6 +37,8 @@ export function authenticatedLocalOwnerKey(
 export async function activateAuthenticatedLocalOwner(userId: string, signal?: AbortSignal) {
   const ownerKey = authenticatedLocalOwnerKey(userId);
   await localDatabase.transaction("rw", localDatabase.system, async () => {
+    const fence = await readLogoutFence();
+    if (fence && fence.userId === userId) throw new LocalWorkspaceOwnerChangedError();
     const currentOwner = await currentLocalOwnerKey();
     signal?.throwIfAborted();
     if (currentOwner !== ownerKey) {

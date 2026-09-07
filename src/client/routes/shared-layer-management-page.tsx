@@ -1,6 +1,8 @@
 import { captureLocalWorkspaceSession, resolveLocalWorkspace, type LocalWorkspace } from "../platform/local-workspace";
 import { applySharedLayerAvailability } from "../annotations/annotation-state";
-import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
+import { Button, Heading, Modal, ModalOverlay } from "react-aria-components";
+import { Dialog } from "../navigation/overlays";
+import { BackButton } from "../navigation/back-button";
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
@@ -86,7 +88,7 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
   };
 
   return <div className="app-page">
-    <AppHeader actions={<Link className="header-action" to={`/choirs/${choirId}`}>返回云盘</Link>} />
+    <AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回云盘</BackButton>} />
     <main className="page-shell settings-page settings-ux">
       <header className="settings-heading">
         <p className="eyebrow">云盘管理 · {driveName}</p><h1>共享层管理</h1>
@@ -132,7 +134,7 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
       </>}
     </main>
     <ModalOverlay className="modal-overlay" isOpen={deleting !== null} isDismissable={!pending} onOpenChange={open => { if (!open && !pending) setDeleting(null); }}>
-      <Modal className="app-modal app-modal--compact"><Dialog className="app-dialog">
+      <Modal className="app-modal app-modal--compact"><Dialog className="app-dialog" exitDisabled={pending}>
         <Heading slot="title">删除共享层「{deleting ? sharedLayerLabel(deleting.slot, deleting.name) : ""}」？</Heading>
         <p>这会删除当前云盘全部乐谱上的此共享层，并立即隐藏其批注、停止云端编辑。</p>
         <p>30 天内可在“已删除层”恢复原层、批注、授权和阅读偏好；到期后永久清理。停用则保留内容且没有清理期限。</p>

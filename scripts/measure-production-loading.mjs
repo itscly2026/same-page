@@ -207,7 +207,7 @@ async function returnToCachedDrive(page) {
       (record) => record.name === "exit-score:duration",
     ).length ?? 0);
   await page.locator(".page-reader__viewport").click({ position: { x: 250, y: 250 } });
-  await page.getByRole("link", { name: "返回云盘", exact: true }).click();
+  await page.getByRole("button", { name: "返回云盘", exact: true }).click();
   try {
     await page.locator(".file-list").waitFor({ state: "visible" });
   } catch (error) {

@@ -1,3 +1,4 @@
+import { readLogoutFence } from "./logout-fence";
 import { useLiveQuery } from "dexie-react-hooks";
 import { authClient } from "./auth-client";
 import { currentLocalOwnerKey } from "../platform/local-workspace";
@@ -6,14 +7,17 @@ export type OnlineIdentityState = "checking" | "authenticated" | "signed-out" | 
 
 // Local ownership is a navigation/editing boundary, never proof of a cloud session.
 export function useApplicationIdentity() {
-  const session = authClient.useSession();
+  const remoteSession = authClient.useSession();
+  const fence = useLiveQuery(readLogoutFence);
+  const blocked = fence && fence.userId === remoteSession.data?.user.id;
+  const session = blocked && !fence!.pending ? { ...remoteSession, data: null } : remoteSession;
   const rememberedOwner = useLiveQuery(() => currentLocalOwnerKey().catch(() => null));
   const onlineState: OnlineIdentityState = session.isPending ? "checking"
     : session.error ? (session.error.status === 401 ? "signed-out" : "unreachable") : session.data?.user ? "authenticated" : "signed-out";
   const localUserId = session.data?.user.id ?? (rememberedOwner?.startsWith("user:") ? rememberedOwner.slice(5) : null);
   return {
     session, onlineState, localUserId,
-    authenticatedUserId: onlineState === "authenticated" ? session.data!.user.id : null,
+    authenticatedUserId: !blocked && onlineState === "authenticated" ? session.data!.user.id : null,
     restoring: !session.data?.user && rememberedOwner === undefined,
     showLocalEntry: onlineState !== "authenticated" && (Boolean(localUserId) || rememberedOwner === undefined || onlineState !== "signed-out"),
   };

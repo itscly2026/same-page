@@ -1,6 +1,7 @@
+import { BackButton } from "../navigation/back-button";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "react-aria-components";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { managedMembershipsSchema } from "../../shared/lifecycle";
 import { AppHeader } from "../components/app-header";
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
@@ -49,6 +50,6 @@ export default function MembershipManagementPage() {
     </article>)}
     {message ? <p role="status">{message}</p> : null}
     <Button className="secondary-button" isDisabled={busy} onPress={() => void reload().catch(() => setMessage("成员列表加载失败，请重试。"))}>重新读取成员列表</Button>
-    <Link className="secondary-link" to={`/choirs/${choirId}`}>返回云盘</Link>
+    <BackButton className="secondary-link" to={`/choirs/${choirId}`}>返回云盘</BackButton>
   </main></div>;
 }
