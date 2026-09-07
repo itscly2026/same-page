@@ -359,7 +359,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("练声曲.pdf")).toBeInTheDocument();
+    expect(await screen.findByText("练声曲")).toBeInTheDocument();
     expect(screen.getByLabelText("正在加载乐谱")).toBeInTheDocument();
   });
 
@@ -578,7 +578,7 @@ it("keeps a single exit while the PDF never settles", async () => {
         "version-2",
       ),
     );
-    expect(document.body).toHaveTextContent("新版练声曲.pdf");
+    expect(document.body).toHaveTextContent("新版练声曲");
 
     await act(async () =>
       releaseInitialBootstrap(
@@ -589,8 +589,8 @@ it("keeps a single exit while the PDF never settles", async () => {
         }),
       ),
     );
-    expect(document.body).toHaveTextContent("新版练声曲.pdf");
-    expect(document.body).not.toHaveTextContent("旧版练声曲.pdf");
+    expect(document.body).toHaveTextContent("新版练声曲");
+    expect(document.body).not.toHaveTextContent("旧版练声曲");
     expect(loadPdfDocument).not.toHaveBeenCalledWith(
       "/api/choirs/choir-1/scores/score-1/versions/version-1/pdf",
       "version-1",
@@ -672,7 +672,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     await waitFor(() => expect(loadPdfDocument).toHaveBeenCalled());
     fireEvent(window, new Event("online"));
     await waitFor(() => expect(bootstrapCalls).toBe(2));
-    await waitFor(() => expect(document.body).toHaveTextContent("直达新版.pdf"));
+    await waitFor(() => expect(document.body).toHaveTextContent("直达新版"));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
     await act(async () =>
@@ -754,7 +754,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       expect(loadPdfDocument).toHaveBeenCalledWith(expect.any(ArrayBuffer), "version-1"),
     );
     expect(await screen.findByLabelText("翻页阅读")).toBeInTheDocument();
-    expect(screen.getByText("回收站离线谱.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "回收站离线谱" })).toBeInTheDocument();
   });
 
   it("switches a ready cloud document to settled offline data after trashing", async () => {
@@ -818,7 +818,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       expect(loadPdfDocument).toHaveBeenCalledWith(expect.any(ArrayBuffer), "version-1"),
     );
     expect(await screen.findByLabelText("翻页阅读")).toBeInTheDocument();
-    expect(screen.getByText("回收站离线谱.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "回收站离线谱" })).toBeInTheDocument();
   });
 
   it("reacquires the same cloud version after a stale denial invalidates it", async () => {
@@ -1436,7 +1436,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     );
     expect(screen.queryByRole("heading", { name: "无法打开" })).not.toBeInTheDocument();
     releaseLookup(activeBootstrapResponse());
-    expect(await screen.findByText("练声曲.pdf")).toBeInTheDocument();
+    expect(await screen.findByText("练声曲")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
     });
@@ -1537,7 +1537,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     );
 
     await screen.findByLabelText("翻页阅读");
-    expect(screen.getByText("练声曲.pdf")).toBeInTheDocument();
+    expect(screen.getByText("练声曲")).toBeInTheDocument();
     expect(screen.queryByLabelText("阅读器控制")).not.toBeInTheDocument();
     expect(
       within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 1 页"),
@@ -1871,7 +1871,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("练声曲.pdf");
+    await screen.findByText("练声曲");
     await screen.findByLabelText("翻页阅读");
     openMoreMenu();
     expect(
@@ -1889,7 +1889,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("练声曲.pdf");
+    await screen.findByText("练声曲");
     await screen.findByLabelText("翻页阅读");
     const viewport = getPageViewport();
     vi.spyOn(viewport, "getBoundingClientRect").mockReturnValue({
@@ -2121,7 +2121,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("练声曲.pdf");
+    await screen.findByText("练声曲");
     await screen.findByLabelText("翻页阅读");
     const overlay = await screen.findByLabelText("第 1 页批注层");
     fireEvent.pointerDown(overlay, { clientX: 20, clientY: 20 });
@@ -2381,7 +2381,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("练声曲.pdf");
+    await screen.findByText("练声曲");
     await screen.findByLabelText("翻页阅读");
     openMoreMenu();
     expect(
@@ -2449,7 +2449,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     );
 
     await screen.findByLabelText("翻页阅读");
-    expect(screen.getByText("离线练声曲.pdf")).toBeInTheDocument();
+    expect(screen.getByText("离线练声曲")).toBeInTheDocument();
     toggleChrome();
     const editButton = await screen.findByRole("button", { name: /^(编辑|完成编辑)$/ });
     await waitFor(() => expect(editButton).toHaveAttribute("data-state", "ready"));
@@ -2489,12 +2489,12 @@ it("keeps a single exit while the PDF never settles", async () => {
       </MemoryRouter>,
     );
     await screen.findByLabelText("翻页阅读");
-    expect(screen.getByText("A 的离线乐谱.pdf")).toBeInTheDocument();
+    expect(screen.getByText("A 的离线乐谱")).toBeInTheDocument();
 
     await activateAuthenticatedLocalOwner("user-b");
 
     await waitFor(() => {
-      expect(screen.queryByText("A 的离线乐谱.pdf")).not.toBeInTheDocument();
+      expect(screen.queryByText("A 的离线乐谱")).not.toBeInTheDocument();
     });
     expect(screen.getByText("正在打开乐谱…")).toBeInTheDocument();
   });
@@ -2571,7 +2571,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     );
 
     await screen.findByLabelText("翻页阅读");
-    expect(screen.getByText("离线练声曲.pdf")).toBeInTheDocument();
+    expect(screen.getByText("离线练声曲")).toBeInTheDocument();
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "本机离线副本和未同步批注仍保留，恢复后可继续同步",
     );
@@ -2645,7 +2645,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     );
 
     await screen.findByLabelText("翻页阅读");
-    expect(screen.getByText("离线练声曲.pdf")).toBeInTheDocument();
+    expect(screen.getByText("离线练声曲")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     connected = true;
     fireEvent(window, new Event("online"));

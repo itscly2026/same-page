@@ -59,7 +59,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await expect(page.getByRole("dialog", { name: "云盘菜单" })).toContainText("周末排练云盘");
     await expect(page.getByRole("menuitem", { name: "成员与权限" })).toHaveAttribute("aria-disabled", "true");
     await page.screenshot({ path: `artifacts/verification/issue-170/${name}-renamed-drive.png` });
-    await page.getByRole("button", { name: "切换云盘", exact: true }).click();
+    await page.getByRole("link", { name: "返回所有云盘", exact: true }).click();
     await expect(page.getByRole("link", { name: /周末排练云盘/ })).toBeVisible();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   });

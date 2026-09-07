@@ -14,9 +14,10 @@ export type DriveLibraryAccess =
 type LoadedAccess = Exclude<DriveLibraryAccess, { kind: "loading" }>;
 
 export interface DriveLibraryTransport {
+  removeScore?(scoreId: string, signal: AbortSignal): Promise<void>;
   rememberName?(name: string, signal: AbortSignal): Promise<void>;
   readLocal?(signal: AbortSignal): Promise<LoadedAccess | null>;
-  load(signal: AbortSignal, allowAdmission: boolean): Promise<LoadedAccess>;
+  load(signal: AbortSignal, allowAdmission: boolean, authenticated?: boolean): Promise<LoadedAccess>;
   join(displayName: string, signal: AbortSignal): Promise<string | null>;
 }
 

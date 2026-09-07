@@ -99,6 +99,7 @@ export default defineConfig(({ isPreview }) => ({
       },
       workbox: {
         cleanupOutdatedCaches: true,
+        importScripts: ["/update-coordination.js"],
         navigateFallback: "/index.html",
         // API navigations must always reach the Worker. In particular, OAuth
         // callbacks carry one-time codes that the application shell cannot

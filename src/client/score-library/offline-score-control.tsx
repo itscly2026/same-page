@@ -1,3 +1,4 @@
+import { scoreDisplayName } from "../../shared/score-display-name";
 import { captureOfflineFileFence } from "../offline/local-files";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useId, useRef, useState } from "react";
@@ -72,7 +73,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, disabled = fal
       <Button
         ref={triggerRef}
         className="offline-score-button"
-        aria-label={`${needsDownload && !downloading ? actionLabel : "离线副本"}：${score.fileName} · ${description}`}
+        aria-label={`${needsDownload && !downloading ? actionLabel : "离线副本"}：${scoreDisplayName(score.fileName)} · ${description}`}
         aria-haspopup="dialog"
         aria-expanded={detailsOpen}
         aria-controls={detailsOpen ? detailsId : undefined}

@@ -1,3 +1,4 @@
+import { scoreDisplayName, scorePdfFileName } from "../../shared/score-display-name";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { type FormEvent, useEffect, useState } from "react";
 import {
@@ -58,7 +59,7 @@ export function TrashDialog({
         const rename = await diagnosticFetch(`/api/choirs/${choirId}/scores/${score.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ fileName: nextName }),
+          body: JSON.stringify({ fileName: scorePdfFileName(nextName) }),
         });
         if (!rename.ok) {
           setMessage(uploadMessage(rename.status, await rename.json().catch(() => null)));
@@ -70,7 +71,7 @@ export function TrashDialog({
       });
       if (response.status === 409) {
         setRestoreConflict(score);
-        setRestoreName(score.fileName);
+        setRestoreName(scoreDisplayName(score.fileName));
         setMessage("当前文件库已有同名文件，请先为恢复的文件换一个名称。");
         return;
       }
@@ -119,7 +120,7 @@ export function TrashDialog({
                   {trash.map((score) => (
                     <li key={score.id}>
                       <span>
-                        <strong>{score.fileName}</strong>
+                        <strong>{scoreDisplayName(score.fileName)}</strong>
                         <small>{daysRemaining(score.trashExpiresAt)} 天后自动删除</small>
                       </span>
                       <Button isDisabled={busy} onPress={() => void restoreScore(score)}>

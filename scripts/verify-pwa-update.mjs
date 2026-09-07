@@ -54,18 +54,21 @@ try {
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
 
+  const editingWindow = await context.newPage();
+  await editingWindow.goto(`${origin}/login`, { waitUntil: "domcontentloaded" });
+  await editingWindow.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
   activeBuild = builds.second;
   await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.getRegistration();
-    if (!registration) throw new Error("Service Worker registration is missing");
     await registration.update();
   });
-  await page.getByText("有新版本可用", { exact: true }).waitFor();
-
-  await Promise.all([
-    page.waitForEvent("domcontentloaded"),
-    page.getByRole("button", { name: "更新", exact: true }).click(),
-  ]);
+  await page.waitForFunction(async () => Boolean((await navigator.serviceWorker.getRegistration())?.waiting));
+  // A second window with an unfinished login form vetoes every candidate page.
+  await page.waitForTimeout(5000);
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.buildId), buildIds.first);
+  assert.equal(await editingWindow.evaluate(() => document.documentElement.dataset.buildId), buildIds.first);
+  assert.equal(await page.getByText("有新版本可用", { exact: true }).count(), 0);
+  await editingWindow.close();
   await page.waitForFunction(
     (expected) => document.documentElement.dataset.buildId === expected,
     buildIds.second,

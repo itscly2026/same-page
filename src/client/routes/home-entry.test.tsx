@@ -76,10 +76,12 @@ it("keeps explicit invitation intent and the switch picker accessible with one m
   fireEvent.click(screen.getByRole("link", { name: /云盘 one.*成员/ }));
   await screen.findByRole("heading", { name: "云盘 one" });
   fireEvent.click(screen.getByRole("button", { name: "打开云盘菜单" }));
-  fireEvent.click(screen.getByRole("button", { name: "切换云盘" }));
-  await screen.findByRole("link", { name: /云盘 one.*成员 · 当前云盘/ });
-  expect(screen.getByRole("dialog", { name: "切换云盘" })).toBeInTheDocument();
-  expectPath("/choirs/one");
+  fireEvent.click(screen.getByRole("link", { name: "返回所有云盘" }));
+  await screen.findByRole("link", { name: /云盘 one.*成员/ });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expectPath("/drives");
+  fireEvent.click(screen.getByRole("link", { name: "合谱 Same Page 首页" }));
+  expectPath("/drives");
 });
 
 it("does not override an explicit drive deep link with the sole membership", async () => {
@@ -171,7 +173,7 @@ it("keeps the drive shell and search when the online session cannot be reached a
   vi.mocked(fetch).mockRejectedValue(new TypeError("network unavailable"));
   render(tree(["/choirs/one"]));
   await screen.findByRole("heading", { name: "云盘 one" });
-  expect(screen.getByRole("searchbox", { name: "搜索乐谱" })).toBeInTheDocument();
+  expect(screen.getByRole("searchbox", { name: /搜索.*中的乐谱/ })).toBeInTheDocument();
   expect(screen.getByRole("combobox", { name: "乐谱排序" })).toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "本机内容" })).not.toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "登录或注册" })).not.toBeInTheDocument();
@@ -214,4 +216,15 @@ it("does not remember the public preview as a startup drive even for its adminis
   await screen.findByRole("link", { name: /云盘 one.*成员/ });
   expect(screen.queryByText(/上次使用的云盘已不在可访问列表/)).not.toBeInTheDocument();
   expectPath("/");
+});
+
+it("browser back to a selection entry does not become a new startup intent", async () => {
+  memberships = [membership("one"), membership("two")];
+  render(tree());
+  fireEvent.click(await screen.findByRole("link", { name: /云盘 one.*成员/ }));
+  await screen.findByRole("heading", { name: "云盘 one" });
+  fireEvent.click(screen.getByRole("button", { name: "返回测试" }));
+  await screen.findByRole("heading", { name: "我已加入的云盘" });
+  expectPath("/");
+  expect(await screen.findByRole("link", { name: /云盘 one.*成员/ })).toBeInTheDocument();
 });

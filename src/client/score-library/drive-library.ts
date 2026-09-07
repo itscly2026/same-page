@@ -22,6 +22,12 @@ const refreshFailed = "暂时无法更新乐谱列表，当前内容已保留。
 // One lifetime owns the library's network ordering, cache authority and view.
 // The React adapter only supplies browser events and committed-list scrolling.
 export class DriveLibrary {
+  private authenticated = false;
+  setAuthenticated(value: boolean) {
+    if (this.authenticated === value) return;
+    this.authenticated = value;
+    if (this.active) void this.changed();
+  }
   private snapshot: DriveLibrarySnapshot;
   private view: LibraryView;
   private listeners = new Set<() => void>();
@@ -88,6 +94,17 @@ export class DriveLibrary {
     return this.load(false);
   };
 
+  confirmRemoval = async (scoreId: string) => {
+    if (!this.isActive() || this.snapshot.access.kind !== "opened") return;
+    this.request?.controller.abort();
+    this.request = null;
+    await this.transport.removeScore?.(scoreId, this.ownerSignal);
+    if (!this.isActive() || this.snapshot.access.kind !== "opened") return;
+    const access = { ...this.snapshot.access, result: { ...this.snapshot.access.result, scores: this.snapshot.access.result.scores.filter(score => score.id !== scoreId) } };
+    rememberDriveLibrary(this.ownerKey, this.choirId, access);
+    this.publish({ access });
+  };
+
   confirmName = async (name: string) => {
     if (!this.isActive() || this.snapshot.access.kind !== "opened") return;
     this.request?.controller.abort();
@@ -148,7 +165,7 @@ export class DriveLibrary {
     pending.done = Promise.resolve().then(() => {
       const signal = AbortSignal.any([controller.signal, ownerSignal]);
       signal.throwIfAborted();
-      return this.transport.load(signal, allowAdmission);
+      return this.transport.load(signal, allowAdmission, this.authenticated);
     })
       .then((access) => {
         if (this.request !== pending || !this.isActive() || controller.signal.aborted) return;

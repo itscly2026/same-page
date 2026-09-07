@@ -31,7 +31,7 @@ test("literal search, verified offline read and failed/successful immutable PDF 
   await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
   await context.setOffline(false);
   const versions = await (await context.request.get(`${base}/versions`)).json();
-  const staged = await context.request.post(`${base}/versions`, { multipart: { expectedRevision: String(versions.revision), file: { name: "新版.pdf", mimeType: "application/pdf", buffer: fixture.pdf } } });
+  const staged = await context.request.post(`${base}/versions`, { multipart: { expectedRevision: String(versions.revision), file: { name: "新版", mimeType: "application/pdf", buffer: fixture.pdf } } });
   assert.equal(staged.status(), 201);
   const version = (await staged.json()).version;
   assert.equal((await context.request.post(`${base}/versions/${version.id}/publish`, { data: { expectedRevision: versions.revision } })).status(), 204);

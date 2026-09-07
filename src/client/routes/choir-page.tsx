@@ -1,5 +1,5 @@
+import { scoreDisplayName } from "../../shared/score-display-name";
 import { hasManagement, isDelegated, type Operation } from "../../shared/drive-permissions";
-import { useLogout } from "../auth/logout-context";
 import { BackButton } from "../navigation/back-button";
 import { ScoreLink } from "../score-library/score-link";
 import { useNetworkStatus } from "../platform/use-network-status";
@@ -9,7 +9,7 @@ import { LocalLibrary } from "../score-library/local-library";
 import { useApplicationIdentity } from "../auth/application-identity";
 import { IdentityNotice } from "../auth/local-entry";
 import type { ApplicationIdentity } from "../auth/application-identity";
-import { ChevronDown, UserRound } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   Button,
@@ -25,7 +25,6 @@ import {
 import { Menu } from "../navigation/overlays";
 import { Link, useParams } from "react-router-dom";
 
-import { isInternalAuthEmail } from "../../shared/auth";
 import type { ScoreSummary } from "../../shared/scores";
 import { AppHeader } from "../components/app-header";
 import {
@@ -49,7 +48,7 @@ import { InviteCodeDialog } from "../score-library/invite-code-dialog";
 import { TrashDialog } from "../score-library/trash-dialog";
 import { UploadDialog } from "../score-library/upload-dialog";
 
-import { DriveHeader, DrivePicker } from "../score-library/drive-header";
+import { DriveHeader } from "../score-library/drive-header";
 import { UploadFab } from "../score-library/upload-fab";
 import type { LibrarySort } from "../score-library/library-view-state";
 import { OfflineScoreControl } from "../score-library/offline-score-control";
@@ -63,7 +62,6 @@ export default function ChoirPage() {
 
 function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; identity: ApplicationIdentity; cacheOwner: DriveCacheOwnerKey }) {
   const { session } = identity;
-  const logout = useLogout();
   const userId = identity.localUserId ?? undefined;
   const online = useNetworkStatus();
   const { library, snapshot } = useDriveLibrary(cacheOwner, choirId, Boolean(identity.authenticatedUserId) && online, !identity.restoring && (Boolean(userId) || identity.onlineState !== "checking"));
@@ -71,7 +69,6 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
   const [openAdmissionDisplayName, setOpenAdmissionDisplayName] = useState("");
   const [settingsField, setSettingsField] = useState<"name" | "display-name" | null>(null);
   const [avatarRevision, setAvatarRevision] = useState(0);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [inviteManagementOpen, setInviteManagementOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -117,39 +114,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
     setMessage(null);
   };
 
-  const headerActions = (
-    <>
-      <Button className="header-action" onPress={() => setPickerOpen(true)}>切换云盘</Button>
-      <DrivePicker choirId={choirId} userId={userId} isOpen={pickerOpen} onOpenChange={setPickerOpen} />
-      {session.data?.user ? (
-        <MenuTrigger>
-          <Button className="account-menu-button" aria-label="用户菜单">
-            <UserRound size={17} aria-hidden="true" />
-            <span className="account-menu-label">
-              {isInternalAuthEmail(session.data.user.email)
-                ? "我的"
-                : session.data.user.email}
-            </span>
-            <span className="account-menu-label account-menu-label--compact">
-              我的
-            </span>
-            <ChevronDown size={15} aria-hidden="true" />
-          </Button>
-          <Popover className="file-menu-popover account-menu-popover">
-            <Menu aria-label="用户菜单">
-              <MenuItem href={`/choirs/${choirId}/preferences`}>阅读偏好</MenuItem>
-              <MenuItem href="/user">个人设置</MenuItem>
-              <MenuItem onAction={() => void logout.request()}>退出登录</MenuItem>
-            </Menu>
-          </Popover>
-        </MenuTrigger>
-      ) : (
-        <Link className="header-action header-action--primary" to="/login">
-          登录或注册
-        </Link>
-      )}
-    </>
-  );
+  const headerActions = <Link className="header-action" to="/drives">返回所有云盘</Link>;
 
   if (access.kind === "join-required") {
     return (
@@ -159,7 +124,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           <p className="eyebrow">开放准入</p>
           <h1>{access.choir.name}</h1>
           <p className="hero__copy">填写你在这个云盘中的显示名后即可加入。</p>
-          <Form className="entry-form" onSubmit={(event) => { event.preventDefault(); void library.join(openAdmissionDisplayName); }}>
+          <Form className="entry-form" data-update-busy={openAdmissionDisplayName.trim() || busy ? "true" : undefined} onSubmit={(event) => { event.preventDefault(); void library.join(openAdmissionDisplayName); }}>
             <TextField
               isRequired
               value={openAdmissionDisplayName}
@@ -187,7 +152,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           <p className="eyebrow">云盘</p>
           <h1>无法访问这个云盘</h1>
           <p className="hero__copy">请返回首页输入当前邀请码，或使用有成员关系的邮箱登录。</p>
-          <BackButton className="primary-link" to="/">返回首页</BackButton>
+          <BackButton className="primary-link" to="/drives">返回首页</BackButton>
           {userId && <LocalLibrary userId={userId} choirId={choirId} />}
         </main>
       </div>
@@ -202,7 +167,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           <p className="eyebrow">云盘</p>
           <h1>这个云盘不存在</h1>
           <p className="hero__copy">链接可能已经失效，请返回首页重新选择云盘。</p>
-          <BackButton className="primary-link" to="/">返回首页</BackButton>
+          <BackButton className="primary-link" to="/drives">返回首页</BackButton>
           {userId && <LocalLibrary userId={userId} choirId={choirId} />}
         </main>
       </div>
@@ -267,12 +232,10 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
       />
       <main className="page-shell file-library">
         <h1 className="visually-hidden">{choir.name}</h1>
-        <div className="drive-connection-notice">
+        {(!online || identity.onlineState === "signed-out" || identity.onlineState === "unreachable" || searchMessage) && <details className="drive-connection-notice"><summary>{!online ? "离线" : searchMessage ? "列表更新失败" : identity.onlineState === "unreachable" ? "连接暂不可用" : "需要重新登录"}</summary>
           <IdentityNotice identity={identity} />
-          {!online ? <p role="status">当前离线，已下载的乐谱可继续使用。</p> : null}
-          {localFilesOnly && <p>显示本机目录，搜索仅限本机记录。</p>}
-          {searchMessage && <p role="status">{searchMessage}<Button className="text-button library-retry" onPress={() => void refresh()}>重试</Button></p>}
-        </div>
+          {searchMessage && <p role="status">{searchMessage}<Button onPress={() => void refresh()}>重试</Button></p>}
+        </details>}
         <section className="library-workspace" aria-labelledby="library-content-title">
           <div className="library-toolbar">
             <div className="library-controls">
@@ -294,7 +257,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
               </label>
             </div>
           </div>
-          {search.trim() ? <p className="library-results-summary" role="status">找到 {visibleScores.length} 份，共 {result.scores.length} 份乐谱</p> : null}
+          {search.trim() ? <p className="library-results-summary" role="status">{localFilesOnly ? "仅搜索本机记录 · " : ""}找到 {visibleScores.length} 份，共 {result.scores.length} 份乐谱</p> : null}
 
           {can("uploadFiles") && (storageRatio >= 0.8 || quotaBlocked) ? (
             <p className="storage-warning" role="status">
@@ -321,16 +284,16 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
                     }
                   >
                     <span className="pdf-file-icon" aria-hidden="true">PDF</span>
-                    <span className="file-row__name" title={score.fileName}>{score.fileName}</span>
+                    <span className="file-row__name" title={scoreDisplayName(score.fileName)}>{scoreDisplayName(score.fileName)}</span>
                   </ScoreLink>
                   <div className="file-row__offline"><OfflineScoreControl score={score} authenticatedUserId={userId ?? null} disabled={session.isPending || access.local} /></div>
                   <MenuTrigger>
-                      <Button className="file-menu-button" aria-label={`${score.fileName} 更多操作`}>
+                      <Button className="file-menu-button" aria-label={`${scoreDisplayName(score.fileName)} 更多操作`}>
                         ···
                       </Button>
                       <Popover className="file-menu-popover">
                         <Menu
-                          aria-label={`${score.fileName} 操作`}
+                          aria-label={`${scoreDisplayName(score.fileName)} 操作`}
                           disabledKeys={access.local ? ["rename", "replace", "history", "trash"] : []}
                           onAction={(key) => openScoreAction(score, key as ScoreAction)}
                         >
@@ -385,6 +348,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           selection={scoreAction}
           onClose={() => setScoreAction(null)}
           onComplete={async (nextMessage) => {
+            if (scoreAction.action === "trash") await library.confirmRemoval(scoreAction.score.id);
             await refreshAfterMutation();
             setScoreAction(null);
             setMessage(nextMessage);

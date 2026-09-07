@@ -68,6 +68,20 @@ describe("bounded annotation push", () => {
     expect(await localDatabase.annotationOutbox.count()).toBe(1);
   });
 
+  it("can prepare complete export data without uploading reliable local drafts", async () => {
+    const id = crypto.randomUUID();
+    await saveAnnotationDraft(workspace, { id, layerId, payload: { kind: "text", pageNumber: 1, x: .1, y: .2, fontScale: .024, text: "本机修改" } });
+    await queueScoreDrafts(workspace);
+    const request = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") throw new Error("Export must not require an upload");
+      return String(url).endsWith("/layers") ? layerResponse(layerId) : Response.json({ cursor: 7, objects: [] });
+    });
+    vi.stubGlobal("fetch", request);
+    await expect(syncAnnotations(workspace, { pull: true, push: false })).resolves.toEqual({ pushed: 0, pulled: 0 });
+    expect(await localDatabase.annotationOutbox.count()).toBe(1);
+    expect(await localDatabase.annotations.get(annotationRecordKey(workspace.scopeKey, id))).toMatchObject({ payload: { text: "本机修改" } });
+  });
+
   it("returns busy immediately when another tab holds the Web Lock", async () => {
     Object.defineProperty(navigator, "locks", { configurable: true, value: {
       request: async (_name: string, options: LockOptions, action: (lock: null) => Promise<unknown>) => {

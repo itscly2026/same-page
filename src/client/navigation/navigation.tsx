@@ -1,3 +1,4 @@
+import { holdUpdate } from "../updates/update-safety";
 import { RouterProvider as AriaRouterProvider } from "react-aria-components";
 import { useContext, useEffect, useLayoutEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { UNSAFE_DataRouterContext, useBlocker, useLocation, useNavigate, useNavigationType, useHref } from "react-router-dom";
@@ -43,11 +44,13 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     else history.current.push(location.key);
   }, [location.key, type]);
   const register = useCallback((exit: Exit) => {
+    const releaseUpdate = holdUpdate();
     entries.current.push(exit); update(entries.current.length);
-    return () => { entries.current = entries.current.filter(item => item !== exit); update(entries.current.length); };
+    return () => { releaseUpdate(); entries.current = entries.current.filter(item => item !== exit); update(entries.current.length); };
   }, []);
   const consume = (all: boolean): Promise<boolean> => {
     if (running.current) return running.current;
+    const releaseUpdate = holdUpdate();
     running.current = Promise.resolve().then(async () => {
     retryAction.current = null;
     setMessage(null);
@@ -59,7 +62,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       }
       return true;
     } catch { setMessage("退出未完成，请重试；当前内容仍保留。"); return false; }
-    }).finally(() => { running.current = null; });
+    }).finally(() => { running.current = null; releaseUpdate(); });
     return running.current;
   };
   const back = (fallback: string) => {

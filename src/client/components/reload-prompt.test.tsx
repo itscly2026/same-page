@@ -1,91 +1,35 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
+import { registrationUpdateMock, setRegistrationWaiting, setShouldNeedRefresh, updateServiceWorkerMock } from "../../test/pwa-register-mock";
+import { ReloadPrompt, UpdateDetails } from "./reload-prompt";
 
-import {
-  registrationUpdateMock,
-  setRegistrationWaiting,
-  setShouldNeedRefresh,
-  updateServiceWorkerMock,
-} from "../../test/pwa-register-mock";
-import { ReloadPrompt } from "./reload-prompt";
-
-describe("ReloadPrompt", () => {
+describe("background updates", () => {
   beforeEach(() => {
-    setShouldNeedRefresh(true);
-    setRegistrationWaiting(true);
-    updateServiceWorkerMock.mockClear();
-    registrationUpdateMock.mockClear();
-    Object.defineProperty(navigator, "onLine", {
-      configurable: true,
-      value: true,
-    });
+    setShouldNeedRefresh(true); setRegistrationWaiting(true);
+    updateServiceWorkerMock.mockClear(); registrationUpdateMock.mockClear();
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
   });
-
-  it("offers an explicit update action when a new service worker is waiting", () => {
-    render(<ReloadPrompt />);
-
-    expect(screen.getByText("有新版本可用")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "更新" }));
-    expect(updateServiceWorkerMock).toHaveBeenCalledWith(true);
-    expect(screen.getByText("正在更新…")).toBeInTheDocument();
-  });
-
-  it("keeps the old build usable when the device goes offline", () => {
-    Object.defineProperty(navigator, "onLine", {
-      configurable: true,
-      value: false,
-    });
-
-    render(<ReloadPrompt />);
-    fireEvent.click(screen.getByRole("button", { name: "更新" }));
-
+  it("prepares silently and exposes prepared versus running state only in update details", async () => {
+    const view = render(<MemoryRouter><ReloadPrompt /></MemoryRouter>);
+    await waitFor(() => expect(registrationUpdateMock).toHaveBeenCalled());
+    expect(screen.queryByText("有新版本可用")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    view.rerender(<MemoryRouter><ReloadPrompt /><UpdateDetails /></MemoryRouter>);
+    expect(screen.getByText("新版本已准备，将在安全时应用")).toBeInTheDocument();
     expect(updateServiceWorkerMock).not.toHaveBeenCalled();
-    expect(screen.getByText("当前离线，联网后可重试更新")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
   });
-
-  it("recovers when the waiting service worker is no longer available", async () => {
-    setRegistrationWaiting(false);
-
-    render(<ReloadPrompt />);
-    fireEvent.click(screen.getByRole("button", { name: "更新" }));
-
+  it("keeps the current build while offline and lets a failed check be retried", async () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    render(<MemoryRouter><ReloadPrompt /><UpdateDetails /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+    expect(screen.getByText("当前离线，继续使用当前版本")).toBeInTheDocument();
     expect(updateServiceWorkerMock).not.toHaveBeenCalled();
-    expect(await screen.findByText("更新尚未准备好，请重试")).toBeInTheDocument();
-  });
-
-  it("checks for an update after registration and when returning to the foreground", async () => {
-    setShouldNeedRefresh(false);
-    let visibilityState: DocumentVisibilityState = "visible";
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      get: () => visibilityState,
-    });
-
-    render(<ReloadPrompt />);
-    await waitFor(() => expect(registrationUpdateMock).toHaveBeenCalledTimes(1));
-
-    visibilityState = "hidden";
-    fireEvent(document, new Event("visibilitychange"));
-    expect(registrationUpdateMock).toHaveBeenCalledTimes(1);
-
-    visibilityState = "visible";
-    fireEvent(document, new Event("visibilitychange"));
-    await waitFor(() => expect(registrationUpdateMock).toHaveBeenCalledTimes(2));
-  });
-
-  it("shows a recoverable status when the background update check fails", async () => {
-    setShouldNeedRefresh(false);
-    registrationUpdateMock.mockRejectedValueOnce(new Error("offline"));
-
-    render(<ReloadPrompt />);
-
-    expect(
-      await screen.findByText("更新检查失败，请稍后重试"),
-    ).toBeInTheDocument();
-    registrationUpdateMock.mockResolvedValueOnce(undefined);
-    fireEvent.click(screen.getByRole("button", { name: "重试" }));
-    await waitFor(() => expect(registrationUpdateMock).toHaveBeenCalledTimes(2));
-    expect(screen.queryByText("更新检查失败，请稍后重试")).not.toBeInTheDocument();
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    registrationUpdateMock.mockRejectedValueOnce(new Error("network"));
+    fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+    expect(await screen.findByText("更新检查失败，请稍后重试")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+    expect(await screen.findByText("新版本已准备，将在安全时应用")).toBeInTheDocument();
   });
 });
