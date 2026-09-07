@@ -25,7 +25,7 @@ test("export preserves multipage source geometry and overlays text and ink on ro
     const loaded = loadPdfDocument(new Uint8Array(bytes).buffer);
     const { document: source } = await loaded.promise;
     const annotations = Array.from({ length: 4 }, (_, i) => [
-      { layerId: "selected", deleted: false, payload: { kind: "text", pageNumber: i + 1, x: .5, y: .2, fontScale: .04, text: "换气 · Breath" } },
+      { layerId: "selected", deleted: false, payload: { kind: "text", pageNumber: i + 1, x: .5, y: .2, fontScale: .04, text: "换气 · Breath\nKeep this long English phrase together when possible and breathe gently" } },
       { layerId: "selected", deleted: false, payload: { kind: "ink", pageNumber: i + 1, strokeWidth: .003, points: [{ x: .1, y: .7 }, { x: .3, y: .7 }] } },
       { layerId: "excluded", deleted: false, payload: { kind: "text", pageNumber: i + 1, x: .5, y: .5, fontScale: .08, text: "EXCLUDED" } },
     ]).flat();
@@ -49,9 +49,9 @@ test("export preserves multipage source geometry and overlays text and ink on ro
       let sourceLost = 0, textRed = 0, inkRed = 0, strayRed = 0;
       for (let pixel = 0; pixel < a.length / 4; pixel++) {
         const x = pixel % last.width / last.width, y = Math.floor(pixel / last.width) / last.height;
-        if (!(x > .2 && x < .8 && y > .15 && y < .25) && !(x > .08 && x < .32 && y > .68 && y < .72) && a[pixel * 4] < 80 && a[pixel * 4 + 1] < 80 && b[pixel * 4] > 150) sourceLost++;
+        if (!(x > .2 && x < .8 && y >= 0 && y < .4) && !(x > .08 && x < .32 && y > .68 && y < .72) && a[pixel * 4] < 80 && a[pixel * 4 + 1] < 80 && b[pixel * 4] > 150) sourceLost++;
         if (b[pixel * 4] > 160 && b[pixel * 4] - b[pixel * 4 + 1] > 60 && b[pixel * 4 + 1] < 180 && b[pixel * 4 + 2] < 180) {
-          if (x > .2 && x < .8 && y > .15 && y < .25) textRed++;
+          if (x > .2 && x < .8 && y >= 0 && y < .4) textRed++;
           else if (x > .08 && x < .32 && y > .68 && y < .72) inkRed++;
           else strayRed++;
         }
@@ -78,7 +78,16 @@ test("reader export uses reading subscriptions even when opened from editing", a
   const page = await browser.newPage({ serviceWorkers: "block" });
   page.setDefaultTimeout(15000);
   const fixture = createVisualFixtureSession();
-  await page.route("**/api/**", route => route.fulfill(fixture.resolve({ pathname: new URL(route.request().url()).pathname, method: route.request().method(), identity: "admin", cookie: "" })));
+  let revoked = false;
+  await page.route("**/api/**", route => {
+    const pathname = new URL(route.request().url()).pathname;
+    const response = fixture.resolve({ pathname, method: route.request().method(), identity: "admin", cookie: "" });
+    if (revoked && pathname.endsWith("/layers")) {
+      const body = JSON.parse(response.body); body.layers = body.layers.filter(layer => layer.sharedSlot !== "E");
+      response.body = JSON.stringify(body);
+    }
+    return route.fulfill(response);
+  });
   await page.goto(`${app.origin}/choirs/visual-choir/scores/visual-score`);
   const sheet = page.locator(".page-reader__viewport"); await sheet.waitFor();
   await sheet.click();
@@ -92,4 +101,15 @@ test("reader export uses reading subscriptions even when opened from editing", a
   const [download] = await Promise.all([page.waitForEvent("download"), dialog.getByRole("button", { name: "导出 PDF", exact: true }).click()]);
   assert.ok(download.suggestedFilename().endsWith(".pdf"));
   assert.equal(await download.failure(), null);
+  revoked = true;
+  await dialog.getByRole("button", { name: "导出 PDF", exact: true }).click();
+  await dialog.getByText("所选批注层已不可用，请重新选择后导出").waitFor();
+  await dialog.getByRole("button", { name: "移除不可用层" }).click();
+  await page.context().setOffline(true);
+  await dialog.getByRole("button", { name: "导出 PDF", exact: true }).click();
+  await dialog.getByText("所选批注层的完整离线数据尚未准备好，请联网后导出").waitFor();
+  for (const checkbox of await dialog.getByRole("checkbox").all()) await checkbox.uncheck();
+  const [original] = await Promise.all([page.waitForEvent("download"), dialog.getByRole("button", { name: "导出 PDF", exact: true }).click()]);
+  assert.equal(await original.failure(), null);
+
 });
