@@ -33,7 +33,7 @@ it("detaches the departing library before the next route resets document scroll"
   vi.stubGlobal("scrollY", 320);
 
   function Library({ leave }: { leave(): void }) {
-    const { library, snapshot } = useDriveLibrary(owner, drive, false);
+    const { library, snapshot } = useDriveLibrary(owner, drive, false, true);
     return snapshot.access.kind === "opened"
       ? <button onClick={() => { library.prepareScoreOpen(window.scrollY); leave(); }}>打开乐谱</button>
       : <p>正在加载</p>;
@@ -72,7 +72,7 @@ it("starts the new owner's library after the identity observer clears previous c
   }));
   function Library() {
     const signedIn = Boolean(observerState.userId);
-    const { library, snapshot } = useDriveLibrary(signedIn ? "user:one" : owner, drive, signedIn);
+    const { library, snapshot } = useDriveLibrary(signedIn ? "user:one" : owner, drive, signedIn, true);
     return <>
       <p>{snapshot.access.kind === "opened" ? snapshot.access.isMember ? "成员文件库" : "访客文件库" : "正在加载"}</p>
       <input aria-label="搜索乐谱" value={snapshot.view.search} onChange={event => library.setSearch(event.target.value)} />

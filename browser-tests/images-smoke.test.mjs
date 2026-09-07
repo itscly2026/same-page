@@ -34,7 +34,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     const base = `${fixture.origin}/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/versions/${fixture.versionId}/images`;
     await page.goto(fixture.origin);
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
-    await context.route("**/assets/pdf-*.js", route => route.fulfill({ contentType: "application/javascript", body: 'throw new ReferenceError("Iterator unavailable in test engine");' }));
+    await page.addInitScript(() => { globalThis.Iterator = undefined; });
     await page.goto(`${fixture.origin}/choirs/${fixture.choirId}/scores/${fixture.scoreId}`);
     let conversion;
     await expect.poll(async () => {
@@ -46,10 +46,17 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     const manifest = conversion.manifest;
     // Backend readiness can precede the browser's next manifest poll. Wait for
     // preparation and painting; an existing canvas may still be the old PDF.
-    await expect(page.locator(".reader-display-notice")).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.locator(".reader-display-notice")).toContainText("当前使用图片恢复", { timeout: 30_000 });
+    await expect(page.getByRole("button", { name: "重试 PDF 阅读", exact: true })).toBeVisible();
     await expect(page.locator(".reader-display-recovery")).toHaveCount(0, { timeout: 30_000 });
     await expect(page.locator(".reader-shell")).toBeVisible();
     await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
+    assert.ok(await page.locator("canvas[data-pdf-canvas-active]").first().evaluate(canvas => {
+      const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+      let ink = 0;
+      for (let i = 0; i < pixels.length; i += 16) if (pixels[i + 3] && pixels[i] + pixels[i + 1] + pixels[i + 2] < 700) ink++;
+      return ink > 100;
+    }), "a rendered image score must contain actual nonblank notation");
     if (!await page.getByRole("button", { name: "更多", exact: true }).isVisible()) await page.locator(".page-reader__viewport").click({ position: { x: 510, y: 300 } });
     if (!await page.getByRole("dialog", { name: "更多阅读选项" }).isVisible()) await page.getByRole("button", { name: "更多", exact: true }).click();
     // Image-mode preparation now automatically saves its verified offline copy.

@@ -3,8 +3,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { OfflineScoreControl } from "./offline-score-control";
 import { useOfflineScore } from "../offline/use-offline-score";
 import { prepareOfflineScore } from "../offline/offline-score";
-import { authenticatedLocalOwnerKey, createLocalWorkspace } from "../platform/local-workspace";
-import type { OfflineScoreRecord } from "../platform/local-database";
+import { activateAuthenticatedLocalOwner, authenticatedLocalOwnerKey, createLocalWorkspace } from "../platform/local-workspace";
+import { localDatabase, type OfflineScoreRecord } from "../platform/local-database";
 
 vi.mock("dexie-react-hooks", () => ({ useLiveQuery: () => "user:user" }));
 vi.mock("../offline/use-offline-score", async (original) => ({
@@ -26,7 +26,7 @@ function verified(versionId = "v2"): OfflineScoreRecord {
 function state(record: OfflineScoreRecord | null, invalid = false) {
   vi.mocked(useOfflineScore).mockReturnValue({ scopeKey: workspace.scopeKey, record, invalid });
 }
-beforeEach(() => { vi.clearAllMocks(); state(null); vi.mocked(prepareOfflineScore).mockResolvedValue(verified()); });
+beforeEach(async () => { await localDatabase.open(); await activateAuthenticatedLocalOwner("user"); vi.clearAllMocks(); state(null); vi.mocked(prepareOfflineScore).mockResolvedValue(verified()); });
 
 it("downloads once and does not claim offline availability before verified data arrives", async () => {
   let finish!: () => void;

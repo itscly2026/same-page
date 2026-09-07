@@ -40,3 +40,24 @@ it("retains editing and retries when local persistence fails", async () => {
   expect(screen.getByText("编辑中")).toBeInTheDocument(); expect(screen.getByRole("alert")).toHaveTextContent("本机保存未完成");
   fireEvent.click(screen.getByRole("button", { name: "重试" })); expect(await screen.findByText("阅读中")).toBeInTheDocument();
 });
+
+it("uses the latest explicit destination while one local save is pending", async () => {
+  let complete!: (ok: boolean) => void;
+  const save = vi.fn(() => new Promise<boolean>(resolve => { complete = resolve; }));
+  const router = setup(save);
+  await act(() => router.navigate(-1));
+  await act(async () => { void router.navigate("/settings"); });
+  await act(async () => { void router.navigate("/library"); });
+  await act(async () => complete(true));
+  expect(await screen.findByRole("heading", { name: "云盘" })).toBeInTheDocument();
+  expect(save).toHaveBeenCalledTimes(1);
+});
+
+it("retries the original internal destination after a failed save", async () => {
+  const save = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true); setup(save);
+  fireEvent.click(screen.getByRole("link", { name: "打开设置" }));
+  await screen.findByRole("alert");
+  fireEvent.click(screen.getByRole("button", { name: "重试" }));
+  expect(await screen.findByRole("heading", { name: "设置" })).toBeInTheDocument();
+  expect(save).toHaveBeenCalledTimes(2);
+});

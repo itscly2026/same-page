@@ -1,3 +1,4 @@
+import { LogoutProvider } from "./auth/logout";
 import { NavigationProvider } from "./navigation/navigation";
 import { RouteContent } from "./components/route-content";
 import { lazy, useLayoutEffect, useState } from "react";
@@ -30,7 +31,7 @@ const DiagnosticsPage = lazy(() => import("./diagnostics/diagnostics-page"));
 export function AppRoutes() {
   return (
     <>
-      <NavigationProvider>
+      <NavigationProvider><LogoutProvider>
       <RouteScrollReset />
 
         <Routes>
@@ -61,7 +62,7 @@ export function AppRoutes() {
             element={<RouteContent><ReaderPage /></RouteContent>}
           />
         </Routes>
-      </NavigationProvider>
+      </LogoutProvider></NavigationProvider>
 
     </>
   );

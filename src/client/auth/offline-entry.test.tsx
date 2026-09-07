@@ -70,7 +70,7 @@ it("retains navigation metadata across a cold start without claiming cloud files
   }));
   const view = open("/choirs/drive");
   await screen.findByRole("link", { name: /cloud.pdf/ });
-  await screen.findByRole("button", { name: "上传 PDF" });
+  await waitFor(() => expect(screen.getByRole("button", { name: "上传 PDF" })).toBeEnabled());
   view.unmount();
   clearDriveLibraryCache();
   vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));

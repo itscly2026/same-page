@@ -33,5 +33,5 @@ export function useReaderSession(workspace: LocalWorkspace | null, userId: strin
     current?.session.setAuthenticatedUser(userId);
   }, [current?.session, userId]);
   const active = current?.session.workspace.scopeKey === workspace?.scopeKey ? current : null;
-  return { confirmDisplay: (document: import("./image-document").ScoreDocument) => active?.session.confirmDisplay(document), recoverDisplay: (error: unknown) => active?.session.recoverDisplay(error), retry: () => setAttempt(value => value + 1), snapshot: active?.snapshot ?? initial, download: () => active?.session.download(), retryLayers: () => active?.session.retryLayers() };
+  return { confirmDisplay: (document: import("./image-document").ScoreDocument) => active?.session.confirmDisplay(document), recoverDisplay: (error: unknown) => active?.session.recoverDisplay(error), retry: () => { if (!active?.session.retryPdf()) setAttempt(value => value + 1); }, snapshot: active?.snapshot ?? initial, download: () => active?.session.download(), retryLayers: () => active?.session.retryLayers() };
 }

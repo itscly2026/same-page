@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { currentLocalOwnerKey } from "../platform/local-workspace";
+import { useRef, useState, type ReactNode } from "react";
 import { Button, Heading, Modal, ModalOverlay } from "react-aria-components";
 import { useNavigate } from "react-router-dom";
 import { Dialog } from "../navigation/overlays";
@@ -6,10 +7,15 @@ import { authClient } from "./auth-client";
 import { clearPrivateLocalDataAfterLogout, getLogoutLocalSummary, type LogoutLocalSummary } from "./logout-local-data";
 import { clearPreviewGuestSession } from "./preview-guest-session";
 import { clearLibraryDeviceState } from "../score-library/library-view-state";
-import { localDatabase } from "../platform/local-database";
+import { beginLogout, completeLogout, cancelLogout } from "./logout-fence";
+import { LogoutContext } from "./logout-context";
 
-export const logoutFenceKey = "auth:explicit-logout";
-export function useLogout() {
+export function LogoutProvider({ children }: { children: ReactNode }) {
+  const logout = useLogoutController();
+  return <LogoutContext value={logout.request}>{children}{logout.dialog}</LogoutContext>;
+}
+
+function useLogoutController() {
   const session = authClient.useSession();
   const navigate = useNavigate();
   const [summary, setSummary] = useState<LogoutLocalSummary | null>(null);
@@ -26,20 +32,20 @@ export function useLogout() {
     running.current = true; setBusy(true);
     let serverSignedOut = false;
     try {
-      const userId = session.data?.user.id;
-      if (userId) await localDatabase.system.put({ key: logoutFenceKey, value: JSON.stringify({ userId, sessionId: session.data?.session?.id ?? null, pending: true }) });
+      const owner = await currentLocalOwnerKey();
+      const userId = session.data?.user.id ?? (owner?.startsWith("user:") ? owner.slice(5) : undefined);
+      if (userId) await beginLogout(userId, session.data?.session?.id ?? null);
       const result = await authClient.signOut();
       if (result.error) throw new Error("sign_out_failed");
       serverSignedOut = true;
       await clearPreviewGuestSession();
       await clearPrivateLocalDataAfterLogout();
       clearLibraryDeviceState();
-      const fence = await localDatabase.system.get(logoutFenceKey);
-      if (fence) await localDatabase.system.put({ ...fence, value: JSON.stringify({ ...JSON.parse(fence.value), pending: false }) });
+      await completeLogout();
       setSummary(null);
       await navigate("/?signedOut=1", { replace: true });
     } catch {
-      if (!serverSignedOut) await localDatabase.system.delete(logoutFenceKey).catch(() => undefined);
+      if (!serverSignedOut) await cancelLogout().catch(() => undefined);
       setMessage(serverSignedOut ? "服务端已退出，但本机隐私清理未完成。请重试清理。" : "退出未完成，本机数据没有清除。请重试。");
     } finally { running.current = false; setBusy(false); }
   };

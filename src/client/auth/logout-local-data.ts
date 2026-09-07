@@ -23,7 +23,7 @@ export async function getLogoutLocalSummary(): Promise<LogoutLocalSummary> {
   if (!ownerKey?.startsWith("user:")) {
     return { pendingOperations: 0, conflicts: 0, syncErrors: 0 };
   }
-  const [pendingOperations, conflicts, syncErrors] = await Promise.all([
+  const [pendingOperations, conflicts, syncErrors, drafts] = await Promise.all([
     localDatabase.annotationOutbox.where("ownerKey").equals(ownerKey).count(),
     localDatabase.annotationConflicts.where("ownerKey").equals(ownerKey).count(),
     localDatabase.annotations
@@ -31,8 +31,9 @@ export async function getLogoutLocalSummary(): Promise<LogoutLocalSummary> {
       .equals(ownerKey)
       .filter((annotation) => annotation.state === "sync-error")
       .count(),
+    localDatabase.annotations.where("ownerKey").equals(ownerKey).filter(annotation => annotation.state === "draft").count(),
   ]);
-  return { pendingOperations, conflicts, syncErrors };
+  return { pendingOperations: pendingOperations + drafts, conflicts, syncErrors };
 }
 
 export async function clearPrivateLocalDataAfterLogout() {

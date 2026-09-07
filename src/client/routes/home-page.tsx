@@ -34,7 +34,7 @@ import {
   clearGuestSession,
   clearPreviewGuestSession,
 } from "../auth/preview-guest-session";
-import { useLogout } from "../auth/logout";
+import { useLogout } from "../auth/logout-context";
 import { AppHeader } from "../components/app-header";
 import { JoinCodeField } from "../components/join-code-field";
 import { readInviteLink } from "../components/invite-link";
@@ -471,7 +471,6 @@ function HomeContent({ session }: { session: ReturnType<typeof authClient.useSes
         </Modal>
       </ModalOverlay>
 
-      {logout.dialog}
     </div>
   );
 }

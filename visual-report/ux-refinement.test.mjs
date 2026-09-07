@@ -26,7 +26,7 @@ test("shared-layer overview leads to details, explicitly saves edits and persist
   await list.getByRole("link").nth(4).waitFor();
   assert.match(await list.getByRole("link").nth(2).innerText(), /T · Tenor/);
   assert.equal(await list.getByRole("textbox").count(), 0);
-  await list.getByRole("link", { name: /E · 全体/ }).click();
+  await list.getByRole("link", { name: /E · Ensemble/ }).click();
   await page.getByRole("textbox", { name: "名称", exact: true }).fill("合排提醒");
   assert.equal(fixture.diagnostics.requests.filter(request => request.method === "PUT" && request.pathname.endsWith("/settings")).length, 0);
   await page.getByRole("button", { name: "保存设置", exact: true }).click();

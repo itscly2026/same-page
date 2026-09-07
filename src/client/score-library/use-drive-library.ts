@@ -5,7 +5,7 @@ import { DriveLibrary } from "./drive-library";
 import { readDriveSummary, type DriveCacheOwnerKey } from "./drive-library-cache";
 import { driveLibraryTransport } from "./drive-library-transport";
 
-export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, signedIn: boolean) {
+export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, signedIn: boolean, identityReady: boolean) {
   const library = useMemo(() => {
     const transport = driveLibraryTransport(choirId, signedIn);
     const readLocal = async (signal: AbortSignal) => {
@@ -41,6 +41,7 @@ export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, s
   const snapshot = useSyncExternalStore(library.subscribe, library.getSnapshot);
 
   useEffect(() => {
+    if (!identityReady) return;
     library.start();
     const refresh = () => {
       if (document.visibilityState === "visible") void library.refresh();
@@ -52,7 +53,7 @@ export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, s
       window.removeEventListener("online", refresh);
       window.removeEventListener("focus", refresh);
     };
-  }, [library]);
+  }, [library, identityReady]);
 
   // Detach before the next route resets scroll in its layout effects. Keep
   // network startup passive so identity observers clear the previous owner first.

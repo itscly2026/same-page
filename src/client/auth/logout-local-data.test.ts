@@ -176,3 +176,16 @@ describe("logout local privacy", () => {
     ).toBe(0);
   });
 });
+
+it("fences delayed identity activation and an old session until a new login succeeds", async () => {
+  const { beginLogout, completeLogout, acceptNewSession } = await import("./logout-fence");
+  await activateAuthenticatedLocalOwner("revoked-user");
+  await beginLogout("revoked-user", "revoked-session");
+  await expect(activateAuthenticatedLocalOwner("revoked-user")).rejects.toThrow("local_workspace_owner_changed");
+  await clearPrivateLocalDataAfterLogout();
+  await completeLogout();
+  expect(await acceptNewSession("revoked-user", "revoked-session")).toBe(false);
+  await expect(activateAuthenticatedLocalOwner("revoked-user")).rejects.toThrow("local_workspace_owner_changed");
+  expect(await acceptNewSession("revoked-user", "new-session")).toBe(true);
+  await expect(activateAuthenticatedLocalOwner("revoked-user")).resolves.toBe("user:revoked-user");
+});

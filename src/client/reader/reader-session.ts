@@ -67,7 +67,7 @@ export class ReaderSession {
     this.retained = null;
     this.displayPrepared = true;
     this.pdfFailed = false;
-    this.publish({ document: previous.document, mode: previous.mode, status: "ready", error: null, modeMessage: "显示切换未完成，已保留原谱面。可在更多中重试显示方式。" });
+    this.publish({ document: previous.document, mode: previous.mode, status: "ready", error: null, modeMessage: "显示恢复未完成，已保留原谱面。" });
     return true;
   }
   private lookupSequence = 0;
@@ -137,7 +137,7 @@ export class ReaderSession {
       this.publish({ offline });
       this.localSettled = true;
       if (offline) {
-        if (!navigator.onLine && offline.imageManifest) this.publish({ mode: "images" });
+        if ((!navigator.onLine || this.lookup?.state === "network-unavailable") && offline.imageManifest) this.publish({ mode: "images" });
         if (this.localMatches() && (!this.state.document || this.state.cloudState !== "active")) await this.openOffline(offline);
         await restoreOfflineAnnotationSnapshot(this.workspace, offline).catch(() => undefined);
         if (!await this.current()) return;
@@ -209,6 +209,7 @@ export class ReaderSession {
         invalidateReaderDocument({ ...this.workspace, sourceKind: "cloud" });
       }
       this.publish({ cloudState: lookup.state === "trashed" ? "trashed" : "unavailable", ...(lookup.state === "trashed" ? { capability: "trashed" as const } : {}) });
+      if (lookup.state === "network-unavailable" && this.state.offline?.imageManifest && !this.state.document) this.publish({ mode: "images" });
       if (this.localMatches()) void this.openOffline(this.state.offline!);
       if (lookup.state !== "trashed") void this.retryLayers();
     }
@@ -248,7 +249,7 @@ export class ReaderSession {
       void manifest.then(async manifest => {
         if (!await this.current() || generation !== this.generation) return;
         this.displayPrepared = true;
-        this.publish({ document: new ImageDocument(manifest, scoreImagesPath(this.workspace.choirId, this.workspace.scoreId, manifest.versionId), local?.blob), status: "ready", modeMessage: null });
+        this.publish({ document: new ImageDocument(manifest, scoreImagesPath(this.workspace.choirId, this.workspace.scoreId, manifest.versionId), local?.blob), status: "ready", modeMessage: this.automaticRecoveryUsed ? "PDF 显示失败，当前使用图片恢复。" : null });
         this.prepareAutomaticOfflineCopy();
       }).catch(error => {
         if (this.disposed || generation !== this.generation) return;
@@ -360,6 +361,11 @@ export class ReaderSession {
     this.automaticRecoveryUsed = true;
     if (!this.changeMode("images")) return false;
     this.publish({ modeMessage: "PDF 显示失败，已尝试图片兼容模式。你仍可切回 PDF 阅读。" });
+    return true;
+  };
+  retryPdf = () => {
+    if (this.state.mode !== "images" || !this.state.document) return false;
+    this.changeMode("pdf");
     return true;
   };
   private changeMode(mode: ScoreDisplayMode) {

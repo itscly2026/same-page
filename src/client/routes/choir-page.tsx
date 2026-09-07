@@ -1,3 +1,4 @@
+import { useLogout } from "../auth/logout-context";
 import { BackButton } from "../navigation/back-button";
 import { ScoreLink } from "../score-library/score-link";
 import { useNetworkStatus } from "../platform/use-network-status";
@@ -61,9 +62,10 @@ export default function ChoirPage() {
 
 function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; identity: ApplicationIdentity; cacheOwner: DriveCacheOwnerKey }) {
   const { session } = identity;
+  const logout = useLogout();
   const userId = identity.localUserId ?? undefined;
   const online = useNetworkStatus();
-  const { library, snapshot } = useDriveLibrary(cacheOwner, choirId, Boolean(identity.authenticatedUserId) && online);
+  const { library, snapshot } = useDriveLibrary(cacheOwner, choirId, Boolean(identity.authenticatedUserId) && online, !identity.restoring && (Boolean(userId) || identity.onlineState !== "checking"));
   const { access, view: { search, sort }, scores: visibleScores, refreshMessage: searchMessage, joining: busy } = snapshot;
   const [openAdmissionDisplayName, setOpenAdmissionDisplayName] = useState("");
   const [settingsField, setSettingsField] = useState<"name" | "display-name" | null>(null);
@@ -136,6 +138,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
             <Menu aria-label="用户菜单">
               <MenuItem href={`/choirs/${choirId}/preferences`}>阅读偏好</MenuItem>
               <MenuItem href="/user">个人设置</MenuItem>
+              <MenuItem onAction={() => void logout.request()}>退出登录</MenuItem>
             </Menu>
           </Popover>
         </MenuTrigger>

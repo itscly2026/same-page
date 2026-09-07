@@ -1,4 +1,4 @@
-import { useLogout } from "../auth/logout";
+import { useLogout } from "../auth/logout-context";
 import { Menu as MenuIcon, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button,  Form, Heading, Input,  MenuItem, MenuTrigger, Modal, ModalOverlay, Popover, TextField } from "react-aria-components";
@@ -69,11 +69,11 @@ function DriveAvatar({ userId, choirId, onEditDisplayName, localOnly }: { userId
     return () => controller.abort();
   }, [userId, choirId, localOnly]);
   const initial = Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(displayName))[0]?.segment.toLocaleUpperCase() ?? "我";
-  return <><MenuTrigger>
+  return <MenuTrigger>
     <Button className="drive-avatar" aria-label="用户菜单">{initial}</Button>
     <Popover className="file-menu-popover account-menu-popover"><Menu aria-label="用户菜单">
       <MenuItem isDisabled={!onEditDisplayName || localOnly} onAction={onEditDisplayName}>我在此云盘的显示名{localOnly ? "（需联网）" : ""}</MenuItem>
       <MenuItem href={`/choirs/${choirId}/preferences`}>阅读偏好</MenuItem><MenuItem href="/user">个人设置</MenuItem><MenuItem onAction={() => void logout.request()}>退出登录</MenuItem>
     </Menu></Popover>
-  </MenuTrigger>{logout.dialog}</>;
+  </MenuTrigger>;
 }

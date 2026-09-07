@@ -2254,12 +2254,12 @@ it("keeps a single exit while the PDF never settles", async () => {
     fireEvent.pointerUp(editingOverlay, { clientX: 20, clientY: 30 });
     expect(screen.getByLabelText("批注文本")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "完成" })).toHaveLength(1);
-    fireEvent.click(
-      within(screen.getByRole("form", { name: "文字输入" })).getByRole(
-        "button",
-        { name: "取消" },
-      ),
-    );
+    fireEvent.change(screen.getByLabelText("批注文本"), { target: { value: "连续布局退出前保存的文字" } });
+    fireEvent.click(screen.getByRole("button", { name: "返回云盘" }));
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "批注文本" })).not.toBeInTheDocument());
+    expect(await screen.findByLabelText("连续滚动阅读")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    expect(await screen.findByText("连续布局退出前保存的文字")).toBeInTheDocument();
 
     // A slow/failed ink write must retain the selected target from #141,
     // while #142 prevents changing layers, tools or history before persistence.

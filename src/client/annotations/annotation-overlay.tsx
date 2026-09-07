@@ -296,7 +296,7 @@ export function AnnotationOverlay({
     return Boolean(saved);
   };
 
-  useEffect(() => editor?.registerTextCommit(finishTextEditor));
+  useEffect(() => { if (editing && textEditor) return editor?.registerTextCommit(finishTextEditor); });
 
   const addTransformPointer = (
     event: ReactPointerEvent<Element>,

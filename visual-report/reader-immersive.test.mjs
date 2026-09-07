@@ -202,6 +202,12 @@ async function recordContinuousEditFailure(page, engineName) {
 async function assertPageAlignment(page) {
   await expect.poll(() => page.locator(".annotated-pdf-page:visible").first().evaluate(frame => {
     const paper = frame.getBoundingClientRect();
+    const canvas = frame.querySelector("canvas[data-pdf-canvas-active]");
+    if (!canvas) return false;
+    const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    let ink = 0;
+    for (let i = 0; i < pixels.length; i += 16) if (pixels[i + 3] && pixels[i] + pixels[i + 1] + pixels[i + 2] < 700) ink++;
+    if (ink < 100) return false;
     return [frame.querySelector("canvas[data-pdf-canvas-active]"), frame.querySelector(".annotation-overlay")].every(element => {
       if (!element) return false;
       const box = element.getBoundingClientRect();

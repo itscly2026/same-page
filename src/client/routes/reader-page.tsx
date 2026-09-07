@@ -400,13 +400,7 @@ function ReaderPageContent() {
         <p className="hero__copy" role="alert">
           {loadError}
         </p>
-        <Link
-          className="primary-link"
-          to={`/choirs/${choirId}`}
-          onClick={() => startLoadingJourney("exit-score", "warm")}
-        >
-          返回云盘
-        </Link>
+        <BackButton className="primary-link" to={`/choirs/${choirId}`}>返回云盘</BackButton>
         <Button className="secondary-button" onPress={reader.retry}>重试加载</Button>
         <details><summary>更多帮助</summary>{displayChoices}{diagnosticDialog}</details>
       </main>
@@ -501,7 +495,7 @@ function ReaderPageContent() {
       {failedDisplay === document ? <div className="reader-display-recovery" role="alert">
         <span>页面显示失败，本机草稿仍保留。</span>{displayChoices}{diagnosticDialog}
       </div> : null}
-      {reader.snapshot.modeMessage ? <p className="reader-display-notice" role="status">{reader.snapshot.modeMessage}</p> : null}
+      {reader.snapshot.modeMessage ? <p className="reader-display-notice" role="status">{reader.snapshot.modeMessage}{reader.snapshot.mode === "images" && <Button className="text-button" onPress={reader.retry}>重试 PDF 阅读</Button>}</p> : null}
       {chromeVisible ? (
       <header className="reader-chrome" aria-label="阅读器控制">
           <Button aria-label="返回云盘" className="reader-chrome__back reader-icon-button" onPress={() => { startLoadingJourney("exit-score", "warm"); navigation.back(`/choirs/${choirId}`); }}>
@@ -522,7 +516,7 @@ function ReaderPageContent() {
                   editAvailability === "read-only" ||
                   editAvailability === "trashed"
                 }
-                onPress={() => editing ? void finishEditing() : requestEditing()}
+                onPress={() => editing ? navigation.afterEditing(() => { /* Completion is performed by the editing exit layer. */ }) : requestEditing()}
               >
                 {editing ? <Check aria-hidden="true" size={21} /> : <Pencil aria-hidden="true" size={21} />}
               </Button>

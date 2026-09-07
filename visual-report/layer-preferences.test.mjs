@@ -77,7 +77,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     };
 
     await page.goto(`${origin}${drive}/preferences`);
-    const checkbox = page.getByRole("checkbox", { name: "E · 全体 默认显示" });
+    const checkbox = page.getByRole("checkbox", { name: "E · Ensemble 默认显示" });
     await checkbox.waitFor();
     assert.equal(await page.locator('input[type="color"]').count(), 0);
     await geometry(".preference-display-toggle", "preferences");
@@ -85,11 +85,11 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByRole("heading", { name: "批注颜色", exact: true }).waitFor();
     assert.equal(await page.getByRole("checkbox").count(), 0);
     await geometry(".settings-color-control input", "colors");
-    await page.getByRole("link", { name: "返回阅读偏好" }).click();
+    await page.getByRole("button", { name: "返回阅读偏好" }).click();
     await page.goto(`${origin}${drive}/scores/visual-score`);
     await showReader(page);
     await page.getByRole("button", { name: "看哪些批注", exact: true }).click();
-    await page.getByRole("checkbox", { name: "显示 E · 全体" }).waitFor();
+    await page.getByRole("checkbox", { name: "显示 E · Ensemble" }).waitFor();
     assert.equal(await page.getByRole("checkbox").count(), 5);
     await page.locator(".layer-section--personal").scrollIntoViewIfNeeded();
     await geometry(".reader-layer-toggle", "display");
@@ -103,35 +103,35 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${origin}${drive}/preferences`);
-    const display = page.getByRole("checkbox", { name: "E · 全体 默认显示" });
+    const display = page.getByRole("checkbox", { name: "E · Ensemble 默认显示" });
     await display.waitFor();
     failNext = true;
     await display.press("Space");
     await page.getByRole("alert").waitFor();
     assert.equal(await display.isChecked(), true);
     await capture(page, `${engineName}-display-save-failure`);
-    await page.getByRole("button", { name: "重试 E · 全体" }).click();
-    await page.waitForFunction(() => !document.querySelector('input[aria-label="E · 全体 默认显示"]').checked);
+    await page.getByRole("button", { name: "重试 E · Ensemble" }).click();
+    await page.waitForFunction(() => !document.querySelector('input[aria-label="E · Ensemble 默认显示"]').checked);
     await page.getByRole("link", { name: "批注颜色", exact: true }).click();
-    const color = page.getByLabel("E · 全体 批注颜色", { exact: true });
+    const color = page.getByLabel("E · Ensemble 批注颜色", { exact: true });
     const previousColor = await color.inputValue();
     failNext = true;
     await color.fill("#123456");
     await page.getByRole("alert").waitFor();
     assert.equal(await color.inputValue(), previousColor);
     await capture(page, `${engineName}-color-save-failure`);
-    await page.getByRole("button", { name: "重试 E · 全体" }).click();
+    await page.getByRole("button", { name: "重试 E · Ensemble" }).click();
     await page.waitForFunction(() => document.querySelector('input[type="color"]').value === "#123456");
     await capture(page, `${engineName}-color-custom`);
-    await page.getByRole("button", { name: "E · 全体 恢复默认颜色" }).click();
-    await page.getByRole("button", { name: "E · 全体 恢复默认颜色" }).waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "E · Ensemble 恢复默认颜色" }).click();
+    await page.getByRole("button", { name: "E · Ensemble 恢复默认颜色" }).waitFor({ state: "hidden" });
     await page.reload();
-    assert.notEqual(await page.getByLabel("E · 全体 批注颜色", { exact: true }).inputValue(), "#123456");
+    assert.notEqual(await page.getByLabel("E · Ensemble 批注颜色", { exact: true }).inputValue(), "#123456");
 
     await page.goto(`${origin}${drive}/scores/visual-score`);
     await showReader(page);
     await page.getByRole("button", { name: "看哪些批注", exact: true }).click();
-    const scoreDisplay = page.getByRole("checkbox", { name: "显示 E · 全体" });
+    const scoreDisplay = page.getByRole("checkbox", { name: "显示 E · Ensemble" });
     await scoreDisplay.waitFor();
     assert.equal(await scoreDisplay.isChecked(), false, "drive default applies to this score");
     // Clear the pre-existing Bass fixture override first.
@@ -142,7 +142,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByRole("alert").waitFor();
     assert.equal(await scoreDisplay.isChecked(), false);
     await page.getByRole("button", { name: "重试未保存项" }).click();
-    await page.waitForFunction(() => document.querySelector('input[aria-label="显示 E · 全体"]').checked);
+    await page.waitForFunction(() => document.querySelector('input[aria-label="显示 E · Ensemble"]').checked);
     await capture(page, `${engineName}-score-override`);
     await page.getByRole("button", { name: "使用云盘默认", exact: true }).click();
     await page.getByRole("button", { name: "使用云盘默认", exact: true }).waitFor({ state: "hidden" });
@@ -157,7 +157,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByRole("dialog", { name: "仅可查看" }).waitFor();
     await capture(page, `${engineName}-permission`);
     await page.getByRole("button", { name: "知道了" }).click();
-    await page.getByRole("button", { name: "E，全体", exact: true }).click();
+    await page.getByRole("button", { name: "E，Ensemble", exact: true }).click();
     await page.getByText("第一排男高音这里请统一提前吸气并保持轻声进入", { exact: true }).waitFor();
     assert.equal(await page.getByText("换气", { exact: true }).count(), 0, "editing shows only the selected shared layer");
     assert.equal(await page.getByRole("button", { name: "页面位置" }).isDisabled(), true);
@@ -169,22 +169,23 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
 
     identity = "admin";
     await page.goto(`${origin}${drive}/shared-layers`);
-    await page.getByRole("link", { name: /E · 全体.*已授权/ }).waitFor();
+    await page.getByRole("link", { name: /E · Ensemble.*已授权/ }).waitFor();
     const managementSizes = viewports.filter(([, height]) => height > 320);
     await geometry(".settings-layer-link, .layer-create-form input[type=text]", "management", managementSizes);
-    await page.getByRole("button", { name: "删除 E · 全体", exact: true }).click();
-    await page.getByRole("dialog", { name: "删除共享层「E · 全体」？" }).waitFor();
+    await page.getByRole("button", { name: "删除 E · Ensemble", exact: true }).click();
+    await page.getByRole("dialog", { name: "删除共享层「E · Ensemble」？" }).waitFor();
     await geometry(".dialog-actions button", "delete-layer-confirm", managementSizes);
     await page.getByRole("button", { name: "删除整个共享层", exact: true }).click();
-    await page.getByRole("link", { name: /E · 全体.*已授权/ }).waitFor({ state: "hidden" });
+    await page.getByRole("link", { name: /E · Ensemble.*已授权/ }).waitFor({ state: "hidden" });
     await page.getByRole("button", { name: "已删除层", exact: true }).click();
     await page.getByText(/恢复截止：/).waitFor();
     await geometry(".settings-layer-link button", "deleted-layers", managementSizes);
     await page.getByRole("button", { name: "恢复", exact: true }).click();
     await page.getByText("原共享层已恢复，原有启用或停用状态保留。", { exact: true }).waitFor();
     await page.getByRole("button", { name: "当前共享层", exact: true }).click();
-    await page.getByRole("link", { name: /E · 全体.*已授权/ }).click();
-    await page.getByRole("heading", { name: "E · 全体" }).waitFor();
+    await page.getByRole("link", { name: /E · Ensemble.*已授权/ }).click();
+    await page.getByRole("heading", { name: "E · Ensemble" }).waitFor();
+
     await geometry(".settings-member-row, .layer-details-form input[type=text]", "grants", managementSizes);
     if (process.env.LAYOUT_CAPTURE_DIR) await writeFile(path.join(process.env.LAYOUT_CAPTURE_DIR, `${engineName}-interactions.json`), JSON.stringify({ writes, checks: ["drive defaults", "score override and restore", "save failure and retry", "custom color and restore", "permission explanation", "edit hidden layer without subscribing", "exit restores reading"] }, null, 2));
     await context.close();

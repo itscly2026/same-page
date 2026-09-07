@@ -90,6 +90,11 @@ it("opens server page geometry in image mode without starting PDF.js", async () 
     expect(page.getViewport({ scale: 1 })).toMatchObject({ width: 800, height: 600 });
     expect(vi.mocked(loadPdfDocument).mock.calls.length).toBe(before);
     await vi.waitFor(() => expect(session.getSnapshot().downloading).toBe(false));
+    const readable = session.getSnapshot().document;
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    expect(session.retryPdf()).toBe(true);
+    expect(session.getSnapshot().document).toBe(readable);
+    expect(session.getSnapshot()).toMatchObject({ mode: "images", status: "ready", modeMessage: expect.stringContaining("当前副本仍可使用") });
   } finally { session.dispose(); }
 });
 
