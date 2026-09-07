@@ -314,7 +314,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
           input.includes("/layers")
-            ? Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } })
+            ? Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } })
             : input.includes("/versions/")
             ? new Response(new Uint8Array([1, 2, 3]), {
                 headers: { "content-type": "application/pdf" },
@@ -454,7 +454,7 @@ it("keeps a single exit while the PDF never settles", async () => {
         input.endsWith("/bootstrap")
           ? delayedBootstrap
           : Promise.resolve(
-              Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
+              Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
             ),
       ),
     );
@@ -553,7 +553,7 @@ it("keeps a single exit while the PDF never settles", async () => {
           );
         }
         return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -631,7 +631,7 @@ it("keeps a single exit while the PDF never settles", async () => {
           );
         }
         return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -715,7 +715,7 @@ it("keeps a single exit while the PDF never settles", async () => {
             : Promise.resolve(new Response(null, { status: 403 }));
         }
         return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -778,7 +778,7 @@ it("keeps a single exit while the PDF never settles", async () => {
           );
         }
         return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -850,7 +850,7 @@ it("keeps a single exit while the PDF never settles", async () => {
           return Promise.resolve(activeBootstrapResponse());
         }
         return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -916,7 +916,7 @@ it("keeps a single exit while the PDF never settles", async () => {
           return Promise.resolve(activeBootstrapResponse());
         }
         return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -999,7 +999,7 @@ it("keeps a single exit while the PDF never settles", async () => {
           return Promise.resolve(activeBootstrapResponse());
         }
         return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -1069,7 +1069,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       vi.fn().mockImplementation((input: string) => {
         if (!input.endsWith("/bootstrap")) {
           return Promise.resolve(
-            Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
+            Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
           );
         }
         bootstrapCalls += 1;
@@ -1154,7 +1154,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       vi.fn().mockImplementation((input: string) => {
         if (!input.endsWith("/bootstrap")) {
           return Promise.resolve(
-            Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
+            Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
           );
         }
         bootstrapCalls += 1;
@@ -1412,7 +1412,7 @@ it("keeps a single exit while the PDF never settles", async () => {
           return delayedLookup;
         }
         return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
+          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -1472,7 +1472,7 @@ it("keeps a single exit while the PDF never settles", async () => {
         Promise.resolve(
           input.endsWith("/scores/score-1/bootstrap")
             ? Response.json({ error: "not_found" }, { status: 404 })
-            : Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } }),
+            : Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
         ),
       ),
     );
@@ -1495,7 +1495,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
           input.includes("/layers")
-            ? Response.json({ layers: completeReaderLayers(), permissions: { canManageLayers: false } })
+            ? Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } })
             : input.includes("/annotations?") ? Response.json({ cursor: 0, objects: [] })
             : activeBootstrapResponse(),
         ),
@@ -1615,7 +1615,7 @@ it("keeps a single exit while the PDF never settles", async () => {
               canEdit: true,
             },
           ]),
-          permissions: { canManageLayers: false },
+          sharedLayerRevision: 0, permissions: { canManageLayers: false },
         }));
       }
       return Promise.resolve(activeBootstrapResponse());
@@ -1691,7 +1691,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     await act(async () => {
       resolveLayers(Response.json({
         layers: completeReaderLayers([]),
-        permissions: { canManageLayers: false },
+        sharedLayerRevision: 0, permissions: { canManageLayers: false },
       }));
     });
     await waitFor(() => {
@@ -1743,7 +1743,7 @@ it("keeps a single exit while the PDF never settles", async () => {
               canEdit: true,
             },
           ]),
-          permissions: { canManageLayers: true },
+          sharedLayerRevision: 0, permissions: { canManageLayers: true },
         }));
       }
       return Promise.resolve(activeBootstrapResponse());
@@ -1815,7 +1815,7 @@ it("keeps a single exit while the PDF never settles", async () => {
                 canEdit: false,
               },
             ]),
-            permissions: { canManageLayers: false },
+            sharedLayerRevision: 0, permissions: { canManageLayers: false },
           }),
         );
       }
@@ -2105,7 +2105,7 @@ it("keeps a single exit while the PDF never settles", async () => {
                 canEdit: true,
               },
             ]),
-            permissions: { canManageLayers: false },
+            sharedLayerRevision: 0, permissions: { canManageLayers: false },
           }),
         );
       }
@@ -2354,7 +2354,7 @@ it("keeps a single exit while the PDF never settles", async () => {
                 driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true,
               },
             ]),
-            permissions: { canManageLayers: false },
+            sharedLayerRevision: 0, permissions: { canManageLayers: false },
           }),
         );
       }

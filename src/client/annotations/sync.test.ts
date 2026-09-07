@@ -16,6 +16,8 @@ import {
 } from "./annotation-state";
 import { pushPendingAnnotations, syncAnnotations } from "./sync";
 
+const layerId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const layerResponse = (id: string) => Response.json({ layers: [{ id, kind: "personal", sharedSlot: null, name: "Personal", sortOrder: 10000, subscribed: true, subscriptionSource: "personal", displayColor: "#b4235a", colorSource: "personal", adminDefaultColor: null, driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }], sharedLayerRevision: 0, permissions: { canManageLayers: false } });
 const workspace = createLocalWorkspace(
   authenticatedLocalOwnerKey("user-1"),
   "choir-1",
@@ -31,6 +33,7 @@ describe("bounded annotation push", () => {
         request: (_name: string, _options: LockOptions, action: (lock: object) => Promise<unknown>) => action({}),
       },
     });
+    vi.stubGlobal("fetch", vi.fn(async () => layerResponse(layerId)));
     await localDatabase.open();
     await activateAuthenticatedLocalOwner("user-1");
     await Promise.all([
@@ -57,7 +60,7 @@ describe("bounded annotation push", () => {
     await saveAnnotationDraft(workspace, { id, layerId, payload: { kind: "text", pageNumber: 1, x: .1, y: .2, fontScale: .024, text: "local" } });
     await queueScoreDrafts(workspace);
     const cloudId = crypto.randomUUID();
-    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (_url, init) => String(_url).endsWith("/layers") ? Response.json({ layers: [{ id: layerId, kind: "personal", sharedSlot: null, name: "Personal", sortOrder: 10000, subscribed: true, subscriptionSource: "personal", displayColor: "#b4235a", colorSource: "personal", adminDefaultColor: null, driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }], permissions: { canManageLayers: false } }) : init?.method === "POST"
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (_url, init) => String(_url).endsWith("/layers") ? Response.json({ layers: [{ id: layerId, kind: "personal", sharedSlot: null, name: "Personal", sortOrder: 10000, subscribed: true, subscriptionSource: "personal", displayColor: "#b4235a", colorSource: "personal", adminDefaultColor: null, driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }], sharedLayerRevision: 0, permissions: { canManageLayers: false } }) : init?.method === "POST"
       ? Response.json({}, { status: 403 })
       : Response.json({ cursor: 7, objects: [{ id: cloudId, layerId, version: 1, deleted: false, payload: { kind: "text", pageNumber: 1, x: .1, y: .2, fontScale: .024, text: "cloud" }, createdByDisplayName: "", updatedByDisplayName: "", updatedAt: 1 }] })));
     await expect(syncAnnotations(workspace, { pull: true })).rejects.toThrow();
@@ -81,7 +84,7 @@ describe("bounded annotation push", () => {
         opId: `op-${index}`,
         ...workspace,
         annotationId: `annotation-${index}`,
-        layerId: "layer-1",
+        layerId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
         baseVersion: 0,
         type: "upsert" as const,
         payload: {
@@ -99,6 +102,7 @@ describe("bounded annotation push", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation(async (_input, init?: RequestInit) => {
+        if (String(_input).endsWith("/layers")) return layerResponse(layerId);
         const body = JSON.parse(String(init?.body)) as {
           operations: Array<{ opId: string }>;
         };
@@ -115,7 +119,7 @@ describe("bounded annotation push", () => {
       pushPendingAnnotations(workspace, { maxOperations: 100 }),
     ).resolves.toBe(100);
 
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
     expect(await localDatabase.annotationOutbox.count()).toBe(1);
   });
 
@@ -154,6 +158,7 @@ describe("bounded annotation push", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation(async (_input, init?: RequestInit) => {
+        if (String(_input).endsWith("/layers")) return layerResponse(layerId);
         const body = JSON.parse(String(init?.body)) as {
           operations: typeof sent;
         };
@@ -242,6 +247,7 @@ describe("bounded annotation push", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation(async (_input, init?: RequestInit) => {
+        if (String(_input).endsWith("/layers")) return layerResponse(layerId);
         const body = JSON.parse(String(init?.body)) as {
           operations: typeof sent;
         };
@@ -320,7 +326,7 @@ describe("bounded annotation push", () => {
       opId: "legacy-invalid-delete",
       ...workspace,
       annotationId: "annotation-1",
-      layerId: "layer-1",
+      layerId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
       baseVersion: 0,
       type: "delete",
       payload: null,
@@ -331,7 +337,7 @@ describe("bounded annotation push", () => {
       opId: "valid-create",
       ...workspace,
       annotationId: "annotation-2",
-      layerId: "layer-1",
+      layerId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
       baseVersion: 0,
       type: "upsert",
       payload: {
@@ -349,6 +355,7 @@ describe("bounded annotation push", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation(async (_input, init?: RequestInit) => {
+        if (String(_input).endsWith("/layers")) return layerResponse(layerId);
         send();
         const body = JSON.parse(String(init?.body)) as {
           operations: Array<{ opId: string }>;
@@ -374,7 +381,7 @@ describe("bounded annotation push", () => {
 
   it("does not remove a separate positive-version conflict while folding an invalid delete", async () => {
     const annotationId = "annotation-with-real-conflict";
-    const layerId = "layer-1";
+    const layerId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
     await localDatabase.annotations.put({
       key: annotationRecordKey(workspace.scopeKey, annotationId),
       ...workspace,

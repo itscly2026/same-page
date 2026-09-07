@@ -1,8 +1,11 @@
+import { readSharedLayerAvailability, readSharedLayerSnapshot } from "./shared-layer-state";
+import { RECOVERY_PERIOD_MS } from "../lifecycle/cleanup";
 import { createSharedLayerInstances } from "./shared-layer-instances";
 import { AnnotationScopeAccessError, synchronizeOperations } from "./synchronize";
 import { type Context, Hono } from "hono";
 
 import {
+  sharedLayerLifecycleSchema,
   annotationPayloadSchema,
   annotationPushRequestSchema,
   sharedLayerSlotSchema,
@@ -44,7 +47,7 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
     ).bind(crypto.randomUUID(), choirId, scoreId, userId, access.membership?.id ?? null, now, now).run();
   }
 
-  const rows = await context.env.DB.prepare(
+  const query = context.env.DB.prepare(
     `SELECT layers.id, layers.kind, layers.default_slot, COALESCE(settings.name, layers.name) AS name, COALESCE(settings.sort_order, layers.sort_order) AS sort_order,
             layers.sharing, owner.display_name AS owner_name,
             CASE WHEN subscriptions.user_id IS NULL THEN 0 ELSE 1 END AS personal_subscribed,
@@ -75,16 +78,18 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
      LEFT JOIN memberships owner ON owner.user_id = layers.owner_user_id AND owner.choir_id = layers.choir_id AND owner.status = 'active'
      LEFT JOIN personal_layer_subscriptions subscriptions ON subscriptions.layer_id = layers.id AND subscriptions.user_id = ?
      WHERE layers.choir_id = ? AND layers.score_id = ?
-       AND ((layers.kind = 'shared' AND settings.active = 1) OR layers.owner_user_id = ?
+       AND ((layers.kind = 'shared' AND settings.active = 1 AND settings.deleted_at IS NULL) OR layers.owner_user_id = ?
          OR (layers.sharing = 1 AND owner.id IS NOT NULL AND EXISTS (SELECT 1 FROM memberships reader WHERE reader.id = ? AND reader.status = 'active')
              AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = layers.owner_user_id)))
      ORDER BY CASE layers.kind WHEN 'shared' THEN 0 ELSE 1 END,
               sort_order, layers.created_at`,
   ).bind(userId, access.membership?.role === "admin" ? 1 : 0, userId, userId,
-    access.membership?.id ?? null, userId, choirId, scoreId, userId, access.membership?.id ?? null).all<LayerRow>();
+    access.membership?.id ?? null, userId, choirId, scoreId, userId, access.membership?.id ?? null);
+  const snapshot = await readSharedLayerSnapshot<LayerRow>(context.env.DB, choirId, query);
 
   return context.json({
-    layers: rows.results.map(row => ({ ...serializeLayer(row), canShare: row.kind === "personal" && row.can_edit === 1 && !!access.membership })),
+    sharedLayerRevision: snapshot.sharedLayerRevision,
+    layers: snapshot.rows.map(row => ({ ...serializeLayer(row), canShare: row.kind === "personal" && row.can_edit === 1 && !!access.membership })),
     permissions: { canManageLayers: access.membership?.role === "admin" },
   });
 });
@@ -107,7 +112,7 @@ annotationRoutes.get("/choirs/:choirId/shared-layer-preferences", async (context
        ON preferences.choir_id = settings.choir_id
       AND preferences.slot = settings.slot
       AND preferences.user_id = ?
-     WHERE settings.choir_id = ? AND settings.active = 1 ORDER BY settings.sort_order, settings.slot`,
+     WHERE settings.choir_id = ? AND settings.active = 1 AND settings.deleted_at IS NULL ORDER BY settings.sort_order, settings.slot`,
   ).bind(principal.userId, choirId).all<{
     slot: string;
     name: string;
@@ -129,8 +134,9 @@ annotationRoutes.get("/choirs/:choirId/shared-layers", async (context) => {
   await requireChoirAdmin(createDatabase(context.env.DB), principal, choirId);
   const drive = await readDriveIdentity(context, choirId);
   if (!drive) return context.json({ error: "choir_not_found" }, 404);
-  const rows = await context.env.DB.prepare(
-    `SELECT settings.slot, settings.name, settings.sort_order, settings.active, settings.default_color,
+  const state = context.req.query("state") === "deleted" ? "deleted" : "current";
+  const query = context.env.DB.prepare(
+    `SELECT settings.slot, settings.name, settings.sort_order, settings.active, settings.default_color, settings.deleted_at, settings.revision,
             COUNT(granted_members.id) AS granted_member_count
      FROM choir_shared_layer_settings AS settings
      LEFT JOIN shared_layer_edit_grants AS grants
@@ -140,21 +146,47 @@ annotationRoutes.get("/choirs/:choirId/shared-layers", async (context) => {
       AND granted_members.choir_id = settings.choir_id
       AND granted_members.status = 'active'
       AND granted_members.role = 'member'
-     WHERE settings.choir_id = ?
+     WHERE settings.choir_id = ? AND ((? = 'deleted' AND settings.deleted_at IS NOT NULL) OR (? = 'current' AND settings.deleted_at IS NULL))
      GROUP BY settings.slot ORDER BY settings.sort_order, settings.slot`,
-  ).bind(choirId).all<{
+  ).bind(choirId, state, state);
+  const snapshot = await readSharedLayerSnapshot<{
     slot: string;
     name: string;
     default_color: string;
     granted_member_count: number;
     sort_order: number;
     active: number;
-  }>();
-  return context.json({ drive, layers: rows.results.map(row => ({
+    deleted_at: number | null;
+    revision: number;
+  }>(context.env.DB, choirId, query);
+  return context.json({ drive, sharedLayerRevision: snapshot.sharedLayerRevision, activeSharedSlots: snapshot.activeSharedSlots, layers: snapshot.rows.map(row => ({
     slot: row.slot, name: row.name, defaultColor: row.default_color,
     sortOrder: row.sort_order, active: row.active === 1,
+    revision: row.revision, deletedAt: row.deleted_at,
+    recoverUntil: row.deleted_at === null ? null : row.deleted_at + RECOVERY_PERIOD_MS,
     grantedMemberCount: Number(row.granted_member_count),
   })) });
+});
+
+// Revision CAS makes a lost response queryable and rejects stale delete/restore actions.
+annotationRoutes.post("/choirs/:choirId/shared-layers/:slot/lifecycle", async context => {
+  const choirId = context.req.param("choirId");
+  const member = await requireChoirAdmin(createDatabase(context.env.DB), await resolveContextPrincipal(context), choirId);
+  const slot = sharedLayerSlotSchema.safeParse(context.req.param("slot"));
+  const parsed = sharedLayerLifecycleSchema.safeParse(await context.req.json().catch(() => null));
+  if (!slot.success || !parsed.success) return context.json({ error: "invalid_layer_lifecycle" }, 400);
+  const now = Date.now();
+  const deleting = parsed.data.action === "delete";
+  const result = await context.env.DB.prepare(`UPDATE choir_shared_layer_settings
+    SET deleted_at = ?, revision = revision + 1, updated_at = ?, updated_by_membership_id = ?
+    WHERE choir_id = ? AND slot = ? AND revision = ?
+      AND ${deleting ? "deleted_at IS NULL" : "deleted_at IS NOT NULL AND deleted_at > cast(unixepoch('subsecond') * 1000 AS INTEGER) - ?"}
+      AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND role = 'admin' AND lifecycle_revision = ?)`)
+    .bind(deleting ? now : null, now, member.id, choirId, slot.data, parsed.data.expectedRevision,
+      ...(!deleting ? [RECOVERY_PERIOD_MS] : []), member.id, member.lifecycleRevision).run();
+  if (!result.meta.changes) return context.json({ error: "layer_lifecycle_conflict" }, 409);
+  return context.json({ action: parsed.data.action, revision: parsed.data.expectedRevision + 1,
+    ...await readSharedLayerAvailability(context.env.DB, choirId) });
 });
 
 annotationRoutes.post("/choirs/:choirId/shared-layers", async context => {
@@ -184,15 +216,15 @@ annotationRoutes.put("/choirs/:choirId/shared-layers/:slot/order", async context
   const offset = parsed.data.direction === "up" ? -1 : 1;
   const result = await context.env.DB.prepare(`WITH ordered AS MATERIALIZED (
       SELECT slot, ROW_NUMBER() OVER (ORDER BY sort_order, slot) - 1 AS ordinal
-      FROM choir_shared_layer_settings WHERE choir_id = ?
+      FROM choir_shared_layer_settings WHERE choir_id = ? AND deleted_at IS NULL
     ), target AS (SELECT ordinal FROM ordered WHERE slot = ?),
     neighbor AS (SELECT ordinal FROM ordered WHERE ordinal = (SELECT ordinal FROM target) + ?)
     UPDATE choir_shared_layer_settings SET sort_order = (
       SELECT CASE WHEN ordinal = (SELECT ordinal FROM target) THEN COALESCE((SELECT ordinal FROM neighbor), ordinal)
         WHEN ordinal = (SELECT ordinal FROM neighbor) THEN (SELECT ordinal FROM target) ELSE ordinal END
       FROM ordered WHERE ordered.slot = choir_shared_layer_settings.slot
-    ), updated_by_membership_id = ?, updated_at = ?
-    WHERE choir_id = ? AND EXISTS (SELECT 1 FROM target)
+    ), updated_by_membership_id = ?, updated_at = ?, revision = revision + 1
+    WHERE choir_id = ? AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM target)
       AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND role = 'admin' AND lifecycle_revision = ?)`)
     .bind(choirId, slot.data, offset, membership.id, Date.now(), choirId, membership.id, membership.lifecycleRevision).run();
   if (!result.meta.changes) return context.json({ error: "layer_not_found" }, 404);
@@ -208,8 +240,8 @@ annotationRoutes.put("/choirs/:choirId/shared-layers/:slot/settings", async (con
   const data = parsed.data;
   const result = await context.env.DB.prepare(`UPDATE choir_shared_layer_settings SET
     name = COALESCE(?, name), sort_order = COALESCE(?, sort_order), active = COALESCE(?, active),
-    default_color = COALESCE(?, default_color), updated_by_membership_id = ?, updated_at = ?
-    WHERE choir_id = ? AND slot = ? AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND role = 'admin' AND lifecycle_revision = ?)`).bind(data.name ?? null, data.sortOrder ?? null,
+    default_color = COALESCE(?, default_color), updated_by_membership_id = ?, updated_at = ?, revision = revision + 1
+    WHERE choir_id = ? AND slot = ? AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND role = 'admin' AND lifecycle_revision = ?)`).bind(data.name ?? null, data.sortOrder ?? null,
       data.active === undefined ? null : Number(data.active), data.defaultColor?.toLowerCase() ?? null,
       membership.id, Date.now(), choirId, slot.data, membership.id, membership.lifecycleRevision).run();
   if (!result.meta.changes) return context.json({ error: "layer_not_found" }, 404);
@@ -234,15 +266,16 @@ annotationRoutes.put("/choirs/:choirId/shared-layers/:slot/preference", async (c
   const colorOverride = parsed.data.colorOverride === undefined
     ? existing?.color_override ?? null
     : parsed.data.colorOverride?.toLowerCase() ?? null;
-  await context.env.DB.prepare(
+  const result = await context.env.DB.prepare(
     `INSERT INTO user_drive_layer_preferences
        (user_id, choir_id, slot, subscribed, color_override, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)
+     SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM choir_shared_layer_settings WHERE choir_id = ? AND slot = ? AND deleted_at IS NULL)
      ON CONFLICT(user_id, choir_id, slot) DO UPDATE SET
        subscribed = excluded.subscribed,
        color_override = excluded.color_override,
        updated_at = excluded.updated_at`,
-  ).bind(principal.userId, choirId, slot.data, subscribed ? 1 : 0, colorOverride, Date.now()).run();
+  ).bind(principal.userId, choirId, slot.data, subscribed ? 1 : 0, colorOverride, Date.now(), choirId, slot.data).run();
+  if (!result.meta.changes) return context.json({ error: "layer_not_found" }, 404);
   return context.json({ preference: { subscribed, colorOverride } });
 });
 
@@ -264,15 +297,16 @@ annotationRoutes.put("/choirs/:choirId/scores/:scoreId/shared-layers/:slot/prefe
   const subscribed = parsed.data.subscribed === undefined
     ? existing?.subscribed_override == null ? null : existing.subscribed_override === 1
     : parsed.data.subscribed;
-  await context.env.DB.prepare(
+  const result = await context.env.DB.prepare(
     `INSERT INTO user_score_layer_preferences
        (user_id, choir_id, score_id, slot, subscribed_override, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)
+     SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM choir_shared_layer_settings WHERE choir_id = ? AND slot = ? AND deleted_at IS NULL)
      ON CONFLICT(user_id, score_id, slot) DO UPDATE SET
        subscribed_override = excluded.subscribed_override,
        updated_at = excluded.updated_at`,
   ).bind(access.principal.userId, access.choirId, access.scoreId, slot.data,
-    subscribed === null ? null : subscribed ? 1 : 0, Date.now()).run();
+    subscribed === null ? null : subscribed ? 1 : 0, Date.now(), access.choirId, slot.data).run();
+  if (!result.meta.changes) return context.json({ error: "layer_not_found" }, 404);
   return context.json({ preference: { subscribed } });
 });
 
@@ -318,10 +352,10 @@ annotationRoutes.put("/choirs/:choirId/shared-layers/:slot/grants/:membershipId"
   ).bind(membershipId, choirId, actorId).first<{ role: string; target_revision: number; actor_revision: number }>();
   if (!target) return context.json({ error: "membership_not_found" }, 404);
   if (target.role === "admin") return context.json({ grant: { membershipId, granted: true } });
-  const guard = `EXISTS (SELECT 1 FROM memberships target JOIN memberships actor ON actor.choir_id = target.choir_id
+  const guard = `EXISTS (SELECT 1 FROM choir_shared_layer_settings WHERE choir_id = ? AND slot = ? AND deleted_at IS NULL) AND EXISTS (SELECT 1 FROM memberships target JOIN memberships actor ON actor.choir_id = target.choir_id
     WHERE target.id = ? AND target.choir_id = ? AND target.status = 'active' AND target.role = 'member' AND target.lifecycle_revision = ?
       AND actor.user_id = ? AND actor.status = 'active' AND actor.role = 'admin' AND actor.lifecycle_revision = ?)`;
-  const guardBindings = [membershipId, choirId, target.target_revision, actorId, target.actor_revision];
+  const guardBindings = [choirId, slot.data, membershipId, choirId, target.target_revision, actorId, target.actor_revision];
   const mutation = body.granted
     ? context.env.DB.prepare(`INSERT INTO shared_layer_edit_grants (id, choir_id, slot, membership_id)
         SELECT ?, ?, ?, ? WHERE ${guard}
@@ -429,7 +463,7 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/annotations", async (cont
       AND grants.choir_id = layers.choir_id
      WHERE operations.score_id = ? AND operations.choir_id = ?
        AND operations.status = 'accepted' AND operations.sequence > ?
-       AND ((layers.kind = 'shared' AND EXISTS (SELECT 1 FROM choir_shared_layer_settings WHERE choir_id = layers.choir_id AND slot = layers.default_slot AND active = 1))
+       AND ((layers.kind = 'shared' AND EXISTS (SELECT 1 FROM choir_shared_layer_settings WHERE choir_id = layers.choir_id AND slot = layers.default_slot AND active = 1 AND deleted_at IS NULL))
          OR layers.owner_user_id = ? OR (layers.kind = 'personal' AND layers.sharing = 1 AND EXISTS (SELECT 1 FROM memberships reader WHERE reader.id = ? AND reader.status = 'active')
            AND EXISTS (SELECT 1 FROM memberships WHERE choir_id = layers.choir_id AND user_id = layers.owner_user_id AND status = 'active')
            AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = layers.owner_user_id)))
@@ -597,6 +631,6 @@ interface PullRow extends ObjectRow {
 }
 
 async function hasSharedLayer(context: Context<AppEnvironment>, choirId: string, slot: string) {
-  return context.env.DB.prepare("SELECT 1 FROM choir_shared_layer_settings WHERE choir_id = ? AND slot = ?")
+  return context.env.DB.prepare("SELECT 1 FROM choir_shared_layer_settings WHERE choir_id = ? AND slot = ? AND deleted_at IS NULL")
     .bind(choirId, slot).first();
 }

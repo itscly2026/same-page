@@ -485,7 +485,8 @@ function ReaderPageContent() {
     loaded: activeAnnotations !== null,
     draftCount: annotations.filter(annotation => annotation.state === "draft").length,
     acceptedCount: annotations.filter(annotation => annotation.state === "synced" && annotation.version > 0).length,
-    permissionErrorCount: annotations.filter(annotation => annotation.syncErrorCode === "permission_denied").length,
+    permissionErrorCount: annotations.filter(annotation => annotation.syncErrorCode === "permission_denied" ||
+      (annotation.state !== "synced" && !layers.some(layer => layer.id === annotation.layerId && layer.canEdit))).length,
     online,
     pendingCount,
     conflictCount: conflicts.length,

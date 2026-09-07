@@ -237,6 +237,7 @@ export const annotationPushResponseSchema = z.object({
 });
 
 export const annotationLayerListResponseSchema = z.object({
+  sharedLayerRevision: z.number().int().nonnegative(),
   layers: z.array(annotationLayerSummarySchema),
   permissions: z.object({ canManageLayers: z.boolean() }),
 });
@@ -265,11 +266,19 @@ export const driveLayerPreferencesResponseSchema = z.object({
   layers: z.array(driveLayerPreferenceSummarySchema),
 });
 
+export const sharedLayerLifecycleSchema = z.object({
+  action: z.enum(["delete", "restore"]),
+  expectedRevision: z.number().int().nonnegative(),
+}).strict();
+
 export const sharedLayerManagementSummarySchema = z.object({
   slot: sharedLayerSlotSchema,
   name: z.string(),
   defaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   grantedMemberCount: z.number().int().nonnegative(),
+  revision: z.number().int().nonnegative(),
+  deletedAt: z.number().nullable(),
+  recoverUntil: z.number().nullable(),
   sortOrder: z.number().int(),
   active: z.boolean(),
 });
@@ -278,7 +287,12 @@ export type SharedLayerManagementSummary = z.infer<
   typeof sharedLayerManagementSummarySchema
 >;
 
-export const sharedLayerManagementResponseSchema = z.object({
+export const sharedLayerAvailabilitySchema = z.object({
+  sharedLayerRevision: z.number().int().nonnegative(),
+  activeSharedSlots: z.array(sharedLayerSlotSchema),
+});
+
+export const sharedLayerManagementResponseSchema = sharedLayerAvailabilitySchema.extend({
   drive: driveIdentitySchema,
   layers: z.array(sharedLayerManagementSummarySchema),
 });

@@ -89,7 +89,7 @@ export function ReaderEditingControls({
         <div className="segmented-control" aria-label="批注工具">
           {(["text", "ink", "eraser"] as const).map((entry) => (
             <Button
-              isDisabled={isDisabled}
+              isDisabled={isDisabled || !selectedLayer?.canEdit}
               aria-label={{ text: "文本", ink: "画笔", eraser: "整条橡皮" }[entry]}
               aria-pressed={tool === entry}
               className="annotation-tool-button"
@@ -103,7 +103,7 @@ export function ReaderEditingControls({
       </div>
       <div className="annotation-control-group annotation-history-controls" aria-label="历史">
         <Button
-          isDisabled={isDisabled}
+          isDisabled={isDisabled || !selectedLayer?.canEdit}
           aria-label="撤销"
           className="annotation-tool-button"
           onPress={() => activeLayerId ? void editor.undo(activeLayerId) : undefined}
@@ -111,7 +111,7 @@ export function ReaderEditingControls({
           <Undo2 aria-hidden="true" size={20} />
         </Button>
         <Button
-          isDisabled={isDisabled}
+          isDisabled={isDisabled || !selectedLayer?.canEdit}
           aria-label="重做"
           className="annotation-tool-button"
           onPress={() => activeLayerId ? void editor.redo(activeLayerId) : undefined}

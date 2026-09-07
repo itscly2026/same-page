@@ -76,7 +76,7 @@ test("annotation commands retain offline and in-flight edits with real Worker/D1
   await page.evaluate(async () => { const { state, sync, workspace } = window.annotationTest; await state.queueScoreDrafts(workspace); await sync.syncAnnotations(workspace, { pull: true }); });
   await expect.poll(async () => (await readCloud()).find(o => o.id === id)?.payload.text).toBe("newer C");
 
-  // Mixed denied shared layer and allowed personal layer in the same actual batch.
+  // Refresh capabilities before sending: unavailable shared drafts stay local while personal work uploads.
   await page.evaluate(async payload => {
     const { state, sync, workspace, layers } = window.annotationTest;
     for (const layer of [layers.find(l => l.kind === "shared"), layers.find(l => l.kind === "personal")]) {
@@ -84,7 +84,7 @@ test("annotation commands retain offline and in-flight edits with real Worker/D1
     }
     await state.queueScoreDrafts(workspace); await sync.syncAnnotations(workspace, { pull: true });
   }, text("mixed"));
-  assert.equal(await page.evaluate(async () => { const { db, workspace } = window.annotationTest; return db.annotations.where("scopeKey").equals(workspace.scopeKey).filter(a => a.syncErrorCode === "permission_denied").count(); }), 1);
+  assert.equal(await page.evaluate(async () => { const { db, workspace } = window.annotationTest; return db.annotationOutbox.where("scopeKey").equals(workspace.scopeKey).count(); }), 1);
   assert.equal((await readCloud()).filter(o => o.payload?.text === "mixed").length, 1);
 
   const adminContext = await browser.newContext();
@@ -96,6 +96,31 @@ test("annotation commands retain offline and in-flight edits with real Worker/D1
   assert.equal((await adminContext.request.put(grantPath, { headers: { origin: fixture.origin }, data: { granted: true } })).status(), 200);
   await page.evaluate(async () => { const { state, sync, workspace } = window.annotationTest; await state.retryScoreSyncErrors(workspace); await state.queueScoreDrafts(workspace); await sync.syncAnnotations(workspace, { pull: true }); });
   await expect.poll(async () => (await readCloud()).filter(o => o.payload?.text === "mixed").length).toBe(2);
+  // A drive-wide deletion preserves a disconnected device's work on the same
+  // slot; restoring it resumes the ordinary object synchronization protocol.
+  const layerBase = `${fixture.origin}/api/choirs/${fixture.choirId}/shared-layers`;
+  const layerBefore = (await (await adminContext.request.get(layerBase)).json()).layers.find(layer => layer.slot === "E");
+  const sharedDraftId = await page.evaluate(() => crypto.randomUUID());
+  await context.setOffline(true);
+  await page.evaluate(async ({ id, payload }) => {
+    const { state, workspace, layers } = window.annotationTest;
+    await state.saveAnnotationDraft(workspace, { id, layerId: layers.find(layer => layer.sharedSlot === "E").id, payload });
+    await state.queueScoreDrafts(workspace);
+  }, { id: sharedDraftId, payload: text("断网时的共享层草稿") });
+  const deletion = await adminContext.request.post(`${layerBase}/E/lifecycle`, { headers: { origin: fixture.origin }, data: { action: "delete", expectedRevision: layerBefore.revision } });
+  assert.equal(deletion.status(), 200);
+  const deleted = await deletion.json();
+  await context.setOffline(false);
+  await page.evaluate(async () => { const { sync, workspace } = window.annotationTest; await sync.syncAnnotations(workspace, { pull: true }); });
+  assert.equal(await page.evaluate(async () => { const { state, workspace } = window.annotationTest; return (await state.readAnnotationLayers(workspace)).some(layer => layer.sharedSlot === "E"); }), false);
+  assert.equal((await readCloud()).some(object => object.id === sharedDraftId), false);
+  assert.equal((await readCloud()).some(object => object.id === id), true, "personal layer remains readable");
+  assert.equal(await page.evaluate(async id => { const { db, workspace } = window.annotationTest; return (await db.annotationOutbox.where("scopeKey").equals(workspace.scopeKey).toArray()).some(op => op.annotationId === id); }, sharedDraftId), true);
+  assert.equal((await adminContext.request.post(`${layerBase}/E/lifecycle`, { headers: { origin: fixture.origin }, data: { action: "restore", expectedRevision: deleted.revision } })).status(), 200);
+  await page.evaluate(async () => { const { sync, workspace } = window.annotationTest; await sync.syncAnnotations(workspace, { pull: true }); });
+  await expect.poll(async () => (await readCloud()).find(object => object.id === sharedDraftId)?.payload.text).toBe("断网时的共享层草稿");
+  assert.equal((await readCloud()).filter(object => object.payload?.text === "mixed").length, 2, "original shared object and personal object both survive restoration");
+
   // Revoke again so the actual reader can demonstrate the durable blocked state.
   assert.equal((await adminContext.request.put(grantPath, { headers: { origin: fixture.origin }, data: { granted: false } })).status(), 200);
   await page.evaluate(async payload => {
@@ -144,7 +169,7 @@ test("annotation commands retain offline and in-flight edits with real Worker/D1
   await holder.close();
   await page.goto(`${fixture.origin}/choirs/${fixture.choirId}/scores/${fixture.scoreId}`);
   await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
-  await expect(page.getByRole("complementary", { name: "批注同步异常" })).toContainText("恢复权限后重试");
+  await expect(page.getByRole("complementary", { name: "批注同步异常" })).toContainText("本机草稿保留");
   await mkdir("artifacts/verification", { recursive: true });
   await page.screenshot({ path: "artifacts/verification/annotations-135.png", fullPage: true });
   } catch (error) { console.error(error); throw error; }

@@ -25,6 +25,8 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     const writes = [];
     let failNext = false;
     let identity = "member";
+    let deletedAt = null;
+    let layerRevision = 0;
     await context.route("**/api/**", async route => {
       const request = route.request();
       const pathname = new URL(request.url()).pathname;
@@ -34,7 +36,21 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
         writes.push({ pathname, body, failed: failNext });
         if (failNext) { failNext = false; return route.fulfill({ status: 503, body: "{}", contentType: "application/json" }); }
       }
+      if (method === "POST" && pathname.endsWith("/shared-layers/E/lifecycle")) {
+        assert.equal(body.expectedRevision, layerRevision);
+        deletedAt = body.action === "delete" ? Date.now() : null;
+        layerRevision++;
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ action: body.action, revision: layerRevision, sharedLayerRevision: layerRevision, activeSharedSlots: deletedAt === null ? ["E", "S", "A", "T", "B"] : ["S", "A", "T", "B"] }) });
+      }
       const response = fixture.resolve({ pathname, method, body, identity, cookie: request.headers().cookie ?? "" });
+      if (pathname === `${drive.replace("/choirs/", "/api/choirs/")}/shared-layers`) {
+        const payload = JSON.parse(response.body);
+        payload.sharedLayerRevision = layerRevision;
+        payload.activeSharedSlots = deletedAt === null ? ["E", "S", "A", "T", "B"] : ["S", "A", "T", "B"];
+        const deleted = new URL(request.url()).searchParams.get("state") === "deleted";
+        payload.layers = payload.layers.filter(layer => deleted === (layer.slot === "E" && deletedAt !== null)).map(layer => layer.slot === "E" ? { ...layer, revision: layerRevision, deletedAt, recoverUntil: deletedAt === null ? null : deletedAt + 30 * 86400000 } : layer);
+        response.body = JSON.stringify(payload);
+      }
       if (pathname.endsWith("/layers")) {
         const payload = JSON.parse(response.body);
         // Member fixture has a drive-wide E edit grant and no grants on S/A/T/B.
@@ -156,6 +172,17 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByRole("link", { name: /E · 全体.*已授权/ }).waitFor();
     const managementSizes = viewports.filter(([, height]) => height > 320);
     await geometry(".settings-layer-link, .layer-create-form input[type=text]", "management", managementSizes);
+    await page.getByRole("button", { name: "删除 E · 全体", exact: true }).click();
+    await page.getByRole("dialog", { name: "删除共享层「E · 全体」？" }).waitFor();
+    await geometry(".dialog-actions button", "delete-layer-confirm", managementSizes);
+    await page.getByRole("button", { name: "删除整个共享层", exact: true }).click();
+    await page.getByRole("link", { name: /E · 全体.*已授权/ }).waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "已删除层", exact: true }).click();
+    await page.getByText(/恢复截止：/).waitFor();
+    await geometry(".settings-layer-link button", "deleted-layers", managementSizes);
+    await page.getByRole("button", { name: "恢复", exact: true }).click();
+    await page.getByText("原共享层已恢复，原有启用或停用状态保留。", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "当前共享层", exact: true }).click();
     await page.getByRole("link", { name: /E · 全体.*已授权/ }).click();
     await page.getByRole("heading", { name: "E · 全体" }).waitFor();
     await geometry(".settings-member-row, .layer-details-form input[type=text]", "grants", managementSizes);

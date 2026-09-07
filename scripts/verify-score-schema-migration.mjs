@@ -130,6 +130,8 @@ try {
   applyMigrations("0018_drive_name_revision.sql");
   assert.deepEqual(query("SELECT id, name FROM choirs"), driveNames);
   assert(query("SELECT name_revision FROM choirs").every(row => row.name_revision === 0));
+  applyMigrations("0019_shared_layer_recycle.sql");
+  assert(query("SELECT deleted_at, revision FROM choir_shared_layer_settings").every(row => row.deleted_at === null && row.revision === 0));
   assert.deepEqual(queryNamed(preservedQueries), preserved);
   assert.deepEqual(query("PRAGMA foreign_key_check"), []);
   assert.deepEqual(query("SELECT id, sharing FROM annotation_layers"), [{ id: "preserved-layer", sharing: 0 }]);

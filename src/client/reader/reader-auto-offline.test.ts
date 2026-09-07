@@ -39,7 +39,7 @@ beforeEach(async () => {
   }));
   vi.stubGlobal("fetch", vi.fn(async (input: string) => {
     if (input.endsWith("/bootstrap")) return Response.json({state:"active",score,permissions:{canManage:false}});
-    if (input.endsWith("/layers")) return Response.json({layers,permissions:{canManageLayers:false}});
+    if (input.endsWith("/layers")) return Response.json({layers,sharedLayerRevision: 0, permissions:{canManageLayers:false}});
     if (input.includes("/annotations?")) return Response.json({cursor:0,objects:[]});
     if (input.endsWith("/pdf")) { pdfRequests++; return failDownload ? new Response(null,{status:503}) : new Response(bytes); }
     return new Response(null,{status:404});
