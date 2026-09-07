@@ -331,7 +331,7 @@ export const localDatabase = new SamePageDatabase();
 
 export async function activateVerifiedOfflineScore(
   record: Omit<OfflineScoreRecord, "active" | "verifiedAt"> & { sessionEpoch?: string },
-  expected?: { activeKey: string | null; fileFence?: string },
+  expected?: { activeKey: string | null; fileFence?: string; signal?: AbortSignal },
 ) {
   await localDatabase.transaction(
     "rw",
@@ -370,9 +370,11 @@ export async function activateVerifiedOfflineScore(
         layers, annotations, cursor: (await localDatabase.annotationSyncCursors.get(record.scopeKey))?.cursor ?? 0,
         verifiedAt: Date.now(),
       };
+      expected?.signal?.throwIfAborted();
       // Blob values already read by another session remain valid after deleting
       // the IndexedDB reference. Annotation tables are deliberately untouched.
       await localDatabase.offlineScores.bulkDelete(existing.map((entry) => entry.key));
+      expected?.signal?.throwIfAborted();
       await localDatabase.offlineScores.put({
         ...record,
         annotationSnapshot,

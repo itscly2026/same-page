@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import type { LocalWorkspace } from "../platform/local-workspace";
 import { ReaderSession, type ReaderSessionSnapshot } from "./reader-session";
 
-const initial: ReaderSessionSnapshot = { mode: "pdf", modeMessage: null, score: null, document: null, offline: null, cloudState: "checking", capability: "preparing", status: "loading", error: null, downloading: false, downloadMessage: null };
+const initial: ReaderSessionSnapshot = { mode: "pdf", modeMessage: null, score: null, document: null, offline: null, cloudState: "checking", capability: "preparing", status: "loading", error: null, downloading: false, downloadMessage: null, preparation: { phase: "idle" } };
 
 export function useReaderSession(workspace: LocalWorkspace | null, userId: string | null) {
   const initialUser = useRef(userId);
