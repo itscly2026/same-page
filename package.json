@@ -47,7 +47,7 @@
     "dexie-react-hooks": "^4.4.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.5",
-    "lucide-react": "^1.37.0",
+    "lucide-react": "^1.41.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.3.289",
     "qrcode.react": "^4.2.0",
