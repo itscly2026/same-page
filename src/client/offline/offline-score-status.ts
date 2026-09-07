@@ -26,5 +26,3 @@ function offlineDownloadFailure(record: OfflineScoreRecord | null, currentVersio
   if (mode && (record.imageManifest ? "images" : "pdf") !== mode) return `${prefix}${format} 副本仍可离线使用，当前显示方式尚未准备好。`;
   return `${prefix}当前 ${format} 仍可离线使用，现有副本不受影响。`;
 }
-
-
