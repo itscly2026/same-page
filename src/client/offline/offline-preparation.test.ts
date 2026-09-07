@@ -189,3 +189,19 @@ it('an explicit download survives the displayed PDF byte provider becoming unava
   f.finish();
   expect((await pending).phase).toBe('ready');
 });
+
+it('cleanup also fences an explicit request still waiting for its initial context', async () => {
+  const { captureOfflineFileFence, clearLocalFiles } = await import('./local-files');
+  const f = await fixture();
+  const initialFence = await captureOfflineFileFence(f.workspace);
+  let release!: (value: string) => void;
+  const client = new OfflinePreparation(f.workspace, f.score, 'pdf', null, new Promise(resolve => { release = resolve; }));
+  clients.push(client);
+  const pending = client.prepare('explicit');
+  await clearLocalFiles({ ownerKey: f.workspace.ownerKey, choirId: 'drive', scoreId: 'score' });
+  release(initialFence);
+  await vi.waitFor(() => expect(f.downloads()).toBe(1));
+  f.finish();
+  expect((await pending).phase).not.toBe('ready');
+  expect(await findVerifiedOfflineScore(f.workspace)).toBeNull();
+});

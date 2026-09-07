@@ -135,7 +135,7 @@ export class OfflinePreparation {
   private identityGeneration = 0;
   private context: Promise<{ workspace: LocalWorkspace; fence: string }>;
 
-  constructor(workspace: LocalWorkspace, readonly score: ScoreSummary, readonly mode: ScoreDisplayMode, authenticatedUserId: string | null, fileFence?: Promise<string>) {
+  constructor(private readonly workspace: LocalWorkspace, readonly score: ScoreSummary, readonly mode: ScoreDisplayMode, authenticatedUserId: string | null, fileFence?: Promise<string>) {
     this.targetKey = JSON.stringify([workspace.scopeKey, score.currentVersion.id, mode]);
     this.identityGeneration = identityGenerations.get(workspace.ownerKey) ?? 0;
     this.context = (async () => {
@@ -166,6 +166,9 @@ export class OfflinePreparation {
     if (this.disposed) return { phase: "cancelled" };
     if (intent === "automatic" && this.attempted) return this.state;
     this.attempted = true;
+    // Capture at the click, before any pending context can yield to cleanup.
+    const requestFence = intent === "explicit" ? captureOfflineFileFence(this.workspace) : undefined;
+    void requestFence?.catch(() => undefined);
     pendingRequests.set(this, intent);
     this.publish({ phase: "preparing", intent });
     let context: Awaited<typeof this.context>;
@@ -175,7 +178,7 @@ export class OfflinePreparation {
       if (this.identityGeneration !== (identityGenerations.get(context.workspace.ownerKey) ?? 0)) throw new Error("offline_identity_changed");
       const logout = await readLogoutFence();
       if (logout && context.workspace.ownerKey === `user:${logout.userId}`) throw new Error("offline_identity_changed");
-      if (intent === "explicit") context = { ...context, fence: await captureOfflineFileFence(context.workspace) };
+      if (requestFence) context = { ...context, fence: await requestFence };
       this.key = JSON.stringify([context.workspace.scopeKey, context.workspace.sessionEpoch, this.identityGeneration, context.fence, this.score.currentVersion.id, this.mode]);
     }
     catch { pendingRequests.delete(this); cancelUnownedPreparations(); const state: OfflinePreparationState = { phase: "failed", reason: "identity" }; this.publish(state); return state; }
