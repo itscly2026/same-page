@@ -154,7 +154,7 @@ export default function PrivacyPage() {
           </p>
         </section>
 
-        <BackButton className="privacy-document__home" to="/">
+        <BackButton className="privacy-document__home" to="/drives">
           返回合谱首页
         </BackButton>
       </main>

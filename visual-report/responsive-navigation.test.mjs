@@ -37,7 +37,7 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
       await page.setViewportSize({ width, height: 1000 });
 
       const toolbar = await page.locator(".library-toolbar").boundingBox();
-      const search = await page.getByPlaceholder("搜索乐谱").boundingBox();
+      const search = await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).boundingBox();
       const sort = await page.getByRole("combobox", { name: "乐谱排序" }).boundingBox();
       const menu = await page.getByRole("button", { name: "打开云盘菜单" }).boundingBox();
       const avatar = await page.getByRole("button", { name: "用户菜单" }).boundingBox();
@@ -53,7 +53,7 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
       }
       await capture(page, `${engineName}-library-${libraryIdentity}-${width}`);
     }
-    await page.getByPlaceholder("搜索乐谱").fill("晨光");
+    await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).fill("晨光");
     await page.getByRole("status").filter({ hasText: "找到 1 份" }).waitFor();
     await page.getByRole("combobox", { name: "乐谱排序" }).selectOption("updated");
     assert.equal(await page.locator(".file-row").count(), 1);

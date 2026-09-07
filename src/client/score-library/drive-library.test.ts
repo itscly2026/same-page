@@ -47,6 +47,16 @@ describe("DriveLibrary interface", () => {
     expect(library.getSnapshot().access).toMatchObject({ isMember: true, result: { permissions: { capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()) } } });
   });
 
+  it("does not restore a confirmed deletion when the subsequent directory refresh fails", async () => {
+    const { library, transport } = create(async () => opened());
+    await library.refresh();
+    await library.confirmRemoval("score-one");
+    transport.load.mockRejectedValueOnce(new TypeError("offline"));
+    await library.changed();
+    expect(library.getSnapshot().scores).toEqual([]);
+    expect(library.getSnapshot().refreshMessage).toContain("当前内容已保留");
+  });
+
   it("keeps a guest's cached library available when session refresh is offline", async () => {
     rememberDriveLibrary("guest:drive-one", choirId, opened());
     const { library } = create(() => Promise.reject(new TypeError("offline")), "guest:drive-one");

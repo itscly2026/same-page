@@ -63,11 +63,12 @@ export function MembershipList({
 
   if (localOnly || (state.userId === userId && state.kind === "failed")) {
     const drives = local?.userId === userId ? local.drives.filter(entry => entry.membership) : [];
-    const destination = drives.find(entry => entry.choirId === readLastDrive(userId)) ?? (drives.length === 1 ? drives[0] : null);
+    const lastDrive = readLastDrive(userId);
+    const destination = drives.find(entry => entry.choirId === lastDrive) ?? (!lastDrive && drives.length === 1 ? drives[0] : null);
     if (autoEnter && destination) return <Navigate to={`/choirs/${destination.choirId}`} replace />;
     return <>
       {!localOnly && <p role="status">暂时无法加载已加入的云盘。<Button onPress={() => setRetry(value => value + 1)}>重试</Button></p>}
-      {local?.userId !== userId ? <p role="status">正在读取本机目录…</p> : drives.length ? <div className="membership-list">{drives.map(entry => <Link className="membership-row" key={entry.choirId} to={`/choirs/${entry.choirId}`} onClick={onSelect}><span><strong>{entry.choir.name}</strong><small>本机目录 · 成员关系待联网确认</small></span></Link>)}</div> : localOnly && <p>本机尚未保存云盘目录，请联网后重试。</p>}
+      {local?.userId !== userId ? <p role="status">正在读取本机目录…</p> : drives.length ? <div className="membership-list">{drives.map(entry => <Link className="membership-row" key={entry.choirId} to={`/choirs/${entry.choirId}`} onClick={onSelect}><span><strong>{entry.choir.name}</strong></span></Link>)}</div> : localOnly && <p>本机尚未保存云盘目录，请联网后重试。</p>}
     </>;
   }
   if (state.userId !== userId || state.kind === "loading") {

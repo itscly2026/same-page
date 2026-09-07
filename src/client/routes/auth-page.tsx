@@ -404,14 +404,14 @@ export default function AuthPage() {
     }
     const guestResponse = await diagnosticFetch("/api/guest/session").catch(() => null);
     if (!guestResponse?.ok) {
-      await navigate("/", { replace: true });
+      await navigate("/", { replace: true, state: { startup: true } });
       return;
     }
     const guest = guestSessionResponseSchema.safeParse(
       await guestResponse.json(),
     );
     if (!guest.success) {
-      await navigate("/", { replace: true });
+      await navigate("/", { replace: true, state: { startup: true } });
       return;
     }
     if (guest.data.entryKind === "preview") {
@@ -779,7 +779,7 @@ export default function AuthPage() {
           title: "登录完成",
           description: "你已经登录，但本次加入云盘没有完成。",
           form: (
-            <BackButton className="primary-link auth-primary-link" to="/">
+            <BackButton className="primary-link auth-primary-link" to="/drives">
               返回首页
             </BackButton>
           ),
@@ -791,7 +791,7 @@ export default function AuthPage() {
     <div className="app-page auth-page">
       <AppHeader
         actions={
-          <BackButton className="header-action" to="/">
+          <BackButton className="header-action" to="/drives">
             返回首页
           </BackButton>
         }

@@ -54,7 +54,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     offline.on("requestfailed", request => { if (request.url().includes("/auth/")) errors.push(request.failure()?.errorText); });
     offline.on("response", response => { if (response.url().includes("/api/auth/get-session")) sessionResponses.push(response.status()); });
     await offline.goto(fixture.origin);
-    try { await offline.getByRole("link").filter({ hasText: fixture.fileName }).waitFor({ timeout: 10_000 }); }
+    try { await offline.getByRole("link").filter({ hasText: fixture.fileName.replace(/\.pdf$/i, "") }).waitFor({ timeout: 10_000 }); }
     catch {
       await mkdir("artifacts/verification/offline-entry", { recursive: true });
       await offline.screenshot({ path: `artifacts/verification/offline-entry/${engineName}-failure.png` });
@@ -64,18 +64,18 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     await mkdir("artifacts/verification/offline-entry", { recursive: true });
     await offline.screenshot({ path: `artifacts/verification/offline-entry/${engineName}-home.png` });
     assert.equal(new URL(offline.url()).pathname, `/choirs/${fixture.choirId}`);
-    await offline.getByRole("searchbox", { name: "搜索乐谱" }).waitFor();
+    await offline.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).waitFor();
     await offline.getByRole("combobox", { name: "乐谱排序" }).selectOption("updated");
     await offline.reload();
-    await offline.getByRole("link").filter({ hasText: fixture.fileName }).waitFor();
+    await offline.getByRole("link").filter({ hasText: fixture.fileName.replace(/\.pdf$/i, "") }).waitFor();
     assert.equal(await offline.getByRole("combobox", { name: "乐谱排序" }).inputValue(), "updated");
     assert.equal(await offline.getByRole("heading", { name: "本机内容" }).count(), 0);
     await offline.getByRole("button", { name: "打开云盘菜单" }).click();
-    await offline.getByRole("button", { name: "切换云盘", exact: true }).click();
+    await offline.getByRole("link", { name: "返回所有云盘", exact: true }).click();
     await offline.getByRole("link").filter({ hasText: "本地链路云盘" }).click();
     await offline.goto(drive);
     await offline.getByRole("heading", { name: "本地链路云盘" }).waitFor();
-    await offline.getByRole("link").filter({ hasText: fixture.fileName }).click();
+    await offline.getByRole("link").filter({ hasText: fixture.fileName.replace(/\.pdf$/i, "") }).click();
     await expectSampleScoreContent(offline);
     const readerUrl = offline.url();
     await offline.locator(".reader-shell").click({ position: { x: 195, y: 350 } });

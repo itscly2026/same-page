@@ -1,3 +1,5 @@
+import { scoreDisplayName } from "../../shared/score-display-name";
+import { Link, useParams } from "react-router-dom";
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Button, Heading, Modal, ModalOverlay } from "react-aria-components";
@@ -8,8 +10,9 @@ import { clearLocalFiles, listLocalFiles, type LocalFileScope } from "../offline
 import { formatBytes } from "../score-library/library-format";
 
 export default function LocalStoragePage() {
+  const { choirId = "" } = useParams();
   const [revision, refresh] = useState(0);
-  const files = useLiveQuery(() => listLocalFiles().catch(() => null), [revision]);
+  const files = useLiveQuery(() => listLocalFiles().then(files => files.filter(file => file.choirId === choirId)).catch(() => null), [revision, choirId]);
   const navigation = useAppNavigation();
   const [selection, setSelection] = useState<{ label: string; scopes: LocalFileScope[] } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -26,15 +29,14 @@ export default function LocalStoragePage() {
     setBusy(false); setSelection(null);
   };
   return <div className="app-page"><AppHeader /><main className="page-shell compact-page">
-    <Button className="text-button" onPress={() => navigation.back("/")}>返回</Button><h1>本机存储</h1>
+    <Button className="text-button" onPress={() => navigation.back(`/choirs/${choirId}`)}>返回</Button><h1>本机存储</h1>
     <p>仅清理这台设备已下载的 PDF 和图片谱面，不删除云端文件、个人草稿、待同步操作或冲突，也不退出登录。云盘目录保留，再次打开需联网下载。</p>
     {files === null ? <p role="alert">无法读取本机文件。<Button onPress={() => refresh(value => value + 1)}>重试</Button></p> : files === undefined ? <p role="status">正在统计本机文件…</p> : <>
       <p>已下载谱面文件：{formatBytes(files.reduce((sum, file) => sum + file.blob.size, 0))}</p>
-      <Button className="secondary-button" isDisabled={!files.length || busy} onPress={() => setSelection({ label: "全部本机谱面文件", scopes: drives.map(drive => drive.ownerKey.startsWith("user:") ? { ownerKey: drive.ownerKey } : drive).filter((scope, i, all) => all.findIndex(item => JSON.stringify(item) === JSON.stringify(scope)) === i) })}>清理全部文件</Button>
       {drives.map(drive => <section key={`${drive.ownerKey}:${drive.choirId}`}>
         <h2>{files.find(file => file.ownerKey === drive.ownerKey && file.choirId === drive.choirId)?.driveName}</h2><Button className="secondary-button" onPress={() => setSelection({ label: "这个云盘的本机谱面文件", scopes: [drive] })}>清理此云盘</Button>
         <ul>{files.filter(file => file.ownerKey === drive.ownerKey && file.choirId === drive.choirId).map(file => <li key={file.key}>
-          {file.fileName} · {file.imageManifest ? "图片" : "PDF"} · {formatBytes(file.blob.size)} <Button className="text-button" onPress={() => setSelection({ label: file.fileName, scopes: [{ ...drive, scoreId: file.scoreId }] })}>清理 {file.fileName}</Button>
+          <Link to={`/choirs/${file.choirId}/scores/${file.scoreId}`}>{scoreDisplayName(file.fileName)}</Link> · {file.imageManifest ? "图片" : "PDF"} · {formatBytes(file.blob.size)} <Button className="text-button" onPress={() => setSelection({ label: file.fileName, scopes: [{ ...drive, scoreId: file.scoreId }] })}>清理 {scoreDisplayName(file.fileName)}</Button>
         </li>)}</ul>
       </section>)}
     </>}

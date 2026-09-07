@@ -1,6 +1,6 @@
 import { noCapabilities, hasManagement } from "../../shared/drive-permissions";
 import { captureLocalWorkspaceSession, createLocalWorkspace, authenticatedLocalOwnerKey } from "../platform/local-workspace";
-import { readLocalDriveDirectories, rememberLocalDriveDirectory, renameLocalDriveDirectory } from "./local-drive-directory";
+import { readLocalDriveDirectories, rememberLocalDriveDirectory, renameLocalDriveDirectory, removeLocalDriveScore } from "./local-drive-directory";
 import { useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { DriveLibrary } from "./drive-library";
 import { readDriveSummary, type DriveCacheOwnerKey } from "./drive-library-cache";
@@ -8,7 +8,7 @@ import { driveLibraryTransport } from "./drive-library-transport";
 
 export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, signedIn: boolean, identityReady: boolean) {
   const library = useMemo(() => {
-    const transport = driveLibraryTransport(choirId, signedIn);
+    const transport = driveLibraryTransport(choirId, false);
     const readLocal = async (signal: AbortSignal) => {
       if (!ownerKey.startsWith("user:")) return null;
       const directory = (await readLocalDriveDirectories(ownerKey.slice(5))).find(entry => entry.choirId === choirId);
@@ -20,17 +20,22 @@ export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, s
     return new DriveLibrary(ownerKey, choirId, {
       ...transport,
       readLocal,
+      async removeScore(scoreId, signal) {
+        if (!ownerKey.startsWith("user:")) return;
+        const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey(ownerKey.slice(5)), choirId, ""));
+        await removeLocalDriveScore(workspace, scoreId, signal);
+      },
       async rememberName(name, signal) {
         if (!ownerKey.startsWith("user:")) return;
         const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey(ownerKey.slice(5)), choirId, ""));
         await renameLocalDriveDirectory(workspace, name, signal);
       },
-      async load(signal, allowAdmission) {
+      async load(signal, allowAdmission, signedIn = false) {
         if (!signedIn && ownerKey.startsWith("user:")) return (await readLocal(signal))!;
         const workspace = signedIn && ownerKey.startsWith("user:")
           ? captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey(ownerKey.slice(5)), choirId, "")).catch(() => null)
           : Promise.resolve(null);
-        const access = await transport.load(signal, allowAdmission);
+        const access = await driveLibraryTransport(choirId, signedIn).load(signal, allowAdmission);
         const captured = await workspace;
         if (captured && access.kind === "opened") {
           await rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal, access.isMember && !access.choir.isPreviewEntry, access.result.permissions.capabilities, access.result.storage).catch(() => undefined);
@@ -38,8 +43,10 @@ export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, s
         return access;
       },
     });
-  }, [ownerKey, choirId, signedIn]);
+  }, [ownerKey, choirId]);
   const snapshot = useSyncExternalStore(library.subscribe, library.getSnapshot);
+
+  useEffect(() => library.setAuthenticated(signedIn), [library, signedIn]);
 
   useEffect(() => {
     if (!identityReady) return;

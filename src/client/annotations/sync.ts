@@ -22,6 +22,7 @@ import { removeCachedPublications, cacheAnnotationLayers, readAnnotationLayers, 
 type SyncResult = { pushed: number; pulled: number };
 type SyncOptions = { pull: false } | {
   pull: true;
+  push?: false;
   signal?: AbortSignal;
   // Mutations and offline preparation require a layer request started after
   // this call. A reader may join the current refresh, including its ready layers.
@@ -51,11 +52,11 @@ export async function syncAnnotations(workspace: LocalWorkspace, options: SyncOp
   options.signal?.throwIfAborted();
   workspace = await captureLocalWorkspaceSession(workspace);
   options.signal?.throwIfAborted();
-  const key = JSON.stringify([workspace.scopeKey, workspace.sessionEpoch]);
+  const key = JSON.stringify([workspace.scopeKey, workspace.sessionEpoch, options.push !== false]);
   // Re-entering the same account must neither reuse nor wait for its old
   // in-page refresh. Storage fencing remains authoritative across other tabs.
-  for (const [otherKey, tasks] of refreshTasks) {
-    if (otherKey !== key && tasks[0]?.workspace.scopeKey === workspace.scopeKey) {
+  for (const tasks of refreshTasks.values()) {
+    if (tasks[0]?.workspace.sessionEpoch !== workspace.sessionEpoch && tasks[0]?.workspace.scopeKey === workspace.scopeKey) {
       for (const stale of tasks) stale.controller.abort(new LocalWorkspaceOwnerChangedError());
     }
   }
@@ -79,7 +80,7 @@ export async function syncAnnotations(workspace: LocalWorkspace, options: SyncOp
       }, layers => {
         current.layers = layers;
         for (const listener of current.listeners) listener(layers);
-      }), { signal });
+      }, options.push !== false), { signal });
       if (!result) throw new Error("annotation_sync_busy");
       return result;
     });
@@ -125,6 +126,7 @@ async function refreshAnnotations(
   signal: AbortSignal,
   startingLayers: () => void,
   layersApplied: (layers: AnnotationLayerSummary[]) => void,
+  push: boolean,
 ): Promise<SyncResult> {
   startingLayers();
   const applied = await refreshLayerCapabilities(workspace, signal);
@@ -135,7 +137,7 @@ async function refreshAnnotations(
   // still allows readable cloud changes and revocations to reach this device.
   let pushed = 0;
   let pushError: unknown;
-  try { pushed = await drainAnnotationOutbox(workspace, { signal, layers: applied }); }
+  try { if (push) pushed = await drainAnnotationOutbox(workspace, { signal, layers: applied }); }
   catch (error) { pushError = error; }
   signal.throwIfAborted();
   await assertLocalWorkspaceActive(workspace);
@@ -162,7 +164,7 @@ async function refreshAnnotations(
   return { pushed, pulled };
 }
 
-async function refreshLayerCapabilities(workspace: LocalWorkspace, signal: AbortSignal) {
+export async function refreshLayerCapabilities(workspace: LocalWorkspace, signal: AbortSignal) {
   await assertLocalWorkspaceActive(workspace);
   signal.throwIfAborted();
   const base = `/api/choirs/${encodeURIComponent(workspace.choirId)}/scores/${encodeURIComponent(workspace.scoreId)}`;

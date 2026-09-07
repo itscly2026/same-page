@@ -1,3 +1,4 @@
+import { holdUpdate } from "../updates/update-safety";
 import { useLayoutEffect, useRef, useState } from "react";
 
 import { MAX_PDF_BYTES, scoreSummarySchema } from "../../shared/scores";
@@ -54,6 +55,7 @@ export function useUploadQueue({ choirId, onComplete, onQuotaChange }: {
   async function pump() {
     const current = runtime.current;
     if (!current.active || current.running || current.state.paused) return;
+    const releaseUpdate = holdUpdate();
     current.running = true;
     const generation = current.generation;
     const isCurrent = () => current.active && generation === current.generation;
@@ -95,6 +97,7 @@ export function useUploadQueue({ choirId, onComplete, onQuotaChange }: {
         }
       }
     } finally {
+      releaseUpdate();
       if (isCurrent()) current.running = false;
     }
   }

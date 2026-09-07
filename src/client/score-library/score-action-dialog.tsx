@@ -1,3 +1,4 @@
+import { scoreDisplayName, scorePdfFileName } from "../../shared/score-display-name";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { type FormEvent, lazy, Suspense, useState } from "react";
 import {
@@ -64,7 +65,7 @@ export function ScoreActionDialog({
 }
 
 function BasicScoreActionDialog({ choirId, selection, onClose, onComplete }: Parameters<typeof ScoreActionDialog>[0]) {
-  const [renameValue, setRenameValue] = useState(selection.score.fileName);
+  const [renameValue, setRenameValue] = useState(scoreDisplayName(selection.score.fileName));
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -142,7 +143,7 @@ function runScoreAction(
     return diagnosticFetch(scorePath, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ fileName: renameValue }),
+      body: JSON.stringify({ fileName: scorePdfFileName(renameValue) }),
     });
   }
   return diagnosticFetch(scorePath, { method: "DELETE" });

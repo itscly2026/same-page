@@ -1,3 +1,4 @@
+import { scoreDisplayName } from "../../shared/score-display-name";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Link } from "react-router-dom";
 import { localDatabase } from "../platform/local-database";
@@ -31,8 +32,8 @@ export function LocalLibrary({ userId, choirId }: { userId: string; choirId?: st
     {content.drives.map(drive => <section key={drive.id}>
       <h2>{choirId ? drive.name : <Link className="local-drive-link" to={`/choirs/${drive.id}`}>{drive.name}</Link>}</h2>
       <div className="membership-list">{drive.scores.map(score => score.saved
-        ? <Link className="membership-row" key={score.id} to={`/choirs/${drive.id}/scores/${score.id}`}><span>{score.fileName}</span><small>本机已保存 · 打开时校验</small></Link>
-        : <div className="membership-row" key={score.id}><span>{score.fileName}</span><small>需联网下载</small></div>)}</div>
+        ? <Link className="membership-row" key={score.id} to={`/choirs/${drive.id}/scores/${score.id}`}><span>{scoreDisplayName(score.fileName)}</span><small>本机已保存 · 打开时校验</small></Link>
+        : <div className="membership-row" key={score.id}><span>{scoreDisplayName(score.fileName)}</span><small>需联网下载</small></div>)}</div>
     </section>)}
   </section>;
 }

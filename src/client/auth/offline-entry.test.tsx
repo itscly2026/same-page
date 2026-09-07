@@ -23,7 +23,7 @@ async function saved(userId = "a") {
   await activateAuthenticatedLocalOwner(userId);
   const workspace = createLocalWorkspace(authenticatedLocalOwnerKey(userId), "drive", "score");
   const blob = new Blob(["verified test PDF"]);
-  await localDatabase.driveDirectories.put({ key: JSON.stringify([workspace.ownerKey, "drive"]), ownerKey: workspace.ownerKey, choirId: "drive", choir: { id: "drive", name: "排练云盘", guestAdmissionMode: "invite" }, scores: [], membership: true });
+  await localDatabase.driveDirectories.put({ key: JSON.stringify([workspace.ownerKey, "drive"]), ownerKey: workspace.ownerKey, choirId: "drive", choir: { id: "drive", name: "排练云盘", guestAdmissionMode: "invite" }, scores: [{ id: "score", choirId: "drive", fileName: `${userId}.pdf`, updatedAt: 1, currentVersion: { id: "version", versionNumber: 1, sizeBytes: blob.size, sha256: await sha256Hex(await blob.arrayBuffer()), etag: "v", pageCount: 1, createdAt: 1 } }], membership: true });
   await localDatabase.offlineScores.put({ key: userId, ...workspace,
     versionId: "version", fileName: `${userId}.pdf`, sha256: await sha256Hex(await blob.arrayBuffer()), pageCount: 1, blob, active: 1, verifiedAt: 1,
     annotationSnapshot: { layers: [{ ...workspace, key: "personal", id: "00000000-0000-4000-8000-000000000001", kind: "personal", sharedSlot: null, name: "我的笔记", sortOrder: 0, subscribed: true, subscriptionSource: "personal", displayColor: "#000000", colorSource: "personal", adminDefaultColor: null, driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }], annotations: [], cursor: 0, verifiedAt: 1 } });
@@ -38,7 +38,7 @@ it("offers the last local user's saved score after a cold-start network failure"
   await saved();
   vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
   open();
-  expect(await screen.findByRole("link", { name: /a.pdf/ })).toHaveAttribute("href", "/choirs/drive/scores/score");
+  expect(await screen.findByRole("link", { name: /^a$/ })).toHaveAttribute("href", "/choirs/drive/scores/score");
   await screen.findByText(/暂时无法连接/);
   expect(screen.queryByRole("heading", { name: "Harmony begins on the Same Page" })).not.toBeInTheDocument();
 });
@@ -48,7 +48,7 @@ it("opens saved content at a drive deep link while authentication is still pendi
   let finish!: (response: Response) => void;
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => { finish = resolve; })));
   open("/choirs/drive");
-  expect(await screen.findByRole("link", { name: /a.pdf/ })).toBeInTheDocument();
+  expect(await screen.findByRole("link", { name: /^a$/ })).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "登录或注册" })).not.toBeInTheDocument();
   await waitFor(() => expect(finish).toBeDefined());
   await act(async () => finish(Response.json(null)));
@@ -70,24 +70,25 @@ it("retains navigation metadata across a cold start without claiming cloud files
     return Response.json({});
   }));
   const view = open("/choirs/drive");
-  await screen.findByRole("link", { name: /cloud.pdf/ });
+  await screen.findByRole("link", { name: /^cloud$/ });
   await waitFor(() => expect(screen.getByRole("button", { name: "上传 PDF" })).toBeEnabled());
   view.unmount();
   clearDriveLibraryCache();
   vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
   authClient.$store.atoms.session.set({ ...authClient.$store.atoms.session.get(), data: null, isPending: true });
   open("/choirs/drive");
-  await screen.findByText("cloud.pdf");
-  expect(screen.queryByRole("link", { name: /cloud.pdf/ })).not.toBeInTheDocument();
+  await screen.findByText("cloud");
+  expect(screen.queryByRole("link", { name: /^cloud$/ })).not.toBeInTheDocument();
   expect(await screen.findByText("需联网下载")).toBeInTheDocument();
-  expect(await screen.findByRole("link", { name: /a.pdf/ })).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: /^a$/ })).not.toBeInTheDocument();
+  expect(await localDatabase.offlineScores.get("a")).toBeDefined();
 });
 
 it.each([503, 401, 200])("keeps local files when cold-start authentication returns %s", async status => {
   await saved();
   vi.stubGlobal("fetch", vi.fn(async () => status === 200 ? Response.json(null) : Response.json({ message: "unavailable" }, { status })));
   open();
-  await screen.findByRole("link", { name: /a.pdf/ });
+  await screen.findByRole("link", { name: /^a$/ });
   await screen.findByText(status === 503 ? /暂时无法连接/ : /重新登录后同步/);
   expect(screen.queryByRole("heading", { name: "Harmony begins on the Same Page" })).not.toBeInTheDocument();
 });
@@ -105,22 +106,22 @@ it("rechecks the same user on reconnect and keeps the drive route", async () => 
   act(() => window.dispatchEvent(new Event("offline")));
   act(() => window.dispatchEvent(new Event("online")));
   await screen.findByRole("heading", { name: "排练云盘" });
-  expect(await screen.findByRole("link", { name: /cloud.pdf/ })).toHaveAttribute("href", "/choirs/drive/scores/remote");
+  expect(await screen.findByRole("link", { name: /^cloud$/ })).toHaveAttribute("href", "/choirs/drive/scores/remote");
 });
 
 it("does not reveal the former user's saved list when another user authenticates", async () => {
   await saved();
   vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
   open();
-  await screen.findByRole("link", { name: /a.pdf/ });
+  await screen.findByRole("link", { name: /^a$/ });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).includes("get-session") ? authenticatedResponse("b") : Response.json({ memberships: [] })));
   await act(async () => { await authClient.$store.atoms.session.get().refetch(); });
   await screen.findByText(/本机尚未保存/);
-  expect(screen.queryByText("a.pdf")).not.toBeInTheDocument();
+  expect(screen.queryByText("a")).not.toBeInTheDocument();
   vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
   await act(async () => { await authClient.$store.atoms.session.get().refetch(); });
   await screen.findByText(/本机尚未保存/);
-  expect(screen.queryByText("a.pdf")).not.toBeInTheDocument();
+  expect(screen.queryByText("a")).not.toBeInTheDocument();
 });
 
 it("does not recover the previous user's directory after explicit local logout cleanup", async () => {
@@ -129,5 +130,5 @@ it("does not recover the previous user's directory after explicit local logout c
   vi.stubGlobal("fetch", vi.fn(async () => Response.json(null)));
   open();
   await screen.findByRole("heading", { name: "Harmony begins on the Same Page" });
-  expect(screen.queryByText("a.pdf")).not.toBeInTheDocument();
+  expect(screen.queryByText("a")).not.toBeInTheDocument();
 });
