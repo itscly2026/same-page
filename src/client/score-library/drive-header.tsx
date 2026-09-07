@@ -1,3 +1,4 @@
+import { InstallButton } from "../install/install-entry";
 import { Menu as MenuIcon, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button,  Form, Heading, Input,  MenuItem, MenuTrigger, Modal, ModalOverlay, Popover, TextField } from "react-aria-components";
@@ -28,6 +29,7 @@ export function DriveHeader({ choirId, choirName, userId, search, onSearch, onRe
         <Link className="drive-drawer-switch" to="/drives" onClick={close}>返回所有云盘</Link>
 
         {management?.(close)}
+        <InstallButton />
       </>}</Dialog></Modal>
     </ModalOverlay>
   </>;
