@@ -1,3 +1,5 @@
+import { captureLocalWorkspaceSession, createLocalWorkspace, authenticatedLocalOwnerKey, type LocalWorkspace } from "../platform/local-workspace";
+import { readLocalDriveDirectories, rememberLocalDriveDirectory, renameLocalDriveDirectory, removeLocalDriveScore } from "./local-drive-directory";
 import { noCapabilities, hasManagement } from "../../shared/drive-permissions";
 import type { ScoreSummary } from "../../shared/scores";
 import {
@@ -17,31 +19,44 @@ export interface DriveLibrarySnapshot {
   joining: boolean;
 }
 
+type OpenedAccess = Extract<DriveLibraryAccess, { kind: "opened" }>;
+
+function localAccess(access: OpenedAccess): OpenedAccess {
+  return { ...access, local: true, isMember: false,
+    rememberedCapabilities: access.local ? access.rememberedCapabilities : access.result.permissions.capabilities,
+    managementVisible: access.managementVisible || hasManagement(access.result.permissions.capabilities),
+    result: { ...access.result, permissions: { capabilities: noCapabilities() } },
+  };
+}
+
 const refreshFailed = "暂时无法更新乐谱列表，当前内容已保留。请稍后重试。";
 
-// One lifetime owns the library's network ordering, cache authority and view.
+// One lifetime owns local/remote directory ordering, persistence, authority and view.
 // The React adapter only supplies browser events and committed-list scrolling.
 export class DriveLibrary {
   private authenticated = false;
   setAuthenticated(value: boolean) {
     if (this.authenticated === value) return;
     this.authenticated = value;
+    if (!value && this.snapshot.access.kind === "opened") this.publish({ access: localAccess(this.snapshot.access) });
     if (this.active) void this.changed();
   }
   private snapshot: DriveLibrarySnapshot;
   private view: LibraryView;
   private listeners = new Set<() => void>();
   private active = false;
+  private lifetimeController = new AbortController();
   private ownerSignal = AbortSignal.abort();
   private request: { controller: AbortController; done: Promise<void> } | null = null;
   private joinController: AbortController | null = null;
   private restorePending = true;
   private localController: AbortController | null = null;
+  private workspace: Promise<LocalWorkspace | null> = Promise.resolve(null);
 
   constructor(
     private ownerKey: DriveCacheOwnerKey,
     private choirId: string,
-    private transport: DriveLibraryTransport = driveLibraryTransport(choirId, ownerKey.startsWith("user:")),
+    private transport: DriveLibraryTransport = driveLibraryTransport(choirId),
   ) {
     this.view = readLibraryView(ownerKey, choirId);
     this.snapshot = {
@@ -59,16 +74,20 @@ export class DriveLibrary {
   start = () => {
     if (this.active) return;
     this.active = true;
-    this.ownerSignal = captureDriveLibraryOwner(this.ownerKey);
+    this.lifetimeController = new AbortController();
+    this.ownerSignal = AbortSignal.any([captureDriveLibraryOwner(this.ownerKey), this.lifetimeController.signal]);
+    this.workspace = this.ownerKey.startsWith("user:")
+      ? captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey(this.ownerKey.slice(5)), this.choirId, "")).catch(() => null)
+      : Promise.resolve(null);
     const cached = readDriveLibrary(this.ownerKey, this.choirId);
     this.publish({
       access: cached
-        ? { kind: "opened", choir: cached.choir, result: { ...cached.result, permissions: { capabilities: noCapabilities() } }, isMember: false, local: true, rememberedCapabilities: cached.result.permissions.capabilities, managementVisible: hasManagement(cached.result.permissions.capabilities) }
+        ? localAccess({ kind: "opened", choir: cached.choir, result: cached.result, isMember: false })
         : { kind: "loading", choir: readDriveSummary(this.ownerKey, this.choirId) ?? undefined },
     });
     this.localController = new AbortController();
     const signal = AbortSignal.any([this.ownerSignal, this.localController.signal]);
-    void this.transport.readLocal?.(signal).then(access => {
+    void this.readLocal(signal).then(access => {
       if (signal.aborted || !access || !["loading", "failed"].includes(this.snapshot.access.kind)) return;
       this.publish({ access });
     }).catch(() => undefined);
@@ -77,6 +96,7 @@ export class DriveLibrary {
 
   stop = () => {
     this.active = false;
+    this.lifetimeController.abort();
     this.localController?.abort();
     this.request?.controller.abort();
     this.request = null;
@@ -98,21 +118,26 @@ export class DriveLibrary {
     if (!this.isActive() || this.snapshot.access.kind !== "opened") return;
     this.request?.controller.abort();
     this.request = null;
-    await this.transport.removeScore?.(scoreId, this.ownerSignal);
-    if (!this.isActive() || this.snapshot.access.kind !== "opened") return;
+    this.localController?.abort();
     const access = { ...this.snapshot.access, result: { ...this.snapshot.access.result, scores: this.snapshot.access.result.scores.filter(score => score.id !== scoreId) } };
     rememberDriveLibrary(this.ownerKey, this.choirId, access);
     this.publish({ access });
+    const signal = this.ownerSignal;
+    const workspace = await this.workspace;
+    if (workspace) await removeLocalDriveScore(workspace, scoreId, signal);
   };
 
   confirmName = async (name: string) => {
     if (!this.isActive() || this.snapshot.access.kind !== "opened") return;
     this.request?.controller.abort();
     this.request = null;
+    this.localController?.abort();
     const access = { ...this.snapshot.access, choir: { ...this.snapshot.access.choir, name } };
     rememberDriveLibrary(this.ownerKey, this.choirId, access);
     this.publish({ access });
-    await this.transport.rememberName?.(name, this.ownerSignal);
+    const signal = this.ownerSignal;
+    const workspace = await this.workspace;
+    if (workspace) await renameLocalDriveDirectory(workspace, name, signal);
   };
 
   setSearch = (search: string) => this.updateView({ search, scrollTop: 0 });
@@ -160,16 +185,19 @@ export class DriveLibrary {
     const controller = new AbortController();
     // Register before calling the adapter, including an adapter that throws.
     const ownerSignal = this.ownerSignal;
+    const workspace = this.workspace;
+    const authenticated = this.authenticated;
+    const signal = AbortSignal.any([controller.signal, ownerSignal]);
     const pending = { controller, done: Promise.resolve() };
     this.request = pending;
     pending.done = Promise.resolve().then(() => {
-      const signal = AbortSignal.any([controller.signal, ownerSignal]);
       signal.throwIfAborted();
-      return this.transport.load(signal, allowAdmission, this.authenticated);
+      if (!authenticated && this.ownerKey.startsWith("user:")) return this.readLocal(signal);
+      return this.transport.load(signal, allowAdmission, authenticated);
     })
-      .then((access) => {
+      .then(async (access) => {
         if (this.request !== pending || !this.isActive() || controller.signal.aborted) return;
-        if (access.kind === "failed") {
+        if (!access || access.kind === "failed") {
           this.failed();
           return;
         }
@@ -178,7 +206,12 @@ export class DriveLibrary {
         } else {
           invalidateDriveLibrary(this.ownerKey, this.choirId);
         }
+        this.localController?.abort();
         this.publish({ access, refreshMessage: null });
+        if (access.kind === "opened" && !access.local) {
+          const captured = await workspace;
+          if (captured) await rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal, access.isMember && !access.choir.isPreviewEntry, access.result.permissions.capabilities, access.result.storage).catch(() => undefined);
+        }
       })
       .catch(() => {
         if (this.request === pending && !controller.signal.aborted) this.failed();
@@ -187,9 +220,21 @@ export class DriveLibrary {
     return pending.done;
   }
 
+  private async readLocal(signal: AbortSignal): Promise<OpenedAccess | null> {
+    if (!this.ownerKey.startsWith("user:")) return null;
+    const directory = (await readLocalDriveDirectories(this.ownerKey.slice(5))).find(entry => entry.choirId === this.choirId);
+    signal.throwIfAborted();
+    return { kind: "opened", local: true, isMember: false,
+      rememberedMembership: directory?.membership ?? false,
+      managementVisible: hasManagement(directory?.capabilities ?? noCapabilities()), rememberedCapabilities: directory?.capabilities,
+      choir: directory?.choir ?? readDriveSummary(this.ownerKey, this.choirId) ?? { id: this.choirId, name: "云盘", guestAdmissionMode: "invite" },
+      result: { scores: directory?.scores ?? [], storage: directory?.storage ?? { usedBytes: 0, limitBytes: 1 }, permissions: { capabilities: noCapabilities() } },
+    };
+  }
+
   private failed() {
     this.publish(this.snapshot.access.kind === "opened"
-      ? { access: { ...this.snapshot.access, local: true, rememberedCapabilities: this.snapshot.access.local ? this.snapshot.access.rememberedCapabilities : this.snapshot.access.result.permissions.capabilities, managementVisible: this.snapshot.access.managementVisible || hasManagement(this.snapshot.access.result.permissions.capabilities), result: { ...this.snapshot.access.result, permissions: { capabilities: noCapabilities() } } }, refreshMessage: refreshFailed }
+      ? { access: localAccess(this.snapshot.access), refreshMessage: refreshFailed }
       : { access: { kind: "failed" }, refreshMessage: null });
   }
 

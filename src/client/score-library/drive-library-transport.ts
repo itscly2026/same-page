@@ -14,22 +14,19 @@ export type DriveLibraryAccess =
 type LoadedAccess = Exclude<DriveLibraryAccess, { kind: "loading" }>;
 
 export interface DriveLibraryTransport {
-  removeScore?(scoreId: string, signal: AbortSignal): Promise<void>;
-  rememberName?(name: string, signal: AbortSignal): Promise<void>;
-  readLocal?(signal: AbortSignal): Promise<LoadedAccess | null>;
-  load(signal: AbortSignal, allowAdmission: boolean, authenticated?: boolean): Promise<LoadedAccess>;
+  load(signal: AbortSignal, allowAdmission: boolean, authenticated: boolean): Promise<LoadedAccess>;
   join(displayName: string, signal: AbortSignal): Promise<string | null>;
 }
 
-export function driveLibraryTransport(choirId: string, signedIn: boolean): DriveLibraryTransport {
-  const bootstrap = async (signal: AbortSignal): Promise<LoadedAccess> => {
+export function driveLibraryTransport(choirId: string): DriveLibraryTransport {
+  const bootstrap = async (signal: AbortSignal, authenticated: boolean): Promise<LoadedAccess> => {
     const response = await diagnosticFetch(`/api/choirs/${choirId}/bootstrap`, { signal });
     if ([401, 403].includes(response.status)) return { kind: "denied" };
     if (response.status === 404) return { kind: "not-found" };
     if (!response.ok) return { kind: "failed" };
     const payload = await parseDiagnosticResponse(response, driveBootstrapResponseSchema);
     signal.throwIfAborted();
-    if (signedIn && payload.permissions.access !== "guest") {
+    if (authenticated && payload.permissions.access !== "guest") {
       void diagnosticFetch("/api/guest/session", { method: "DELETE", signal }).catch(() => null);
     }
     return {
@@ -38,15 +35,15 @@ export function driveLibraryTransport(choirId: string, signedIn: boolean): Drive
     };
   };
   return {
-    async load(signal, allowAdmission) {
-      const first = await bootstrap(signal);
+    async load(signal, allowAdmission, authenticated) {
+      const first = await bootstrap(signal, authenticated);
       if (!allowAdmission || !["denied", "not-found"].includes(first.kind)) return first;
       const response = await diagnosticFetch(`/api/guest/choirs/${choirId}`, { signal });
       if (response.status === 404) return first;
       if (!response.ok) return { kind: "failed" };
       const admission = await parseDiagnosticResponse(response, guestSessionResponseSchema);
       signal.throwIfAborted();
-      if (signedIn && admission.entryKind !== "preview") {
+      if (authenticated && admission.entryKind !== "preview") {
         return { kind: "join-required", choir: admission.choir };
       }
       const granted = await diagnosticFetch("/api/guest/session", {
@@ -56,7 +53,7 @@ export function driveLibraryTransport(choirId: string, signedIn: boolean): Drive
       if ([401, 403].includes(granted.status)) return { kind: "denied" };
       if (!granted.ok) return { kind: "failed" };
       signal.throwIfAborted();
-      return bootstrap(signal);
+      return bootstrap(signal, authenticated);
     },
     async join(displayName, signal) {
       const response = await diagnosticFetch("/api/choirs/join", {
