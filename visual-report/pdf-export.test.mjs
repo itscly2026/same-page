@@ -17,6 +17,7 @@ test("export preserves multipage source geometry and overlays text and ink on ro
   for (const rotation of [0, 90, 180, 270]) {
     const sheet = pdf.addPage([400, 600]); sheet.setCropBox(20, 30, 360, 540); sheet.setRotation(degrees(rotation));
     sheet.drawText(`ORIGINAL PAGE ${rotation}`, { x: 70, y: 300, size: 18 });
+    sheet.drawText("SOURCE RED", { x: 70, y: 260, size: 12, color: rgb(1, 0, 0) });
     for (let i = 0; i < 5; i++) sheet.drawLine({ start: { x: 50, y: 170 + i * 10 }, end: { x: 350, y: 170 + i * 10 }, thickness: 1, color: rgb(0, 0, 0) });
   }
   const result = await page.evaluate(async bytes => {
@@ -35,9 +36,24 @@ test("export preserves multipage source geometry and overlays text and ink on ro
     const { document: target } = await exported.promise;
     const evidence = [];
     document.body.innerHTML = "";
+    const textBounds = (payload, width, height) => {
+      // Use the reader's real layout, not a fixed box tied to one OS font.
+      const container = document.createElement("div");
+      container.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:${height}px;container-type:inline-size;visibility:hidden`;
+      const label = document.createElement("button");
+      label.className = "annotation-text";
+      label.style.cssText = `left:${payload.x * 100}%;top:${payload.y * 100}%;font-size:${payload.fontScale * 100}cqw`;
+      label.textContent = payload.text;
+      container.append(label); document.body.append(container);
+      const box = label.getBoundingClientRect();
+      const bounds = { left: box.left - 2, right: box.right + 2, top: box.top - 2, bottom: box.bottom + 2 };
+      container.remove();
+      return bounds;
+    };
     for (let i = 1; i <= 4; i++) {
       const before = await source.getPage(i), after = await target.getPage(i);
       const viewport = before.getViewport({ scale: 1 });
+      const bounds = textBounds(annotations.find(annotation => annotation.payload.pageNumber === i && annotation.payload.kind === "text").payload, viewport.width, viewport.height);
       const render = async sheet => {
         const canvas = document.createElement("canvas"); canvas.width = viewport.width; canvas.height = viewport.height;
         await sheet.render({ canvas, viewport }).promise;
@@ -49,9 +65,13 @@ test("export preserves multipage source geometry and overlays text and ink on ro
       let sourceLost = 0, textRed = 0, inkRed = 0, strayRed = 0;
       for (let pixel = 0; pixel < a.length / 4; pixel++) {
         const x = pixel % last.width / last.width, y = Math.floor(pixel / last.width) / last.height;
-        if (!(x > .2 && x < .8 && y >= 0 && y < .4) && !(x > .08 && x < .32 && y > .68 && y < .72) && a[pixel * 4] < 80 && a[pixel * 4 + 1] < 80 && b[pixel * 4] > 150) sourceLost++;
-        if (b[pixel * 4] > 160 && b[pixel * 4] - b[pixel * 4 + 1] > 60 && b[pixel * 4 + 1] < 180 && b[pixel * 4 + 2] < 180) {
-          if (x > .2 && x < .8 && y >= 0 && y < .4) textRed++;
+        const inText = x * last.width >= bounds.left && x * last.width <= bounds.right && y * last.height >= bounds.top && y * last.height <= bounds.bottom;
+        if (!inText && !(x > .08 && x < .32 && y > .68 && y < .72) && a[pixel * 4] < 80 && a[pixel * 4 + 1] < 80 && b[pixel * 4] > 150) sourceLost++;
+        // Linux LCD font antialiasing can make black source glyph edges red.
+        // Count only red that was not already present in the original render.
+        const isRed = data => data[pixel * 4] > 160 && data[pixel * 4] - data[pixel * 4 + 1] > 60 && data[pixel * 4 + 1] < 180 && data[pixel * 4 + 2] < 180;
+        if (isRed(b) && !isRed(a)) {
+          if (inText) textRed++;
           else if (x > .08 && x < .32 && y > .68 && y < .72) inkRed++;
           else strayRed++;
         }
