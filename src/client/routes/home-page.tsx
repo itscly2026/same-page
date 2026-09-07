@@ -25,7 +25,6 @@ import {
   type ChoirSummary,
 } from "../../shared/choirs";
 import { authClient } from "../auth/auth-client";
-import readerPreview from "../assets/home/reader-preview.png";
 import sharedLayersIllustration from "../assets/home/shared-layers.webp";
 import personalLayerIllustration from "../assets/home/personal-layer.webp";
 import replacePdfIllustration from "../assets/home/replace-pdf.webp";
@@ -307,7 +306,6 @@ function HomeContent({ session, startup }: { session: ReturnType<typeof authClie
               >
                 进入云盘
               </Button>
-              <span className="hero-invite-hint">使用邀请码</span>
               <InstallButton />
               {previewChoir ? (
                 <Link
@@ -320,10 +318,6 @@ function HomeContent({ session, startup }: { session: ReturnType<typeof authClie
               ) : null}
             </div>
           </div>
-          <figure className="hero-reader-preview">
-            <img src={readerPreview} alt="乐谱批注示例：全体排练要求与个人换气提醒显示在同一份谱上" width={720} height={920} fetchPriority="high" />
-            <figcaption><span>全体排练要求</span><span>我的换气提醒</span></figcaption>
-          </figure>
           <a className="marketing-more-features" href="#features">
             了解更多功能 <span aria-hidden="true">↓</span>
           </a>

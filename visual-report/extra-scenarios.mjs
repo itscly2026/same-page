@@ -13,8 +13,8 @@ function reader(id, title, description, ready, actions = [], extra = {}) {
 }
 export const extraVisualReportScenarios = [
   scene("home-continue-reading", "首页 · 继续上次阅读", "仅展示当前用户仍可访问的最近乐谱与有效页码。", "/", selector(".continue-reading a"), [], { device: "portrait", seedContinue: true }),
-  scene("home-guest-mobile", "首页 · 手机产品示例", "双语品牌与实际阅读器生成的示例谱面。", "/", selector(".hero-reader-preview img"), [], { identity: "guest" }),
-  scene("home-guest-desktop", "首页 · 桌面产品示例", "品牌说明与示例谱面并排。", "/", selector(".hero-reader-preview img"), [], { identity: "guest", device: "desktop" }),
+  scene("home-guest-mobile", "首页 · 手机入口", "双语品牌说明与进入云盘入口。", "/", role("button", "进入云盘"), [], { identity: "guest" }),
+  scene("home-guest-desktop", "首页 · 桌面入口", "品牌说明与进入云盘入口。", "/", role("button", "进入云盘"), [], { identity: "guest", device: "desktop" }),
 
   scene("library-empty", "文件库 · 空库", "空库给管理员明确上传入口。", driveRoute, selector(".library-empty-state"), [], { identity: "admin" }),
   scene("library-search-none", "文件库 · 搜索无结果", "保留云盘总数，并提供清除搜索。", driveRoute, role("button", "清除搜索"), [{ type: "fillRole", role: "searchbox", name: /搜索.*中的乐谱/, value: "不存在的乐谱" }]),
