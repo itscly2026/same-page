@@ -201,6 +201,11 @@ export class DriveLibrary {
           this.failed();
           return;
         }
+        if (access.kind === "opened" && !access.local) {
+          const captured = await workspace;
+          if (captured) await rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal, access.isMember && !access.choir.isPreviewEntry, access.result.permissions.capabilities, access.result.storage).catch(() => undefined);
+        }
+        if (this.request !== pending || signal.aborted) return;
         if (access.kind === "opened") {
           if (!access.local) rememberDriveLibrary(this.ownerKey, this.choirId, access);
         } else {
@@ -208,10 +213,6 @@ export class DriveLibrary {
         }
         this.localController?.abort();
         this.publish({ access, refreshMessage: null });
-        if (access.kind === "opened" && !access.local) {
-          const captured = await workspace;
-          if (captured) await rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal, access.isMember && !access.choir.isPreviewEntry, access.result.permissions.capabilities, access.result.storage).catch(() => undefined);
-        }
       })
       .catch(() => {
         if (this.request === pending && !controller.signal.aborted) this.failed();
