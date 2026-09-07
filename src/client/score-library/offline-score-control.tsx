@@ -1,13 +1,13 @@
 import { offlinePreparationDescription } from "../offline/offline-score-status";
 import { scoreDisplayName } from "../../shared/score-display-name";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button,  Heading, Popover, Tooltip, TooltipTrigger } from "react-aria-components";
 import { Dialog } from "../navigation/overlays";
 import { CircleAlert, Download, HardDriveDownload, LoaderCircle, RefreshCw, HardDrive, Check } from "lucide-react";
 import type { ScoreSummary } from "../../shared/scores";
 import { ACTIVE_LOCAL_OWNER_KEY, guestOwnerSystemKey, localDatabase } from "../platform/local-database";
-import { authenticatedLocalOwnerKey, createLocalWorkspace, type LocalWorkspaceOwnerKey } from "../platform/local-workspace";
+import { authenticatedLocalOwnerKey, createLocalWorkspace, resolveLocalWorkspace, type LocalWorkspaceOwnerKey } from "../platform/local-workspace";
 import { useOfflineScore, useOfflinePreparation } from "../offline/use-offline-score";
 import "./offline-score-control.css";
 
@@ -22,9 +22,17 @@ export function OfflineScoreControl({ score, authenticatedUserId, authenticatedS
     const active = await localDatabase.system.get(ACTIVE_LOCAL_OWNER_KEY);
     if (authenticatedUserId) return active?.value === authenticatedLocalOwnerKey(authenticatedUserId) ? authenticatedLocalOwnerKey(authenticatedUserId) : null;
     if (active?.value.startsWith("user:")) return active.value as LocalWorkspaceOwnerKey;
-    return (await localDatabase.system.get(guestOwnerSystemKey(score.choirId)))?.value as LocalWorkspaceOwnerKey | undefined;
+    return (await localDatabase.system.get(guestOwnerSystemKey(score.choirId)))?.value as LocalWorkspaceOwnerKey | undefined ?? null;
     } catch { return null; }
   }, [authenticatedUserId, score.choirId]);
+  useEffect(() => {
+    if (owner !== null || disabled || authenticatedUserId) return;
+    const controller = new AbortController();
+    // A first-time guest has no owner until a workspace is established. The
+    // live query observes its creation before downloads become available.
+    void resolveLocalWorkspace({ authenticatedUserId: null, choirId: score.choirId, scoreId: score.id, signal: controller.signal }).catch(() => undefined);
+    return () => controller.abort();
+  }, [owner, disabled, authenticatedUserId, score.choirId, score.id]);
   const workspace = owner ? createLocalWorkspace(owner, score.choirId, score.id) : null;
   const offline = useOfflineScore(workspace);
   const { state: attempt, prepare } = useOfflinePreparation(workspace, score, authenticatedUserId, authenticatedSessionId);
@@ -51,7 +59,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, authenticatedS
         aria-haspopup="dialog"
         aria-expanded={detailsOpen}
         aria-controls={detailsOpen ? detailsId : undefined}
-        isDisabled={disabled}
+        isDisabled={disabled || !workspace}
         onPress={() => {
           setDetailsOpen(true);
           if (needsDownload && !explicitDownload) void prepare();
@@ -69,7 +77,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, authenticatedS
         <p role="status">{description}</p>
         <p>保存在合谱中，供这台设备离线使用。</p>
         {state === "ready" && <p>已保存在这台设备上，断网也能打开。</p>}
-        {needsDownload && <Button className="secondary-button" isDisabled={disabled || explicitDownload} onPress={() => void prepare()}>{downloading ? explicitDownload ? "正在下载…" : "继续下载（切换页面不中断）" : actionLabel}</Button>}
+        {needsDownload && <Button className="secondary-button" isDisabled={disabled || !workspace || explicitDownload} onPress={() => void prepare()}>{downloading ? explicitDownload ? "正在下载…" : "继续下载（切换页面不中断）" : actionLabel}</Button>}
         <Button className="text-button" onPress={() => setDetailsOpen(false)}>关闭</Button>
       </Dialog>
     </Popover>
