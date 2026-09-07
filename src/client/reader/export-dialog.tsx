@@ -32,6 +32,7 @@ export function ExportDialog({ layers, workspace, source, versionId, fileName, a
   return <ModalOverlay className="modal-overlay" isOpen isDismissable={!busy} onOpenChange={open => { if (!open && !busy) onClose(); }}><Modal className="app-modal"><Dialog className="app-dialog" exitDisabled={busy}>
     <Heading slot="title">导出 PDF</Heading><p>选择要包含的批注；本次选择不改变阅读订阅。取消全部可导出原谱。</p>
     {layers.map(layer => <label className="confirmation-checkbox" key={layer.id}><input type="checkbox" disabled={busy} checked={selected.includes(layer.id)} onChange={event => setSelected(ids => event.target.checked ? [...ids, layer.id] : ids.filter(id => id !== layer.id))} />{layer.kind === "personal" && layer.canEdit ? "我的笔记" : layer.name}</label>)}
+    {selected.some(id => !layers.some(layer => layer.id === id)) && <p role="alert">部分已选层不再可用。<Button isDisabled={busy} onPress={() => setSelected(ids => ids.filter(id => layers.some(layer => layer.id === id)))}>移除不可用层</Button></p>}
     {message && <p role="status">{message}</p>}
     <Button className="secondary-button" isDisabled={busy} onPress={onClose}>关闭</Button><Button className="primary-button" isDisabled={busy} onPress={() => void run()}>{busy ? "正在导出…" : "导出 PDF"}</Button>
   </Dialog></Modal></ModalOverlay>;

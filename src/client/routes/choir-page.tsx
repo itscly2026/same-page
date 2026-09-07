@@ -124,7 +124,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           <p className="eyebrow">开放准入</p>
           <h1>{access.choir.name}</h1>
           <p className="hero__copy">填写你在这个云盘中的显示名后即可加入。</p>
-          <Form className="entry-form" onSubmit={(event) => { event.preventDefault(); void library.join(openAdmissionDisplayName); }}>
+          <Form className="entry-form" data-update-busy={openAdmissionDisplayName.trim() || busy ? "true" : undefined} onSubmit={(event) => { event.preventDefault(); void library.join(openAdmissionDisplayName); }}>
             <TextField
               isRequired
               value={openAdmissionDisplayName}
@@ -152,7 +152,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           <p className="eyebrow">云盘</p>
           <h1>无法访问这个云盘</h1>
           <p className="hero__copy">请返回首页输入当前邀请码，或使用有成员关系的邮箱登录。</p>
-          <BackButton className="primary-link" to="/">返回首页</BackButton>
+          <BackButton className="primary-link" to="/drives">返回首页</BackButton>
           {userId && <LocalLibrary userId={userId} choirId={choirId} />}
         </main>
       </div>
@@ -167,7 +167,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           <p className="eyebrow">云盘</p>
           <h1>这个云盘不存在</h1>
           <p className="hero__copy">链接可能已经失效，请返回首页重新选择云盘。</p>
-          <BackButton className="primary-link" to="/">返回首页</BackButton>
+          <BackButton className="primary-link" to="/drives">返回首页</BackButton>
           {userId && <LocalLibrary userId={userId} choirId={choirId} />}
         </main>
       </div>
@@ -348,6 +348,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           selection={scoreAction}
           onClose={() => setScoreAction(null)}
           onComplete={async (nextMessage) => {
+            if (scoreAction.action === "trash") await library.confirmRemoval(scoreAction.score.id);
             await refreshAfterMutation();
             setScoreAction(null);
             setMessage(nextMessage);

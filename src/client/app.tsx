@@ -30,6 +30,10 @@ const PrivacyPage = lazy(() => import("./routes/privacy-page"));
 const DiagnosticsPage = lazy(() => import("./diagnostics/diagnostics-page"));
 
 export function AppRoutes() {
+  const location = useLocation();
+  const [startupKey, setStartupKey] = useState<string | null>(() => location.pathname === "/" ? location.key : null);
+  if (startupKey !== null && location.pathname !== "/") setStartupKey(null);
+  const startup = startupKey === location.key || location.state?.startup === true;
   return (
     <>
       <NavigationProvider><LogoutProvider>
@@ -37,7 +41,7 @@ export function AppRoutes() {
 
         <Routes>
           <Route element={<PageWithFooter />}>
-            <Route path="/" element={<RouteContent><HomePage /></RouteContent>} />
+            <Route path="/" element={<RouteContent><HomePage startup={startup} /></RouteContent>} />
             <Route path="/drives" element={<RouteContent><HomePage /></RouteContent>} />
             <Route path="/choirs/:choirId/storage" element={<RouteContent><LocalStoragePage /></RouteContent>} />
             <Route path="/choirs/:choirId/me" element={<RouteContent><UserLifecyclePage /></RouteContent>} />

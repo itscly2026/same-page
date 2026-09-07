@@ -38,13 +38,17 @@ it("rejects a directory response captured before an A to B to A identity change"
 });
 
 it("keeps a retained copy discoverable without resurrecting it in a confirmed empty directory", async () => {
-  const { readLocalDriveDirectories, rememberLocalDriveDirectory } = await import("./local-drive-directory");
+  const { readLocalDriveDirectories, rememberLocalDriveDirectory, removeLocalDriveScore } = await import("./local-drive-directory");
   const { captureLocalWorkspaceSession } = await import("../platform/local-workspace");
   await localDatabase.open();
   await activateAuthenticatedLocalOwner("retained");
   const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey("retained"), "drive", "removed"));
   await localDatabase.offlineScores.put({ ...workspace, key: "retained", versionId: "version", fileName: "保留.pdf", sha256: "unverified", pageCount: 1, blob: new Blob(["PDF"]), active: 1, verifiedAt: 1, annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 } });
   await rememberLocalDriveDirectory(workspace, { id: "drive", name: "排练", guestAdmissionMode: "invite" }, [], new AbortController().signal, true);
+  // A confirmed DELETE removes the directory entry even if no later GET succeeds.
+  const directory = (await readLocalDriveDirectories("retained"))[0];
+  await rememberLocalDriveDirectory(workspace, directory.choir, [{ id: "removed", choirId: "drive", fileName: "保留.pdf", updatedAt: 1, currentVersion: { id: "version", versionNumber: 1, sizeBytes: 3, sha256: "test", etag: "test", pageCount: 1, createdAt: 1 } }], new AbortController().signal, true);
+  await removeLocalDriveScore(workspace, "removed", new AbortController().signal);
   expect((await readLocalDriveDirectories("retained"))[0].scores).toEqual([]);
   render(<MemoryRouter><LocalLibrary userId="retained" /></MemoryRouter>);
   expect(await screen.findByRole("link", { name: /保留/ })).toHaveAttribute("href", "/choirs/drive/scores/removed");

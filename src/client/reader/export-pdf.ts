@@ -1,3 +1,4 @@
+import { paintExportText } from "./export-text";
 import { PDFDocument, concatTransformationMatrix, popGraphicsState, pushGraphicsState } from "pdf-lib";
 import type { AnnotationLayerSummary, AnnotationPayload } from "../../shared/annotations";
 import type { PDFDocumentProxy } from "./pdf-document";
@@ -32,19 +33,7 @@ export async function exportAnnotatedPdf(source: PDFDocumentProxy, annotations: 
         });
         context.stroke();
       } else {
-        const size = payload.fontScale * viewport.width;
-        context.font = `700 ${size}px system-ui, sans-serif`;
-        context.textAlign = "center"; context.textBaseline = "middle";
-        const lines: string[] = [];
-        for (const paragraph of payload.text.split("\n")) {
-          let line = "";
-          for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(paragraph)) {
-            if (line && context.measureText(line + segment).width > viewport.width / 2) { lines.push(line); line = ""; }
-            line += segment;
-          }
-          lines.push(line);
-        }
-        lines.forEach((line, i) => context.fillText(line, payload.x * viewport.width, payload.y * viewport.height + (i - (lines.length - 1) / 2) * size * 1.25));
+        paintExportText(context, payload, viewport.width, viewport.height);
       }
     }
     const image = await pdf.embedPng(canvas.toDataURL("image/png"));

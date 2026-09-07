@@ -86,7 +86,7 @@ export default function UserLifecyclePage() {
     </> : <Link className="secondary-link" to="/login">登录或恢复用户</Link>}
     {message ? <p role="status">{message}</p> : null}
     <Button className="secondary-button" isDisabled={busy} onPress={() => void reload()}>重新读取状态</Button>
-    <BackButton className="secondary-link" to="/">返回首页</BackButton>
+    <BackButton className="secondary-link" to="/drives">返回首页</BackButton>
   </main></div>;
 }
 function methodName(method: string) { return method === "credential" ? "邮箱与密码" : method === "google" ? "Google" : "微信"; }

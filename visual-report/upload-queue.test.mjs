@@ -82,7 +82,7 @@ for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {
       await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).waitFor();
       assert.equal(await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).inputValue(), "b.pdf");
       await page.getByText(/请核对同名文件/).waitFor();
-      await page.getByRole("link", { name: /b\.pdf/ }).waitFor();
+      await page.getByRole("link", { name: /^b$/ }).waitFor();
       assert.equal(files.length, 3);
     } finally { await context.close(); await browser.close(); }
   });

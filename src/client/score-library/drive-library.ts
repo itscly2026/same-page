@@ -94,6 +94,17 @@ export class DriveLibrary {
     return this.load(false);
   };
 
+  confirmRemoval = async (scoreId: string) => {
+    if (!this.isActive() || this.snapshot.access.kind !== "opened") return;
+    this.request?.controller.abort();
+    this.request = null;
+    await this.transport.removeScore?.(scoreId, this.ownerSignal);
+    if (!this.isActive() || this.snapshot.access.kind !== "opened") return;
+    const access = { ...this.snapshot.access, result: { ...this.snapshot.access.result, scores: this.snapshot.access.result.scores.filter(score => score.id !== scoreId) } };
+    rememberDriveLibrary(this.ownerKey, this.choirId, access);
+    this.publish({ access });
+  };
+
   confirmName = async (name: string) => {
     if (!this.isActive() || this.snapshot.access.kind !== "opened") return;
     this.request?.controller.abort();

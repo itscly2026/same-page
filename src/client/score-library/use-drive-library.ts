@@ -1,6 +1,6 @@
 import { noCapabilities, hasManagement } from "../../shared/drive-permissions";
 import { captureLocalWorkspaceSession, createLocalWorkspace, authenticatedLocalOwnerKey } from "../platform/local-workspace";
-import { readLocalDriveDirectories, rememberLocalDriveDirectory, renameLocalDriveDirectory } from "./local-drive-directory";
+import { readLocalDriveDirectories, rememberLocalDriveDirectory, renameLocalDriveDirectory, removeLocalDriveScore } from "./local-drive-directory";
 import { useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { DriveLibrary } from "./drive-library";
 import { readDriveSummary, type DriveCacheOwnerKey } from "./drive-library-cache";
@@ -20,6 +20,11 @@ export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, s
     return new DriveLibrary(ownerKey, choirId, {
       ...transport,
       readLocal,
+      async removeScore(scoreId, signal) {
+        if (!ownerKey.startsWith("user:")) return;
+        const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey(ownerKey.slice(5)), choirId, ""));
+        await removeLocalDriveScore(workspace, scoreId, signal);
+      },
       async rememberName(name, signal) {
         if (!ownerKey.startsWith("user:")) return;
         const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey(ownerKey.slice(5)), choirId, ""));

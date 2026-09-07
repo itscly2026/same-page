@@ -55,7 +55,7 @@ export async function syncAnnotations(workspace: LocalWorkspace, options: SyncOp
   const key = JSON.stringify([workspace.scopeKey, workspace.sessionEpoch, options.push !== false]);
   // Re-entering the same account must neither reuse nor wait for its old
   // in-page refresh. Storage fencing remains authoritative across other tabs.
-  for (const [otherKey, tasks] of refreshTasks) {
+  for (const tasks of refreshTasks.values()) {
     if (tasks[0]?.workspace.sessionEpoch !== workspace.sessionEpoch && tasks[0]?.workspace.scopeKey === workspace.scopeKey) {
       for (const stale of tasks) stale.controller.abort(new LocalWorkspaceOwnerChangedError());
     }

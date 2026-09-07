@@ -83,20 +83,20 @@ const productFeatures = [
   },
 ] as const;
 
-export function HomePage() {
+export function HomePage({ startup = false }: { startup?: boolean }) {
   const identity = useApplicationIdentity();
   const { session } = identity;
-  if (identity.showLocalEntry) return <LocalEntry identity={identity} />;
-  return <HomeContent key={session.isPending ? "pending" : session.data?.user.id ?? "guest"} session={session} />;
+  if (identity.showLocalEntry) return <LocalEntry identity={identity} startup={startup} />;
+  return <HomeContent key={session.isPending ? "pending" : session.data?.user.id ?? "guest"} session={session} startup={startup} />;
 }
 
-function HomeContent({ session }: { session: ReturnType<typeof authClient.useSession> }) {
+function HomeContent({ session, startup }: { session: ReturnType<typeof authClient.useSession>; startup: boolean }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const [linkInvite] = useState(() => readInviteLink(location.hash));
   const linkHandled = useRef(false);
-  const [startupIntent, setStartupIntent] = useState(location.pathname === "/" && !location.search && !location.hash);
+  const [startupIntent, setStartupIntent] = useState(startup && location.pathname === "/" && !location.search && !location.hash);
   const [joinOpen, setJoinOpen] = useState(searchParams.get("join") === "1" || linkInvite !== null);
   const [joinStep, setJoinStep] = useState<JoinStep>({ kind: "invite" });
   const [joinCode, setJoinCode] = useState(linkInvite?.code ?? "");

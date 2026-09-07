@@ -217,3 +217,14 @@ it("does not remember the public preview as a startup drive even for its adminis
   expect(screen.queryByText(/上次使用的云盘已不在可访问列表/)).not.toBeInTheDocument();
   expectPath("/");
 });
+
+it("browser back to a selection entry does not become a new startup intent", async () => {
+  memberships = [membership("one"), membership("two")];
+  render(tree());
+  fireEvent.click(await screen.findByRole("link", { name: /云盘 one.*成员/ }));
+  await screen.findByRole("heading", { name: "云盘 one" });
+  fireEvent.click(screen.getByRole("button", { name: "返回测试" }));
+  await screen.findByRole("heading", { name: "我已加入的云盘" });
+  expectPath("/");
+  expect(await screen.findByRole("link", { name: /云盘 one.*成员/ })).toBeInTheDocument();
+});
