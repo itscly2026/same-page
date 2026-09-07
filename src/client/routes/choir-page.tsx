@@ -1,4 +1,5 @@
 import { scoreDisplayName } from "../../shared/score-display-name";
+import { InstallSuggestion } from "../install/install-entry";
 import { hasManagement, isDelegated, type Operation } from "../../shared/drive-permissions";
 import { BackButton } from "../navigation/back-button";
 import { ScoreLink } from "../score-library/score-link";
@@ -232,6 +233,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
       />
       <main className="page-shell file-library">
         <h1 className="visually-hidden">{choir.name}</h1>
+        <InstallSuggestion />
         {(!online || identity.onlineState === "signed-out" || identity.onlineState === "unreachable" || searchMessage) && <details className="drive-connection-notice"><summary>{!online ? "离线" : searchMessage ? "列表更新失败" : identity.onlineState === "unreachable" ? "连接暂不可用" : "需要重新登录"}</summary>
           <IdentityNotice identity={identity} />
           {searchMessage && <p role="status">{searchMessage}<Button onPress={() => void refresh()}>重试</Button></p>}

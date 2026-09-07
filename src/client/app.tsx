@@ -1,3 +1,4 @@
+import { InstallProvider } from "./install/install-provider";
 import { LogoutProvider } from "./auth/logout";
 import { NavigationProvider } from "./navigation/navigation";
 import { RouteContent } from "./components/route-content";
@@ -36,7 +37,7 @@ export function AppRoutes() {
   const startup = startupKey === location.key || location.state?.startup === true;
   return (
     <>
-      <NavigationProvider><LogoutProvider>
+      <NavigationProvider><LogoutProvider><InstallProvider>
       <RouteScrollReset />
 
         <Routes>
@@ -70,7 +71,7 @@ export function AppRoutes() {
             element={<RouteContent><ReaderPage /></RouteContent>}
           />
         </Routes>
-      </LogoutProvider></NavigationProvider>
+      </InstallProvider></LogoutProvider></NavigationProvider>
 
     </>
   );

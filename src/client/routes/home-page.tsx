@@ -1,3 +1,4 @@
+import { InstallButton } from "../install/install-entry";
 import { useApplicationIdentity } from "../auth/application-identity";
 import { LocalEntry } from "../auth/local-entry";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
@@ -267,7 +268,7 @@ function HomeContent({ session, startup }: { session: ReturnType<typeof authClie
       <AppHeader
         actions={
           session.data?.user ? (
-            <PersonalMenu email={session.data.user.email} />
+            <><InstallButton className="header-action" /><PersonalMenu email={session.data.user.email} /></>
           ) : session.isPending ? null : (
             <Link className="header-action header-action--primary" to="/login">
               登录
@@ -305,6 +306,7 @@ function HomeContent({ session, startup }: { session: ReturnType<typeof authClie
               >
                 进入云盘
               </Button>
+              <InstallButton />
               {previewChoir ? (
                 <Link
                   className="hero-preview-link"
