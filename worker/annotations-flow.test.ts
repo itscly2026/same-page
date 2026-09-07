@@ -1,3 +1,4 @@
+import { noCapabilities } from "../src/shared/drive-permissions";
 import { cleanupSharedLayers } from "./annotations/cleanup";
 import { RECOVERY_PERIOD_MS } from "./lifecycle/cleanup";
 import type { SharedLayerManagementSummary } from "../src/shared/annotations";
@@ -46,12 +47,10 @@ beforeEach(async () => {
       "DELETE FROM annotation_objects",
       "DELETE FROM user_score_layer_preferences",
       "DELETE FROM user_drive_layer_preferences",
-      "DELETE FROM shared_layer_edit_grants",
       "DELETE FROM annotation_layers",
       "DELETE FROM score_object_deletions",
       "DELETE FROM score_versions",
       "DELETE FROM scores",
-      "DELETE FROM memberships",
       "DELETE FROM choirs",
       "DELETE FROM rate_limits",
       "DELETE FROM session",
@@ -73,9 +72,9 @@ describe("annotation layers and object synchronization", () => {
     const list = async (state = "current") => (await (await callWorker(`${base}/shared-layers?state=${state}`, { headers: { cookie: fixture.adminCookie } })).json() as { layers: SharedLayerManagementSummary[] }).layers;
     const change = (action: string, expectedRevision: number, cookie = fixture.adminCookie) => callWorker(`${base}/shared-layers/${slot}/lifecycle`, jsonRequest(cookie, { action, expectedRevision }));
     const put = (path: string, body: unknown) => callWorker(`${base}${path}`, { ...jsonRequest(fixture.adminCookie, body), method: "PUT" });
-    const members = await (await callWorker(`${base}/shared-layers/${slot}/grants`, { headers: { cookie: fixture.adminCookie } })).json() as { members: { id: string; displayName: string }[] };
-    const memberId = members.members.find(row => row.displayName === "成员")!.id;
-    await put(`/shared-layers/${slot}/grants/${memberId}`, { granted: true });
+    const members = await (await callWorker(`${base}/memberships`, { headers: { cookie: fixture.adminCookie } })).json() as { memberships: { id: string; displayName: string }[] };
+    const memberId = members.memberships.find(row => row.displayName === "成员")!.id;
+    await setLayerPermission(fixture, memberId, slot, true);
     await put(`/shared-layers/${slot}/preference`, { subscribed: false, colorOverride: "#987654" });
     await put(`/scores/${fixture.scoreId}/shared-layers/${slot}/preference`, { subscribed: true });
     const layer = await layerBySlot(fixture, fixture.adminCookie, slot);
@@ -99,7 +98,6 @@ describe("annotation layers and object synchronization", () => {
     expect(await layerBySlot(second, fixture.adminCookie, slot)).toBeUndefined();
     expect(await (await push(fixture, [operation(objectId, String(layer!.id), 1, "晚到保存")])).json()).toMatchObject({ results: [{ status: "permission_denied" }] });
     expect((await put(`/shared-layers/${slot}/settings`, { active: true })).status).toBe(404);
-    expect((await put(`/shared-layers/${slot}/grants/${memberId}`, { granted: true })).status).toBe(404);
     expect((await put(`/shared-layers/${slot}/order`, { direction: "up" })).status).toBe(404);
     const pullPath = `${base}/scores/${fixture.scoreId}/annotations`;
     expect(await (await callWorker(pullPath, { headers: { cookie: fixture.adminCookie } })).json()).toMatchObject({ objects: [] });
@@ -135,7 +133,7 @@ describe("annotation layers and object synchronization", () => {
     await cleanupSharedLayers(env.DB);
     const list = await (await callWorker(`${base}/shared-layers?state=deleted`, { headers: { cookie: fixture.adminCookie } })).json();
     expect(list).toMatchObject({ layers: [] });
-    for (const table of ["annotation_layers", "annotation_objects", "annotation_sync_operations", "shared_layer_edit_grants", "user_drive_layer_preferences", "user_score_layer_preferences"]) {
+    for (const table of ["annotation_layers", "annotation_objects", "annotation_sync_operations", "user_drive_layer_preferences", "user_score_layer_preferences"]) {
       expect(await env.DB.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE choir_id = ?`).bind(fixture.choirId).first()).toEqual({ count: table === "annotation_layers" ? 5 : 0 });
     }
     const created = await (await callWorker(`${base}/shared-layers`, jsonRequest(fixture.adminCookie, { name: "Ensemble", defaultColor: "#123456" }))).json() as { slot: string };
@@ -194,7 +192,7 @@ describe("annotation layers and object synchronization", () => {
       return (await response.json() as { layers: Array<{ id: string; kind: string; canEdit: boolean; sharing: boolean; subscribed: boolean }> }).layers;
     };
     const personal = (await list(author.cookie)).find(layer => layer.kind === "personal")!;
-    const authorFixture = { ...fixture, adminCookie: author.cookie, adminUserId: author.userId };
+    const authorFixture = { ...fixture, adminCookie: author.cookie, ownerUserId: author.userId };
     const objectId = crypto.randomUUID();
     await push(authorFixture, [operation(objectId, personal.id, 0, "我的排练笔记")]);
     expect((await list(reader.cookie)).some(layer => layer.id === personal.id)).toBe(false);
@@ -206,7 +204,7 @@ describe("annotation layers and object synchronization", () => {
     const subscribe = await callWorker(`${base}/personal-layers/${personal.id}/subscription`, { ...jsonRequest(reader.cookie, { subscribed: true }), method: "PUT" });
     expect(subscribe.status).toBe(200);
     expect((await list(reader.cookie)).find(layer => layer.id === personal.id)).toMatchObject({ subscribed: true });
-    for (const actor of [fixture, { ...fixture, adminCookie: reader.cookie, adminUserId: reader.userId }]) {
+    for (const actor of [fixture, { ...fixture, adminCookie: reader.cookie, ownerUserId: reader.userId }]) {
       expect(await (await push(actor, [operation(objectId, personal.id, 1, "不能修改")])).json()).toMatchObject({ results: [{ status: "permission_denied" }] });
     }
     const pull = async (cookie: string) => (await callWorker(`${base}/annotations`, { headers: { cookie } })).json();
@@ -225,8 +223,8 @@ describe("annotation layers and object synchronization", () => {
     expect(await pull(reader.cookie)).toMatchObject({ objects: [] });
     await share(true);
     expect((await list(reader.cookie)).find(layer => layer.id === personal.id)).toMatchObject({ subscribed: false });
-    const membersResponse = await callWorker(`/api/choirs/${fixture.choirId}/shared-layers/E/grants`, { headers: { cookie: fixture.adminCookie } });
-    const { members } = await membersResponse.json() as { members: Array<{ id: string; displayName: string }> };
+    const membersResponse = await callWorker(`/api/choirs/${fixture.choirId}/memberships`, { headers: { cookie: fixture.adminCookie } });
+    const { memberships: members } = await membersResponse.json() as { memberships: Array<{ id: string; displayName: string }> };
     const authorMembership = members.find(member => member.displayName === "声部长")!;
     await callWorker(`/api/choirs/${fixture.choirId}/memberships/${authorMembership.id}`, jsonRequest(fixture.adminCookie, { action: "remove", expectedRevision: 0 }));
     expect(await pull(reader.cookie)).toMatchObject({ objects: [] });
@@ -236,14 +234,12 @@ describe("annotation layers and object synchronization", () => {
     const fixture = await createFixture();
     const member = await createMember(fixture.joinCode!, "grant-target@example.test", "成员");
     const target = await createDatabase(env.DB).query.memberships.findFirst({ where: eq(memberships.userId, member.userId) });
-    const actor = await createDatabase(env.DB).query.memberships.findFirst({ where: eq(memberships.userId, fixture.adminUserId) });
-    if (changed === "actor") {
-      expect((await callWorker(`/api/choirs/${fixture.choirId}/memberships/${target!.id}`, jsonRequest(fixture.adminCookie, { action: "promote", expectedRevision: 0 }))).status).toBe(204);
-    }
+    const actor = await createDatabase(env.DB).query.memberships.findFirst({ where: eq(memberships.userId, fixture.ownerUserId) });
     const another = changed === "actor" ? await createMember(fixture.joinCode!, "grant-another@example.test", "另一成员") : null;
     const grantTarget = another ? await createDatabase(env.DB).query.memberships.findFirst({ where: eq(memberships.userId, another.userId) }) : target;
     const DB = new Proxy(env.DB, { get(db, key) {
       if (key === "batch") return async (statements: D1PreparedStatement[]) => {
+        if (changed === "actor") expect((await callWorker(`/api/choirs/${fixture.choirId}/ownership`, jsonRequest(fixture.adminCookie, { membershipId: target!.id, confirm: true }))).status).toBe(204);
         const membershipId = changed === "target" ? target!.id : actor!.id;
         const adminCookie = changed === "target" ? fixture.adminCookie : member.cookie;
         const path = `/api/choirs/${fixture.choirId}/memberships/${membershipId}`;
@@ -254,11 +250,11 @@ describe("annotation layers and object synchronization", () => {
       const value = Reflect.get(db, key); return typeof value === "function" ? value.bind(db) : value;
     }});
     const execution = createExecutionContext();
-    const response = await worker.fetch(new Request(`https://same-page.test/api/choirs/${fixture.choirId}/shared-layers/E/grants/${grantTarget!.id}`, { ...jsonRequest(fixture.adminCookie, { granted: true }), method: "PUT" }), { ...env, DB }, execution);
+    const response = await worker.fetch(new Request(`https://same-page.test/api/choirs/${fixture.choirId}/memberships/${grantTarget!.id}/permissions`, { ...jsonRequest(fixture.adminCookie, { expectedRevision: 0, operations: { operations: [], sharedLayers: ["E"] }, management: { operations: [], sharedLayers: [] } }), method: "PUT" }), { ...env, DB }, execution);
     await waitOnExecutionContext(execution);
     expect(response.status).toBe(409);
-    const grants = await callWorker(`/api/choirs/${fixture.choirId}/shared-layers/E/grants`, { headers: { cookie: changed === "target" ? fixture.adminCookie : member.cookie } });
-    expect(await grants.json()).toMatchObject({ members: expect.arrayContaining([expect.objectContaining({ id: grantTarget!.id, role: "member", granted: false })]) });
+    const grants = await callWorker(`/api/choirs/${fixture.choirId}/memberships`, { headers: { cookie: changed === "target" ? fixture.adminCookie : member.cookie } });
+    expect(await grants.json()).toMatchObject({ memberships: expect.arrayContaining([expect.objectContaining({ id: grantTarget!.id, isOwner: 0, operations: { operations: [], sharedLayers: [] } })]) });
   });
 
   it("measures real local D1 batches of 1 and 100 mixed operations", async () => {
@@ -284,7 +280,7 @@ describe("annotation layers and object synchronization", () => {
       }});
       const operations = Array.from({ length: size }, (_, i) => operation(crypto.randomUUID(), i % 2 ? personal.id : fixture.layerId, 0, "benchmark"));
       const execution = createExecutionContext();
-      const response = await worker.fetch(new Request(`https://same-page.test/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/annotations/push`, jsonRequest(fixture.adminCookie, { operations }, { "x-same-page-owner-user-id": fixture.adminUserId })), { ...env, DB }, execution);
+      const response = await worker.fetch(new Request(`https://same-page.test/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/annotations/push`, jsonRequest(fixture.adminCookie, { operations }, { "x-same-page-owner-user-id": fixture.ownerUserId })), { ...env, DB }, execution);
       await waitOnExecutionContext(execution);
       expect(response.status).toBe(200);
       const body = await response.json() as { results: Array<{ status: string }> };
@@ -308,7 +304,7 @@ describe("annotation layers and object synchronization", () => {
     const bootstrap = await read(`/api/choirs/${fixture.choirId}/bootstrap`, first.cookie);
     expect(bootstrap.status).toBe(200);
     expect(await bootstrap.json()).toMatchObject({
-      scores: [{ id: fixture.scoreId }], permissions: { canManage: false, access: "preview" },
+      scores: [{ id: fixture.scoreId }], permissions: { capabilities: noCapabilities(), access: "preview" },
     });
     const layers = await read(`${base}/layers`, first.cookie);
     expect(layers.status).toBe(200);
@@ -316,7 +312,7 @@ describe("annotation layers and object synchronization", () => {
     const personal = body.layers.find((layer) => layer.kind === "personal")!;
     expect(personal.canEdit).toBe(true);
     expect(body.layers.filter((layer) => layer.kind === "shared").every((layer) => !layer.canEdit)).toBe(true);
-    const author = { ...fixture, adminCookie: first.cookie, adminUserId: first.userId };
+    const author = { ...fixture, adminCookie: first.cookie, ownerUserId: first.userId };
     const op = operation(crypto.randomUUID(), personal.id, 0, "只属于我");
     expect(await (await push(author, [op])).json()).toMatchObject({ results: [{ status: "accepted" }] });
     // Reloading the layers and pulling from a fresh request retains the same private content.
@@ -326,12 +322,12 @@ describe("annotation layers and object synchronization", () => {
     expect(await (await read(`${base}/annotations`, first.cookie)).json()).toMatchObject({
       objects: [expect.objectContaining({ id: op.annotationId, payload: expect.objectContaining({ text: "只属于我" }) })],
     });
-    for (const other of [second, { cookie: fixture.adminCookie, userId: fixture.adminUserId }]) {
+    for (const other of [second, { cookie: fixture.adminCookie, userId: fixture.ownerUserId }]) {
       expect(await (await read(`${base}/layers`, other.cookie)).json()).not.toMatchObject({
         layers: expect.arrayContaining([expect.objectContaining({ id: personal.id })]),
       });
       expect(await (await read(`${base}/annotations`, other.cookie)).json()).toMatchObject({ objects: [] });
-      expect(await (await push({ ...fixture, adminCookie: other.cookie, adminUserId: other.userId }, [
+      expect(await (await push({ ...fixture, adminCookie: other.cookie, ownerUserId: other.userId }, [
         operation(op.annotationId, personal.id, 1, "不能改别人的"),
       ])).json()).toMatchObject({ results: [{ status: "permission_denied" }] });
     }
@@ -757,11 +753,7 @@ describe("annotation layers and object synchronization", () => {
     const memberRow = await createDatabase(env.DB).query.memberships.findFirst({
       where: eq(memberships.userId, member.userId),
     });
-    const grantPath = `/api/choirs/${fixture.choirId}/shared-layers/E/grants/${memberRow!.id}`;
-    expect((await callWorker(grantPath, {
-      ...jsonRequest(fixture.adminCookie, { granted: true }),
-      method: "PUT",
-    })).status).toBe(200);
+    expect((await setLayerPermission(fixture, memberRow!.id, "E", true)).status).toBe(204);
     const grantedManagement = await callWorker(managementPath, {
       headers: { cookie: fixture.adminCookie },
     });
@@ -786,25 +778,18 @@ describe("annotation layers and object synchronization", () => {
     const memberRow = await createDatabase(env.DB).query.memberships.findFirst({
       where: eq(memberships.userId, member.userId),
     });
-    const grantPath = `/api/choirs/${fixture.choirId}/shared-layers/E/grants/${memberRow!.id}`;
-    const grant = await callWorker(
-      grantPath,
-      { ...jsonRequest(fixture.adminCookie, { granted: true }), method: "PUT" },
-    );
-    expect(grant.status).toBe(200);
+    const grant = await setLayerPermission(fixture, memberRow!.id, "E", true);
+    expect(grant.status).toBe(204);
 
     const accepted = await push(
-      { ...fixture, adminCookie: member.cookie, adminUserId: member.userId },
+      { ...fixture, adminCookie: member.cookie, ownerUserId: member.userId },
       [operation(crypto.randomUUID(), fixture.layerId, 0, "获授权")],
     );
     expect(accepted.status).toBe(200);
-    const revoke = await callWorker(
-      grantPath,
-      { ...jsonRequest(fixture.adminCookie, { granted: false }), method: "PUT" },
-    );
-    expect(revoke.status).toBe(200);
+    const revoke = await setLayerPermission(fixture, memberRow!.id, "E", false);
+    expect(revoke.status).toBe(204);
     const revoked = await push(
-      { ...fixture, adminCookie: member.cookie, adminUserId: member.userId },
+      { ...fixture, adminCookie: member.cookie, ownerUserId: member.userId },
       [operation(crypto.randomUUID(), fixture.layerId, 0, "已撤权")],
     );
     expect(await revoked.json()).toMatchObject({ results: [{ status: "permission_denied" }] });
@@ -817,7 +802,7 @@ describe("annotation layers and object synchronization", () => {
       layers: Array<{ id: string; kind: string }>;
     };
     const memberPersonal = memberLayerBody.layers.find((layer) => layer.kind === "personal")!;
-    const mixed = await push({ ...fixture, adminCookie: member.cookie, adminUserId: member.userId }, [
+    const mixed = await push({ ...fixture, adminCookie: member.cookie, ownerUserId: member.userId }, [
       operation(crypto.randomUUID(), fixture.layerId, 0, "失权草稿"),
       operation(crypto.randomUUID(), memberPersonal.id, 0, "合法个人草稿"),
     ]);
@@ -829,8 +814,8 @@ describe("annotation layers and object synchronization", () => {
 
     const otherChoir = await provisionChoir({
       binding: env.DB,
-      adminUserId: member.userId,
-      adminDisplayName: "另一云盘管理员",
+      ownerUserId: member.userId,
+      ownerDisplayName: "另一云盘管理员",
       inviteSecret: env.INVITE_SECRET,
     });
     const crossChoir = await callWorker(
@@ -880,8 +865,8 @@ async function createFixture() {
   const admin = await signIn("annotation-admin@example.test");
   const provisioned = await provisionChoir({
     binding: env.DB,
-    adminUserId: admin.userId,
-    adminDisplayName: "管理员",
+    ownerUserId: admin.userId,
+    ownerDisplayName: "管理员",
     inviteSecret: env.INVITE_SECRET,
   });
   const upload = await callWorker(
@@ -898,7 +883,7 @@ async function createFixture() {
   }).layers.find((layer) => layer.sharedSlot === "E")!.id;
   return {
     adminCookie: admin.cookie,
-    adminUserId: admin.userId,
+    ownerUserId: admin.userId,
     choirId: provisioned.choirId,
     joinCode: provisioned.joinCode,
     scoreId,
@@ -982,7 +967,7 @@ function push(
     choirId: string;
     scoreId: string;
     adminCookie: string;
-    adminUserId: string;
+    ownerUserId: string;
   },
   operations: unknown[],
 ) {
@@ -991,7 +976,7 @@ function push(
     jsonRequest(
       fixture.adminCookie,
       { operations },
-      { "x-same-page-owner-user-id": fixture.adminUserId },
+      { "x-same-page-owner-user-id": fixture.ownerUserId },
     ),
   );
 }
@@ -1046,3 +1031,29 @@ async function sha256(value: string) {
     byte.toString(16).padStart(2, "0"),
   ).join("");
 }
+
+async function setLayerPermission(fixture: { choirId: string; adminCookie: string }, membershipId: string, slot: string, granted: boolean) {
+  const listing = await callWorker(`/api/choirs/${fixture.choirId}/memberships`, { headers: { cookie: fixture.adminCookie } });
+  const data = await listing.json() as { memberships: Array<{ id: string; revision: number; operations: { operations: string[]; sharedLayers: string[] }; management: object }> };
+  const target = data.memberships.find(member => member.id === membershipId)!;
+  return callWorker(`/api/choirs/${fixture.choirId}/memberships/${membershipId}/permissions`, { ...jsonRequest(fixture.adminCookie, {
+    expectedRevision: target.revision, operations: { ...target.operations, sharedLayers: granted ? [...target.operations.sharedLayers, slot] : target.operations.sharedLayers.filter(value => value !== slot) }, management: target.management,
+  }), method: "PUT" });
+}
+
+it("keeps finite shared-slot grants stable and separates configuration from content editing", async () => {
+  const fixture = await createFixture();
+  const member = await createMember(fixture.joinCode!, "layer-config@example.test", "层配置员");
+  const base = `/api/choirs/${fixture.choirId}`;
+  const listing = await (await callWorker(`${base}/memberships`, { headers: { cookie: fixture.adminCookie } })).json() as { memberships: Array<{ id: string; displayName: string; revision: number }> };
+  const target = listing.memberships.find(row => row.displayName === "层配置员")!;
+  expect((await callWorker(`${base}/memberships/${target.id}/permissions`, { ...jsonRequest(fixture.adminCookie, { expectedRevision: target.revision, operations: { operations: ["configureLayers"], sharedLayers: ["S"] }, management: { operations: [], sharedLayers: [] } }), method: "PUT" })).status).toBe(204);
+  expect(await layerBySlot(fixture, member.cookie, "S")).toMatchObject({ canEdit: true });
+  expect(await layerBySlot(fixture, member.cookie, "E")).toMatchObject({ canEdit: false });
+  expect((await callWorker(`${base}/shared-layers/S/settings`, { ...jsonRequest(member.cookie, { name: "高声部" }), method: "PUT" })).status).toBe(200);
+  expect(await layerBySlot(fixture, member.cookie, "S")).toMatchObject({ canEdit: true, name: "高声部" });
+  const created = await callWorker(`${base}/shared-layers`, jsonRequest(member.cookie, { name: "新增层", defaultColor: "#123456" }));
+  expect(created.status).toBe(201);
+  const { slot } = await created.json() as { slot: string };
+  expect(await layerBySlot(fixture, member.cookie, slot)).toMatchObject({ canEdit: false });
+});

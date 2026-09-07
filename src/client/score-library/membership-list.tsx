@@ -104,7 +104,7 @@ export function MembershipList({
           <span>
             <strong>{membership.choir.name}</strong>
             <small>
-              {membership.role === "admin" ? "管理员" : "成员"}
+              {membership.isOwner ? "拥有者" : "成员"}
               {membership.choir.id === currentChoirId ? " · 当前云盘" : ""}
             </small>
           </span>

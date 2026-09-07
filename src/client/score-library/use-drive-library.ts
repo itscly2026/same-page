@@ -1,3 +1,4 @@
+import { noCapabilities, hasManagement } from "../../shared/drive-permissions";
 import { captureLocalWorkspaceSession, createLocalWorkspace, authenticatedLocalOwnerKey } from "../platform/local-workspace";
 import { readLocalDriveDirectories, rememberLocalDriveDirectory, renameLocalDriveDirectory } from "./local-drive-directory";
 import { useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
@@ -12,9 +13,9 @@ export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, s
       if (!ownerKey.startsWith("user:")) return null;
       const directory = (await readLocalDriveDirectories(ownerKey.slice(5))).find(entry => entry.choirId === choirId);
       signal.throwIfAborted();
-      return { kind: "opened" as const, local: true, isMember: false, rememberedMembership: directory?.membership ?? false, managementVisible: directory?.canManage ?? false,
+      return { kind: "opened" as const, local: true, isMember: false, rememberedMembership: directory?.membership ?? false, managementVisible: hasManagement(directory?.capabilities ?? noCapabilities()), rememberedCapabilities: directory?.capabilities,
         choir: directory?.choir ?? readDriveSummary(ownerKey, choirId) ?? { id: choirId, name: "云盘", guestAdmissionMode: "invite" as const },
-        result: { scores: directory?.scores ?? [], storage: directory?.storage ?? { usedBytes: 0, limitBytes: 1 }, permissions: { canManage: false } } };
+        result: { scores: directory?.scores ?? [], storage: directory?.storage ?? { usedBytes: 0, limitBytes: 1 }, permissions: { capabilities: noCapabilities() } } };
     };
     return new DriveLibrary(ownerKey, choirId, {
       ...transport,
@@ -32,7 +33,7 @@ export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, s
         const access = await transport.load(signal, allowAdmission);
         const captured = await workspace;
         if (captured && access.kind === "opened") {
-          await rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal, access.isMember && !access.choir.isPreviewEntry, access.result.permissions.canManage, access.result.storage).catch(() => undefined);
+          await rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal, access.isMember && !access.choir.isPreviewEntry, access.result.permissions.capabilities, access.result.storage).catch(() => undefined);
         }
         return access;
       },

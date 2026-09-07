@@ -1,15 +1,16 @@
+import { isDelegated, permissionSetSchema } from "../../src/shared/drive-permissions";
+import { memberCapabilities, readPermissionMember, requireOperation } from "../permissions/access";
 import { Hono } from "hono";
 import { z } from "zod";
 import { createAuth } from "../auth/create-auth";
-import { AuthorizationError, requireChoirAdmin } from "../auth/authorization";
+import { AuthorizationError } from "../auth/authorization";
 import { resolveContextPrincipal } from "../auth/context-principal";
-import { createDatabase } from "../db/database";
 import type { AppEnvironment } from "../env";
 import { RECOVERY_PERIOD_MS } from "./cleanup";
 
 export const lifecycleRoutes = new Hono<AppEnvironment>();
 const FRESH_AUTH_MS = 10 * 60 * 1000;
-const mutationSchema = z.object({ expectedRevision: z.number().int().nonnegative(), action: z.enum(["remove", "restore", "promote", "demote"]) });
+const mutationSchema = z.object({ expectedRevision: z.number().int().nonnegative(), action: z.enum(["remove", "restore"]) });
 
 lifecycleRoutes.get("/user/lifecycle", async (context) => {
   const session = await createAuth(context.env, context.executionCtx).api.getSession({ headers: context.req.raw.headers });
@@ -19,11 +20,9 @@ lifecycleRoutes.get("/user/lifecycle", async (context) => {
     WHERE user_id = ? AND previous_session_id <> ? AND expires_at > ? AND created_at <= ?`).bind(session.user.id, session.session.id, Date.now(), session.session.createdAt.getTime()).first();
   const methods = await context.env.DB.prepare("SELECT provider_id AS method FROM account WHERE user_id = ?").bind(session.user.id).all<{ method: string }>();
   const drives = await context.env.DB.prepare(`SELECT memberships.id, memberships.choir_id AS choirId,
-    choirs.name, memberships.display_name AS displayName, memberships.role, memberships.status,
+    choirs.name, memberships.display_name AS displayName, memberships.status,
     memberships.lifecycle_revision AS revision, memberships.removed_at AS removedAt,
-    CASE WHEN memberships.role = 'admin' AND memberships.status = 'active' AND NOT EXISTS (
-      SELECT 1 FROM memberships AS other WHERE other.choir_id = memberships.choir_id
-        AND other.id <> memberships.id AND other.status = 'active' AND other.role = 'admin') THEN 1 ELSE 0 END AS lastAdmin
+    choirs.owner_membership_id = memberships.id AS isOwner
     FROM memberships JOIN choirs ON choirs.id = memberships.choir_id WHERE memberships.user_id = ?`).bind(session.user.id).all();
   context.header("Cache-Control", "no-store");
   return context.json({ userId: session.user.id, deletion, reauthenticated: Boolean(challenge), methods: methods.results.map((row) => row.method), memberships: drives.results });
@@ -83,12 +82,18 @@ lifecycleRoutes.post("/user/lifecycle/restore", async (context) => {
 
 lifecycleRoutes.get("/choirs/:choirId/memberships", async (context) => {
   const choirId = context.req.param("choirId");
-  await requireChoirAdmin(createDatabase(context.env.DB), await resolveContextPrincipal(context), choirId);
-  const result = await context.env.DB.prepare(`SELECT id, display_name AS displayName, role, status,
-    removed_at AS removedAt, lifecycle_revision AS revision, removed_for_deletion_id IS NOT NULL AS userDeleted,
-    CASE WHEN status = 'removed' AND removed_at > ? AND removed_for_deletion_id IS NULL THEN 1 ELSE 0 END AS recoverable
-    FROM memberships WHERE choir_id = ? ORDER BY status, display_name`).bind(Date.now() - RECOVERY_PERIOD_MS, choirId).all();
-  return context.json({ memberships: result.results });
+  const actor = await readPermissionMember(context.env.DB, await resolveContextPrincipal(context), choirId);
+  const capabilities = memberCapabilities(actor);
+  if (!actor.isOwner && !isDelegated(capabilities.management) && !capabilities.operations.operations.includes("removeMembers")) throw new AuthorizationError();
+  const result = await context.env.DB.prepare(`SELECT m.id, m.display_name AS displayName, m.status, m.permissions, m.management_scope AS management,
+    m.removed_at AS removedAt, m.lifecycle_revision AS revision, m.removed_for_deletion_id IS NOT NULL AS userDeleted,
+    c.owner_membership_id = m.id AS isOwner,
+    CASE WHEN m.status = 'removed' AND m.removed_at > ? AND m.removed_for_deletion_id IS NULL THEN 1 ELSE 0 END AS recoverable
+    FROM memberships m JOIN choirs c ON c.id = m.choir_id WHERE m.choir_id = ? ORDER BY m.status, m.display_name`).bind(Date.now() - RECOVERY_PERIOD_MS, choirId).all<{ id: string; permissions: string; management: string; isOwner: number }>();
+  const members = result.results.map(row => ({ ...row, operations: permissionSetSchema.parse(JSON.parse(row.permissions)), management: permissionSetSchema.parse(JSON.parse(row.management)) }))
+    .filter(row => actor.isOwner || (row.id !== actor.id && !row.isOwner && !isDelegated(row.management)));
+
+  return context.json({ memberships: members, capabilities, actorId: actor.id });
 });
 
 lifecycleRoutes.post("/choirs/:choirId/memberships/:membershipId", async (context) => {
@@ -100,21 +105,21 @@ lifecycleRoutes.post("/choirs/:choirId/memberships/:membershipId", async (contex
   const target = await context.env.DB.prepare("SELECT user_id FROM memberships WHERE id = ? AND choir_id = ?").bind(membershipId, choirId).first<{ user_id: string }>();
   if (!target) return context.json({ error: "membership_not_found" }, 404);
   const selfLeaving = target.user_id === principal.userId && body.data.action === "remove";
-  const actor = selfLeaving ? null : await requireChoirAdmin(createDatabase(context.env.DB), principal, choirId);
+  const actor = selfLeaving ? null : await requireOperation(context.env.DB, principal, choirId, "removeMembers");
   const { action, expectedRevision } = body.data;
   const now = Date.now();
   const change = action === "remove"
     ? "status = 'removed', removed_at = ?, removed_for_deletion_id = NULL"
-    : action === "restore"
-      ? "status = 'active', role = 'member', removed_at = NULL"
-      : `role = '${action === "promote" ? "admin" : "member"}'`;
+    : "status = 'active', removed_at = NULL";
   const result = await context.env.DB.prepare(`UPDATE memberships SET ${change}, lifecycle_revision = lifecycle_revision + 1, last_lifecycle_action = ?
     WHERE id = ? AND choir_id = ? AND lifecycle_revision = ? AND removed_for_deletion_id IS NULL
       AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = memberships.user_id)
-      AND (? = 1 OR EXISTS (SELECT 1 FROM memberships AS actor WHERE actor.id = ? AND actor.status = 'active' AND actor.role = 'admin'))
+      AND (? = 1 OR EXISTS (SELECT 1 FROM memberships AS actor WHERE actor.id = ? AND actor.status = 'active' AND (EXISTS (SELECT 1 FROM membership_capabilities WHERE id = actor.id AND removeMembers = 1))))
+      AND NOT EXISTS (SELECT 1 FROM choirs WHERE owner_membership_id = memberships.id)
+      AND (? = 1 OR EXISTS (SELECT 1 FROM choirs WHERE id = memberships.choir_id AND owner_membership_id = ?) OR NOT (json_array_length(management_scope, '$.operations') > 0 OR json_extract(management_scope, '$.sharedLayers') = 'all' OR json_array_length(management_scope, '$.sharedLayers') > 0))
       AND ${action === "restore" ? "status = 'removed' AND removed_at > ?" : "status = 'active'"}`)
     .bind(...(action === "remove" ? [now] : []), action, membershipId, choirId, expectedRevision,
-      selfLeaving ? 1 : 0, actor?.id ?? "", ...(action === "restore" ? [now - RECOVERY_PERIOD_MS] : [])).run();
+      selfLeaving ? 1 : 0, actor?.id ?? "", selfLeaving ? 1 : 0, actor?.id ?? "", ...(action === "restore" ? [now - RECOVERY_PERIOD_MS] : [])).run();
   if (result.meta.changes !== 1) {
     const retry = await context.env.DB.prepare(`SELECT id FROM memberships WHERE id = ? AND choir_id = ?
       AND lifecycle_revision = ? AND last_lifecycle_action = ?`).bind(membershipId, choirId, expectedRevision + 1, action).first();

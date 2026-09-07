@@ -1,3 +1,4 @@
+import { prepareDriveOwners } from "./prepare-drive-owners.mjs";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -137,6 +138,26 @@ try {
   assert.deepEqual(query("SELECT id, sharing FROM annotation_layers"), [{ id: "preserved-layer", sharing: 0 }]);
   executeD1({ command: "INSERT INTO choir_shared_layer_settings(choir_id, slot, name, default_color) VALUES ('choir', 'custom-piano', '钢琴', '#123456')", targetArgs });
   assert.equal(query("SELECT name FROM choir_shared_layer_settings WHERE slot = 'custom-piano'")[0].name, "钢琴");
+  // A second active administrator makes ownership ambiguous; preview has none.
+  executeD1({ command: `INSERT INTO user (id, name, email, email_verified, created_at, updated_at) VALUES ('second-user', 'Second', 'second@example.test', 1, 1, 1);
+    INSERT INTO memberships (id, choir_id, user_id, display_name, role) VALUES ('second-member', 'choir', 'second-user', 'Second', 'admin');
+    INSERT INTO memberships (id, choir_id, user_id, display_name) SELECT 'preview-member', id, 'user', 'Preview' FROM choirs WHERE id <> 'choir';`, targetArgs });
+  assert.throws(() => prepareDriveOwners(targetArgs), /explicit valid active member/);
+  const mapping = Object.fromEntries(query("SELECT id FROM choirs").map(row => [row.id, 'user']));
+  assert.throws(() => prepareDriveOwners(targetArgs, { ...mapping, choir: 'missing-user' }), /explicit valid active member/);
+  prepareDriveOwners(targetArgs, mapping);
+  applyMigrations("0020_drive_permissions.sql");
+  assert(!query("PRAGMA table_info(memberships)").some(row => row.name === 'role'));
+  assert(query("SELECT owner_membership_id FROM choirs").every(row => row.owner_membership_id));
+  const formerAdmin = query("SELECT permissions, management_scope FROM memberships WHERE id = 'second-member'")[0];
+  assert.equal(JSON.parse(formerAdmin.permissions).operations.length, 7);
+  assert.equal(JSON.parse(formerAdmin.management_scope).sharedLayers, 'all');
+  assert.deepEqual(query("PRAGMA foreign_key_check"), []);
+  assert.throws(() => query("UPDATE memberships SET status = 'removed' WHERE id = 'membership'"));
+  assert.throws(() => query("UPDATE choirs SET owner_membership_id = 'preview-member' WHERE id = 'choir'"));
+  query("UPDATE choirs SET owner_membership_id = 'second-member' WHERE id = 'choir'");
+  query("UPDATE memberships SET status = 'removed' WHERE id = 'membership'");
+  assert.equal(query("SELECT count(*) AS count FROM effective_shared_layer_permissions WHERE membership_id = 'membership'")[0].count, 0);
   process.stdout.write("Verified legacy score schema migration.\n");
 } finally {
   rmSync(persistencePath, { recursive: true, force: true });

@@ -54,7 +54,7 @@ export function DriveSettingsDialog({ choirId, field, onClose, onSaved }: {
         {message && <p role="status">{message}</p>}
         {!settings && !message && <p role="status">正在读取当前设置…</p>}
         {message && <Button isDisabled={busy} onPress={() => setAttempt(value => value + 1)}>重新读取</Button>}
-        <div className="dialog-actions"><Button className="secondary-button" isDisabled={busy} onPress={onClose}>取消</Button><Button className="primary-button" type="submit" isDisabled={!settings || busy || (field === "name" && !settings.canManage)}>{busy ? "正在保存…" : "保存"}</Button></div>
+        <div className="dialog-actions"><Button className="secondary-button" isDisabled={busy} onPress={onClose}>取消</Button><Button className="primary-button" type="submit" isDisabled={!settings || busy || (field === "name" && !settings.canEditDriveInfo)}>{busy ? "正在保存…" : "保存"}</Button></div>
       </Form>
     </Dialog></Modal>
   </ModalOverlay>;

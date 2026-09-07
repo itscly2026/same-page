@@ -29,23 +29,27 @@ export async function startStorageFixture({ authenticated = false, previewEntry 
         signal.throwIfAborted();
         const objectKey = `${choirId}/${scoreId}/${versionId}.pdf`;
         const object = await SCORES_BUCKET.put(objectKey, pdf, { httpMetadata: { contentType: "application/pdf" } });
+        const ownerMembershipId = randomUUID();
+        const accountStatements = [];
+        const seedAccounts = accounts.length ? accounts : [{ id: randomUUID(), email: `${randomUUID()}@example.test`, password: randomBytes(24).toString("hex") }];
+        for (const [index, account] of seedAccounts.entries()) {
+          const now = Date.now();
+          accountStatements.push(
+            DB.prepare("INSERT INTO user (id, name, email, email_verified, created_at, updated_at) VALUES (?, '本地测试用户', ?, 1, ?, ?)").bind(account.id, account.email, now, now),
+            DB.prepare("INSERT INTO account (id, issuer, account_id, provider_id, user_id, password, created_at, updated_at) VALUES (?, ?, ?, 'credential', ?, ?, ?, ?)").bind(randomUUID(), createLocalAccountIssuer("credential"), account.id, account.id, await hashPassword(account.password), now, now),
+            DB.prepare("INSERT INTO memberships (id, choir_id, user_id, display_name, status) VALUES (?, ?, ?, '本地测试成员', 'active')").bind(index === 0 ? ownerMembershipId : randomUUID(), choirId, account.id),
+          );
+        }
         await DB.batch([
-          DB.prepare("INSERT INTO choirs (id, name, guest_admission_mode, is_preview_entry, storage_used_bytes) VALUES (?, '本地链路云盘', 'open', ?, ?)").bind(choirId, previewEntry ? 1 : 0, pdf.length),
+          DB.prepare("INSERT INTO choirs (id, owner_membership_id, name, guest_admission_mode, is_preview_entry, storage_used_bytes) VALUES (?, ?, '本地链路云盘', 'open', ?, ?)").bind(choirId, ownerMembershipId, previewEntry ? 1 : 0, pdf.length),
           DB.prepare("INSERT INTO scores (id, choir_id, file_name, file_name_key, current_version_id) VALUES (?, ?, ?, ?, ?)").bind(scoreId, choirId, fileName, fileName, versionId),
           DB.prepare("INSERT INTO score_versions (id, choir_id, score_id, version_number, object_key, size_bytes, sha256, etag, page_count, state) VALUES (?, ?, ?, 1, ?, ?, ?, ?, 2, 'ready')").bind(versionId, choirId, scoreId, objectKey, pdf.length, hash, object.etag),
+          ...accountStatements,
         ]);
         if (expired) {
           const now = Date.now();
           await DB.prepare("UPDATE scores SET trashed_at = ?, trash_expires_at = ? WHERE id = ?")
             .bind(now - 31 * 86400000, now - 86400000, scoreId).run();
-        }
-        for (const [index, account] of accounts.entries()) {
-          const now = Date.now();
-          await DB.batch([
-            DB.prepare("INSERT INTO user (id, name, email, email_verified, created_at, updated_at) VALUES (?, '本地测试用户', ?, 1, ?, ?)").bind(account.id, account.email, now, now),
-            DB.prepare("INSERT INTO account (id, issuer, account_id, provider_id, user_id, password, created_at, updated_at) VALUES (?, ?, ?, 'credential', ?, ?, ?, ?)").bind(randomUUID(), createLocalAccountIssuer("credential"), account.id, account.id, await hashPassword(account.password), now, now),
-            DB.prepare("INSERT INTO memberships (id, choir_id, user_id, display_name, role, status) VALUES (?, ?, ?, '本地测试成员', ?, 'active')").bind(randomUUID(), choirId, account.id, index === 0 ? "admin" : "member"),
-          ]);
         }
         await DB.batch([
           ["E", "Ensemble", "#a12652"], ["S", "Soprano", "#3566a6"],

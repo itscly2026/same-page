@@ -45,7 +45,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.getByRole("button", { name: "用户菜单" }).getByText("林", { exact: true }).waitFor();
     await page.getByRole("button", { name: "打开云盘菜单" }).click();
     await page.getByRole("dialog", { name: "云盘菜单" }).waitFor();
-    assert.equal(await page.getByRole("menuitem", { name: "成员与管理员" }).getAttribute("href"), "/choirs/visual-choir/memberships");
+    assert.equal(await page.getByRole("menuitem", { name: "成员与权限" }).getAttribute("href"), "/choirs/visual-choir/memberships");
     await page.screenshot({ path: `${output}/${name}-drawer.png` });
     await page.getByRole("button", { name: "切换云盘", exact: true }).click();
     await page.getByRole("dialog", { name: "切换云盘" }).waitFor();

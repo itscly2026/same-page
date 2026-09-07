@@ -51,35 +51,35 @@ export default function UserLifecyclePage() {
     await authClient.getSession();
     setState(null); setMessage("用户已停用。本机未同步草稿仍保留；三十天内请使用删除时的登录方式重新验证并确认恢复。");
   };
-  const admins = state?.memberships.filter((member) => member.lastAdmin === 1) ?? [];
+  const ownedDrives = state?.memberships.filter((member) => member.isOwner === 1) ?? [];
   if (state && !state.deletion && (session.isPending || session.data?.user.id !== state.userId)) return <p role="status">正在核对登录身份…</p>;
   return <div className="app-page"><AppHeader /><main className="page-shell compact-page lifecycle-page">
     <h1>个人设置</h1>
     {state ? state.deletion ? <section>
       <h2>恢复用户</h2>
       <p>用户已停用，云盘访问与同步已撤销。恢复截止：{new Date(state.deletion.expiresAt).toLocaleString()}。</p>
-      <p>请使用删除时的{methodName(state.deletion.authMethod)}重新登录；验证后仍需明确确认恢复。恢复后原成员关系恢复为普通成员，管理员角色与共享层编辑权由现任管理员重新授予。</p>
+      <p>请使用删除时的{methodName(state.deletion.authMethod)}重新登录；验证后仍需明确确认恢复。恢复后原成员关系恢复为普通成员，拥有者角色与共享层编辑权由现任拥有者重新授予。</p>
       <Link className="secondary-link" to="/login">重新验证原登录方式</Link>
       <Button className="secondary-button" isDisabled={busy} onPress={() => void perform("/api/user/lifecycle/restore", { confirm: true, deletionId: state.deletion!.deletionId }, async () => { await authClient.getSession(); await navigate("/login"); })}>确认恢复用户</Button>
     </section> : <>
       <section><h2>我的云盘成员关系</h2>
         {state.memberships.map((member) => <article className="lifecycle-member" key={member.id}>
-          <h3>{member.name}</h3><p>{member.displayName} · {member.status === "removed" ? "已退出或移除" : member.role === "admin" ? "管理员" : "普通成员"}</p>
-          {member.role === "admin" && member.status === "active" ? <Link className="secondary-link" to={`/choirs/${member.choirId}/memberships`}>管理成员与交接</Link> : null}
+          <h3>{member.name}</h3><p>{member.displayName} · {member.status === "removed" ? "已退出或移除" : member.isOwner === 1 ? "拥有者" : "普通成员"}</p>
+          {member.isOwner === 1 && member.status === "active" ? <Link className="secondary-link" to={`/choirs/${member.choirId}/memberships`}>管理成员与交接</Link> : null}
           {member.status === "active" ? <Button className="secondary-button" isDisabled={busy} onPress={() => {
-            if (window.confirm("退出后立即停止该成员关系的云端访问与同步；三十天内请管理员恢复。已下载内容及本机未同步草稿会保留。公开体验的本人个人层仍可使用。确认退出？")) {
+            if (window.confirm("退出后立即停止该成员关系的云端访问与同步；三十天内请拥有者恢复。已下载内容及本机未同步草稿会保留。公开体验的本人个人层仍可使用。确认退出？")) {
               void perform(`/api/choirs/${member.choirId}/memberships/${member.id}`, { action: "remove", expectedRevision: member.revision });
             }
-          }}>退出云盘</Button> : <p>三十天内可联系现任管理员恢复；个人层不向管理员开放。</p>}
+          }}>退出云盘</Button> : <p>三十天内可联系现任拥有者恢复；个人层不向拥有者开放。</p>}
         </article>)}
       </section>
       <section><h2>删除用户</h2>
         <p>删除会立即撤销所有会话、云盘访问与同步。身份和个人层保留三十天，期间可重新验证并确认恢复；到期后永久清理。共享批注保留你最后使用的云盘内显示名，不保留登录邮箱或全局资料名作为署名。</p>
         <p>已下载内容无法远程收回；本机未同步草稿会保留在原用户下，其他用户不能读取。恢复期结束后服务器无法恢复已清理的数据。</p>
-        {admins.length ? <p role="alert">请先在这些云盘完成管理员交接：{admins.map((member) => member.name).join("、")}。</p> : null}
-        {!state.reauthenticated ? <Button className="secondary-button" isDisabled={busy || admins.length > 0} onPress={() => void perform("/api/user/lifecycle/reauthenticate", { expectedUserId: state.userId }, async () => { await navigate("/login"); })}>重新验证原登录方式</Button> : <>
+        {ownedDrives.length ? <p role="alert">请先在这些云盘完成拥有权转让：{ownedDrives.map((member) => member.name).join("、")}。</p> : null}
+        {!state.reauthenticated ? <Button className="secondary-button" isDisabled={busy || ownedDrives.length > 0} onPress={() => void perform("/api/user/lifecycle/reauthenticate", { expectedUserId: state.userId }, async () => { await navigate("/login"); })}>重新验证原登录方式</Button> : <>
           <label className="confirmation-checkbox"><input type="checkbox" checked={acceptedUser === state.userId} onChange={(event) => setAcceptedUser(event.target.checked ? state.userId : null)} /><span>我理解删除、三十天恢复期、共享批注署名保留与本机草稿的影响。</span></label>
-          <Button className="primary-button" isDisabled={busy || acceptedUser !== state.userId || admins.length > 0} onPress={() => void perform("/api/user/lifecycle/delete", { confirm: true, expectedUserId: state.userId }, finishDeletion)}>确认删除用户</Button>
+          <Button className="primary-button" isDisabled={busy || acceptedUser !== state.userId || ownedDrives.length > 0} onPress={() => void perform("/api/user/lifecycle/delete", { confirm: true, expectedUserId: state.userId }, finishDeletion)}>确认删除用户</Button>
         </>}
       </section>
     </> : <Link className="secondary-link" to="/login">登录或恢复用户</Link>}

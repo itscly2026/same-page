@@ -1,3 +1,4 @@
+import { permissionRoutes } from "./permissions/routes";
 import { cleanupSharedLayers } from "./annotations/cleanup";
 import { driveSettingsRoutes } from "./choirs/settings";
 import { convertScoreImages } from "./images/conversion";
@@ -45,6 +46,7 @@ app.get("/api/health", (context) => {
 app.on(["GET", "POST"], "/api/auth/*", handleAuthRequest);
 
 app.route("/api", diagnosticReportRoutes);
+app.route("/api", permissionRoutes);
 app.route("/api", lifecycleRoutes);
 app.route("/api", choirRoutes);
 app.route("/api", driveSettingsRoutes);
@@ -55,8 +57,8 @@ app.route("/api", annotationRoutes);
 app.notFound((context) => context.json({ error: "not_found" }, 404));
 
 app.onError((error, context) => {
-  if (error instanceof Error && error.message.includes("last_admin_requires_handoff")) {
-    return context.json({ error: "last_admin_requires_handoff" }, 409);
+  if (error instanceof Error && error.message.includes("owner_requires_transfer")) {
+    return context.json({ error: "owner_requires_transfer" }, 409);
   }
   if (error instanceof Error && /annotation_permission_revoked|upload_permission_revoked/.test(error.message)) return context.json({ error: "forbidden" }, 403);
   if (error instanceof AuthorizationError) {

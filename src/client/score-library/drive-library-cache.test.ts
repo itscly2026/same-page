@@ -1,3 +1,4 @@
+import { noCapabilities } from "../../shared/drive-permissions";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -16,7 +17,7 @@ import {
 const result = {
   scores: [],
   storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
-  permissions: { canManage: false },
+  permissions: { capabilities: noCapabilities() },
 };
 
 describe("drive library cache", () => {

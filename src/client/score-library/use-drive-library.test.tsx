@@ -1,3 +1,4 @@
+import { noCapabilities, effectiveCapabilities, emptyPermissions } from "../../shared/drive-permissions";
 import { useLayoutEffect, useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -27,7 +28,7 @@ it("detaches the departing library before the next route resets document scroll"
   rememberLibraryView(owner, drive, { search: "", sort: "name", scrollTop: 320 });
   rememberDriveLibrary(owner, drive, {
     choir: { id: drive, name: "排练云盘", guestAdmissionMode: "open" },
-    result: { scores: [], storage: { usedBytes: 0, limitBytes: 1000 }, permissions: { canManage: false } },
+    result: { scores: [], storage: { usedBytes: 0, limitBytes: 1000 }, permissions: { capabilities: noCapabilities() } },
   });
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
   vi.stubGlobal("scrollY", 320);
@@ -67,7 +68,7 @@ it("starts the new owner's library after the identity observer clears previous c
     return Response.json({
       choir: { id: drive, name: "排练云盘", guestAdmissionMode: "open" },
       scores: [], storage: { usedBytes: 0, limitBytes: 1000 },
-      permissions: { canManage: Boolean(observerState.userId), access: observerState.userId ? "membership" : "guest" },
+      permissions: { capabilities: effectiveCapabilities(Boolean(observerState.userId), emptyPermissions(), emptyPermissions()), access: observerState.userId ? "membership" : "guest" },
     });
   }));
   function Library() {

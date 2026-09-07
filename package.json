@@ -30,7 +30,7 @@
     "check:full": "npm run test:renderer && npm run test:pwa-update && npm run check && node scripts/measure-loading-performance.mjs",
     "visual:report": "npm run build && node scripts/generate-visual-report.mjs",
     "auth:schema": "auth generate --config scripts/better-auth-schema.ts --adapter drizzle --dialect sqlite --output worker/db/auth-schema.generated.ts --yes",
-    "db:migrate:local": "wrangler d1 migrations apply same-page-production --local && node scripts/backfill-score-file-names.mjs --local",
+    "db:migrate:local": "node scripts/prepare-drive-owners.mjs --local && wrangler d1 migrations apply same-page-production --local && node scripts/backfill-score-file-names.mjs --local",
     "provision:choir": "node scripts/provision-choir.mjs",
     "verify:deployment": "node scripts/verify-deployment.mjs",
     "cf-typegen": "wrangler types",

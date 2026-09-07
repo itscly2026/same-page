@@ -1,3 +1,4 @@
+import { effectiveCapabilities, emptyPermissions, noCapabilities } from "../shared/drive-permissions";
 import { Blob as NodeBlob } from "node:buffer";
 import { cacheAnnotationLayers, readAnnotationLayers, saveAnnotationDraft } from "./annotations/annotation-state";
 import type { AnnotationLayerSummary } from "../shared/annotations";
@@ -64,7 +65,7 @@ describe("AppRoutes", () => {
               ? {
                   scores: [],
                   storage: { usedBytes: 0, limitBytes: 1_073_741_824 },
-                  permissions: { canManage: false },
+                  permissions: { capabilities: noCapabilities() },
                 }
               : {
                   choir: {
@@ -266,48 +267,26 @@ describe("AppRoutes", () => {
     expect(await screen.findByText("已授权 2 位成员")).toBeVisible();
   });
 
-  it("edits member grants from one shared-layer detail page", async () => {
-    vi.mocked(authClient.useSession).mockReturnValue({
-      data: { user: { id: "admin-1", email: "admin@example.test" } },
-      isPending: false,
-    } as ReturnType<typeof authClient.useSession>);
-    const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
-      if (input === "/api/choirs/choir-1/shared-layers" && !init?.method) {
-        return Promise.resolve(Response.json({
-          drive: { id: "choir-1", name: "小红花云盘" },
-          sharedLayerRevision: 0, activeSharedSlots: ["E"], layers: [{ slot: "E", name: "Ensemble", defaultColor: "#a12652", grantedMemberCount: 0, sortOrder: 0, active: true, revision: 0, deletedAt: null, recoverUntil: null }],
-        }));
-      }
-      if (input === "/api/choirs/choir-1/shared-layers/E/grants" && !init?.method) {
-        return Promise.resolve(Response.json({ members: [
-          { id: "admin-membership", displayName: "管理员", role: "admin", granted: true },
-          { id: "member-membership", displayName: "小林", role: "member", granted: false },
-        ] }));
-      }
-      if (input === "/api/choirs/choir-1/shared-layers/E/grants/member-membership") {
-        return Promise.resolve(Response.json({ grant: { membershipId: "member-membership", granted: true } }));
-      }
-      return Promise.resolve(new Response(null, { status: 404 }));
+  it("separates operation permissions from delegated scopes on the member page", async () => {
+    vi.mocked(authClient.useSession).mockReturnValue({ data: { user: { id: "owner", email: "owner@example.test" } }, isPending: false } as ReturnType<typeof authClient.useSession>);
+    const member = { id: "member", displayName: "小林", isOwner: 0, status: "active", removedAt: null, revision: 0, userDeleted: 0, recoverable: 0, operations: emptyPermissions(), management: emptyPermissions() };
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.endsWith("/permission-layers")) return Response.json({ layers: [{ slot: "S", name: "Soprano" }] });
+      if (input.endsWith("/permission-changes")) return Response.json({ changes: [] });
+      if (input.endsWith("/permissions") && init?.method === "PUT") return new Response(null, { status: 204 });
+      if (input.endsWith("/memberships")) return Response.json({ actorId: "owner", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), memberships: [member] });
+      return new Response(null, { status: 404 });
     });
     vi.stubGlobal("fetch", fetchMock);
-
-    render(
-      <MemoryRouter initialEntries={["/choirs/choir-1/shared-layers/E"]}>
-        <AppRoutes />
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByRole("heading", { name: "E · Ensemble" })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "管理员 管理员" })).toBeDisabled();
-    const member = screen.getByRole("checkbox", { name: "小林" });
-    expect(member).not.toBeChecked();
-    fireEvent.click(member);
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/choirs/choir-1/shared-layers/E/grants/member-membership",
-        expect.objectContaining({ method: "PUT", body: JSON.stringify({ granted: true }) }),
-      );
-    });
+    render(<MemoryRouter initialEntries={["/choirs/choir-1/memberships"]}><AppRoutes /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("heading", { name: "小林" }));
+    const operationFields = screen.getByRole("group", { name: "可以做什么" });
+    const managementFields = screen.getByRole("group", { name: "可以管理哪些授权" });
+    fireEvent.click(within(operationFields).getByRole("checkbox", { name: "上传文件" }));
+    expect(within(managementFields).getByRole("checkbox", { name: "上传文件" })).not.toBeChecked();
+    fireEvent.click(within(managementFields).getByRole("checkbox", { name: "Soprano" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存 小林 的权限" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/choirs/choir-1/memberships/member/permissions", expect.objectContaining({ method: "PUT", body: JSON.stringify({ expectedRevision: 0, operations: { operations: ["uploadFiles"], sharedLayers: [] }, management: { operations: [], sharedLayers: ["S"] } }) })));
   });
 
   it("shows the public preview as the third independent signed-out entry", async () => {
@@ -644,7 +623,7 @@ describe("AppRoutes", () => {
     const membership = {
       id: "membership-1",
       displayName: "小花",
-      role: "member",
+      isOwner: false,
       choir: targetDrive,
     };
     const fetchMock = vi.fn().mockImplementation(
@@ -791,7 +770,7 @@ describe("AppRoutes", () => {
                 membership: {
                   id: "membership-1",
                   displayName: "小花",
-                  role: "member",
+                  isOwner: false,
                   choir: {
                     id: "spring-choir",
                     name: "公开体验云盘",
@@ -811,7 +790,7 @@ describe("AppRoutes", () => {
                     {
                       id: "membership-1",
                       displayName: "小花",
-                      role: "member",
+                      isOwner: false,
                       choir: {
                         id: "spring-choir",
                         name: "公开体验云盘",
@@ -914,7 +893,7 @@ describe("AppRoutes", () => {
         }
         if (input.includes("/bootstrap")) {
           return Promise.resolve(
-            Response.json(driveBootstrapBody({ canManage: true, access: "membership" })),
+            Response.json(driveBootstrapBody({ capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), access: "membership" })),
           );
         }
         return Promise.resolve(
@@ -991,6 +970,17 @@ describe("AppRoutes", () => {
     );
   });
 
+  it.each(["uploadFiles", "editDriveInfo"] as const)("shows the upload action only with upload permission: %s", async operation => {
+    vi.mocked(authClient.useSession).mockReturnValue({ data: { user: { id: "operator", email: "operator@example.test" } }, isPending: false } as ReturnType<typeof authClient.useSession>);
+    vi.stubGlobal("fetch", vi.fn(async (input: string) => input.includes("/bootstrap")
+      ? Response.json(driveBootstrapBody({ access: "membership", capabilities: effectiveCapabilities(false, { operations: [operation], sharedLayers: [] }, emptyPermissions()) }))
+      : new Response(null, { status: 204 })));
+    render(<MemoryRouter initialEntries={["/choirs/choir-1"]}><AppRoutes /></MemoryRouter>);
+    await screen.findByText("这个云盘还没有乐谱。");
+    if (operation === "uploadFiles") expect(screen.getByRole("button", { name: "上传 PDF" })).toBeEnabled();
+    else expect(screen.queryByRole("button", { name: "上传 PDF" })).not.toBeInTheDocument();
+  });
+
   it("keeps management tools but hides invite-code controls for open guest admission", async () => {
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "admin-1", email: "admin@example.test" } },
@@ -1006,7 +996,7 @@ describe("AppRoutes", () => {
               guestAdmissionMode: "open",
             },
             usedBytes: 900_000_000,
-            canManage: true,
+            capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()),
             access: "membership",
           })),
         );
@@ -1069,7 +1059,7 @@ describe("AppRoutes", () => {
                 },
               ],
               storage: { usedBytes: 950_000_000, limitBytes: 1_073_741_824 },
-              permissions: { canManage: false, access: "guest" },
+              permissions: { capabilities: noCapabilities(), access: "guest" },
             })
           : Response.json({
               choir: {
@@ -1262,7 +1252,7 @@ describe("AppRoutes", () => {
 function driveBootstrapBody(options: {
   choir?: { id: string; name: string; guestAdmissionMode: "invite" | "open" };
   usedBytes?: number;
-  canManage?: boolean;
+  capabilities?: ReturnType<typeof noCapabilities>;
   access?: "membership" | "preview" | "guest";
 } = {}) {
   return {
@@ -1277,7 +1267,7 @@ function driveBootstrapBody(options: {
       limitBytes: 1_073_741_824,
     },
     permissions: {
-      canManage: options.canManage ?? false,
+      capabilities: options.capabilities ?? noCapabilities(),
       access: options.access ?? "guest",
     },
   };

@@ -1,3 +1,4 @@
+import { effectiveCapabilities, emptyPermissions, noCapabilities } from "../../shared/drive-permissions";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DriveLibrary } from "./drive-library";
 import { clearDriveLibraryCache, readDriveLibrary, readReturningDriveCacheOwner, rememberDriveLibrary } from "./drive-library-cache";
@@ -14,7 +15,7 @@ function opened(fileName = "秋日.pdf", canManage = true): Opened {
       scores: [{ id: "score-one", choirId, fileName, updatedAt: 1, currentVersion: {
         id: "version-one", versionNumber: 1, sizeBytes: 100, sha256: "a".repeat(64), etag: "one", pageCount: 1, createdAt: 1,
       } }],
-      storage: { usedBytes: 100, limitBytes: 1000 }, permissions: { canManage },
+      storage: { usedBytes: 100, limitBytes: 1000 }, permissions: { capabilities: canManage ? effectiveCapabilities(true, emptyPermissions(), emptyPermissions()) : noCapabilities() },
     },
   };
 }
@@ -40,10 +41,10 @@ describe("DriveLibrary interface", () => {
     rememberDriveLibrary(owner, choirId, opened());
     const response = deferred<Opened>();
     const { library } = create(() => response.promise);
-    expect(library.getSnapshot().access).toMatchObject({ kind: "opened", isMember: false, result: { permissions: { canManage: false } } });
+    expect(library.getSnapshot().access).toMatchObject({ kind: "opened", isMember: false, result: { permissions: { capabilities: noCapabilities() } } });
     response.resolve(opened());
     await library.refresh();
-    expect(library.getSnapshot().access).toMatchObject({ isMember: true, result: { permissions: { canManage: true } } });
+    expect(library.getSnapshot().access).toMatchObject({ isMember: true, result: { permissions: { capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()) } } });
   });
 
   it("keeps a guest's cached library available when session refresh is offline", async () => {

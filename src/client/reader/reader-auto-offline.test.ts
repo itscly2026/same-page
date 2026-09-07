@@ -1,3 +1,4 @@
+import { noCapabilities } from "../../shared/drive-permissions";
 /// <reference types="node" />
 import { Blob as NodeBlob } from "node:buffer";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
@@ -38,7 +39,7 @@ beforeEach(async () => {
     destroy:vi.fn().mockResolvedValue(undefined),
   }));
   vi.stubGlobal("fetch", vi.fn(async (input: string) => {
-    if (input.endsWith("/bootstrap")) return Response.json({state:"active",score,permissions:{canManage:false}});
+    if (input.endsWith("/bootstrap")) return Response.json({state:"active",score,permissions:{capabilities:noCapabilities()}});
     if (input.endsWith("/layers")) return Response.json({layers,sharedLayerRevision: 0, permissions:{canManageLayers:false}});
     if (input.includes("/annotations?")) return Response.json({cursor:0,objects:[]});
     if (input.endsWith("/pdf")) { pdfRequests++; return failDownload ? new Response(null,{status:503}) : new Response(bytes); }

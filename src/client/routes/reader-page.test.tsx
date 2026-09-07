@@ -1,3 +1,4 @@
+import { noCapabilities } from "../../shared/drive-permissions";
 import Dexie from "dexie";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -90,7 +91,7 @@ function activeBootstrapResponse() {
   return Response.json({
     state: "active",
     score: scoreSummary,
-    permissions: { canManage: false },
+    permissions: { capabilities: noCapabilities() },
   });
 }
 
@@ -549,7 +550,7 @@ it("keeps a single exit while the PDF never settles", async () => {
             Response.json({
               state: "active",
               score: versionTwoScore,
-              permissions: { canManage: false },
+              permissions: { capabilities: noCapabilities() },
             }),
           );
         }
@@ -584,7 +585,7 @@ it("keeps a single exit while the PDF never settles", async () => {
         Response.json({
           state: "active",
           score: { ...scoreSummary, fileName: "旧版练声曲.pdf" },
-          permissions: { canManage: false },
+          permissions: { capabilities: noCapabilities() },
         }),
       ),
     );
@@ -627,7 +628,7 @@ it("keeps a single exit while the PDF never settles", async () => {
             Response.json({
               state: "active",
               score: versionTwoScore,
-              permissions: { canManage: false },
+              permissions: { capabilities: noCapabilities() },
             }),
           );
         }
@@ -1080,7 +1081,7 @@ it("keeps a single exit while the PDF never settles", async () => {
             Response.json({
               state: "active",
               score: versionTwoScore,
-              permissions: { canManage: false },
+              permissions: { capabilities: noCapabilities() },
             }),
           );
         }
@@ -2369,7 +2370,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       }
       return Promise.resolve(Response.json({
         state: "active", score: { ...scoreSummary, currentVersion: { ...scoreSummary.currentVersion, sizeBytes: 3 } },
-        permissions: { canManage: false },
+        permissions: { capabilities: noCapabilities() },
       }));
     });
     render(

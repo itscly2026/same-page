@@ -37,9 +37,9 @@ export function provisionChoirFromCli(argv = process.argv.slice(2)) {
     throw new Error("INVITE_SECRET must be provided through the process environment");
   }
 
-  const user = queryAdminUser(options.adminEmail, options.mode);
+  const user = queryOwnerUser(options.ownerEmail, options.mode);
   if (!user) {
-    throw new Error("The administrator must complete registration first");
+    throw new Error("The owner must complete registration first");
   }
 
   const choirId = randomUUID();
@@ -48,8 +48,8 @@ export function provisionChoirFromCli(argv = process.argv.slice(2)) {
   const joinCodeHash = joinCode ? hashJoinCode(joinCode, inviteSecret) : null;
   const joinCodeCiphertext = joinCode ? encryptJoinCode(joinCode, choirId, inviteSecret) : null;
   const sql = [
-    `INSERT INTO choirs (id, name, guest_admission_mode, guest_session_version, is_preview_entry, join_code_hash, join_code_ciphertext, storage_limit_bytes) VALUES (${quote(choirId)}, ${quote(options.choirName)}, ${quote(options.guestAdmission)}, 1, ${options.previewEntry ? 1 : 0}, ${quoteNullable(joinCodeHash)}, ${quoteNullable(joinCodeCiphertext)}, 1073741824);`,
-    `INSERT INTO memberships (id, choir_id, user_id, display_name, role, status) VALUES (${quote(membershipId)}, ${quote(choirId)}, ${quote(user.id)}, ${quote(options.adminDisplayName)}, 'admin', 'active');`,
+    `INSERT INTO choirs (id, owner_membership_id, name, guest_admission_mode, guest_session_version, is_preview_entry, join_code_hash, join_code_ciphertext, storage_limit_bytes) VALUES (${quote(choirId)}, ${quote(membershipId)}, ${quote(options.choirName)}, ${quote(options.guestAdmission)}, 1, ${options.previewEntry ? 1 : 0}, ${quoteNullable(joinCodeHash)}, ${quoteNullable(joinCodeCiphertext)}, 1073741824);`,
+    `INSERT INTO memberships (id, choir_id, user_id, display_name, status) VALUES (${quote(membershipId)}, ${quote(choirId)}, ${quote(user.id)}, ${quote(options.ownerDisplayName)}, 'active');`,
     ...[
       ["E", "#a12652"],
       ["S", "#c2415d"],
@@ -84,7 +84,7 @@ export function provisionChoirFromCli(argv = process.argv.slice(2)) {
   );
 }
 
-function queryAdminUser(email, mode) {
+function queryOwnerUser(email, mode) {
   const output = runWrangler([
     "d1",
     "execute",
@@ -139,15 +139,15 @@ export function parseArguments(argv) {
     }
   }
 
-  const adminEmail = values.get("--admin-email")?.trim().toLowerCase();
-  const adminDisplayName = values.get("--admin-display-name")?.trim();
+  const ownerEmail = values.get("--owner-email")?.trim().toLowerCase();
+  const ownerDisplayName = values.get("--owner-display-name")?.trim();
   const choirName = values.get("--choir-name")?.trim() || "小红花云盘";
   const guestAdmission = values.get("--guest-admission")?.trim() || "invite";
-  if (!adminEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
-    throw new Error("--admin-email is required");
+  if (!ownerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail)) {
+    throw new Error("--owner-email is required");
   }
-  if (!adminDisplayName || adminDisplayName.length > 40) {
-    throw new Error("--admin-display-name must contain 1 to 40 characters");
+  if (!ownerDisplayName || ownerDisplayName.length > 40) {
+    throw new Error("--owner-display-name must contain 1 to 40 characters");
   }
   if (choirName.length > 80) {
     throw new Error("--choir-name must contain at most 80 characters");
@@ -159,8 +159,8 @@ export function parseArguments(argv) {
     throw new Error("--preview-entry requires --guest-admission open");
   }
   return {
-    adminEmail,
-    adminDisplayName,
+    ownerEmail,
+    ownerDisplayName,
     choirName,
     guestAdmission,
     mode,
@@ -178,7 +178,7 @@ export function formatSuccessMessage(joinCode, showJoinCode, guestAdmission) {
   }
   return (
     "Choir created. The initial invite code was not displayed. " +
-    "Sign in as the administrator and view it in drive management.\n"
+    "Sign in as the owner and view it in drive management.\n"
   );
 }
 

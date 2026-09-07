@@ -206,15 +206,18 @@ export const visualReportScenarios = [
     actions: [],
   },
   {
-    id: "shared-layer-grants",
-    title: "云盘管理 · 单层编辑授权",
-    description: "进入 E · Ensemble 详情后再管理成员编辑权。",
+    id: "shared-layer-details",
+    title: "云盘管理 · 单层配置",
+    description: "层配置不授予内容编辑权限。",
     device: "narrow",
     identity: "admin",
     route: "/choirs/visual-choir/shared-layers/E",
-    ready: { type: "role", role: "checkbox", name: "周宁" },
+    ready: { type: "role", role: "button", name: "保存设置" },
     actions: [],
   },
+  ...["narrow", "landscape"].map(device => ({
+    id: `member-permissions-${device}`, title: "成员与权限", description: "分别配置操作权限与授权管理范围。", device, identity: "admin", route: "/choirs/visual-choir/memberships", ready: { type: "role", role: "heading", name: "周宁" }, actions: [{ type: "clickCenter", selector: "details.lifecycle-member:nth-of-type(2) > summary" }],
+  })),
   {
     id: "reader-clean",
     title: "阅读器 · 纯净视图",

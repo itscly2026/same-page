@@ -21,8 +21,8 @@ const DriveLayerPreferencesPage = lazy(
 const SharedLayerManagementPage = lazy(
   () => import("./routes/shared-layer-management-page"),
 );
-const SharedLayerGrantsPage = lazy(
-  () => import("./routes/shared-layer-grants-page"),
+const SharedLayerDetailsPage = lazy(
+  () => import("./routes/shared-layer-details-page"),
 );
 const LocalStoragePage = lazy(() => import("./routes/local-storage-page"));
 const PrivacyPage = lazy(() => import("./routes/privacy-page"));
@@ -54,7 +54,7 @@ export function AppRoutes() {
             />
             <Route
               path="/choirs/:choirId/shared-layers/:slot"
-              element={<RouteContent><SharedLayerGrantsPage /></RouteContent>}
+              element={<RouteContent><SharedLayerDetailsPage /></RouteContent>}
             />
           </Route>
           <Route
