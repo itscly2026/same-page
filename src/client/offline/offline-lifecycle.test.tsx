@@ -166,3 +166,12 @@ it("cannot list or clear another user's files and keeps the drive directory", as
   await expect(clearLocalFiles({ ownerKey: guest.ownerKey, choirId: guest.choirId })).rejects.toThrow("local_workspace_owner_changed");
   expect(await localDatabase.offlineScores.count()).toBe(1);
 });
+
+it("the activation transaction rejects a logout fence before asynchronous watchers run", async () => {
+  const { beginLogout } = await import("../auth/logout-fence");
+  await activateAuthenticatedLocalOwner("a");
+  const record = await recordFor();
+  await beginLogout("a", "session");
+  await expect(activateVerifiedOfflineScore(record)).rejects.toThrow("local_workspace_owner_changed");
+  expect(await findActiveOfflineScore(record.ownerKey, record.choirId, record.scoreId)).toBeUndefined();
+});

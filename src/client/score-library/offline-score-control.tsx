@@ -11,8 +11,8 @@ import { authenticatedLocalOwnerKey, createLocalWorkspace, type LocalWorkspaceOw
 import { useOfflineScore, useOfflinePreparation } from "../offline/use-offline-score";
 import "./offline-score-control.css";
 
-export function OfflineScoreControl({ score, authenticatedUserId, disabled = false }: {
-  score: ScoreSummary; authenticatedUserId: string | null; disabled?: boolean;
+export function OfflineScoreControl({ score, authenticatedUserId, authenticatedSessionId, disabled = false }: {
+  score: ScoreSummary; authenticatedUserId: string | null; authenticatedSessionId: string | null; disabled?: boolean;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -27,7 +27,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, disabled = fal
   }, [authenticatedUserId, score.choirId]);
   const workspace = owner ? createLocalWorkspace(owner, score.choirId, score.id) : null;
   const offline = useOfflineScore(workspace);
-  const { state: attempt, prepare } = useOfflinePreparation(workspace, score, authenticatedUserId);
+  const { state: attempt, prepare } = useOfflinePreparation(workspace, score, authenticatedUserId, authenticatedSessionId);
   const phase = attempt.phase;
   const inspected = Boolean(workspace && offline?.scopeKey === workspace.scopeKey);
   const record = offline?.scopeKey === workspace?.scopeKey ? offline?.record ?? null : null;

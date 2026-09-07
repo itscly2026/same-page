@@ -24,9 +24,9 @@ export function useOfflineScore(workspace: LocalWorkspace | null) {
   }, [workspace?.scopeKey]);
 }
 
-export function useOfflinePreparation(workspace: LocalWorkspace | null, score: ScoreSummary, authenticatedUserId: string | null) {
+export function useOfflinePreparation(workspace: LocalWorkspace | null, score: ScoreSummary, authenticatedUserId: string | null, sessionId: string | null) {
   const ownerKey = workspace?.ownerKey;
-  const key = JSON.stringify([workspace?.scopeKey, score.currentVersion.id, authenticatedUserId]);
+  const key = JSON.stringify([workspace?.scopeKey, score.currentVersion.id, authenticatedUserId, sessionId]);
   const current = useRef<OfflinePreparation | null>(null);
   const [observed, setObserved] = useState<{ key: string; state: OfflinePreparationState } | null>(null);
   useEffect(() => {

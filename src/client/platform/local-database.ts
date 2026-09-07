@@ -1,3 +1,4 @@
+import { readLogoutFence } from "../auth/logout-fence";
 import type { DriveCapabilities } from "../../shared/drive-permissions";
 import { offlineFileFenceKeys } from "../offline/offline-file-fence";
 import type { ChoirSummary } from "../../shared/choirs";
@@ -345,6 +346,8 @@ export async function activateVerifiedOfflineScore(
         ? activeOwner?.value === record.ownerKey
         : !activeOwner?.value.startsWith("user:") &&
           guestOwner?.value === record.ownerKey;
+      const logout = await readLogoutFence();
+      if (logout && record.ownerKey === `user:${logout.userId}`) throw new Error("local_workspace_owner_changed");
       const epoch = (await localDatabase.system.get("local-workspace:epoch"))?.value ?? "";
       if (!ownerIsActive || (record.sessionEpoch !== undefined && record.sessionEpoch !== epoch)) throw new Error("local_workspace_owner_changed");
       if (expected?.fileFence !== undefined) {
@@ -381,6 +384,7 @@ export async function activateVerifiedOfflineScore(
         active: 1,
         verifiedAt: Date.now(),
       });
+      expected?.signal?.throwIfAborted();
     },
   );
 }

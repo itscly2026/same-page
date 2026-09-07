@@ -26,7 +26,7 @@ async function fixture(userId: string | null = null) {
     return new Response(null, { status: 404 });
   }));
   const client = (target = score, scope = workspace, identity = userId) => { const value = new OfflinePreparation(scope, target, 'pdf', identity); clients.push(value); return value; };
-  return { workspace, score, client, finish: () => finish(), signal: () => signal, downloads: () => downloads };
+  return { workspace, score, client, finish: () => finish(), takeFinish: () => finish, signal: () => signal, downloads: () => downloads };
 }
 it('shares an automatic preparation with explicit intent and completes after both callers leave', async () => {
   const f = await fixture();
@@ -55,14 +55,13 @@ it('only cancels when the final automatic requester leaves; an old completion ca
   expect(f.signal()?.aborted).toBe(false);
   second.dispose();
   expect(f.signal()?.aborted).toBe(true);
-  const finishOld = f.finish;
-  // Save the first response resolver before starting the retry.
-  finishOld();
-  expect((await old).phase).toBe('cancelled');
-  expect((await joined).phase).toBe('cancelled');
+  const finishOld = f.takeFinish();
   const retry = f.client();
   const fresh = retry.prepare('explicit');
   await vi.waitFor(() => expect(f.downloads()).toBe(2));
+  finishOld();
+  expect((await old).phase).toBe('cancelled');
+  expect((await joined).phase).toBe('cancelled');
   expect(retry.getSnapshot().phase).toBe('preparing');
   f.finish();
   expect((await fresh).phase).toBe('ready');
@@ -131,4 +130,62 @@ it('never observes another version or score as the requested copy', async () => 
   expect((await pending).phase).toBe('ready');
   expect(version.getSnapshot().phase).toBe('idle');
   expect(other.getSnapshot().phase).toBe('idle');
+});
+
+it('another score waiting to capture its fence cannot retain an unowned automatic task', async () => {
+  const { captureOfflineFileFence } = await import('./local-files');
+  const f = await fixture();
+  const reader = f.client();
+  const pending = reader.prepare('automatic');
+  await vi.waitFor(() => expect(f.downloads()).toBe(1));
+  const scope = createLocalWorkspace(f.workspace.ownerKey, 'drive', 'other');
+  let release!: (value: string) => void;
+  const other = new OfflinePreparation(scope, { ...f.score, id: 'other' }, 'pdf', null, new Promise(resolve => { release = resolve; }));
+  clients.push(other);
+  const otherPending = other.prepare('automatic');
+  reader.dispose();
+  expect(f.signal()?.aborted).toBe(true);
+  f.finish();
+  expect((await pending).phase).toBe('cancelled');
+  other.dispose();
+  release(await captureOfflineFileFence(scope));
+  expect((await otherPending).phase).toBe('cancelled');
+});
+
+it('different versions download independently and a late old version cannot replace the new activation', async () => {
+  const f = await fixture();
+  const old = f.client().prepare('explicit');
+  await vi.waitFor(() => expect(f.downloads()).toBe(1));
+  const finishOld = f.takeFinish();
+  const current = f.client({ ...f.score, currentVersion: { ...f.score.currentVersion, id: 'v2' } });
+  const fresh = current.prepare('explicit');
+  await vi.waitFor(() => expect(f.downloads()).toBe(2));
+  f.finish();
+  expect((await fresh).phase).toBe('ready');
+  finishOld();
+  expect((await old).phase).toBe('failed');
+  expect(current.getSnapshot()).toMatchObject({ phase: 'ready', record: { versionId: 'v2' } });
+  expect((await findVerifiedOfflineScore(f.workspace))?.versionId).toBe('v2');
+});
+
+it('image preparation cannot join an in-progress PDF preparation of the same version', async () => {
+  const f = await fixture();
+  const pdf = f.client().prepare('explicit');
+  await vi.waitFor(() => expect(f.downloads()).toBe(1));
+  const images = new OfflinePreparation(f.workspace, f.score, 'images', null);
+  clients.push(images);
+  // The fixture has no image manifest: this independent attempt must fail,
+  // rather than inherit the successful PDF result.
+  expect((await images.prepare('explicit')).phase).toBe('failed');
+  f.finish();
+  expect((await pdf).phase).toBe('ready');
+  expect(images.getSnapshot().phase).toBe('failed');
+});
+
+it('an explicit download survives the displayed PDF byte provider becoming unavailable on exit', async () => {
+  const f = await fixture();
+  const pending = f.client().prepare('explicit', () => Promise.reject(new Error('document destroyed')));
+  await vi.waitFor(() => expect(f.downloads()).toBe(1));
+  f.finish();
+  expect((await pending).phase).toBe('ready');
 });

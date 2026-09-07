@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { revokeOfflinePreparationIdentity } from "../offline/offline-score";
 import { readLogoutFence } from "./logout-fence";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -17,9 +17,9 @@ export function useApplicationIdentity() {
   const onlineState: OnlineIdentityState = session.isPending ? "checking"
     : session.error ? (session.error.status === 401 ? "signed-out" : "unreachable") : session.data?.user ? "authenticated" : "signed-out";
   const confirmedUserId = !blocked && onlineState === "authenticated" ? session.data!.user.id : null;
-  const sessionId = session.data?.session.id;
+  const sessionId = session.data?.session?.id;
   const previousIdentity = useRef({ userId: confirmedUserId, sessionId });
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (previousIdentity.current.userId && (previousIdentity.current.userId !== confirmedUserId || previousIdentity.current.sessionId !== sessionId)) revokeOfflinePreparationIdentity(previousIdentity.current.userId);
     previousIdentity.current = { userId: confirmedUserId, sessionId };
   }, [confirmedUserId, sessionId]);
@@ -27,6 +27,7 @@ export function useApplicationIdentity() {
   return {
     session, onlineState, localUserId,
     authenticatedUserId: confirmedUserId,
+    authenticatedSessionId: confirmedUserId ? sessionId ?? null : null,
     restoring: !session.data?.user && rememberedOwner === undefined,
     showLocalEntry: onlineState !== "authenticated" && (Boolean(localUserId) || rememberedOwner === undefined || onlineState !== "signed-out"),
   };

@@ -196,7 +196,7 @@ function ReaderPageContent() {
   const [exportOpen, setExportOpen] = useState(false);
   const [visibleDisplay, setVisibleDisplay] = useState<ScoreDocument | null>(null);
   const [failedDisplay, setFailedDisplay] = useState<ScoreDocument | null>(null);
-  const reader = useReaderSession(workspace, identity.authenticatedUserId);
+  const reader = useReaderSession(workspace, identity.authenticatedUserId, identity.authenticatedSessionId);
   const { score, document, offline: loadedOffline, cloudState, downloading, downloadMessage, preparation } = reader.snapshot;
   const documentScopeKey = document ? workspace?.scopeKey ?? null : null;
   const offlineStatus = useOfflineScore(workspace);

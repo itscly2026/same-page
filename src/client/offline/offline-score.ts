@@ -100,6 +100,7 @@ export type OfflinePreparationState =
 type PreparationTask = {
   controller: AbortController;
   ownerKey: string;
+  targetKey: string;
   automatic: Set<OfflinePreparation>;
   explicit: boolean;
   state: OfflinePreparationState;
@@ -114,8 +115,10 @@ export function revokeOfflinePreparationIdentity(userId: string) {
 }
 const pendingRequests = new Map<OfflinePreparation, "automatic" | "explicit">();
 function cancelUnownedPreparations() {
-  if (pendingRequests.size) return;
-  for (const task of preparations.values()) if (!task.explicit && !task.automatic.size) task.controller.abort();
+  for (const task of preparations.values()) {
+    const joining = [...pendingRequests.keys()].some(request => request.targetKey === task.targetKey);
+    if (!joining && !task.explicit && !task.automatic.size) task.controller.abort();
+  }
 }
 const observers = new Set<OfflinePreparation>();
 
@@ -128,10 +131,12 @@ export class OfflinePreparation {
   private attempted = false;
   private key = "";
   private task?: PreparationTask;
+  readonly targetKey: string;
   private identityGeneration = 0;
   private context: Promise<{ workspace: LocalWorkspace; fence: string }>;
 
   constructor(workspace: LocalWorkspace, readonly score: ScoreSummary, readonly mode: ScoreDisplayMode, authenticatedUserId: string | null, fileFence?: Promise<string>) {
+    this.targetKey = JSON.stringify([workspace.scopeKey, score.currentVersion.id, mode]);
     this.identityGeneration = identityGenerations.get(workspace.ownerKey) ?? 0;
     this.context = (async () => {
       if (workspace.ownerKey.startsWith("user:") && workspace.ownerKey !== `user:${authenticatedUserId ?? ""}`) throw new Error("offline_identity_unconfirmed");
@@ -179,7 +184,7 @@ export class OfflinePreparation {
     let task = preparations.get(this.key);
     if (!task || task.controller.signal.aborted) {
       const controller = new AbortController();
-      task = { controller, ownerKey: context.workspace.ownerKey, automatic: new Set(), explicit: false, state: { phase: "preparing", intent }, result: Promise.resolve({ phase: "idle" }) };
+      task = { controller, ownerKey: context.workspace.ownerKey, targetKey: this.targetKey, automatic: new Set(), explicit: false, state: { phase: "preparing", intent }, result: Promise.resolve({ phase: "idle" }) };
       preparations.set(this.key, task);
       const ownedTask = task;
       const key = this.key;
@@ -193,7 +198,7 @@ export class OfflinePreparation {
       }).subscribe({ next: valid => { if (!valid) controller.abort(); }, error: () => controller.abort() });
       task.result = (async (): Promise<OfflinePreparationState> => {
         try {
-          const bytes = await pdfData?.();
+          const bytes = await pdfData?.().catch(() => undefined);
           controller.signal.throwIfAborted();
           const record = await prepareOfflineScore(context.workspace, this.score, this.mode, controller.signal, bytes, context.fence);
           return { phase: "ready", record };

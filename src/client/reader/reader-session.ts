@@ -89,7 +89,7 @@ export class ReaderSession {
   private filesCleared = false;
   private fileWatcher?: { unsubscribe(): void };
 
-  constructor(readonly workspace: LocalWorkspace, private authenticatedUserId: string | null) {
+  constructor(readonly workspace: LocalWorkspace, private authenticatedUserId: string | null, private authenticatedSessionId: string | null = null) {
     this.fileFence = captureOfflineFileFence(workspace);
     void this.fileFence.catch(() => undefined);
     this.identity = workspace.ownerKey.startsWith("user:") ? workspace.ownerKey.slice(5) : "guest";
@@ -97,10 +97,11 @@ export class ReaderSession {
     this.confirmedVersion = score?.currentVersion.id ?? null;
     this.state = { mode: "pdf", modeMessage: null, score, document: null, offline: null, cloudState: "checking", capability: "preparing", status: "loading", error: null, downloading: false, downloadMessage: null, preparation: { phase: "idle" } };
   }
-  setAuthenticatedUser = (userId: string | null) => {
-    if (this.authenticatedUserId === userId) return;
+  setAuthenticatedUser = (userId: string | null, sessionId: string | null = null) => {
+    if (this.authenticatedUserId === userId && this.authenticatedSessionId === sessionId) return;
     if (this.authenticatedUserId) revokeOfflinePreparationIdentity(this.authenticatedUserId);
     this.authenticatedUserId = userId;
+    this.authenticatedSessionId = sessionId;
     this.layerAbort.abort();
     this.releasePreparation();
     this.layerAbort = new AbortController();
