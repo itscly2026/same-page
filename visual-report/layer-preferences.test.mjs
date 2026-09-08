@@ -85,7 +85,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByRole("heading", { name: "笔记颜色", exact: true }).waitFor();
     assert.equal(await page.getByRole("checkbox").count(), 0);
     await geometry(".settings-color-control input", "colors");
-    await page.getByRole("button", { name: "返回阅读偏好" }).click();
+    await page.getByRole("button", { name: "返回", exact: true }).click();
     await page.goto(`${origin}${drive}/scores/visual-score`);
     await showReader(page);
     await page.getByRole("button", { name: "看哪些笔记", exact: true }).click();

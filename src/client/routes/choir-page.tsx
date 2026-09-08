@@ -1,6 +1,5 @@
 import { scoreDisplayName } from "../../shared/score-display-name";
-import { InstallSuggestion } from "../install/install-entry";
-import { hasManagement, isDelegated, type Operation } from "../../shared/drive-permissions";
+import { hasManagement, type Operation } from "../../shared/drive-permissions";
 import { BackButton } from "../navigation/back-button";
 import { ScoreLink } from "../score-library/score-link";
 import { useNetworkStatus } from "../platform/use-network-status";
@@ -44,8 +43,6 @@ import {
   type ScoreActionSelection,
 } from "../score-library/score-action-dialog";
 import { formatBytes } from "../score-library/library-format";
-import { InviteCodeDialog } from "../score-library/invite-code-dialog";
-import { TrashDialog } from "../score-library/trash-dialog";
 import { UploadDialog } from "../score-library/upload-dialog";
 
 import { DriveHeader } from "../score-library/drive-header";
@@ -67,13 +64,11 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
   const { library, snapshot } = useDriveLibrary(cacheOwner, choirId, Boolean(identity.authenticatedUserId) && online, !identity.restoring && (Boolean(userId) || identity.onlineState !== "checking"));
   const { access, view: { search, sort }, scores: visibleScores, refreshMessage: searchMessage, joining: busy } = snapshot;
   const [openAdmissionDisplayName, setOpenAdmissionDisplayName] = useState("");
-  const [settingsField, setSettingsField] = useState<"name" | "display-name" | null>(null);
+  const [settingsField, setSettingsField] = useState<"display-name" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [inviteManagementOpen, setInviteManagementOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [quotaBlocked, setQuotaBlocked] = useState(false);
   const [scoreAction, setScoreAction] = useState<ScoreActionSelection | null>(null);
-  const [trashOpen, setTrashOpen] = useState(false);
   const refresh = library.refresh;
   const refreshAfterMutation = library.changed;
   const updateSearch = library.setSearch;
@@ -113,7 +108,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
     setMessage(null);
   };
 
-  const headerActions = <Link className="header-action" to="/drives">返回所有云盘</Link>;
+  const headerActions = <Link className="header-action" to="/drives">云盘列表</Link>;
 
   if (access.kind === "join-required") {
     return (
@@ -165,19 +160,14 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
   return (
     <div className="app-page drive-page">
       <DriveHeader choirId={choirId} choirName={choir.name} userId={userId} localOnly={Boolean(access.local)} onEditDisplayName={access.isMember && !access.local ? () => setSettingsField("display-name") : undefined} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
-        management={managementVisible ? close => <section className="drive-drawer-management">
-          <h3>云盘管理</h3>
-          <Menu aria-label="云盘管理菜单" disabledKeys={access.local ? ["name", "memberships", "layers", "trash", "invite"] : []} onAction={key => {
-            close();
-            if (key === "name") setSettingsField("name");
-            if (key === "trash") setTrashOpen(true);
-            if (key === "invite") setInviteManagementOpen(true);
-          }}>
-            {visible("editDriveInfo") && <MenuItem id="name">云盘名称</MenuItem>}
-            {(visibleCapabilities.isOwner || isDelegated(visibleCapabilities.management) || visible("removeMembers")) && <MenuItem id="memberships" href={`/choirs/${choirId}/memberships`}>成员与权限</MenuItem>}
-            {visible("configureLayers") && <MenuItem id="layers" href={`/choirs/${choirId}/shared-layers`}>共享层</MenuItem>}
-            {visible("trashFiles") && <MenuItem id="trash">回收站</MenuItem>}
-            {visible("manageInvites") && choir.guestAdmissionMode === "invite" && <MenuItem id="invite">邀请码</MenuItem>}
+        management={access.isMember || managementVisible ? close => <section className="drive-drawer-management">
+          <h3>云盘设置</h3>
+          <Menu aria-label="云盘管理菜单" disabledKeys={access.local ? ["info", "memberships", "layers", "trash", "admission"] : []} onAction={close}>
+            <MenuItem id="info" href={`/choirs/${choirId}/settings/info`}>基本信息</MenuItem>
+            <MenuItem id="memberships" href={`/choirs/${choirId}/memberships`}>成员与权限</MenuItem>
+            <MenuItem id="layers" href={`/choirs/${choirId}/settings/layers`}>共享层</MenuItem>
+            <MenuItem id="admission" href={`/choirs/${choirId}/settings/admission`}>加入方式</MenuItem>
+            <MenuItem id="trash" href={`/choirs/${choirId}/settings/trash`}>回收站</MenuItem>
           </Menu>
           {access.local && <p role="status">管理操作需联网并确认权限后使用。</p>}
           <p className="drive-storage">云盘存储：{formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}</p>
@@ -186,7 +176,6 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
       <main className="page-shell file-library">
         <h1 className={access.retained ? undefined : "visually-hidden"}>{choir.name}</h1>
         {access.retained && <p role="status">已无法访问此云盘，以下为本机保留内容</p>}
-        <InstallSuggestion />
         {(!online || identity.onlineState === "signed-out" || identity.onlineState === "unreachable" || searchMessage) && <details className="drive-connection-notice"><summary>{!online ? "离线" : searchMessage ? "列表更新失败" : identity.onlineState === "unreachable" ? "连接暂不可用" : "需要重新登录"}</summary>
           <IdentityNotice identity={identity} />
           {searchMessage && <p role="status">{searchMessage}<Button onPress={() => void refresh()}>重试</Button></p>}
@@ -266,22 +255,14 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
               ))}
             </section>
           ) : (
-            <div className="library-empty-state">{access.retained && <BackButton className="secondary-link" to="/drives">返回所有云盘</BackButton>}{search.trim() ? <><p>没有找到包含「{search}」的乐谱。</p><Button className="secondary-button" onPress={() => updateSearch("")}>清除搜索</Button></> : <><p>{access.retained ? "本机没有可用的保留副本。" : access.local ? "本机尚未保存这个云盘的目录或乐谱，请联网后下载。" : "这个云盘还没有乐谱。"}</p><p>{can("uploadFiles") ? "上传第一份 PDF，开始准备排练。" : access.isMember ? "有上传权限的成员上传乐谱后，会显示在这里。" : "暂时没有可浏览的乐谱，请稍后再来。"}</p>{can("uploadFiles") ? <Button className="secondary-button" onPress={() => setUploadOpen(true)}>上传第一份 PDF</Button> : null}</>}</div>
+            <div className="library-empty-state">{access.retained && <BackButton className="secondary-link" to="/drives">云盘列表</BackButton>}{search.trim() ? <><p>没有找到包含「{search}」的乐谱。</p><Button className="secondary-button" onPress={() => updateSearch("")}>清除搜索</Button></> : <><p>{access.retained ? "本机没有可用的保留副本。" : access.local ? "本机尚未保存这个云盘的目录或乐谱，请联网后下载。" : "这个云盘还没有乐谱。"}</p><p>{can("uploadFiles") ? "上传第一份 PDF，开始准备排练。" : access.isMember ? "有上传权限的成员上传乐谱后，会显示在这里。" : "暂时没有可浏览的乐谱，请稍后再来。"}</p>{can("uploadFiles") ? <Button className="secondary-button" onPress={() => setUploadOpen(true)}>上传第一份 PDF</Button> : null}</>}</div>
           )}
         </section>
       </main>
 
-      {settingsField && !access.local && (settingsField === "display-name" || can("editDriveInfo")) && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async value => { if (settingsField === "name") await library.confirmName(value); await refreshAfterMutation(); setMessage("已保存。"); }} />}
+      {settingsField && !access.local && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async () => { await refreshAfterMutation(); setMessage("已保存。"); }} />}
       {visible("uploadFiles") && <UploadFab disabled={Boolean(access.local)} onPress={() => setUploadOpen(true)} />}
 
-      {inviteManagementOpen && can("manageInvites") ? (
-        <InviteCodeDialog
-          key={`${choirId}:${userId}`}
-          choirId={choirId}
-          choirName={choir.name}
-          onClose={() => setInviteManagementOpen(false)}
-        />
-      ) : null}
 
       {userId && can("uploadFiles") ? <UploadDialog
         key={`upload:${choirId}:${userId}`}
@@ -308,13 +289,6 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
             setScoreAction(null);
             setMessage(nextMessage);
           }}
-        />
-      ) : null}
-      {trashOpen && can("trashFiles") ? (
-        <TrashDialog
-          choirId={choirId}
-          onClose={() => setTrashOpen(false)}
-          onRestored={refreshAfterMutation}
         />
       ) : null}
     </div>

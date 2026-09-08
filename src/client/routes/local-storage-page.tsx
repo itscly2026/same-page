@@ -27,7 +27,7 @@ export default function LocalStoragePage() {
     setMessage(failures ? `已清理 ${formatBytes(bytes)}；${failures} 项未完成，请重试。` : `已清理 ${formatBytes(bytes)} 本机谱面文件。`);
     setBusy(false); setSelection(null);
   };
-  return <div className="app-page"><AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回云盘</BackButton>} /><main className="page-shell settings-page settings-ux">
+  return <div className="app-page"><AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回</BackButton>} /><main className="page-shell settings-page settings-ux">
     <header className="settings-heading"><h1>本机存储</h1></header>
     <p>仅清理这台设备已下载的 PDF 和图片谱面，不删除云端文件、个人草稿、待同步操作或冲突，也不退出登录。云盘目录保留，再次打开需联网下载。</p>
     {files === null ? <p role="alert">无法读取本机文件。<Button onPress={() => refresh(value => value + 1)}>重试</Button></p> : files === undefined ? <p role="status">正在统计本机文件…</p> : <>

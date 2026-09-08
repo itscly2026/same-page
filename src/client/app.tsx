@@ -12,6 +12,8 @@ import { LocalIdentityObserver } from "./platform/local-identity-observer";
 import { ReaderPage } from "./reader/reader-runtime";
 import { HomePage } from "./routes/home-page";
 
+const HelpPage = lazy(() => import("./routes/help-page"));
+const DriveManagementPage = lazy(() => import("./routes/drive-management-page"));
 const AboutPage = lazy(() => import("./routes/about-page"));
 const PersonalSettingsPage = lazy(() => import("./routes/personal-settings-page"));
 const LeaveDrivePage = lazy(() => import("./routes/leave-drive-page"));
@@ -48,6 +50,8 @@ export function AppRoutes() {
             <Route path="/drives" element={<RouteContent><HomePage /></RouteContent>} />
             <Route path="/choirs/:choirId/storage" element={<RouteContent><LocalStoragePage /></RouteContent>} />
             <Route path="/choirs/:choirId/me" element={<RouteContent><LeaveDrivePage /></RouteContent>} />
+            <Route path="/help" element={<RouteContent><HelpPage /></RouteContent>} />
+            <Route path="/choirs/:choirId/settings/:section" element={<RouteContent><DriveManagementPage /></RouteContent>} />
             <Route path="/about" element={<RouteContent><AboutPage /></RouteContent>} />
             <Route path="/user" element={<RouteContent><PersonalSettingsPage /></RouteContent>} />
             <Route path="/user/lifecycle" element={<RouteContent><UserLifecyclePage /></RouteContent>} />

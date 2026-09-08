@@ -217,7 +217,7 @@ describe("AppRoutes", () => {
     await waitFor(() => expect(color).toHaveValue("#a12652"));
     expect(screen.getByText("云盘默认")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /恢复默认颜色/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "返回阅读偏好" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
     expect(screen.getByRole("checkbox", { name: "Ensemble 默认显示" })).not.toBeChecked();
   });
 
@@ -911,7 +911,8 @@ describe("AppRoutes", () => {
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "打开云盘菜单" }));
     expect(screen.queryByRole("menu", { name: "管理员菜单" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(screen.queryByRole("button", { name: "关闭" })).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "云盘菜单" }), { key: "Escape" });
     expect(fetchMock).not.toHaveBeenCalledWith("/api/choirs/join", expect.anything());
     expect(fetchMock).not.toHaveBeenCalledWith("/api/guest/session", expect.objectContaining({ method: "POST" }));
   });
@@ -924,6 +925,8 @@ describe("AppRoutes", () => {
     let currentCode = "HGFEDCBA";
     const fetchMock = vi.fn().mockImplementation(
       (input: string, init?: RequestInit) => {
+        if (input.endsWith("/management")) return Promise.resolve(Response.json({ name: "小红花云盘", guestAdmissionMode: "invite", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), layers: [] }));
+        if (input.endsWith("/memberships")) return Promise.resolve(Response.json({ actorId: "owner", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), memberships: [] }));
         if (input.endsWith("/join-code")) {
           return Promise.resolve(Response.json({ joinCode: currentCode }));
         }
@@ -960,9 +963,10 @@ describe("AppRoutes", () => {
     fireEvent.click(await screen.findByRole("button", { name: "打开云盘菜单" }));
     expect(await screen.findByRole("menuitem", { name: "共享层" })).toHaveAttribute(
       "href",
-      "/choirs/choir-1/shared-layers",
+      "/choirs/choir-1/settings/layers",
     );
-    fireEvent.click(await screen.findByRole("menuitem", { name: "邀请码" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "加入方式" }));
+    fireEvent.click(await screen.findByRole("button", { name: "查看与轮换邀请码" }));
     expect(await screen.findByRole("dialog", { name: "邀请加入云盘" })).toBeInTheDocument();
     expect(await screen.findByLabelText("当前有效邀请码")).toHaveTextContent("HGFEDCBA");
     fireEvent.click(screen.getByRole("button", { name: "轮换邀请码" }));
@@ -981,8 +985,7 @@ describe("AppRoutes", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     expect(screen.queryByLabelText("当前有效邀请码")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "打开云盘菜单" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "邀请码" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看与轮换邀请码" }));
     expect(await screen.findByLabelText("当前有效邀请码")).toHaveTextContent("ABCDEFGH");
   });
 

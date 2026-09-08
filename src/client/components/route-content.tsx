@@ -20,8 +20,11 @@ function RouteFeedback({ failed = false }: { failed?: boolean }) {
     : pathname.endsWith("/memberships") ? "成员管理"
     : pathname === "/login" ? "登录"
     : pathname === "/user/lifecycle" ? "用户删除与恢复"
-    : pathname.endsWith("/me") ? "退出此云盘"
+    : pathname.endsWith("/me") ? "云盘个人设置"
     : pathname === "/user" ? "个人设置"
+    : pathname.includes("/settings/") ? "云盘设置"
+    : pathname === "/help" ? "帮助"
+    : pathname === "/about" ? "关于合谱"
     : pathname === "/diagnostics" ? "故障诊断"
     : pathname === "/privacy" ? "隐私说明" : drive ? "乐谱云盘" : "合谱";
   return <main className="page-shell">
@@ -29,6 +32,7 @@ function RouteFeedback({ failed = false }: { failed?: boolean }) {
     <h1>{title}</h1>
     <p role={failed ? "alert" : "status"}>{failed ? `${title}加载失败，请重试。` : `正在加载${title}…`}</p>
     <Link className="text-button" to={drive && pathname !== `/choirs/${drive}` ? `/choirs/${drive}` : "/"}>{drive && pathname !== `/choirs/${drive}` ? "返回云盘" : "返回首页"}</Link>
+    {failed && <Link className="secondary-link" to="/diagnostics">故障诊断</Link>}
     {failed && <button className="secondary-button" onClick={() => window.location.reload()}>重新加载页面</button>}
   </main>;
 }

@@ -39,7 +39,7 @@ async function reauthenticate(user: Awaited<ReturnType<typeof person>>) {
 }
 const state = async (cookie: string) => (await callWorker("/api/user/lifecycle", { headers: { cookie } })).json() as Promise<{
   deletion: { deletionId: string; expiresAt: number; authMethod: string } | null;
-  memberships: { id: string; revision: number; status: string; isOwner: number }[];
+  memberships: { id: string; revision: number; status: string; isOwner: number; isPreviewEntry: number }[];
   reauthenticated: boolean;
 }>;
 async function drive(admin: Awaited<ReturnType<typeof person>>, member?: Awaited<ReturnType<typeof person>>) {
@@ -293,4 +293,42 @@ it("rejects an owner's permission write when ownership changed between authoriza
   await waitOnExecutionContext(execution);
   expect(transferred).toBe(true); expect(response.status).toBe(409);
   expect((await callWorker(`/api/choirs/${choirId}/join-code`, { headers: { cookie: owner.cookie } })).status).toBe(403);
+});
+
+it("lets active members read minimal permission facts and management configuration without acquiring write authority", async () => {
+  const owner = await person("overview-owner@example.test"), member = await person("overview-member@example.test"), outsider = await person("overview-outsider@example.test");
+  const choirId = await drive(owner, member);
+  const get = (path: string, cookie = member.cookie) => callWorker(`/api/choirs/${choirId}/${path}`, { headers: { cookie } });
+  expect((await state(member.cookie)).memberships[0].isPreviewEntry).toBe(0);
+  const listing = await get("memberships");
+  expect(listing.status).toBe(200);
+  const data = await listing.json() as { memberships: Array<{ id: string; displayName: string; isOwner: number }> };
+  expect(data.memberships).toHaveLength(2);
+  expect(data.memberships.some(row => row.isOwner === 1)).toBe(true);
+  expect(JSON.stringify(data)).not.toMatch(/email|userId|permissions"|example.test/);
+  expect((await get("permission-layers")).status).toBe(200);
+  const overview = await get("management");
+  expect(overview.status).toBe(200);
+  const configuration = await overview.json();
+  expect(configuration).toMatchObject({ name: expect.any(String), guestAdmissionMode: expect.any(String), layers: expect.any(Array) });
+  expect(Object.keys(configuration as object).sort()).toEqual(["capabilities", "guestAdmissionMode", "layers", "name"]);
+  for (const path of ["management", "memberships", "permission-layers"]) expect((await get(path, outsider.cookie)).status).toBe(403);
+  expect((await get("permission-changes")).status).toBe(403);
+  expect((await get("join-code")).status).toBe(403);
+  expect(data.memberships.every(row => !Object.hasOwn(row, "userDeleted"))).toBe(true);
+  await env.DB.prepare("UPDATE choirs SET guest_admission_mode = 'open', join_code_hash = NULL, is_preview_entry = 1 WHERE id = ?").bind(choirId).run();
+  expect((await state(member.cookie)).memberships[0].isPreviewEntry).toBe(1);
+  const guest = await post("/api/guest/session", "", { admission: "open", choirId });
+  expect(guest.status).toBe(200);
+  // Preview access remains independent of membership, including after removal.
+  for (const path of ["management", "memberships", "permission-layers"]) {
+    expect((await get(path, outsider.cookie)).status).toBe(403);
+    expect((await callWorker(`/api/choirs/${choirId}/${path}`)).status).toBe(403);
+    expect((await get(path, cookieFrom(guest))).status).toBe(403);
+  }
+  const memberState = (await state(member.cookie)).memberships[0];
+  const permissions = { operations: ["uploadFiles"], sharedLayers: [] };
+  expect((await callWorker(`/api/choirs/${choirId}/memberships/${memberState.id}/permissions`, { method: "PUT", headers: { cookie: member.cookie, "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: memberState.revision, operations: permissions, management: { operations: [], sharedLayers: [] } }) })).status).toBe(403);
+  await post(`/api/choirs/${choirId}/memberships/${memberState.id}`, owner.cookie, { action: "remove", expectedRevision: memberState.revision });
+  for (const path of ["management", "memberships", "permission-layers"]) expect((await get(path)).status).toBe(403);
 });

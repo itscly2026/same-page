@@ -1,4 +1,4 @@
-import { isDelegated, permissionSetSchema } from "../../src/shared/drive-permissions";
+import { permissionSetSchema } from "../../src/shared/drive-permissions";
 import { memberCapabilities, readPermissionMember, requireOperation } from "../permissions/access";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -20,7 +20,7 @@ lifecycleRoutes.get("/user/lifecycle", async (context) => {
     WHERE user_id = ? AND previous_session_id <> ? AND expires_at > ? AND created_at <= ?`).bind(session.user.id, session.session.id, Date.now(), session.session.createdAt.getTime()).first();
   const methods = await context.env.DB.prepare("SELECT provider_id AS method FROM account WHERE user_id = ?").bind(session.user.id).all<{ method: string }>();
   const drives = await context.env.DB.prepare(`SELECT memberships.id, memberships.choir_id AS choirId,
-    choirs.name, memberships.display_name AS displayName, memberships.status,
+    choirs.name, choirs.is_preview_entry AS isPreviewEntry, memberships.display_name AS displayName, memberships.status,
     memberships.lifecycle_revision AS revision, memberships.removed_at AS removedAt,
     choirs.owner_membership_id = memberships.id AS isOwner
     FROM memberships JOIN choirs ON choirs.id = memberships.choir_id WHERE memberships.user_id = ?`).bind(session.user.id).all();
@@ -84,14 +84,17 @@ lifecycleRoutes.get("/choirs/:choirId/memberships", async (context) => {
   const choirId = context.req.param("choirId");
   const actor = await readPermissionMember(context.env.DB, await resolveContextPrincipal(context), choirId);
   const capabilities = memberCapabilities(actor);
-  if (!actor.isOwner && !isDelegated(capabilities.management) && !capabilities.operations.operations.includes("removeMembers")) throw new AuthorizationError();
+  const canManageLifecycle = actor.isOwner || capabilities.operations.operations.includes("removeMembers");
   const result = await context.env.DB.prepare(`SELECT m.id, m.display_name AS displayName, m.status, m.permissions, m.management_scope AS management,
     m.removed_at AS removedAt, m.lifecycle_revision AS revision, m.removed_for_deletion_id IS NOT NULL AS userDeleted,
     c.owner_membership_id = m.id AS isOwner,
     CASE WHEN m.status = 'removed' AND m.removed_at > ? AND m.removed_for_deletion_id IS NULL THEN 1 ELSE 0 END AS recoverable
-    FROM memberships m JOIN choirs c ON c.id = m.choir_id WHERE m.choir_id = ? ORDER BY m.status, m.display_name`).bind(Date.now() - RECOVERY_PERIOD_MS, choirId).all<{ id: string; permissions: string; management: string; isOwner: number }>();
-  const members = result.results.map(row => ({ ...row, operations: permissionSetSchema.parse(JSON.parse(row.permissions)), management: permissionSetSchema.parse(JSON.parse(row.management)) }))
-    .filter(row => actor.isOwner || (row.id !== actor.id && !row.isOwner && !isDelegated(row.management)));
+    FROM memberships m JOIN choirs c ON c.id = m.choir_id WHERE m.choir_id = ? AND (m.status = 'active' OR ? = 1) ORDER BY m.status, m.display_name`).bind(Date.now() - RECOVERY_PERIOD_MS, choirId, Number(canManageLifecycle)).all<{ id: string; displayName: string; status: string; revision: number; removedAt: number | null; userDeleted: number; recoverable: number; permissions: string; management: string; isOwner: number }>();
+  const members = result.results.map(row => ({
+    id: row.id, displayName: row.displayName, status: row.status, revision: row.revision, isOwner: row.isOwner,
+    operations: permissionSetSchema.parse(JSON.parse(row.permissions)), management: permissionSetSchema.parse(JSON.parse(row.management)),
+    ...(canManageLifecycle ? { removedAt: row.removedAt, userDeleted: row.userDeleted, recoverable: row.recoverable } : {}),
+  }));
 
   return context.json({ memberships: members, capabilities, actorId: actor.id });
 });

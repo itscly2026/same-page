@@ -64,7 +64,9 @@
 .drive-drawer .dialog-heading { align-items: flex-start; }
 .drive-drawer h2 { margin: 0; font-size: 1.35rem; line-height: 1.5; overflow-wrap: anywhere; }
 .drive-drawer .icon-button { flex-shrink: 0; }
-.drive-drawer-switch { display: block; text-decoration: none; width: 100%; min-height: 44px; margin: .5rem 0 1.25rem; border: 0; border-radius: .7rem; padding: .7rem 1rem; text-align: left; font: inherit; color: var(--ink); background: var(--brand-soft); cursor: pointer; }
+.drive-drawer-switch { display: flex; align-items: center; gap: .6rem; text-decoration: none; min-height: 48px; margin-bottom: 1rem; color: var(--brand); font-weight: 600; }
+.drive-drawer-footer { display: flex; gap: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--line); }
+.drive-drawer-footer a { color: var(--muted); text-decoration: none; }
 .drive-drawer nav { display: grid; }
 .drive-drawer nav a, .drive-drawer [role="menuitem"] { display: flex; align-items: center; min-height: 48px; padding: .65rem .75rem; color: var(--ink); text-decoration: none; border-radius: .6rem; cursor: pointer; outline-offset: -2px; }
 .drive-drawer nav a:hover, .drive-drawer [role="menuitem"][data-focused] { background: var(--brand-soft); }

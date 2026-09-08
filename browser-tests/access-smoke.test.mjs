@@ -79,6 +79,7 @@ test("expired but uncleaned trash cannot be restored through a real browser sess
   assert.equal(restored, 404);
   await page.getByRole("button", { name: "打开云盘菜单", exact: true }).click();
   await page.getByRole("menuitem", { name: "回收站", exact: true }).click();
+  await page.getByRole("button", { name: "打开回收站", exact: true }).click();
   await page.getByText("回收站是空的。", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "恢复", exact: true }).count(), 0);
 });
