@@ -49,8 +49,7 @@ function DriveManagement({ choirId }: { choirId: string }) {
     const allowed = can(operation);
     return <section className="management-row">
       <div className="management-row-main"><div><h2>{title}</h2><p>{value}</p></div>{allowed && typeof destination === "string" ? <Link className="secondary-button" to={destination}>{label}</Link> : <Button className="secondary-button" aria-label={`${label}${allowed ? "" : "（权限说明）"}`} onPress={() => { if (allowed && typeof destination === "function") destination(); else setLocked(current => current === operation ? null : operation); }}>{!allowed && <LockKeyhole size={15} aria-hidden="true" />}{label}</Button>}</div>
-      {!allowed && <p className="management-contact">可以找 {contacts(operation)}</p>}
-      {locked === operation && <div className="permission-lock-explanation" role="status"><p>需要“{operationLabels[operation]}”权限。</p><p>申请授权可联系 {contacts(operation, "management")}。</p><Link to={`/choirs/${choirId}/memberships`}>查看权限分工</Link></div>}
+      {locked === operation && <div className="permission-lock-explanation" role="status"><p>需要“{operationLabels[operation]}”权限。</p><p>处理此项可联系 {contacts(operation)}。</p>{contacts(operation) !== contacts(operation, "management") && <p>申请授权可联系 {contacts(operation, "management")}。</p>}<Link to={`/choirs/${choirId}/memberships`}>查看权限分工</Link></div>}
     </section>;
   }
   return <div className="app-page"><AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回</BackButton>} /><main className="page-shell settings-page settings-ux">

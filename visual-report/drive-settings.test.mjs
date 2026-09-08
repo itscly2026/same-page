@@ -85,7 +85,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.goto(`${app.origin}/choirs/choir-1/management`);
     await expect(page.getByText("Soprano", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: /查看与轮换邀请码/ }).click();
-    await expect(page.getByText("申请授权可联系 小林。")).toBeVisible();
+    await expect(page.getByText("处理此项可联系 小林。")).toBeVisible();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await mkdir("artifacts/visual-report", { recursive: true });
     await page.screenshot({ path: `artifacts/visual-report/management-member-${name}.png`, fullPage: true });

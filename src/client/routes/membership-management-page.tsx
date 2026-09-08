@@ -94,7 +94,7 @@ function MembershipManagement({ choirId }: { choirId: string }) {
     </>}
     {state?.memberships.filter(member => view === "member" || member.id === editingMember).map(member => <MemberEditor focus={view === "permission" ? permission : undefined} key={`${member.id}:${member.revision}:${state.capabilities.isOwner}`} member={member} state={state} layers={layers} busy={busy || loading || needsRefresh} draft={drafts[member.id]} onDraft={draft => setDrafts(current => ({ ...current, [member.id]: draft }))}
       save={(operations, management) => void mutate(`memberships/${member.id}/permissions`, { expectedRevision: member.revision, operations, management }, "PUT", member.id)}
-      change={action => setConfirmation({ title: action === "restore" ? "恢复成员关系" : "移除成员", action: action === "restore" ? "确认恢复" : "确认移除", message: action === "restore" ? "恢复成员关系和保留期内的个人层，不恢复旧权限、管理范围或分享。" : "立即撤销成员权限；断网设备已下载的内容无法即时撤回。", onConfirm: () => mutate(`memberships/${member.id}`, { action, expectedRevision: member.revision }) })}
+      change={action => setConfirmation({ title: action === "restore" ? "恢复成员关系" : "移除成员", action: action === "restore" ? "确认恢复" : "确认移除", destructive: action === "remove", message: action === "restore" ? "恢复成员关系和保留期内的个人层，不恢复旧权限、管理范围或分享。" : "立即撤销成员权限；断网设备已下载的内容无法即时撤回。", onConfirm: () => mutate(`memberships/${member.id}`, { action, expectedRevision: member.revision }) })}
       transfer={() => {
         const former = state.memberships.find(row => row.id === state.actorId)!;
         setConfirmation({ title: "转让拥有权", action: "确认转让", message: `将拥有权转让给「${member.displayName}」？转让后你保留的显式操作权限：${describe(former.operations, layers)}；授权管理范围：${describe(former.management, layers)}。你将不能再转让拥有权或任命受托人。`, onConfirm: () => mutate("ownership", { membershipId: member.id, confirm: true }) });
@@ -122,7 +122,7 @@ function MemberEditor({ focus, member, state, layers, busy, save, change, transf
     {!focus && <><p>操作权限：{describe(member.isOwner ? allPermissions() : member.operations, layers)}</p>
     <p>授权管理范围：{describe(member.isOwner ? allPermissions() : member.management, layers)}</p></>}
     {focus && <p>此项权限：{member.isOwner || hasPermission(member.operations, focus) ? "可以操作" : "不能操作"}；{member.isOwner || hasPermission(member.management, focus) ? "可以授权他人" : "不能授权他人"}</p>}
-    {!canAuthorize && <p>🔒 {outsideScope ? "这项权限不在你的授权管理范围内，请联系云盘拥有者或具有此项授权管理范围的受托人。" : member.isOwner || isDelegated(member.management) ? "只有云盘拥有者可以调整拥有者或受托人的权限。" : member.id === state.actorId ? "不能自行授权，请联系云盘拥有者或相应受托权限管理者。" : "你没有授权管理范围，请联系云盘拥有者或相应受托权限管理者。"} 拥有者：{state.memberships.find(row => row.isOwner)?.displayName ?? "请在成员列表中查看"}。</p>}
+    {!canAuthorize && <p>🔒 {outsideScope ? "这项权限不在你的授权管理范围内，请联系云盘拥有者或具有此项授权管理范围的受托人。" : member.isOwner || isDelegated(member.management) ? "只有云盘拥有者可以调整拥有者或受托人的权限。" : member.id === state.actorId ? "不能自行授权，请联系云盘拥有者或相应受托权限管理者。" : "你没有授权管理范围，请联系云盘拥有者或相应受托权限管理者。"}</p>}
     {member.userDeleted ? <p>用户处于删除恢复期，须本人验证并恢复。</p> : member.status === "active" ? <>
       {canAuthorize && <>
         {member.isOwner === 1 && <p>拥有者始终具备全部能力。以下是转让后保留的显式授权。</p>}
@@ -130,7 +130,7 @@ function MemberEditor({ focus, member, state, layers, busy, save, change, transf
         <Button className="primary-button" isDisabled={busy} onPress={() => save(operations, management)}>保存 {member.displayName} 的权限</Button>
       </>}
       {!member.isOwner && (owner || (!protectedMember && state.capabilities.operations.operations.includes("removeMembers"))) && <details className="member-actions"><summary>成员操作</summary>
-        <div className="settings-actions"><Button className="secondary-button" isDisabled={busy} onPress={() => change("remove")}>移除 {member.displayName}</Button>
+        <div className="settings-actions"><Button className="secondary-button destructive-link" isDisabled={busy} onPress={() => change("remove")}>移除 {member.displayName}</Button>
         {owner && <Button className="secondary-button" isDisabled={busy} onPress={transfer}>转让拥有权给 {member.displayName}</Button>}</div>
       </details>}
     </> : (owner || state.capabilities.operations.operations.includes("removeMembers")) && <Button className="secondary-button" isDisabled={busy || member.recoverable !== 1} onPress={() => change("restore")}>恢复 {member.displayName} 的成员关系</Button>}

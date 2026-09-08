@@ -11,8 +11,9 @@ it("shows safe configuration and explains locked actions before opening an edit 
   vi.stubGlobal("fetch", fetch);
   render(page());
   expect(await screen.findByText("Soprano")).toBeVisible();
+  expect(screen.queryByText(/小林/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /查看与轮换邀请码/ }));
-  expect(screen.getByText("申请授权可联系 小林。")).toBeVisible();
+  expect(screen.getByText("处理此项可联系 小林。")).toBeVisible();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /修改云盘名称/ }));
   expect(screen.getByText("需要“修改基本信息”权限。")).toBeVisible();

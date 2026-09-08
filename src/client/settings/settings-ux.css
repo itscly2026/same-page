@@ -126,7 +126,6 @@
 .management-row-main { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .management-row-main > div { min-width: 0; }
 .management-row-main .secondary-button { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 9px 10px; }
-.management-contact { font-size: 13px; color: #61767b; margin-top: 6px !important; }
 .management-nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 18px 0; border: 0; border-bottom: 1px solid #dbe5e5; color: inherit; text-decoration: none; background: none; text-align: left; font: inherit; }
 .management-nav strong, .management-nav small { display: block; }
 .management-nav small { color: #61767b; font-size: 13px; margin-top: 5px; }
@@ -151,3 +150,9 @@
 .help-diagnostics h2 { font-size: 18px; }
 .about-build { margin-top: 36px; color: #61767b; font-size: 13px; }
 .about-build code { overflow-wrap: anywhere; }
+
+.secondary-button.destructive-link:not(:disabled) { color: #a12b30; border-color: #e0b9bc; }
+.primary-button.destructive-button { background: #b02d34; border-color: #b02d34; color: white; }
+.primary-button.destructive-button[data-hovered] { background: #92232a; border-color: #92232a; }
+.primary-button.destructive-button:focus-visible { outline: 3px solid #e09fa4; outline-offset: 3px; }
+.primary-button.destructive-button[data-disabled] { opacity: .55; }
