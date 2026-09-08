@@ -332,7 +332,7 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
                     <source media="(prefers-reduced-motion: reduce)" srcSet={feature.illustration} />
                     <img
                       src={pausedIllustrations.includes(index) ? feature.illustration : index === 0 ? sharedLayersAnimation : personalLayerAnimation}
-                      alt={index === 0 ? "从右到左 B、T、A、S、E 共享层各画两笔批注，再叠加到同一份乐谱上。" : "选择显示 E 和 T 共享批注，隐藏其他共享层；在默认私密的 P 个人层留下两笔笔记，再叠加到原谱上。"}
+                      alt={index === 0 ? "从右到左 B、T、A、S、E 共享层各画两笔批注，再叠加到同一份乐谱上。" : "选择显示 E 和 T 共享批注，隐藏其他共享层；在默认私密的 Me 个人层画一个小笑脸，再叠加到原谱上。"}
                       width={768}
                       height={512}
                       loading="lazy"

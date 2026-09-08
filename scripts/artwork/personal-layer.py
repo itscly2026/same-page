@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 OUT = Path(__file__).resolve().parents[2] / 'src/client/assets/home'
 W, H, SCALE = 768, 512, 2
 COLORS = ['#ab5571', '#b87a35', '#8061a0', '#37799c', '#557c53', '#014653']
-LABELS = ['B', 'T', 'A', 'S', 'E', 'P']
+LABELS = ['B', 'T', 'A', 'S', 'E', 'Me']
 FONT = ImageFont.truetype('DejaVuSans.ttf', 24 * SCALE)
 
 def frame(spread, selection, personal):
@@ -29,7 +29,7 @@ def frame(spread, selection, personal):
             d.ellipse((px-4*SCALE,py-2*SCALE,px+4*SCALE,py+2*SCALE),fill='#4c625d')
             line(bx,by,[(u+4,vv),(u+4,vv-18)],'#4c625d')
     for i,(color,label) in enumerate(zip(COLORS,LABELS)):
-        amount = personal if label == 'P' else 1
+        amount = personal if label == 'Me' else 1
         if label in ('B', 'A', 'S'):
             rgb = tuple(int(color[j:j+2],16) for j in (1,3,5))
             color = tuple(round(c+(220-c)*selection) for c in rgb)
@@ -42,12 +42,25 @@ def frame(spread, selection, personal):
             if spread>.3:
                 px,py=point(x,y,8,6)
                 d.text((px,py),label,font=FONT,fill=color)
-                if label == 'P':
+                if label == 'Me':
                     # Lock: personal notes are private by default.
                     line(x,y,[(105,18),(105,10),(108,6),(114,6),(117,10),(117,18)],color,2)
                     line(x,y,[(102,18),(120,18),(120,34),(102,34),(102,18)],color,2)
                 elif label in ('B','A','S') and selection > .5:
                     line(x,y,[(103,13),(120,30)],color,2)
+        if label == 'Me':
+            # A little hand-drawn smile, revealed stroke by stroke.
+            strokes = [
+                [(66+25*sin(j*2*pi/64),218-25*sin(j*2*pi/64+pi/2)) for j in range(65)],
+                [(57,211),(57,215)],
+                [(75,211),(75,215)],
+                [(55+j,223+7*sin(j*pi/22)) for j in range(23)],
+            ]
+            for stroke_index, pts in enumerate(strokes):
+                progress = max(0, min(1, amount*4-stroke_index))
+                if progress > 0:
+                    line(x,y,pts[:max(2,round(1+(len(pts)-1)*progress))],color,3)
+            continue
         v=42+i*37
         # Distinct, musically familiar pen marks on different systems.
         if i in (0,2,4):
@@ -63,7 +76,7 @@ def frame(spread, selection, personal):
     return im.resize((W,H),Image.Resampling.LANCZOS)
 
 
-# All shared marks -> choose E/T -> add two private strokes -> overlay.
+# All shared marks -> choose E/T -> draw a private smiley -> overlay.
 frames=[]
 for n in range(130):
     t=n/10
