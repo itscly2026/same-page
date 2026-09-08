@@ -115,6 +115,11 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
   const [submitting, setSubmitting] = useState(false);
   const [clearingGuestSession, setClearingGuestSession] = useState(false);
   const [joinMessage, setJoinMessage] = useState<string | null>(null);
+  const [entryDestination, setEntryDestination] = useState<string | null>(null);
+  // Let the dialog unregister its exit guard before completing admission.
+  useEffect(() => {
+    if (entryDestination) void navigate(entryDestination);
+  }, [entryDestination, navigate]);
   const userId = session.data?.user.id;
   useEffect(() => {
     if (session.isPending || userId) return;
@@ -194,7 +199,7 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
       }
       setSubmitting(false);
       finishJoinDialog();
-      await navigate(`/choirs/${result.choir.id}`);
+      setEntryDestination(`/choirs/${result.choir.id}`);
       return;
     }
     setSubmitting(false);
@@ -237,7 +242,7 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
     if (generation !== entryLifetimeRef.current) return;
     setSubmitting(false);
     if (result.kind === "enter") {
-      finishJoinDialog(); await navigate(`/choirs/${result.choir.id}`);
+      finishJoinDialog(); setEntryDestination(`/choirs/${result.choir.id}`);
     } else if (result.kind === "failed") {
       if (result.restart) setJoinStep({ kind: "invite" });
       setJoinMessage(result.message);
@@ -335,7 +340,7 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
 
       <ModalOverlay
         className="modal-overlay"
-        isOpen={joinOpen}
+        isOpen={joinOpen && !(linkInvite && location.hash)}
         onOpenChange={(open) => {
           if (open) setJoinOpen(true);
           else dismissJoinDialog();

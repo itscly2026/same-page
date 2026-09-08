@@ -3,7 +3,7 @@ import test from "node:test";
 import { chromium, expect } from "@playwright/test";
 import { startStorageFixture } from "./storage-fixture.mjs";
 
-test("valid invitations automatically admit fresh and warm guests and existing members", { timeout: 90000 }, async t => {
+test("valid invitations automatically admit guests, existing members and named new members", { timeout: 90000 }, async t => {
   const fixture = await startStorageFixture({ authenticated: true, invite: true, nonMember: true });
   t.after(() => fixture.stop());
   const browser = await chromium.launch(); t.after(() => browser.close());

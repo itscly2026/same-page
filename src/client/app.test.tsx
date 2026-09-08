@@ -5,7 +5,7 @@ import type { AnnotationLayerSummary } from "../shared/annotations";
 import { captureOfflineAnnotationSnapshot } from "./annotations/offline-snapshot";
 import { StrictMode } from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { Link, MemoryRouter } from "react-router-dom";
+import { createMemoryRouter, RouterProvider, Link, MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppRoutes } from "./app";
@@ -388,6 +388,15 @@ describe("AppRoutes", () => {
     const admissions = vi.mocked(fetch).mock.calls.filter(([url, init]) => url === "/api/guest/session" && init?.method === "POST");
     expect(admissions).toHaveLength(1);
     expect(admissions[0][1]?.body).toBe(JSON.stringify({ admission: "invite", joinCode: "ABCDEFGH" }));
+  });
+
+  it("keeps invitation cleanup and successful entry from triggering the dialog exit guard", async () => {
+    const router = createMemoryRouter([{ path: "*", element: <AppRoutes /> }], { initialEntries: ["/?join=1#invite=ABCDEFGH"] });
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByRole("heading", { name: "小红花云盘" })).toBeInTheDocument();
+    expect(router.state.location.hash).toBe("");
+    expect(vi.mocked(fetch).mock.calls.filter(([url, init]) => url === "/api/guest/session" && init?.method === "POST")).toHaveLength(1);
+    expect(vi.mocked(fetch).mock.calls.filter(([url, init]) => url === "/api/guest/session" && init?.method === "DELETE")).toHaveLength(0);
   });
 
   it("automatically admits an invitation received while the home page is already open", async () => {
