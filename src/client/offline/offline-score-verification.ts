@@ -13,7 +13,14 @@ let running = 0;
 
 // Deduplicate only in-flight checks. Opening again always validates current bytes.
 export function verifyOfflineScore(record: OfflineScoreRecord) {
-  const report = diagnosticScope();
+  return verifyOfflineScoreWithDiagnostics(record, diagnosticScope());
+}
+
+function verifyOfflineScoreWithDiagnostics(record: OfflineScoreRecord, report: ReturnType<typeof diagnosticScope>) {
+  if (!(record.blob instanceof Blob)) {
+    report({ operation: "storage", category: "validation", stage: "decode", step: "offline-file", errorType: "ValidationError" });
+    return Promise.resolve(false);
+  }
   const identity = JSON.stringify([record.key, record.verifiedAt, record.sha256, record.blob.size, record.annotationSnapshot, record.imageManifest]);
   let tasks = verificationTasks.get(record.blob);
   if (!tasks) { tasks = new Map(); verificationTasks.set(record.blob, tasks); }
@@ -63,13 +70,15 @@ async function verifyRecord(record: OfflineScoreRecord, report: ReturnType<typeo
     step = "offline-snapshot";
     if (!record.annotationSnapshot?.verifiedAt) return invalid();
     const layers = record.annotationSnapshot.layers;
-    if (!hasCompleteOfflineLayers(layers, record.ownerKey)) return invalid();
-    const layerIds = new Set(layers.map((layer) => layer.id));
+    if (!Array.isArray(layers) || !Array.isArray(record.annotationSnapshot.annotations)) return invalid();
     for (const layer of record.annotationSnapshot.layers) {
       annotationLayerSummarySchema.parse(layer);
       if (layer.scopeKey !== record.scopeKey) return invalid();
     }
+    if (!hasCompleteOfflineLayers(layers, record.ownerKey)) return invalid();
+    const layerIds = new Set(layers.map((layer) => layer.id));
     for (const annotation of record.annotationSnapshot.annotations) {
+      if (typeof annotation !== "object" || annotation === null) return invalid();
       if (annotation.scopeKey !== record.scopeKey || !layerIds.has(annotation.layerId)) return invalid();
       if (annotation.payload) annotationPayloadSchema.parse(annotation.payload);
     }
@@ -95,14 +104,14 @@ const inspections = new Map<string, Promise<OfflineInspection>>();
 // Thus a newly read corrupt replacement cannot inherit an older in-flight result.
 Dexie.on("storagemutated", () => inspections.clear());
 
-export async function inspectOfflineScore(workspace: LocalWorkspace): Promise<OfflineInspection> {
+export async function inspectOfflineScore(workspace: LocalWorkspace, report = diagnosticScope()): Promise<OfflineInspection> {
   await assertLocalWorkspaceActive(workspace);
   const identity = JSON.stringify([workspace.scopeKey, workspace.sessionEpoch]);
   let task = inspections.get(identity);
   if (!task) {
     task = (async () => {
-      const record = await diagnoseLocalOperation("offline-read", () => findActiveOfflineScore(workspace.ownerKey, workspace.choirId, workspace.scoreId));
-      const valid = record ? await verifyOfflineScore(record) : false;
+      const record = await diagnoseLocalOperation("offline-read", () => findActiveOfflineScore(workspace.ownerKey, workspace.choirId, workspace.scoreId), { report });
+      const valid = record ? await verifyOfflineScoreWithDiagnostics(record, report) : false;
       return { record: valid ? record ?? null : null, invalid: Boolean(record && !valid) };
     })();
     inspections.set(identity, task);

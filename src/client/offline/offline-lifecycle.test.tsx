@@ -214,3 +214,31 @@ it("offers reinspection after a local read failure without marking the stored co
   fireEvent.click(screen.getByRole("button", { name: "校验" }));
   await screen.findByText("可离线使用");
 });
+
+it("does not report an old copy after a delayed read crosses a diagnostic reset", async () => {
+  const database = await import("../platform/local-database");
+  const { default: Dexie } = await import("dexie");
+  const { clearDiagnostics, exportDiagnostics } = await import("../diagnostics/diagnostics");
+  const record = await recordFor();
+  let resolve!: (value: OfflineScoreRecord) => void;
+  const pendingRead = new Promise<OfflineScoreRecord>(done => { resolve = done; });
+  const read = vi.spyOn(database, "findActiveOfflineScore").mockImplementationOnce(() => Dexie.Promise.resolve(pendingRead));
+  const inspection = findVerifiedOfflineScore(record);
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  await activateAuthenticatedLocalOwner("new-owner");
+  clearDiagnostics();
+  resolve({ ...record, sha256: "0".repeat(64) });
+  await expect(inspection).rejects.toThrow("local_workspace_owner_changed");
+  expect(JSON.parse(exportDiagnostics()).records).toEqual([]);
+});
+
+it.each([{}, { layers: null, annotations: [] }, { layers: [null], annotations: [] }, { layers: [], annotations: [null] }])("treats malformed stored snapshot structure as invalid content: %j", async snapshot => {
+  const { clearDiagnostics, exportDiagnostics } = await import("../diagnostics/diagnostics");
+  const record = await recordFor();
+  clearDiagnostics();
+  // Round-trip the malformed value through the same structured data boundary
+  // as existing IndexedDB contents; type declarations cannot validate storage.
+  const invalidRecord: OfflineScoreRecord = { ...record, annotationSnapshot: JSON.parse(JSON.stringify({ verifiedAt: 1, cursor: 0, ...snapshot })) };
+  expect(await verifyOfflineScore(invalidRecord)).toBe(false);
+  expect(JSON.parse(exportDiagnostics()).records).toEqual([expect.objectContaining({ step: "offline-snapshot", errorType: "ValidationError" })]);
+});

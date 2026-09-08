@@ -1,6 +1,6 @@
 import { diagnoseLocalOperation } from "../diagnostics/local-operation";
 import { hasCompleteOfflineLayers } from "../offline/offline-score-verification";
-import { parseDiagnosticResponse, diagnosticFetch, recordFailure } from "../diagnostics/diagnostics";
+import { parseDiagnosticResponse, diagnosticFetch, recordFailure, diagnosticScope } from "../diagnostics/diagnostics";
 import {
   type AnnotationLayerSummary,
   annotationPullResponseSchema,
@@ -44,6 +44,7 @@ let refreshOrder = 0;
 // Callers observe committed layers early, but the promise means the entire
 // synchronization succeeded. Neither a ready layer list nor a busy lock is success.
 export async function syncAnnotations(workspace: LocalWorkspace, options: SyncOptions) {
+  const report = diagnosticScope();
   if (!options.pull) {
     return withScoreSyncLock(workspace, async locked => ({
       pushed: await drainAnnotationOutbox(locked), pulled: 0,
@@ -51,7 +52,7 @@ export async function syncAnnotations(workspace: LocalWorkspace, options: SyncOp
   }
   const requestedAt = ++refreshOrder;
   options.signal?.throwIfAborted();
-  workspace = await diagnoseLocalOperation("sync-lock", () => captureLocalWorkspaceSession(workspace));
+  workspace = await diagnoseLocalOperation("sync-lock", () => captureLocalWorkspaceSession(workspace), { report, signal: options.signal });
   options.signal?.throwIfAborted();
   const key = JSON.stringify([workspace.scopeKey, workspace.sessionEpoch, options.push !== false]);
   // Re-entering the same account must neither reuse nor wait for its old
@@ -81,7 +82,7 @@ export async function syncAnnotations(workspace: LocalWorkspace, options: SyncOp
       }, layers => {
         current.layers = layers;
         for (const listener of current.listeners) listener(layers);
-      }, options.push !== false), { signal });
+      }, options.push !== false, report), { signal });
       if (!result) throw new Error("annotation_sync_busy");
       return result;
     });
@@ -128,9 +129,11 @@ async function refreshAnnotations(
   startingLayers: () => void,
   layersApplied: (layers: AnnotationLayerSummary[]) => void,
   push: boolean,
+  report: ReturnType<typeof diagnosticScope>,
 ): Promise<SyncResult> {
+  const diagnostics = { report, signal };
   startingLayers();
-  const applied = await diagnoseLocalOperation("sync-layers", () => refreshLayerCapabilities(workspace, signal));
+  const applied = await diagnoseLocalOperation("sync-layers", () => refreshLayerCapabilities(workspace, signal), diagnostics);
   layersApplied(applied);
   const base = `/api/choirs/${encodeURIComponent(workspace.choirId)}/scores/${encodeURIComponent(workspace.scoreId)}`;
 
@@ -138,16 +141,16 @@ async function refreshAnnotations(
   // still allows readable cloud changes and revocations to reach this device.
   let pushed = 0;
   let pushError: unknown;
-  try { if (push) pushed = await diagnoseLocalOperation("sync-push", () => drainAnnotationOutbox(workspace, { signal, layers: applied })); }
+  try { if (push) pushed = await diagnoseLocalOperation("sync-push", () => drainAnnotationOutbox(workspace, { signal, layers: applied }), diagnostics); }
   catch (error) { pushError = error; }
   signal.throwIfAborted();
   await assertLocalWorkspaceActive(workspace);
-  const checkpoint = await diagnoseLocalOperation("sync-pull", () => localDatabase.annotationSyncCursors.get(workspace.scopeKey));
+  const checkpoint = await diagnoseLocalOperation("sync-pull", () => localDatabase.annotationSyncCursors.get(workspace.scopeKey), diagnostics);
   const layerIds = applied.map(layer => layer.id).sort();
   let cursor = JSON.stringify(checkpoint?.layerIds) === JSON.stringify(layerIds) ? checkpoint?.cursor ?? 0 : 0;
   let pulled = 0;
   while (true) {
-    const response = await diagnoseLocalOperation("sync-pull", () => refreshRequest(`${base}/annotations?cursor=${cursor}`, signal));
+    const response = await diagnoseLocalOperation("sync-pull", () => refreshRequest(`${base}/annotations?cursor=${cursor}`, signal), diagnostics);
     await assertLocalWorkspaceActive(workspace);
     signal.throwIfAborted();
     if (!response.ok) {
@@ -156,7 +159,7 @@ async function refreshAnnotations(
     }
     const body = await parseDiagnosticResponse(response, annotationPullResponseSchema);
     signal.throwIfAborted();
-    await diagnoseLocalOperation("sync-apply", () => applyPulledAnnotations(workspace, body.cursor, body.objects, layerIds));
+    await diagnoseLocalOperation("sync-apply", () => applyPulledAnnotations(workspace, body.cursor, body.objects, layerIds), diagnostics);
     pulled += body.objects.length;
     if (!body.hasMore || body.cursor <= cursor) break;
     cursor = body.cursor;
@@ -294,7 +297,7 @@ export async function withScoreSyncLock<T>(
   action: (workspace: LocalWorkspace) => Promise<T>,
   options: { ifAvailable?: boolean; signal?: AbortSignal } = {},
 ) {
-  workspace = await diagnoseLocalOperation("sync-lock", () => captureLocalWorkspaceSession(workspace));
+  workspace = await diagnoseLocalOperation("sync-lock", () => captureLocalWorkspaceSession(workspace), { signal: options.signal });
   options.signal?.throwIfAborted();
   const scopeKey = workspace.scopeKey;
   if (navigator.locks) {
