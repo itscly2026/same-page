@@ -19,7 +19,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     const page = await context.newPage();
     const drive = `${fixture.origin}/choirs/${fixture.choirId}`;
     await page.goto(drive);
-    await page.getByRole("button", { name: "此云盘设置", exact: true }).waitFor();
+    await page.getByRole("searchbox", { name: "搜索「本地链路云盘」中的乐谱", exact: true }).waitFor();
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
     await page.getByRole("button", { name: /^离线副本：/ }).click();
     await page.getByRole("button", { name: "下载离线副本", exact: true }).click();

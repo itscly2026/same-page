@@ -22,7 +22,7 @@ test("literal search, verified offline read and failed/successful immutable PDF 
   await page.getByRole("searchbox").fill("%_");
   await expect(page.locator(".file-row__open")).toHaveCount(1);
   await page.getByRole("button", { name: /^离线副本：/ }).click();
-    await page.getByRole("button", { name: "下载离线副本", exact: true }).click();
+  await page.getByRole("button", { name: "下载离线副本", exact: true }).click();
   await page.getByRole("status").filter({ hasText: /^可离线使用$/ }).waitFor();
   await page.getByRole("button", { name: "关闭", exact: true }).click();
   await page.locator(".file-row__open").click();
@@ -37,7 +37,8 @@ test("literal search, verified offline read and failed/successful immutable PDF 
   const version = (await staged.json()).version;
   assert.equal((await context.request.post(`${base}/versions/${version.id}/publish`, { data: { expectedRevision: versions.revision } })).status(), 204);
   await page.goto(`${fixture.origin}/choirs/${fixture.choirId}`);
-  await page.getByRole("status").filter({ hasText: /旧版可离线使用/ }).waitFor();
+  await expect(page.getByRole("button", { name: /^离线副本：.*旧版可离线使用/ })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /^需更新$/ })).toBeVisible();
   await context.setOffline(true);
   await expect(page.getByRole("button", { name: /^离线副本：/ })).toBeDisabled();
   await context.setOffline(false);
@@ -53,7 +54,7 @@ test("literal search, verified offline read and failed/successful immutable PDF 
     };
   });
   await page.getByRole("button", { name: /^离线副本：/ }).click();
-    await page.getByRole("button", { name: "下载新版离线副本", exact: true }).click();
+  await page.getByRole("button", { name: "下载新版离线副本", exact: true }).click();
   await page.getByRole("status").filter({ hasText: /下载未完成/ }).waitFor();
   await expect(page.getByRole("status").filter({ hasText: /下载未完成/ })).toContainText("旧版 PDF 仍可离线使用");
   await context.setOffline(false);
@@ -78,8 +79,8 @@ test("expired but uncleaned trash cannot be restored through a real browser sess
   const restored = await page.evaluate(async ({ choirId, scoreId }) => (await fetch(`/api/choirs/${choirId}/scores/${scoreId}/restore`, { method: "POST" })).status, { choirId: fixture.choirId, scoreId: fixture.scoreId });
   assert.equal(restored, 404);
   await page.getByRole("button", { name: "打开云盘菜单", exact: true }).click();
-  await page.getByRole("menuitem", { name: "回收站", exact: true }).click();
-  await page.getByRole("button", { name: "打开回收站", exact: true }).click();
+  await page.getByRole("link", { name: "回收站", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "回收站", exact: true })).toBeVisible();
   await page.getByText("回收站是空的。", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "恢复", exact: true }).count(), 0);
 });
