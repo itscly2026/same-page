@@ -51,7 +51,11 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.getByRole("heading", { name: "我已加入的云盘" }).waitFor();
     assert.equal(new URL(page.url()).pathname, "/drives");
     await page.getByRole("link", { name: "合谱 Same Page 首页" }).click();
-    await page.getByRole("heading", { name: "我已加入的云盘" }).waitFor();
+    await page.getByRole("heading", { name: "Harmony begins on the Same Page", exact: true }).waitFor();
+    assert.equal(new URL(page.url()).pathname, "/");
+    await page.getByRole("link", { name: "我的云盘", exact: true }).click();
+    await page.getByRole("heading", { name: "我已加入的云盘", exact: true }).waitFor();
+    assert.equal(new URL(page.url()).pathname, "/drives");
     await page.getByRole("link", { name: /示例云盘/ }).click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });
     await page.getByRole("button", { name: "打开云盘菜单" }).focus();

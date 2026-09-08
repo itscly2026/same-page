@@ -462,7 +462,7 @@ export default function AuthPage() {
     const isCurrent = captureSettingsLifetime(entryLifetimeRef);
     setSubmitting(true);
     await cancelDriveEntry(pendingEntryRef.current);
-    if (isCurrent()) await navigate("/drives");
+    if (isCurrent()) await navigate("/", { state: { home: true } });
   };
 
   const joinCurrentGuestChoir = async (event: FormEvent) => {
