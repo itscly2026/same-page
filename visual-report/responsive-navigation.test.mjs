@@ -69,8 +69,11 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
     t.after(() => browser.close());
     const page = await openPage(browser, footerIdentity);
     await page.setViewportSize({ width: 320, height: 800 });
-    await page.goto(`${origin}/?choose=1`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("heading", { name: footerIdentity === "guest" ? "Harmony begins on the Same Page" : "我已加入的云盘", exact: true }).waitFor();
+    await page.goto(`${origin}/privacy`, { waitUntil: "domcontentloaded" });
+    await page.getByRole("heading", { name: "隐私政策", exact: true }).waitFor();
+    await page.getByRole("link", { name: "合谱 Same Page 首页", exact: true }).click();
+    await page.getByRole("heading", { name: "Harmony begins on the Same Page", exact: true }).waitFor();
+    assert.equal(new URL(page.url()).pathname, "/");
     assert.equal(await page.getByRole("button", { name: "帮助与关于", exact: true }).count(), 0);
     assert.equal(await page.getByRole("banner").getByRole("link", { name: "故障诊断", exact: true }).count(), 0);
     const footer = page.getByRole("contentinfo");
