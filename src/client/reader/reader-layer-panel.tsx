@@ -158,18 +158,23 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
           ))}
         </div>
       </div>
-      {personalLayers.length > 0 && <div className="layer-section layer-section--personal">
-        <div className="layer-section__heading"><h3>个人层</h3>{signedIn && <Button aria-label="个人层更多操作" aria-expanded={managing} onPress={() => setManaging(!managing)}>⋯</Button>}</div>
-        {managing && <Button isDisabled={pending} onPress={() => void personalRequest("layers?state=deleted", "GET")}>已删除个人层</Button>}
+      {(personalLayers.length > 0 || signedIn) && <div className="layer-section layer-section--personal">
+        <div className="layer-section__heading"><h3>个人层</h3></div>
         {personalLayers.map(layer => <PersonalLayerCard key={layer.id} layer={layer} workspace={workspace} pending={pending || !signedIn}
           onChange={change => personalRequest(`personal-layers/${layer.id}`, "PUT", { ...change, expectedRevision: layer.revision ?? 0 })}
           onSubscribe={subscribed => void personalRequest(`personal-layers/${layer.id}/subscription`, "PUT", { subscribed })} />)}
         {signedIn && <>
-          {!creating ? <Button className="personal-layer-create" isDisabled={pending} onPress={() => setCreating(true)}>＋ 新建个人层</Button> : <form onSubmit={event => { event.preventDefault(); void personalRequest("personal-layers", "POST", { id: crypto.randomUUID(), name: newName.trim() }).then(saved => { if (saved) setCreating(false); }); }}>
+          <div className="personal-layer-footer">
+            {!creating && <Button className="personal-layer-create" isDisabled={pending} onPress={() => setCreating(true)}>＋ 新建个人层</Button>}
+            <Button className="personal-layer-deleted" isDisabled={pending} aria-expanded={managing}
+              onPress={() => { if (managing) setManaging(false); else void personalRequest("layers?state=deleted", "GET").then(loaded => { if (loaded) setManaging(true); }); }}>已删除个人层</Button>
+          </div>
+          {creating && <form onSubmit={event => { event.preventDefault(); void personalRequest("personal-layers", "POST", { id: crypto.randomUUID(), name: newName.trim() }).then(saved => { if (saved) setCreating(false); }); }}>
             <input aria-label="新个人层名称" placeholder="例如：排练记录" required maxLength={60} value={newName} onChange={event => setNewName(event.target.value)} />
             <button disabled={pending || !newName.trim()}>新建个人层</button>
           <Button isDisabled={pending} onPress={() => setCreating(false)}>取消</Button>
           </form>}
+          {managing && deleted.length === 0 && <p className="reader-layer-help" role="status">没有可恢复的个人层。</p>}
           {managing && deleted.map(layer => <div key={layer.id}>{layer.name}<Button isDisabled={pending}
             onPress={() => void personalRequest(`personal-layers/${layer.id}`, "PUT", { action: "restore", expectedRevision: layer.revision })}>恢复 {layer.name}</Button></div>)}
         </>}

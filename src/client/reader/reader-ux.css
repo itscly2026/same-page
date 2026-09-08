@@ -158,7 +158,10 @@
 .reader-layer-panel .personal-layer-actions button { width: auto; padding: .5rem .65rem; font-size: .8rem; background: transparent; }
 .reader-layer-panel .personal-layer-actions .personal-layer-delete { color: #a12a2a; margin-left: auto; }
 .personal-layer-audience { margin: 0 .75rem .5rem; color: #737373; font-size: .75rem; }
-.reader-layer-panel .personal-layer-create { margin-top: .5rem; background: transparent; color: #555; }
+.personal-layer-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .25rem; margin-top: .5rem; }
+.reader-layer-panel .personal-layer-footer button { width: auto; min-height: 44px; border: 0; background: transparent; padding: .5rem .35rem; box-shadow: none; }
+.reader-layer-panel .personal-layer-create { color: #444; }
+.reader-layer-panel .personal-layer-deleted { margin-left: auto; color: #666; font-size: .8rem; text-decoration: underline; text-decoration-color: #bbb; text-underline-offset: 3px; }
 .reader-shell .annotation-tool-divider { border-left: 1px solid #ddd; border-radius: 0; }
 @media (max-width: 640px) {
   .reader-shell .annotation-controls { display: grid; grid-template-columns: minmax(0, 1fr) 44px auto; width: 288px; max-width: calc(100vw - 24px); }
