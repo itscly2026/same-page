@@ -491,6 +491,25 @@ h1 {
   min-width: 0;
 }
 
+.marketing-animation {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.marketing-animation img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.marketing-animation:focus-visible {
+  outline: 2px solid #014653;
+  outline-offset: 4px;
+}
+
 .marketing-feature__copy {
   width: 100%;
   max-width: 36rem;

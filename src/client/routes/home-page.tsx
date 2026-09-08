@@ -1,4 +1,5 @@
 import { activateGuestLocalOwner } from "../platform/local-workspace";
+import { FeatureAnimation } from "../components/feature-animation";
 import { enterDrive, joinDrive, cancelDriveEntry, type DriveEntryResult } from "../auth/drive-entry";
 import { invalidateSettingsLifetime, useSettingsLifetime } from "../settings/use-settings-lifetime";
 import { InstallButton } from "../install/install-entry";
@@ -28,7 +29,10 @@ import {
   type ChoirSummary,
 } from "../../shared/choirs";
 import sharedLayersIllustration from "../assets/home/shared-layers.webp";
+import sharedLayersAnimation from "../assets/home/shared-layers-animation.webp";
+import personalLayerAnimation from "../assets/home/personal-layer-animation.webp";
 import personalLayerIllustration from "../assets/home/personal-layer.webp";
+import replacePdfAnimation from "../assets/home/replace-pdf-animation.webp";
 import replacePdfIllustration from "../assets/home/replace-pdf.webp";
 import offlineSyncIllustration from "../assets/home/offline-sync.webp";
 import everyDeviceIllustration from "../assets/home/every-device.webp";
@@ -327,7 +331,13 @@ function HomeContent({ identity, startup, linkInvite, finishInvitation }: { iden
                   {feature.description}
                 </p>
               </div>
-              <img
+              {index < 3 ? (
+                <FeatureAnimation
+                  illustration={feature.illustration}
+                  animation={index === 0 ? sharedLayersAnimation : index === 1 ? personalLayerAnimation : replacePdfAnimation}
+                  label={feature.title}
+                />
+              ) : <img
                 className="marketing-feature__illustration"
                 src={feature.illustration}
                 alt=""
@@ -335,7 +345,7 @@ function HomeContent({ identity, startup, linkInvite, finishInvitation }: { iden
                 height={1024}
                 loading="lazy"
                 decoding="async"
-              />
+              />}
             </article>
           ))}
         </section>
