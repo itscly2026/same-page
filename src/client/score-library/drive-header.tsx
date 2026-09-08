@@ -23,9 +23,9 @@ export function DriveHeader({ choirId, choirName, userId, search, onSearch, onRe
   return <>
     <header className="drive-header">
       <Button ref={trigger} className="icon-button" aria-label="打开云盘菜单" onPress={() => setDrawerOpen(true)}><MenuIcon aria-hidden="true" size={23} /></Button>
-      <div className="drive-header__identity"><strong title={choirName}>{choirName}</strong><Form className="library-search drive-search" role="search" onSubmit={event => { event.preventDefault(); onRefresh(); }}>
+      <Form className="library-search drive-search" role="search" onSubmit={event => { event.preventDefault(); onRefresh(); }}>
         <TextField value={search} onChange={onSearch} aria-label={`搜索「${choirName}」中的乐谱`}><Input type="search" placeholder="搜索乐谱" /></TextField>
-      </Form></div>
+      </Form>
       {userId ? <PersonalMenu /> : resolvingIdentity ? <span className="drive-avatar" aria-label="正在恢复用户">我</span> : <Link className="drive-avatar" aria-label="登录或注册" to="/login">访</Link>}
     </header>
     <ModalOverlay className="drive-drawer-overlay" isOpen={drawerOpen && !loading} onOpenChange={setDrawerOpen} isDismissable>

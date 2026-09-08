@@ -27,7 +27,6 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     const drive = `${app.origin}/choirs/visual-choir`;
     await page.goto(drive);
     await page.getByRole("searchbox").fill("排练");
-    await expect(page.locator(".drive-header__identity > strong")).toBeVisible();
     await page.getByRole("button", { name: "打开云盘菜单" }).click();
     await page.getByRole("link", { name: "成员与权限", exact: true }).click();
     await expect(page.getByRole("heading", { name: "成员与权限" })).toBeVisible();
