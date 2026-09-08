@@ -16,9 +16,8 @@ test("shared-layer overview leads to details, explicitly saves edits and persist
   });
   await page.goto(`${app.origin}/choirs/visual-choir`);
   await page.getByRole("button", { name: "打开云盘菜单", exact: true }).click();
-  assert.equal(await page.getByRole("menuitem", { name: "成员与权限" }).getAttribute("href"), "/choirs/visual-choir/memberships");
-  await page.getByRole("menuitem", { name: "共享层", exact: true }).click();
-  await page.getByRole("link", { name: "管理共享层配置", exact: true }).click();
+  assert.equal(await page.getByRole("link", { name: "成员与权限" }).getAttribute("href"), "/choirs/visual-choir/memberships");
+  await page.getByRole("link", { name: "共享层", exact: true }).click();
   await page.getByRole("button", { name: "上移 Tenor" }).click();
   await page.getByText("顺序已保存。", { exact: true }).waitFor();
   await page.getByRole("button", { name: "上移 Tenor" }).waitFor();

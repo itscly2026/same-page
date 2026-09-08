@@ -28,7 +28,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.goto(`${app.origin}/choirs/visual-choir`);
     const fab = page.getByRole("button", { name: "上传 PDF", exact: true });
     await fab.waitFor();
-    await page.getByRole("button", { name: "此云盘设置" }).waitFor();
+    await page.getByRole("button", { name: "我的" }).waitFor();
     assert.equal(await page.locator(".brand-link").count(), 0);
     const output = "artifacts/verification/drive-navigation";
     await mkdir(output, { recursive: true });
@@ -42,10 +42,10 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.evaluate(() => history.back());
     await page.getByRole("heading", { name: "Previous document" }).waitFor();
     await page.goto(`${app.origin}/choirs/visual-choir`);
-    await page.getByRole("button", { name: "此云盘设置" }).waitFor();
+    await page.getByRole("button", { name: "我的" }).waitFor();
     await page.getByRole("button", { name: "打开云盘菜单" }).click();
     await page.getByRole("dialog", { name: "云盘菜单" }).waitFor();
-    assert.equal(await page.getByRole("menuitem", { name: "成员与权限" }).getAttribute("href"), "/choirs/visual-choir/memberships");
+    assert.equal(await page.getByRole("link", { name: "成员与权限" }).getAttribute("href"), "/choirs/visual-choir/memberships");
     await page.screenshot({ path: `${output}/${name}-drawer.png` });
     await page.getByRole("link", { name: "云盘列表", exact: true }).click();
     await page.getByRole("heading", { name: "我已加入的云盘" }).waitFor();

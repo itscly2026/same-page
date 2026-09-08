@@ -3,9 +3,9 @@ import { Dialog as AriaDialog, OverlayTriggerStateContext, type DialogProps, Men
 import { useExitLayer } from "./navigation-context";
 
 // Every mounted dialog participates, including dialogs opened by DialogTrigger.
-export function Dialog({ exitDisabled = false, ...props }: DialogProps & { exitDisabled?: boolean }) {
+export function Dialog({ exitDisabled = false, preserveOnNavigate = false, ...props }: DialogProps & { exitDisabled?: boolean; preserveOnNavigate?: boolean }) {
   const state = useContext(OverlayTriggerStateContext);
-  useExitLayer(Boolean(state?.isOpen), "overlay", () => { if (exitDisabled) return false; state?.close(); return true; });
+  useExitLayer(Boolean(state?.isOpen), "overlay", destination => { if (destination && preserveOnNavigate) return true; if (exitDisabled) return false; state?.close(); return true; });
   return <AriaDialog {...props} />;
 }
 

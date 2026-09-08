@@ -3186,3 +3186,5 @@ h1 {
 .lifecycle-member > summary { cursor: pointer; min-height: 44px; padding: .5rem 0; }
 .lifecycle-member > summary h2 { display: inline; margin: 0; font-size: 1.15rem; }
 .permission-fields .text-button { margin-left: .5rem; min-height: 44px; }
+
+.app-footer a { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }

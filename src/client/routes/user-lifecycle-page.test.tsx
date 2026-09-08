@@ -59,7 +59,7 @@ it("keeps deletion behind a secondary entry", async () => {
 it("keeps ordinary personal settings available when lifecycle service fails", () => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
   render(<MemoryRouter><PersonalSettingsPage /></MemoryRouter>);
-  expect(screen.getByRole("button", { name: "应用菜单" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "退出登录" })).toBeVisible();
   expect(screen.getByRole("link", { name: "删除用户" })).toHaveAttribute("href", "/user/lifecycle");
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -89,8 +89,8 @@ it("does not navigate from an old restore after leaving the lifecycle page", asy
   </Routes></MemoryRouter>);
   fireEvent.click(await screen.findByRole("button", { name: "确认恢复用户" }));
   await waitFor(() => expect(release).toBeTypeOf("function"));
-  fireEvent.click(screen.getByRole("button", { name: "返回个人设置" }));
-  await screen.findByRole("heading", { name: "个人设置" });
+  fireEvent.click(screen.getByRole("button", { name: "返回" }));
+  await screen.findByRole("heading", { name: "账户" });
   await act(async () => release());
-  expect(screen.getByRole("heading", { name: "个人设置" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "账户" })).toBeVisible();
 });

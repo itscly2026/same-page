@@ -1,3 +1,4 @@
+import { loginHref } from "../auth/login-return";
 import { resolveSharedLayerPreference, annotationLayerListResponseSchema } from "../../shared/annotations";
 import { useEffect, useRef, useState } from "react";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
@@ -131,7 +132,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
 
   return (
     <section className="reader-layer-panel" aria-label="看哪些笔记" aria-busy={pending}>
-      <p className="reader-layer-help">此处设置仅影响本谱，默认值可在<Link to={`/choirs/${workspace.choirId}/preferences`}>云盘个人设置</Link>中调整。</p>
+      <p className="reader-layer-help">仅这份谱 · 仅我。更改自动保存。{signedIn ? <Link to={`/choirs/${workspace.choirId}/preferences`}>此云盘的默认显示</Link> : <Link to={loginHref(`/choirs/${workspace.choirId}/scores/${workspace.scoreId}`, "layers")}>登录后设置默认显示</Link>}</p>
       <div className="layer-section">
         <div className="layer-section__heading">
           <div><h3>共享层</h3></div>

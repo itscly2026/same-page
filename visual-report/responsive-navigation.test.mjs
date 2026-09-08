@@ -40,7 +40,7 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
       const search = await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).boundingBox();
       const sort = await page.getByRole("combobox", { name: "乐谱排序" }).boundingBox();
       const menu = await page.getByRole("button", { name: "打开云盘菜单" }).boundingBox();
-      const avatar = await page.getByRole("button", { name: "此云盘设置" }).boundingBox();
+      const avatar = await page.getByRole("button", { name: "我的" }).boundingBox();
       assert.ok(menu.x + menu.width <= search.x && search.x + search.width <= avatar.x, `${width}: search sits between navigation and avatar`);
       assert.ok(Math.abs(search.y + search.height / 2 - avatar.y - avatar.height / 2) < 2, `${width}: header controls share a row`);
       assert.ok(sort.x >= toolbar.x && sort.x + sort.width <= toolbar.x + toolbar.width, "sort remains inside the toolbar");
@@ -71,28 +71,34 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
     await page.setViewportSize({ width: 320, height: 800 });
     await page.goto(`${origin}/privacy`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "隐私政策", exact: true }).waitFor();
+    await page.getByRole("button", { name: "返回", exact: true }).click();
+    await page.getByRole("heading", { name: "关于合谱", exact: true }).waitFor();
+    await page.getByRole("button", { name: "返回", exact: true }).click();
     await page.getByRole("link", { name: "合谱 Same Page 首页", exact: true }).click();
     await page.getByRole("heading", { name: "Harmony begins on the Same Page", exact: true }).waitFor();
     assert.equal(new URL(page.url()).pathname, "/");
     assert.equal(await page.getByRole("button", { name: "帮助与关于", exact: true }).count(), 0);
     assert.equal(await page.getByRole("banner").getByRole("link", { name: "故障诊断", exact: true }).count(), 0);
     const footer = page.getByRole("contentinfo");
-    for (const name of ["故障诊断", "隐私政策"]) {
+    for (const name of ["帮助", "关于合谱"]) {
       const item = footer.getByRole("link", { name, exact: true });
       const box = await item.boundingBox();
       assert.ok(box.height >= 44 && box.width >= 44);
     }
-    const privacy = footer.getByRole("link", { name: "隐私政策", exact: true });
+    const privacy = footer.getByRole("link", { name: "关于合谱", exact: true });
     await privacy.focus();
     await capture(page, `${engineName}-help-${footerIdentity}-320`);
     await page.evaluate(() => { window.__layoutDocumentMarker = "same-document"; });
     await privacy.press("Enter");
+    await page.getByRole("link", { name: "隐私政策", exact: true }).press("Enter");
     await page.getByRole("heading", { name: "隐私政策", exact: true }).waitFor();
     assert.equal(new URL(page.url()).pathname, "/privacy");
     assert.equal(await page.evaluate(() => window.__layoutDocumentMarker), "same-document");
     assert.equal(await page.getByRole("contentinfo").count(), 0);
     await page.goBack();
-    await footer.getByRole("link", { name: "故障诊断", exact: true }).press("Enter");
+    await page.goBack();
+    await footer.getByRole("link", { name: "帮助", exact: true }).press("Enter");
+    await page.getByRole("link", { name: "故障诊断", exact: true }).press("Enter");
     await page.getByText("查看诊断内容", { exact: true }).click();
     await page.getByRole("textbox", { name: "可发送给支持人员的诊断内容" }).waitFor();
     assert.equal(new URL(page.url()).pathname, "/diagnostics");

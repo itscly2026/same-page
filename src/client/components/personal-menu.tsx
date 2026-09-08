@@ -12,7 +12,8 @@ export function PersonalMenu({ email }: { email?: string | null }) {
     <Button className="drive-avatar" aria-label="我的">{initial ?? <UserRound aria-hidden="true" size={20} />}</Button>
     <Popover className="file-menu-popover account-menu-popover"><Menu aria-label="我的">
       <MenuItem isDisabled>{realEmail ?? "已登录"}</MenuItem>
-      <MenuItem href="/user">个人设置</MenuItem>
+      <MenuItem href="/user">账户</MenuItem>
+      <MenuItem href="/help">帮助</MenuItem><MenuItem href="/about">关于合谱</MenuItem>
       <MenuItem onAction={() => void logout.request()}>退出登录</MenuItem>
     </Menu></Popover>
   </MenuTrigger>;

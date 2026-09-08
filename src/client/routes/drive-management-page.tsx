@@ -5,8 +5,7 @@ import { Button } from "react-aria-components";
 import { Link, useParams } from "react-router-dom";
 import { LockKeyhole } from "lucide-react";
 import { authClient } from "../auth/auth-client";
-import { AppHeader } from "../components/app-header";
-import { BackButton } from "../navigation/back-button";
+import { TaskHeader } from "../components/task-header";
 import { driveManagementSchema } from "../../shared/drive-management";
 import { managedMembershipsSchema } from "../../shared/lifecycle";
 import { operationLabels, type Operation } from "../../shared/drive-permissions";
@@ -14,12 +13,12 @@ import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnos
 import { SettingsRequestError, settingsError } from "../settings/settings-request";
 import { DriveSettingsDialog } from "../score-library/drive-settings-dialog";
 import { InviteCodeDialog } from "../score-library/invite-code-dialog";
-import { TrashDialog } from "../score-library/trash-dialog";
+import { TrashContents } from "../score-library/trash-contents";
 
 type Overview = ReturnType<typeof driveManagementSchema.parse>;
 type Members = ReturnType<typeof managedMembershipsSchema.parse>;
-export default function DriveManagementPage() {
-  const { choirId = "", section = "info" } = useParams();
+export default function DriveManagementPage({ section }: { section: "info" | "admission" | "trash" }) {
+  const { choirId = "" } = useParams();
   const session = authClient.useSession();
   return <DriveManagement key={`${session.data?.user.id ?? "guest"}:${choirId}`} choirId={choirId} section={section} />;
 }
@@ -27,7 +26,7 @@ function DriveManagement({ choirId, section }: { choirId: string; section: strin
   const [data, setData] = useState<{ overview: Overview; members: Members } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [dialog, setDialog] = useState<"name" | "invite" | "trash" | null>(null);
+  const [dialog, setDialog] = useState<"name" | "invite" | null>(null);
   const [locked, setLocked] = useState<Operation | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -54,23 +53,18 @@ function DriveManagement({ choirId, section }: { choirId: string; section: strin
       {locked === operation && <div className="permission-lock-explanation" role="status"><p>需要“{operationLabels[operation]}”权限。</p><p>处理此项可联系 {contacts(operation)}。</p>{contacts(operation) !== contacts(operation, "management") && <p>申请授权可联系 {contacts(operation, "management")}。</p>}<Link to={`/choirs/${choirId}/memberships`}>查看权限分工</Link></div>}
     </section>;
   }
-  return <div className="app-page"><AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回</BackButton>} /><main className="page-shell settings-page settings-ux">
-    <header className="settings-heading"><h1>{{ info: "基本信息", admission: "加入方式", layers: "共享层", trash: "回收站" }[section] ?? "云盘设置"}</h1><p>{data?.overview.name ?? "查看配置与权限分工"}</p></header>
+  return <div className="app-page"><TaskHeader title={{ info: "基本信息", admission: "加入方式", trash: "回收站" }[section] ?? "云盘管理"} backTo={`/choirs/${choirId}`} /><main className="page-shell settings-page settings-ux">
+    <header className="settings-heading"><p>{data?.overview.name ?? "查看配置与权限分工"}</p></header>
     {!data && <p role={error ? "alert" : "status"}>{error ?? "正在读取云盘设置…"}</p>}
     {error && <Button className="secondary-button" onPress={refresh}>重新读取</Button>}
     {data && <>
       <div className="management-list">
         {section === "info" && row("云盘名称", data.overview.name, "修改云盘名称", "editDriveInfo", () => setDialog("name"))}
         {section === "admission" && (data.overview.guestAdmissionMode === "invite" ? row("访客进入方式", "需要邀请码", "查看与轮换邀请码", "manageInvites", () => setDialog("invite")) : <section className="management-row"><h2>访客进入方式</h2><p>开放进入</p></section>)}
-        {section === "layers" && <>
-          <ul className="shared-layer-summary">{data.overview.layers.map(layer => <li key={layer.slot}><strong>{layer.name}</strong><span>{layer.active ? "启用" : "停用"}</span></li>)}</ul>
-          {row("共享层配置", "供成员共同查看和使用的笔记层", "管理共享层配置", "configureLayers", `/choirs/${choirId}/shared-layers`)}
-        </>}
-        {section === "trash" && row("回收站", "删除的乐谱保留三十天", "打开回收站", "trashFiles", () => setDialog("trash"))}
+        {section === "trash" && (can("trashFiles") ? <TrashContents choirId={choirId} onRestored={() => {}} /> : row("回收站", "恢复文件需要删除与恢复文件权限。", "查看权限说明", "trashFiles", () => {}))}
       </div>
       {dialog === "name" && can("editDriveInfo") && <NameSettings choirId={choirId} onClose={() => setDialog(null)} onSaved={refresh} />}
       {dialog === "invite" && can("manageInvites") && <InviteCodeDialog choirId={choirId} choirName={data.overview.name} onClose={() => setDialog(null)} />}
-      {dialog === "trash" && can("trashFiles") && <TrashDialog choirId={choirId} onClose={() => setDialog(null)} onRestored={refresh} />}
     </>}
   </main></div>;
 }

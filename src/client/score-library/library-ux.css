@@ -87,3 +87,13 @@
 .drive-connection-notice p { margin: 0; padding: .5rem .75rem; }
 
 .drive-connection-notice summary { padding: .5rem .75rem; cursor: pointer; }
+
+.drive-header__identity { flex: 1; min-width: 0; }
+.drive-header__identity > strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: .9rem; }
+.drive-drawer-management nav { display: grid; }
+.drive-drawer-management > a, .drive-drawer-management nav > a, .drive-drawer-management nav > span, .drive-drawer-management > button { display: flex; align-items: center; min-height: 44px; padding: .5rem .75rem; text-decoration: none; color: inherit; }
+.drive-drawer .dialog-heading { display: flex; align-items: center; justify-content: space-between; }
+.offline-score-control { display: flex; flex-direction: column; align-items: center; }
+.offline-score-label { font-size: .7rem; white-space: nowrap; }
+.drive-header > .icon-button, .drive-header > .drive-avatar { align-self: flex-end; margin-bottom: 2px; }
+.drive-drawer-content { max-height: calc(100dvh - 2rem); overflow-y: auto; }

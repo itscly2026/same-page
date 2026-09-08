@@ -71,7 +71,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, authenticatedS
       </Button>
       <Tooltip className="offline-score-tooltip">{description}</Tooltip>
     </TooltipTrigger>
-    {!detailsOpen && <span className="visually-hidden" role="status">{description}</span>}
+    {!detailsOpen && <span className="offline-score-label" role="status">{!inspected ? "检查中" : { downloading: "正在下载", error: "下载失败", stale: "需更新", ready: "可离线", missing: "待下载" }[state]}</span>}
     <Popover triggerRef={triggerRef} isOpen={detailsOpen} onOpenChange={setDetailsOpen} placement="bottom end" className="offline-score-popover">
       <Dialog id={detailsId} className="offline-score-details">
         <Heading slot="title"><HardDriveDownload aria-hidden="true" size={18} />离线副本</Heading>

@@ -1,3 +1,4 @@
+import { useUnsavedChanges } from "../settings/use-unsaved-changes";
 import { SettingsFeedback } from "../settings/settings-feedback";
 import { runSettingsMutation, settingsMutationMessage } from "../settings/settings-mutation";
 import { SettingsRequestError, settingsError } from "../settings/settings-request";
@@ -5,13 +6,12 @@ import { useSettingsLifetime } from "../settings/use-settings-lifetime";
 import { PermissionMatrix } from "../settings/permission-matrix";
 import { ConfirmDialog, type Confirmation } from "../settings/confirm-dialog";
 import { authClient } from "../auth/auth-client";
-import { BackButton } from "../navigation/back-button";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "react-aria-components";
 import { useParams } from "react-router-dom";
 import { managedMembershipsSchema } from "../../shared/lifecycle";
 import { allPermissions, isDelegated, operationLabels, operationKeys, includesLayer, type PermissionSet } from "../../shared/drive-permissions";
-import { AppHeader } from "../components/app-header";
+import { TaskHeader } from "../components/task-header";
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
 
 type State = ReturnType<typeof managedMembershipsSchema.parse>;
@@ -24,6 +24,8 @@ export default function MembershipManagementPage() {
 }
 function MembershipManagement({ choirId }: { choirId: string }) {
   const lifetime = useSettingsLifetime();
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("active");
   const [view, setView] = useState<"member" | "permission">("member");
   const [permission, setPermission] = useState("uploadFiles");
   const [editingMember, setEditingMember] = useState("");
@@ -65,14 +67,14 @@ function MembershipManagement({ choirId }: { choirId: string }) {
     } finally { if (generation === lifetime.current) setLoading(false); }
   };
   const mutate = async (path: string, body: unknown, method = "POST", draftId?: string) => {
-    if (busy || loading || needsRefresh) return;
+    if (busy || loading || needsRefresh) return false;
     const generation = lifetime.current;
     setBusy(true); setMessage(null);
     const result = await runSettingsMutation(
       () => diagnosticFetch(`/api/choirs/${choirId}/${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
       async () => { if (generation === lifetime.current) await reload(); },
     );
-    if (generation !== lifetime.current) return;
+    if (generation !== lifetime.current) return false;
     setMessage(settingsMutationMessage(result));
     if (draftId && (result.kind === "saved" || result.kind === "saved-refresh-failed")) setDrafts(current => {
       const next = { ...current }; delete next[draftId]; return next;
@@ -80,11 +82,24 @@ function MembershipManagement({ choirId }: { choirId: string }) {
     if (result.kind === "revoked") setState(null);
     if (["unconfirmed", "revoked", "saved-refresh-failed"].includes(result.kind) || (result.kind === "failed" && result.error instanceof SettingsRequestError && result.error.status === 409)) setNeedsRefresh(true);
     setBusy(false);
+    return result.kind === "saved";
   };
-  return <div className="app-page"><AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回</BackButton>} /><main className="page-shell settings-page settings-ux lifecycle-page">
-    <header className="settings-heading"><h1>成员与权限</h1><p>找有权处理问题的人，或查看成员的权限。</p></header>
+  const dirtyMembers = state?.memberships.filter(member => drafts[member.id] && !sameMemberPermissions(drafts[member.id], member)) ?? [];
+  const exitDialog = useUnsavedChanges({ dirty: dirtyMembers.length > 0,
+    discard: () => setDrafts({}),
+    save: async () => {
+      for (const member of dirtyMembers) {
+        if (!await mutate(`memberships/${member.id}/permissions`, { expectedRevision: member.revision, ...drafts[member.id] }, "PUT", member.id)) return false;
+      }
+      return true;
+    },
+  });
+  return <div className="app-page"><TaskHeader title={"成员与权限"} backTo={`/choirs/${choirId}`} /><main className="page-shell settings-page settings-ux lifecycle-page">
+    {exitDialog}<header className="settings-heading"><p>找有权处理问题的人，或查看成员的权限。</p></header>
     {state && <>
       <div className="settings-actions" aria-label="权限查看方式"><Button className="secondary-button" aria-pressed={view === "member"} onPress={() => setView("member")}>按成员</Button><Button className="secondary-button" aria-pressed={view === "permission"} onPress={() => setView("permission")}>按权限</Button></div>
+      {view === "member" && <div className="member-filters"><label>搜索成员<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="云盘内显示名" /></label><label>成员状态<select value={status} onChange={event => setStatus(event.target.value)}><option value="active">活动成员</option><option value="removed">已移除成员</option></select></label></div>}
+      {dirtyMembers.length > 0 && <p role="status">{dirtyMembers.length} 位成员的权限未保存</p>}
       {view === "permission" && <div className="permission-filter"><label>选择权限<select value={permission} onChange={event => { setPermission(event.target.value); setEditingMember(""); }}>{operationKeys.map(key => <option key={key} value={key}>{operationLabels[key]}</option>)}<option value="all-layers">编辑全部共享层（包括未来新增层）</option>{layers.map(layer => <option key={layer.slot} value={`layer:${layer.slot}`}>编辑 {layer.name}</option>)}</select></label></div>}
     </>}
     {state && view === "permission" && <>
@@ -92,12 +107,12 @@ function MembershipManagement({ choirId }: { choirId: string }) {
       <PermissionPeople title="可以授权" members={state.memberships.filter(member => member.status === "active" && (member.isOwner || hasPermission(member.management, permission)))} />
       {state.capabilities.isOwner || hasPermission(state.capabilities.management, permission) ? <details className="permission-edit-entry"><summary>调整此项权限</summary><label>选择成员<select value={editingMember} onChange={event => setEditingMember(event.target.value)}><option value="">选择要调整的成员</option>{state.memberships.filter(member => member.status === "active" && (state.capabilities.isOwner || !member.isOwner && !isDelegated(member.management) && member.id !== state.actorId)).map(member => <option key={member.id} value={member.id}>{member.displayName}</option>)}</select></label><p className="settings-copy">受托人只能调整普通成员，不能为自己或其他受托人授权。</p></details> : <p className="settings-copy permission-note">这项权限不在你的授权管理范围内。需要调整时，请联系上方可以授权的成员。</p>}
     </>}
-    {state?.memberships.filter(member => view === "member" || member.id === editingMember).map(member => <MemberEditor focus={view === "permission" ? permission : undefined} key={`${member.id}:${member.revision}:${state.capabilities.isOwner}`} member={member} state={state} layers={layers} busy={busy || loading || needsRefresh} draft={drafts[member.id]} onDraft={draft => setDrafts(current => ({ ...current, [member.id]: draft }))}
+    {state?.memberships.filter(member => view === "member" ? member.status === status && member.displayName.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) : member.id === editingMember).map(member => <MemberEditor focus={view === "permission" ? permission : undefined} key={`${member.id}:${member.revision}:${state.capabilities.isOwner}`} member={member} state={state} layers={layers} busy={busy || loading || needsRefresh} draft={drafts[member.id]} cancel={() => setDrafts(current => { const next = { ...current }; delete next[member.id]; return next; })} onDraft={draft => setDrafts(current => ({ ...current, [member.id]: draft }))}
       save={(operations, management) => void mutate(`memberships/${member.id}/permissions`, { expectedRevision: member.revision, operations, management }, "PUT", member.id)}
-      change={action => setConfirmation({ title: action === "restore" ? "恢复成员关系" : "移除成员", action: action === "restore" ? "确认恢复" : "确认移除", destructive: action === "remove", message: action === "restore" ? "恢复成员关系和保留期内的个人层，不恢复旧权限、管理范围或分享。" : "立即撤销成员权限；断网设备已下载的内容无法即时撤回。", onConfirm: () => mutate(`memberships/${member.id}`, { action, expectedRevision: member.revision }) })}
+      change={action => setConfirmation({ title: action === "restore" ? "恢复成员关系" : "移除成员", action: action === "restore" ? "确认恢复" : "确认移除", destructive: action === "remove", message: action === "restore" ? "恢复成员关系和保留期内的个人层，不恢复旧权限、管理范围或分享。" : "立即撤销成员权限；断网设备已下载的内容无法即时撤回。", onConfirm: async () => { await mutate(`memberships/${member.id}`, { action, expectedRevision: member.revision }); } })}
       transfer={() => {
         const former = state.memberships.find(row => row.id === state.actorId)!;
-        setConfirmation({ title: "转让拥有权", action: "确认转让", message: `将拥有权转让给「${member.displayName}」？转让后你保留的显式操作权限：${describe(former.operations, layers)}；授权管理范围：${describe(former.management, layers)}。你将不能再转让拥有权或任命受托人。`, onConfirm: () => mutate("ownership", { membershipId: member.id, confirm: true }) });
+        setConfirmation({ title: "转让拥有权", action: "确认转让", message: `将拥有权转让给「${member.displayName}」？转让后你保留的显式操作权限：${describe(former.operations, layers)}；授权管理范围：${describe(former.management, layers)}。你将不能再转让拥有权或任命受托人。`, onConfirm: async () => { await mutate("ownership", { membershipId: member.id, confirm: true }); } });
       }} />)}
     {state?.capabilities.isOwner && <AuditLog choirId={choirId!} revision={state.memberships.map(m => m.revision).join(":")} />}
     <SettingsFeedback loading={loading} loadError={null} message={message} retry={() => void reload().catch(() => undefined)} />
@@ -111,13 +126,14 @@ function PermissionPeople({ title, members }: { title: string; members: Member[]
 function describe(set: PermissionSet, layers: Layer[]): string {
   return [...set.operations.map(key => operationLabels[key]), ...(set.sharedLayers === "all" ? ["全部共享层（包括未来新增层）"] : set.sharedLayers.map(slot => layers.find(layer => layer.slot === slot)?.name ?? slot))].join("、") || "无";
 }
-function MemberEditor({ focus, member, state, layers, busy, save, change, transfer, draft, onDraft }: { focus?: string; draft?: { operations: PermissionSet; management: PermissionSet }; onDraft: (draft: { operations: PermissionSet; management: PermissionSet }) => void; member: Member; state: State; layers: Layer[]; busy: boolean; save: (operations: PermissionSet, management: PermissionSet) => void; change: (action: "remove" | "restore") => void; transfer: () => void }) {
+function MemberEditor({ focus, member, state, layers, busy, save, change, transfer, draft, onDraft, cancel }: { cancel(): void; focus?: string; draft?: { operations: PermissionSet; management: PermissionSet }; onDraft: (draft: { operations: PermissionSet; management: PermissionSet }) => void; member: Member; state: State; layers: Layer[]; busy: boolean; save: (operations: PermissionSet, management: PermissionSet) => void; change: (action: "remove" | "restore") => void; transfer: () => void }) {
   const { operations, management } = draft ?? member;
+  const dirty = !sameMemberPermissions({ operations, management }, member);
   const owner = state.capabilities.isOwner;
   const outsideScope = Boolean(focus && !owner && !hasPermission(state.capabilities.management, focus));
   const canAuthorize = !outsideScope && (owner || (isDelegated(state.capabilities.management) && !member.isOwner && !isDelegated(member.management) && member.id !== state.actorId));
   const protectedMember = Boolean(member.isOwner) || isDelegated(member.management);
-  return <details className="lifecycle-member" open={focus ? true : undefined}><summary><h2>{member.displayName}</h2></summary>
+  return <details className="lifecycle-member" open={focus ? true : undefined}><summary><h2>{member.displayName}{member.id === state.actorId ? " · 我" : ""}</h2><span>{member.isOwner ? "拥有者" : isDelegated(member.management) ? "受托权限管理者" : member.status === "removed" ? "已移除" : "成员"}</span></summary>
     <p>{member.status === "removed" ? "已移除" : member.isOwner ? "拥有者" : isDelegated(member.management) ? "受托权限管理者" : "普通成员"}</p>
     {!focus && <><p>操作权限：{describe(member.isOwner ? allPermissions() : member.operations, layers)}</p>
     <p>授权管理范围：{describe(member.isOwner ? allPermissions() : member.management, layers)}</p></>}
@@ -126,8 +142,8 @@ function MemberEditor({ focus, member, state, layers, busy, save, change, transf
     {member.userDeleted ? <p>用户处于删除恢复期，须本人验证并恢复。</p> : member.status === "active" ? <>
       {canAuthorize && <>
         {member.isOwner === 1 && <p>拥有者始终具备全部能力。以下是转让后保留的显式授权。</p>}
-        <PermissionMatrix focus={focus} operations={operations} management={management} onOperations={operations => onDraft({ operations, management })} onManagement={management => onDraft({ operations, management })} scope={owner ? allPermissions() : state.capabilities.management} owner={owner} layers={layers} disabled={busy} />
-        <Button className="primary-button" isDisabled={busy} onPress={() => save(operations, management)}>保存 {member.displayName} 的权限</Button>
+        <details open={focus ? true : undefined}><summary>编辑权限</summary><PermissionMatrix focus={focus} operations={operations} management={management} onOperations={operations => onDraft({ operations, management })} onManagement={management => onDraft({ operations, management })} scope={owner ? allPermissions() : state.capabilities.management} owner={owner} layers={layers} disabled={busy} />
+        <Button className="primary-button" isDisabled={busy || !dirty} onPress={() => save(operations, management)}>保存 {member.displayName} 的权限</Button>{dirty && <><span role="status">未保存</span><Button isDisabled={busy} onPress={cancel}>取消修改</Button></>}</details>
       </>}
       {!member.isOwner && (owner || (!protectedMember && state.capabilities.operations.operations.includes("removeMembers"))) && <details className="member-actions"><summary>成员操作</summary>
         <div className="settings-actions"><Button className="secondary-button destructive-link" isDisabled={busy} onPress={() => change("remove")}>移除 {member.displayName}</Button>
@@ -151,4 +167,10 @@ function auditDescription(json: string): string {
 
 function hasPermission(set: PermissionSet, permission: string): boolean {
   return permission === "all-layers" ? set.sharedLayers === "all" : permission.startsWith("layer:") ? includesLayer(set, permission.slice(6)) : set.operations.some(key => key === permission);
+}
+
+function sameMemberPermissions(left: { operations: PermissionSet; management: PermissionSet }, right: { operations: PermissionSet; management: PermissionSet }) {
+  const same = (a: PermissionSet, b: PermissionSet) => a.operations.length === b.operations.length && a.operations.every(operation => b.operations.includes(operation))
+    && (a.sharedLayers === "all" || b.sharedLayers === "all" ? a.sharedLayers === b.sharedLayers : a.sharedLayers.length === b.sharedLayers.length && a.sharedLayers.every(slot => b.sharedLayers.includes(slot)));
+  return same(left.operations, right.operations) && same(left.management, right.management);
 }
