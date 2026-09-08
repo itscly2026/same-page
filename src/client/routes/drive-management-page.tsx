@@ -62,7 +62,7 @@ function DriveManagement({ choirId }: { choirId: string }) {
         {row("云盘名称", data.overview.name, "修改云盘名称", "editDriveInfo", () => setDialog("name"))}
         {data.overview.guestAdmissionMode === "invite" ? row("访客进入方式", "需要邀请码", "查看与轮换邀请码", "manageInvites", () => setDialog("invite")) : <section className="management-row"><h2>访客进入方式</h2><p>开放进入</p></section>}
         {row("共享层", data.overview.layers.map(layer => `${layer.name}${layer.active ? "" : "（停用）"}`).join(" · ") || "尚未设置", "管理共享层配置", "configureLayers", `/choirs/${choirId}/shared-layers`)}
-        <Link className="management-nav" to={`/choirs/${choirId}/memberships`}><span><strong>成员与权限</strong><small>找负责人、查看或调整权限</small></span><span aria-hidden="true">›</span></Link>
+        <Link className="management-nav" aria-label="成员与权限" aria-describedby="membership-help" to={`/choirs/${choirId}/memberships`}><span><strong>成员与权限</strong><small id="membership-help">找负责人、查看或调整权限</small></span><span aria-hidden="true">›</span></Link>
         {row("回收站", "删除的乐谱保留三十天", "打开回收站", "trashFiles", () => setDialog("trash"))}
       </div>
       {dialog === "name" && can("editDriveInfo") && <DriveSettingsDialog choirId={choirId} field="name" onClose={() => setDialog(null)} onSaved={async () => refresh()} />}
