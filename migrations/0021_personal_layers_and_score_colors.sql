@@ -22,3 +22,8 @@ WHEN OLD.sharing = 1 AND NEW.sharing = 0
 BEGIN
   DELETE FROM personal_layer_subscriptions WHERE layer_id = NEW.id AND user_id <> NEW.owner_user_id;
 END;
+-- Membership/user lifecycle triggers revoke sharing outside the layer API.
+-- Advance metadata revision so an older client cannot republish on restoration.
+CREATE TRIGGER personal_layer_revocation_revision AFTER UPDATE OF sharing ON annotation_layers
+WHEN OLD.sharing = 1 AND NEW.sharing = 0 AND NEW.deleted_at IS NULL AND NEW.revision = OLD.revision
+BEGIN UPDATE annotation_layers SET revision = revision + 1 WHERE id = NEW.id; END;

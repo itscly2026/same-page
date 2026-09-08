@@ -1,6 +1,5 @@
 import { BackButton } from "../navigation/back-button";
 import { SharedLayerDetailsForm } from "../settings/shared-layer-details-form";
-import { sharedLayerLabel } from "../../shared/annotations";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -53,7 +52,7 @@ function SharedLayerDetails({ choirId, slotParam }: { choirId: string; slotParam
     };
   }, [choirId, slot, loadAttempt]);
 
-  const layerName = layer ? sharedLayerLabel(layer.slot, layer.name) : slot ?? "共享层";
+  const layerName = layer ? layer.name : slot ?? "共享层";
 
 
   return (

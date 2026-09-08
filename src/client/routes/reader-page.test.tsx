@@ -1845,6 +1845,16 @@ it("keeps a single exit while the PDF never settles", async () => {
       within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 2 页"),
     ).toBeInTheDocument();
 
+    toggleChrome();
+    const edit = await screen.findByRole("button", { name: "编辑" });
+    fireEvent.click(edit);
+    await screen.findByRole("button", { name: "完成编辑" });
+    expect(screen.queryByLabelText("本地笔记冲突")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("笔记同步异常")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "前往第 2 页" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "完成编辑" }));
+    await screen.findByRole("button", { name: "前往第 2 页" });
+
     view.unmount();
     render(
       <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>

@@ -270,6 +270,43 @@ describe("annotation layers and object synchronization", () => {
     expect(await pull(reader.cookie)).toMatchObject({ objects: [] });
   });
 
+  it("rejects a sharing request suspended across member removal and restoration", async () => {
+    const fixture = await createFixture();
+    const author = await createMember(fixture.joinCode!, "delayed-share@example.test", "作者");
+    const member = await createDatabase(env.DB).query.memberships.findFirst({ where: eq(memberships.userId, author.userId) });
+    const base = `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}`;
+    const layers = await (await callWorker(`${base}/layers`, { headers: { cookie: author.cookie } })).json() as { layers: { id: string; kind: string }[] };
+    const personal = layers.layers.find(layer => layer.kind === "personal")!;
+    const DB = new Proxy(env.DB, { get(db, key) {
+      if (key === "prepare") return (sql: string) => {
+        const statement = db.prepare(sql);
+        if (!sql.startsWith("UPDATE annotation_layers SET\n    name")) return statement;
+        return new Proxy(statement, { get(statement, key) {
+          if (key === "bind") return (...values: unknown[]) => {
+            const bound = statement.bind(...values);
+            return new Proxy(bound, { get(bound, key) {
+              if (key === "run") return async () => {
+                const path = `/api/choirs/${fixture.choirId}/memberships/${member!.id}`;
+                expect((await callWorker(path, jsonRequest(fixture.adminCookie, { action: "remove", expectedRevision: 0 }))).status).toBe(204);
+                expect((await callWorker(path, jsonRequest(fixture.adminCookie, { action: "restore", expectedRevision: 1 }))).status).toBe(204);
+                return bound.run();
+              };
+              const value = Reflect.get(bound, key); return typeof value === "function" ? value.bind(bound) : value;
+            } });
+          };
+          const value = Reflect.get(statement, key); return typeof value === "function" ? value.bind(statement) : value;
+        } });
+      };
+      const value = Reflect.get(db, key); return typeof value === "function" ? value.bind(db) : value;
+    } });
+    const execution = createExecutionContext();
+    const response = await worker.fetch(new Request(`https://same-page.test${base}/personal-layers/${personal.id}`, { ...jsonRequest(author.cookie, { sharing: true, expectedRevision: 0 }), method: "PUT" }), { ...env, DB }, execution);
+    await waitOnExecutionContext(execution);
+    expect(response.status).toBe(409);
+    const readerLayers = await (await callWorker(`${base}/layers`, { headers: { cookie: fixture.adminCookie } })).json() as { layers: { id: string }[] };
+    expect(readerLayers.layers.some(layer => layer.id === personal.id)).toBe(false);
+  });
+
   it.each(["target", "actor"])("rejects a delayed grant across %s membership changes", async (changed) => {
     const fixture = await createFixture();
     const member = await createMember(fixture.joinCode!, "grant-target@example.test", "成员");
@@ -719,6 +756,13 @@ describe("annotation layers and object synchronization", () => {
       driveSubscribed: false,
       scoreSubscriptionOverride: true,
     });
+
+    const secondUpload = await callWorker(`/api/choirs/${fixture.choirId}/scores`, uploadRequest(fixture.adminCookie, "颜色隔离.pdf"));
+    const secondScore = (await secondUpload.json() as { score: { id: string } }).score.id;
+    expect(await layerBySlot({ ...fixture, scoreId: secondScore }, member.cookie, "E")).toMatchObject({ displayColor: "#112233", subscribed: false, colorSource: "drive" });
+    expect(await layerBySlot(fixture, fixture.adminCookie, "E")).toMatchObject({ displayColor: "#dc2626", subscribed: true });
+    await callWorker(drivePath, { ...jsonRequest(member.cookie, { colorOverride: "#778899", subscribed: false }), method: "PUT" });
+    expect(await layerBySlot(fixture, member.cookie, "E")).toMatchObject({ displayColor: "#445566", subscribed: true, colorSource: "score" });
 
     expect((await callWorker(scorePath, {
       ...jsonRequest(member.cookie, { subscribed: null, colorOverride: null }),

@@ -1,4 +1,4 @@
-import { sharedLayerLabel, resolveSharedLayerPreference, annotationLayerListResponseSchema } from "../../shared/annotations";
+import { resolveSharedLayerPreference, annotationLayerListResponseSchema } from "../../shared/annotations";
 import { useEffect, useRef, useState } from "react";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { PersonalLayerCard } from "./personal-layer-card";
@@ -8,7 +8,7 @@ import { Button } from "react-aria-components";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import { syncAnnotations } from "../annotations/sync";
 import { updateCachedLayer } from "../annotations/annotation-state";
-import type { LocalWorkspace } from "../platform/local-workspace";
+import { assertLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
 import "./reader-ux.css";
 
 type PreferenceChange = { layer: AnnotationLayerSummary; subscribed?: boolean | null; colorOverride?: string | null };
@@ -44,6 +44,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
     setPersonalRetry(null);
     const results = await Promise.allSettled(changes.map(async ({ layer, subscribed, colorOverride }) => {
       if (!layer.sharedSlot) return;
+      await assertLocalWorkspaceActive(workspace);
       if (signedIn) {
         const response = await diagnosticFetch(
           `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/shared-layers/${layer.sharedSlot}/preference`,
@@ -68,7 +69,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
     const failures = changes.filter((_, index) => results[index]?.status === "rejected");
     setFailed(failures);
     setMessage(failures.length
-      ? `${failures.length === changes.length ? "未能保存" : `已保存 ${changes.length - failures.length} 项；未能保存`}：${failures.map(({ layer }) => sharedLayerLabel(layer.sharedSlot, layer.name)).join("、")}。未保存的显示设置保持原样，请重试。`
+      ? `${failures.length === changes.length ? "未能保存" : `已保存 ${changes.length - failures.length} 项；未能保存`}：${failures.map(({ layer }) => layer.name).join("、")}。未保存的显示设置保持原样，请重试。`
       : "");
     busy.current = false;
     setPending(false);
@@ -80,9 +81,11 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
     let confirmed = false;
     let changed = false;
     try {
+      await assertLocalWorkspaceActive(workspace);
       const response = await diagnosticFetch(`/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/${path}`, {
         method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body),
       });
+      await assertLocalWorkspaceActive(workspace);
       changed = response.status === 409;
       if (!response.ok) throw new Error("personal_layer_update_failed");
       confirmed = true;
@@ -138,10 +141,10 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
             <article className="layer-card" key={layer.id}>
               <div className="layer-card__main reader-layer-row">
                 <label className="reader-layer-toggle">
-                  <input aria-label={`显示 ${sharedLayerLabel(layer.sharedSlot, layer.name)}`}
+                  <input aria-label={`显示 ${layer.name}`}
                     checked={layer.subscribed} disabled={pending} type="checkbox"
                     onChange={(event) => void save([{ layer, subscribed: event.target.checked }])} />
-                  <span aria-label={`${sharedLayerLabel(layer.sharedSlot, layer.name)} 当前颜色`} className="layer-color-preview" style={{ background: layer.displayColor }} />
+                  <span aria-label={`${layer.name} 当前颜色`} className="layer-color-preview" style={{ background: layer.displayColor }} />
                   <span className="layer-card__identity"><strong>
                     {layer.name}
                   </strong></span>

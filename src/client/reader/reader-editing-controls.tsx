@@ -1,4 +1,3 @@
-import { sharedLayerDisplayName } from "../../shared/annotations";
 import { useState } from "react";
 import { ChevronDown, Eraser, Highlighter, Square, Circle, Lock, Pencil, Redo2, Type, Undo2, X } from "lucide-react";
 import { Button,  DialogTrigger, Popover } from "react-aria-components";
@@ -6,7 +5,6 @@ import { Dialog } from "../navigation/overlays";
 
 import {
   type AnnotationLayerSummary,
-  type SharedLayerSlot,
 } from "../../shared/annotations";
 import type { AnnotationTool } from "../annotations/annotation-overlay";
 import type { AnnotationEditor } from "../annotations/annotation-editor";
@@ -68,7 +66,6 @@ export function ReaderEditingControls({
                 <LayerSlotButton
                   isDisabled={isDisabled}
                   key={layer.id}
-                  slot={layer.sharedSlot!}
                   layer={layer}
                   activeLayerId={activeLayerId}
                   onLayerChange={chooseLayer}
@@ -77,7 +74,7 @@ export function ReaderEditingControls({
             </div>
             <p>个人层 · 只有你能编辑</p>
             <div className="annotation-layer-switcher">
-              {personalLayers.map(layer => <LayerSlotButton key={layer.id} isDisabled={isDisabled} slot="P" layer={layer} activeLayerId={activeLayerId} onLayerChange={chooseLayer} />)}
+              {personalLayers.map(layer => <LayerSlotButton key={layer.id} isDisabled={isDisabled} layer={layer} activeLayerId={activeLayerId} onLayerChange={chooseLayer} />)}
             </div>
             <p>编辑时只显示所选层，并锁定当前页。</p>
           </Dialog>
@@ -124,13 +121,11 @@ export function ReaderEditingControls({
 
 function LayerSlotButton({
   isDisabled,
-  slot,
   layer,
   activeLayerId,
   onLayerChange,
 }: {
   isDisabled: boolean;
-  slot: SharedLayerSlot | "P";
   layer: AnnotationLayerSummary | undefined;
   activeLayerId: string | null;
   onLayerChange(layerId: string): void;
@@ -180,7 +175,7 @@ function LayerPermissionContent({
         <Lock aria-hidden="true" size={20} />
       </div>
       <h2>仅可查看</h2>
-      <p>{sharedLayerDisplayName(layer.sharedSlot, layer.name)} 可以查看，但只有云盘拥有者和获得此层编辑权的成员可以编辑。</p>
+      <p>{layer.name} 可以查看，但只有云盘拥有者和获得此层编辑权的成员可以编辑。</p>
       <p>如需编辑权限，请联系云盘拥有者。</p>
       <Button className="primary-button" onPress={onClose}>知道了</Button>
     </>

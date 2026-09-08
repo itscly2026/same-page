@@ -16,17 +16,6 @@ export const defaultSharedLayers: ReadonlyArray<{
   { slot: "B", name: "Bass", defaultColor: "#dc2626", sortOrder: 4 },
 ];
 
-export function sharedLayerDisplayName(slot: string | null | undefined, name: string) {
-  void slot;
-  return name;
-}
-
-export function sharedLayerLabel(slot: string | null | undefined, name: string, separator = " · ") {
-  void slot;
-  void separator;
-  return name;
-}
-
 export const normalizedCoordinateSchema = z.number().finite().min(0).max(1);
 
 export const DEFAULT_TEXT_FONT_SCALE = 0.024;

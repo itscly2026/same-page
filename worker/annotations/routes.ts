@@ -337,10 +337,10 @@ annotationRoutes.post("/choirs/:choirId/scores/:scoreId/personal-layers", async 
     WHERE NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = ?)
       AND EXISTS (SELECT 1 FROM scores JOIN choirs ON choirs.id = scores.choir_id
         WHERE scores.id = ? AND scores.trashed_at IS NULL AND
-          ((choirs.is_preview_entry = 1 AND choirs.guest_admission_mode = 'open') OR
-           EXISTS (SELECT 1 FROM memberships WHERE choir_id = choirs.id AND user_id = ? AND status = 'active')))`)
+          ((? IS NULL AND choirs.is_preview_entry = 1 AND choirs.guest_admission_mode = 'open') OR
+           EXISTS (SELECT 1 FROM memberships WHERE id = ? AND lifecycle_revision = ? AND choir_id = choirs.id AND user_id = ? AND status = 'active')))`)
     .bind(id, access.choirId, access.scoreId, access.principal.userId, body.data.name, now, now,
-      access.principal.userId, access.scoreId, access.principal.userId).run();
+      access.principal.userId, access.scoreId, access.membership?.id ?? null, access.membership?.id ?? null, access.membership?.lifecycleRevision ?? null, access.principal.userId).run();
   if (!result.meta.changes) {
     const existing = await context.env.DB.prepare("SELECT id FROM annotation_layers WHERE id = ? AND choir_id = ? AND score_id = ? AND owner_user_id = ? AND kind = 'personal' AND deleted_at IS NULL")
       .bind(id, access.choirId, access.scoreId, access.principal.userId).first();
@@ -367,10 +367,10 @@ annotationRoutes.put("/choirs/:choirId/scores/:scoreId/personal-layers/:layerId"
       AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = owner_user_id)
       AND EXISTS (SELECT 1 FROM scores JOIN choirs ON choirs.id = scores.choir_id WHERE scores.id = annotation_layers.score_id
         AND scores.trashed_at IS NULL AND ((? IS NULL AND choirs.is_preview_entry = 1 AND choirs.guest_admission_mode = 'open') OR
-        EXISTS (SELECT 1 FROM memberships WHERE choir_id = choirs.id AND user_id = annotation_layers.owner_user_id AND status = 'active')))`)
+        EXISTS (SELECT 1 FROM memberships WHERE id = ? AND lifecycle_revision = ? AND choir_id = choirs.id AND user_id = annotation_layers.owner_user_id AND status = 'active')))`)
     .bind(data.name ?? null, data.sharing === undefined ? null : Number(data.sharing), data.action ?? '', now, data.action ?? '', now,
       context.req.param("layerId"), access.choirId, access.scoreId, access.principal.userId, data.expectedRevision,
-      data.action ?? '', now - RECOVERY_PERIOD_MS, data.action ?? '', data.sharing === undefined ? null : 1).run();
+      data.action ?? '', now - RECOVERY_PERIOD_MS, data.action ?? '', access.membership?.id ?? null, access.membership?.id ?? null, access.membership?.lifecycleRevision ?? null).run();
   if (!result.meta.changes) return context.json({ error: "personal_layer_changed" }, 409);
   return context.json({ revision: data.expectedRevision + 1 });
 });
@@ -385,12 +385,13 @@ annotationRoutes.put("/choirs/:choirId/scores/:scoreId/personal-layers/:layerId/
     SELECT ?, layers.id, ? FROM annotation_layers layers
     WHERE layers.id = ? AND layers.choir_id = ? AND layers.score_id = ? AND layers.kind = 'personal' AND layers.deleted_at IS NULL
       AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = layers.owner_user_id)
+      AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = ?)
       AND (layers.owner_user_id = ? OR (layers.sharing = 1
         AND EXISTS (SELECT 1 FROM memberships WHERE choir_id = layers.choir_id AND user_id = layers.owner_user_id AND status = 'active')
         AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND lifecycle_revision = ?)))
     ON CONFLICT(user_id, layer_id) DO UPDATE SET subscribed = excluded.subscribed`)
     .bind(access.principal.userId, Number(body.subscribed), context.req.param("layerId"), access.choirId, access.scoreId,
-      access.principal.userId, access.membership?.id ?? null, access.membership?.lifecycleRevision ?? null).run();
+      access.principal.userId, access.principal.userId, access.membership?.id ?? null, access.membership?.lifecycleRevision ?? null).run();
   if (!result.meta.changes) return context.json({ error: "personal_layer_unavailable" }, 404);
   return context.json({ subscribed: body.subscribed });
 });

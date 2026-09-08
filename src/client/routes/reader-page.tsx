@@ -29,7 +29,6 @@ import {
 import { Dialog } from "../navigation/overlays";
 import { Link, useParams } from "react-router-dom";
 
-import { sharedLayerDisplayName } from "../../shared/annotations";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import type {
   AnnotationOverlayInteraction,
@@ -679,7 +678,7 @@ function ReaderPageContent() {
         </ModalOverlay>
       ) : null}
 
-      {conflicts.length > 0 ? (
+      {!editing && conflicts.length > 0 ? (
         <aside className="annotation-conflicts" aria-label="本地笔记冲突">
           <strong>仍有 {conflicts.length} 项本机冲突待处理</strong>
           <p>同一笔记的云端版本已经变化；以下是保留在这台设备上的版本。</p>
@@ -718,11 +717,11 @@ function ReaderPageContent() {
           })}
         </aside>
       ) : null}
-      {syncStatus.kind === "failed" || syncStatus.kind === "risk" ? (
+      {!editing && (syncStatus.kind === "failed" || syncStatus.kind === "risk") ? (
         <aside className="annotation-conflicts" aria-label="笔记同步异常">
           <strong>{syncStatus.message}</strong>
           <div>
-            <Link className="text-button" aria-disabled={editing || undefined} to="/diagnostics">查看原因</Link>
+            <Link className="text-button" to="/diagnostics">查看原因</Link>
             <Button isDisabled={syncing} onPress={() => void manualSync()}>
               重试同步
             </Button>

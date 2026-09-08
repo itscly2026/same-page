@@ -94,11 +94,11 @@ it("creates another private layer, caches both editing targets, and protects uns
   expect(toggle).toHaveTextContent("仅自己可见");
   const newLayer = (await readAnnotationLayers(workspace)).find(layer => layer.name === "演出提示")!;
   fireEvent.click(screen.getByRole("button", { name: /当前编辑层/ }));
-  expect(screen.getByRole("button", { name: "演出提示", exact: true })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "演出提示" })).toBeEnabled();
   fireEvent.click(screen.getByRole("button", { name: "关闭写入目标" }));
   await saveAnnotationDraft(workspace, { id: crypto.randomUUID(), layerId: newLayer.id, payload: { kind: "text", pageNumber: 1, x: .2, y: .3, fontScale: .024, text: "尚未同步" } });
   const card = toggle.closest("article")!;
-  fireEvent.click(within(card).getByRole("button", { name: "删除", exact: true }));
+  fireEvent.click(within(card).getByRole("button", { name: "删除" }));
   fireEvent.click(within(card).getByRole("button", { name: "确认删除" }));
   await screen.findByText(/此层有未同步内容或冲突/);
   expect(requests.filter(request => request.url.endsWith(`/personal-layers/${newLayer.id}`))).toHaveLength(0);

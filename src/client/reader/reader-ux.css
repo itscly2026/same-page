@@ -37,7 +37,6 @@
 
 .reader-layers-content { display: contents; }
 
-.reader-layer-panel .layer-section--personal .layer-card__main { grid-template-columns: auto minmax(0, 1fr) auto; }
 .reader-layer-panel .layer-section--personal .reader-layer-help { margin: 0; }
 .reader-layer-toggle input { width: 18px; height: 18px; accent-color: #171717; }
 
@@ -156,5 +155,8 @@ body:has(.reader-edit-layer-popover) .annotation-text-hint { display: none; }
 .personal-sharing-toggle { border: 1px solid var(--border-color, #d4d4d4); border-radius: 999px; padding: .35rem .6rem; font-size: .8rem; background: transparent; }
 .personal-sharing-toggle[aria-pressed="true"] { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
 .reader-layer-panel form { display: flex; flex-wrap: wrap; gap: .5rem; margin: .6rem 0; }
-.reader-layer-panel .layer-card__main { flex-wrap: wrap; }
 .reader-layer-panel input[type="color"], .annotation-controls input[type="color"] { width: 36px; height: 36px; padding: 2px; border-radius: 8px; border: 1px solid #ddd; background: transparent; }
+.reader-layer-panel .layer-section--personal .layer-card__main { display: flex; flex-wrap: wrap; gap: .5rem; padding: .5rem .75rem; }
+.reader-layer-panel .layer-section--personal .reader-layer-toggle { flex: 1 1 140px; padding: 0; }
+.reader-layer-panel .personal-sharing-toggle { flex: 0 0 auto; width: auto; border-radius: 999px; padding: .35rem .75rem; }
+.reader-layer-panel form input { min-width: 0; max-width: 100%; border: 1px solid #ddd; border-radius: .5rem; padding: .5rem .75rem; }
