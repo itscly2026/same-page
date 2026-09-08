@@ -3,10 +3,10 @@ import { Button } from "react-aria-components";
 import { Download, X } from "lucide-react";
 import { useInstall } from "./install-context";
 
-export function InstallButton({ className = "secondary-button" }: { className?: string }) {
+export function InstallButton({ className }: { className?: string }) {
   const install = useInstall();
   if (!install || install.hidden) return null;
-  return <Button className={`install-button ${className}`} onPress={install.open}><Download size={18} aria-hidden="true" />安装合谱</Button>;
+  return <Button className={`install-button ${className ?? (install.nativeAvailable ? "primary-button" : "secondary-button")}`} onPress={install.open}><Download size={18} aria-hidden="true" />安装合谱</Button>;
 }
 
 export function InstallSuggestion() {

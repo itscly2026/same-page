@@ -33,7 +33,7 @@ it("consumes a deferred prompt once and keeps help after cancellation", async ()
   expect(prompt).not.toHaveBeenCalled();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "安装合谱" }));
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "已了解，打开安装提示" })); });
+  await act(async () => {});
   expect(prompt).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("status")).toHaveTextContent("已取消安装");
   expect(screen.queryByRole("button", { name: "已了解，打开安装提示" })).not.toBeInTheDocument();
@@ -84,7 +84,7 @@ it.each(["iPhone MicroMessenger", "Android MicroMessenger"])("only shows WeChat 
   expect(prompt).not.toHaveBeenCalled();
 });
 
-it("presents Android shortcut permission guidance before the user invokes the native prompt", async () => {
+it("opens the native prompt directly and keeps actionable Android guidance after cancellation", async () => {
   vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Android Chrome");
   mount();
   const prompt = vi.fn().mockResolvedValue({ outcome: "dismissed" });
@@ -92,12 +92,32 @@ it("presents Android shortcut permission guidance before the user invokes the na
   Object.defineProperty(event, "prompt", { value: prompt });
   act(() => { window.dispatchEvent(event); });
   fireEvent.click(screen.getByRole("button", { name: "安装合谱" }));
-  const advice = screen.getByRole("region", { name: "Android 安装前说明" });
-  const button = screen.getByRole("button", { name: "已了解，打开安装提示" });
-  expect(advice).toHaveTextContent("允许当前浏览器“创建桌面快捷方式”");
-  expect(advice).toHaveTextContent("没有此项可跳过");
-  expect(advice.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(prompt).not.toHaveBeenCalled();
-  await act(async () => { fireEvent.click(button); });
   expect(prompt).toHaveBeenCalledTimes(1);
+  await act(async () => {});
+  const advice = screen.getByRole("region", { name: "Android 安装前说明" });
+  expect(advice).toHaveTextContent("安装前，请检查当前浏览器是否已获准创建桌面快捷方式");
+  expect(advice).toHaveTextContent("手机提供此权限项时，请确保已开启");
+  expect(advice).toHaveTextContent("权限 / 其他权限");
+  expect(screen.getByText(/安装后，请从桌面合谱图标打开/)).toHaveTextContent("外部链接");
+});
+
+it("recovers from a failed prompt with manual help and consumes a newly offered event", async () => {
+  mount();
+  const failed = vi.fn().mockRejectedValue(new Error("unavailable"));
+  const event = new Event("beforeinstallprompt", { cancelable: true });
+  Object.defineProperty(event, "prompt", { value: failed });
+  act(() => window.dispatchEvent(event));
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "安装合谱" })));
+  expect(screen.getByRole("status")).toHaveTextContent("暂时无法打开安装窗口");
+  expect(screen.queryByRole("button", { name: "安装合谱" })).not.toBeInTheDocument();
+  const accepted = vi.fn().mockResolvedValue({ outcome: "accepted" });
+  const next = new Event("beforeinstallprompt", { cancelable: true });
+  Object.defineProperty(next, "prompt", { value: accepted });
+  act(() => window.dispatchEvent(next));
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "安装合谱" })));
+  expect(failed).toHaveBeenCalledTimes(1);
+  expect(accepted).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  act(() => window.dispatchEvent(new Event("appinstalled")));
+  expect(screen.queryByRole("button", { name: "安装合谱" })).not.toBeInTheDocument();
 });

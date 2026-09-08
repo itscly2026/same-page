@@ -1,3 +1,4 @@
+import { activateGuestLocalOwner } from "./local-workspace";
 import Dexie from "dexie";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -103,6 +104,17 @@ describe("local workspace identity transitions", () => {
     await expect(assertLocalWorkspaceActive(a)).rejects.toThrow(
       "local_workspace_owner_changed",
     );
+  });
+
+  it("isolates explicit guest admission from the remembered user and restores that user on login", async () => {
+    const previous = await resolveLocalWorkspace({ authenticatedUserId: "user-a", choirId: "choir-1", scoreId: "score-1" });
+    const guestOwner = await activateGuestLocalOwner("choir-1");
+    const guest = await resolveLocalWorkspace({ authenticatedUserId: null, choirId: "choir-1", scoreId: "score-1" });
+    expect(guest.ownerKey).toBe(guestOwner);
+    expect(guest.ownerKey).not.toBe(previous.ownerKey);
+    await expect(assertLocalWorkspaceActive(previous)).rejects.toThrow("local_workspace_owner_changed");
+    const restored = await resolveLocalWorkspace({ authenticatedUserId: "user-a", choirId: "choir-1", scoreId: "score-1" });
+    expect(restored.ownerKey).toBe(previous.ownerKey);
   });
 
   it("does not promote a guest workspace when the guest signs in", async () => {

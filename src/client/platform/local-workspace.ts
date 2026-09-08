@@ -143,13 +143,33 @@ export async function clearCurrentAuthenticatedLocalOwner() {
   return ownerKey;
 }
 
+// Explicit guest admission changes the active owner without deleting the prior
+// user's drafts. A later confirmed login can reactivate that user's workspace.
+export async function activateGuestLocalOwner(choirId: string, signal?: AbortSignal) {
+  return localDatabase.transaction("rw", localDatabase.system, async () => {
+    const key = guestOwnerSystemKey(choirId);
+    const existing = await localDatabase.system.get(key);
+    const ownerKey = (existing?.value ?? `guest:${crypto.randomUUID()}`) as LocalWorkspaceOwnerKey;
+    signal?.throwIfAborted();
+    if (await currentLocalOwnerKey() !== ownerKey) {
+      await localDatabase.system.put({ key: "local-workspace:epoch", value: crypto.randomUUID() });
+    }
+    await localDatabase.system.bulkPut([
+      { key, value: ownerKey },
+      { key: ACTIVE_LOCAL_OWNER_KEY, value: ownerKey },
+    ]);
+    return ownerKey;
+  });
+}
+
 async function resolveOfflineOwner(choirId: string, signal?: AbortSignal) {
   return localDatabase.transaction("rw", localDatabase.system, async () => {
     const lastAuthenticated = await localDatabase.system.get(
       LAST_AUTHENTICATED_OWNER_KEY,
     );
     signal?.throwIfAborted();
-    if (lastAuthenticated) {
+    const activeOwner = await currentLocalOwnerKey();
+    if (lastAuthenticated && !activeOwner?.startsWith("guest:")) {
       const ownerKey = lastAuthenticated.value as LocalWorkspaceOwnerKey;
       await localDatabase.system.put({
         key: ACTIVE_LOCAL_OWNER_KEY,
@@ -157,16 +177,6 @@ async function resolveOfflineOwner(choirId: string, signal?: AbortSignal) {
       });
       return ownerKey;
     }
-    const key = guestOwnerSystemKey(choirId);
-    const existing = await localDatabase.system.get(key);
-    signal?.throwIfAborted();
-    const ownerKey = existing
-      ? (existing.value as LocalWorkspaceOwnerKey)
-      : (`guest:${crypto.randomUUID()}` as LocalWorkspaceOwnerKey);
-    await localDatabase.system.bulkPut([
-      { key, value: ownerKey },
-      { key: ACTIVE_LOCAL_OWNER_KEY, value: ownerKey },
-    ]);
-    return ownerKey;
+    return activateGuestLocalOwner(choirId, signal);
   });
 }

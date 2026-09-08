@@ -1,3 +1,4 @@
+import { activateGuestLocalOwner } from "../platform/local-workspace";
 import { enterDrive, joinDrive, cancelDriveEntry, type DriveEntryResult } from "../auth/drive-entry";
 import { invalidateSettingsLifetime, useSettingsLifetime } from "../settings/use-settings-lifetime";
 import { InstallButton } from "../install/install-entry";
@@ -86,15 +87,24 @@ const productFeatures = [
 export function HomePage({ startup = false }: { startup?: boolean }) {
   const identity = useApplicationIdentity();
   const { session } = identity;
-  if (identity.showLocalEntry) return <LocalEntry identity={identity} startup={startup} />;
-  return <HomeContent key={session.isPending ? "pending" : session.data?.user.id ?? "guest"} session={session} startup={startup} />;
+  const location = useLocation();
+  const [invitation, setInvitation] = useState(() => ({ hash: location.hash, version: 0, link: readInviteLink(location.hash) }));
+  // A same-page navigation does not remount HomePage. Capture each new fragment,
+  // but retain the credential in memory when admission removes it from the URL.
+  if (invitation.hash !== location.hash) {
+    const link = readInviteLink(location.hash);
+    setInvitation({ hash: location.hash, version: invitation.version + (link ? 1 : 0), link: link ?? invitation.link });
+  }
+  const finishInvitation = () => setInvitation(current => ({ ...current, link: null }));
+  const linkedGuest = invitation.link !== null && identity.onlineState === "signed-out";
+  if (identity.showLocalEntry && !linkedGuest) return <LocalEntry identity={identity} startup={startup} />;
+  return <HomeContent key={`${session.isPending ? "pending" : session.data?.user.id ?? "guest"}:${invitation.version}`} session={session} startup={startup} linkInvite={invitation.link} finishInvitation={finishInvitation} />;
 }
 
-function HomeContent({ session, startup }: { session: ReturnType<typeof authClient.useSession>; startup: boolean }) {
+function HomeContent({ session, startup, linkInvite, finishInvitation }: { session: ReturnType<typeof authClient.useSession>; startup: boolean; linkInvite: ReturnType<typeof readInviteLink>; finishInvitation: () => void }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const location = useLocation();
-  const [linkInvite] = useState(() => readInviteLink(location.hash));
   const linkHandled = useRef(false);
   const [startupIntent, setStartupIntent] = useState(startup && location.pathname === "/" && !location.search && !location.hash);
   const [joinOpen, setJoinOpen] = useState(searchParams.get("join") === "1" || linkInvite !== null);
@@ -137,6 +147,7 @@ function HomeContent({ session, startup }: { session: ReturnType<typeof authClie
   };
 
   const finishJoinDialog = () => {
+    finishInvitation();
     setStartupIntent(false);
     setJoinOpen(false);
     resetJoinFlow();
@@ -149,8 +160,11 @@ function HomeContent({ session, startup }: { session: ReturnType<typeof authClie
   };
 
   const pendingEntryRef = useRef<Promise<DriveEntryResult> | null>(null);
+  const entryAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => entryAbortRef.current?.abort(), []);
   const dismissJoinDialog = () => {
     invalidateSettingsLifetime(entryLifetimeRef);
+    entryAbortRef.current?.abort();
     setSubmitting(false);
     setClearingGuestSession(true);
     void cancelDriveEntry(pendingEntryRef.current).finally(() => setClearingGuestSession(false));
@@ -163,16 +177,22 @@ function HomeContent({ session, startup }: { session: ReturnType<typeof authClie
     if (clearingGuestSession || submitting) return;
     const generation = entryLifetimeRef.current;
     setSubmitting(true); setJoinMessage(null);
-    const pending = enterDrive({ admission: "invite", joinCode }, Boolean(userId));
+    const controller = new AbortController();
+    entryAbortRef.current = controller;
+    const pending = enterDrive({ admission: "invite", joinCode }, Boolean(userId), controller.signal);
     pendingEntryRef.current = pending;
     const result = await pending;
     if (generation !== entryLifetimeRef.current) return;
     setSubmitting(false);
     if (result.kind === "enter") {
+      if (!userId) {
+        try { await activateGuestLocalOwner(result.choir.id, controller.signal); }
+        catch { if (!controller.signal.aborted) setJoinMessage("无法准备本机访客空间，请重试。"); return; }
+        if (generation !== entryLifetimeRef.current) return;
+      }
       finishJoinDialog();
       await navigate(`/choirs/${result.choir.id}`);
     } else if (result.kind === "display-name") {
-      setJoinCode("");
       setJoinStep({ kind: "display-name", choir: result.choir });
     } else if (result.kind === "failed") setJoinMessage(result.message);
   };
