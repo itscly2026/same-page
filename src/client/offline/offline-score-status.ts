@@ -2,7 +2,8 @@ import type { OfflineScoreRecord } from "../platform/local-database";
 import type { OfflinePreparationState } from "./offline-score";
 
 // Preparing a replacement and possessing verified bytes are independent facts.
-export function offlinePreparationDescription(preparation: OfflinePreparationState, copy: { record: OfflineScoreRecord | null; invalid: boolean } | null | undefined, versionId: string, mode?: "pdf" | "images") {
+export function offlinePreparationDescription(preparation: OfflinePreparationState, copy: { record: OfflineScoreRecord | null; invalid: boolean; readFailed?: boolean } | null | undefined, versionId: string, mode?: "pdf" | "images") {
+  if (copy?.readFailed) return "暂时无法读取本机副本，请重试校验";
   if (preparation.phase === "preparing") return "正在下载并校验…";
   if (preparation.phase === "failed") {
     if (preparation.reason === "identity") return "请先登录，再准备新的离线副本。现有副本仍可使用。";

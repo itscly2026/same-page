@@ -1,3 +1,5 @@
+import { diagnosticScope } from "../diagnostics/diagnostics";
+import { diagnoseLocalOperation } from "../diagnostics/local-operation";
 import { discardAnnotationConflict, queueScoreDrafts, readScoreAnnotationState, reapplyAnnotationConflict, retryScoreSyncErrors } from "../annotations/annotation-state";
 import { requestOutboxRecovery } from "../annotations/outbox-recovery";
 import { syncAnnotations } from "../annotations/sync";
@@ -22,9 +24,10 @@ export class ReaderAnnotationActions {
 
   async saveDrafts(): Promise<ReaderSyncOutcome | null> {
     const signal = this.controller.signal;
+    const diagnostics = { report: diagnosticScope(), signal };
     try {
       await this.check(signal);
-      await queueScoreDrafts(this.workspace);
+      await diagnoseLocalOperation("draft-save", () => queueScoreDrafts(this.workspace), diagnostics);
       await this.check(signal);
       requestOutboxRecovery();
       return "local-saved";
@@ -33,6 +36,7 @@ export class ReaderAnnotationActions {
 
   async retry(): Promise<ReaderSyncOutcome | null> {
     const signal = this.controller.signal;
+    const diagnostics = { report: diagnosticScope(), signal };
     try {
       await this.check(signal);
       if (this.access.trashed) return "trash-preserved";
@@ -42,13 +46,13 @@ export class ReaderAnnotationActions {
         return "local-saved";
       }
       requestOutboxRecovery();
-      await retryScoreSyncErrors(this.workspace);
+      await diagnoseLocalOperation("sync-retry", () => retryScoreSyncErrors(this.workspace), diagnostics);
       await this.check(signal);
-      await queueScoreDrafts(this.workspace);
+      await diagnoseLocalOperation("draft-save", () => queueScoreDrafts(this.workspace), diagnostics);
       await this.check(signal);
       await syncAnnotations(this.workspace, { pull: true });
       await this.check(signal);
-      const state = await readScoreAnnotationState(this.workspace);
+      const state = await diagnoseLocalOperation("sync-retry", () => readScoreAnnotationState(this.workspace), diagnostics);
       await this.check(signal);
       return state.syncErrorCount > 0 ? "failed" : "synced";
     } catch { return signal.aborted ? null : "failed"; }
@@ -57,16 +61,17 @@ export class ReaderAnnotationActions {
   async resolveConflict(opId: string, strategy: "discard" | "reapply" | "keep-both"): Promise<ReaderSyncOutcome | null> {
     let saved = false;
     const signal = this.controller.signal;
+    const diagnostics = { report: diagnosticScope(), signal };
     try {
       await this.check(signal);
       if (strategy === "discard") {
-        await discardAnnotationConflict(this.workspace, opId);
+        await diagnoseLocalOperation("conflict-resolve", () => discardAnnotationConflict(this.workspace, opId), diagnostics);
         await this.check(signal);
         return "conflict-discarded";
       }
       await reapplyAnnotationConflict(this.workspace, opId, strategy === "keep-both");
       await this.check(signal);
-      await queueScoreDrafts(this.workspace);
+      await diagnoseLocalOperation("draft-save", () => queueScoreDrafts(this.workspace), diagnostics);
       saved = true;
       await this.check(signal);
       if (!this.access.online || !this.access.authenticated || this.access.trashed) return "local-saved";

@@ -1,9 +1,9 @@
 import pdfPackage from "pdfjs-dist/package.json";
 import { buildId } from "../../shared/build";
 import {
-  categoryForStatus, diagnosticCategories, diagnosticOperations, diagnosticStages,
+  categoryForStatus, diagnosticCategories, diagnosticOperations, diagnosticStages, diagnosticSteps, diagnosticErrorTypes,
   isDiagnosticId, operationForUrl, safeBuildId,
-  type DiagnosticCategory, type DiagnosticOperation, type DiagnosticStage,
+  type DiagnosticCategory, type DiagnosticOperation, type DiagnosticStage, type DiagnosticStep, type DiagnosticErrorType,
 } from "../../shared/diagnostics";
 
 export const pdfEngineVersion = `pdfjs-${pdfPackage.version}`;
@@ -18,7 +18,17 @@ export function pdfFailureReason(error: unknown, rendering = false): PdfReason {
   if (name === "TimeoutError") return "timeout";
   return rendering ? "render-failed" : "document-failed";
 }
+export function diagnosticErrorType(error: unknown): DiagnosticErrorType {
+  try {
+    const name = typeof error === "object" && error !== null && "name" in error ? error.name : null;
+    if (name === "ZodError") return "ValidationError";
+    return diagnosticErrorTypes.find(value => value === name) ?? "OtherError";
+  } catch { return "OtherError"; }
+}
+
 interface Failure {
+  step?: DiagnosticStep;
+  errorType?: DiagnosticErrorType;
   engineVersion?: string;
   pdfReason?: PdfReason;
   operation: DiagnosticOperation;
@@ -28,6 +38,8 @@ interface Failure {
   serverBuild?: string | null;
 }
 interface DiagnosticRecord {
+  step?: DiagnosticStep;
+  errorType?: DiagnosticErrorType;
   engineVersion?: string;
   pdfReason?: PdfReason;
   id: string;
@@ -112,7 +124,9 @@ export function recordFailure(failure: Failure) {
     const stage = failure.stage && diagnosticStages.includes(failure.stage) ? failure.stage : "request";
     const requestId = isDiagnosticId(failure.requestId) ? failure.requestId : null;
     const serverBuild = safeBuildId(failure.serverBuild);
-    const previous = [...records].reverse().find((entry) => entry.operation === operation && entry.category === category && entry.stage === stage && now - entry.time < 30_000);
+    const step = diagnosticSteps.find(value => value === failure.step);
+    const errorType = diagnosticErrorTypes.find(value => value === failure.errorType);
+    const previous = [...records].reverse().find((entry) => entry.operation === operation && entry.category === category && entry.stage === stage && entry.step === step && entry.errorType === errorType && entry.pdfReason === failure.pdfReason && now - entry.time < 30_000);
     if (previous) {
       previous.count = Math.min(previous.count + 1, 9999);
       previous.time = now;
@@ -121,6 +135,8 @@ export function recordFailure(failure: Failure) {
       return;
     }
     records.push({
+      ...(step ? { step } : {}),
+      ...(errorType ? { errorType } : {}),
       ...(failure.engineVersion && /^(pdfjs|pdfium)-[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$/.test(failure.engineVersion) ? { engineVersion: failure.engineVersion } : {}),
       ...(failure.pdfReason && pdfReasons.includes(failure.pdfReason) ? { pdfReason: failure.pdfReason } : {}),
       id: crypto.randomUUID(), time: now, operation, category, stage,

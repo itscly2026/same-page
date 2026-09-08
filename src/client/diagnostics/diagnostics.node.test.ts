@@ -105,3 +105,23 @@ describe("private diagnostics", () => {
     expect(await diagnosticFetch("/api/choirs/private/bootstrap")).toBe(response);
   });
 });
+
+it("keeps failure steps and error types separate and rejects arbitrary metadata", async () => {
+  const { diagnosticErrorType } = await import("./diagnostics");
+  const { diagnosticReportSchema } = await import("../../shared/diagnostic-report");
+  const error = new DOMException("private filename and credentials", "UnknownError");
+  for (const step of ["offline-read", "offline-file"] as const) {
+    recordFailure({ operation: "storage", category: "internal", step, errorType: diagnosticErrorType(error) });
+  }
+  recordFailure({ operation: "storage", category: "internal", step: "offline-read", errorType: "QuotaExceededError" });
+  recordFailure({ operation: "storage", category: "internal", step: "offline-read", errorType: diagnosticErrorType(error) });
+  const exported = JSON.parse(exportDiagnostics());
+  expect(exported.records).toHaveLength(3);
+  expect(exported.records[0]).toMatchObject({ step: "offline-read", errorType: "UnknownError", count: 2 });
+  expect(exportDiagnostics()).not.toContain("private");
+  expect(diagnosticErrorType({ name: "private-custom-error", message: "private" })).toBe("OtherError");
+  const recordSchema = diagnosticReportSchema.shape.records.element;
+  expect(recordSchema.safeParse(exported.records[0]).success).toBe(true);
+  expect(recordSchema.safeParse({ ...exported.records[0], errorType: "private-custom-error" }).success).toBe(false);
+  expect(recordSchema.safeParse({ ...exported.records[0], step: "private-score-id" }).success).toBe(false);
+});

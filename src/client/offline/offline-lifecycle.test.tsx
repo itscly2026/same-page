@@ -1,3 +1,4 @@
+import React from "react";
 import { cacheAnnotationLayers } from "../annotations/annotation-state";
 /// <reference types="node" />
 
@@ -174,4 +175,70 @@ it("the activation transaction rejects a logout fence before asynchronous watche
   await beginLogout("a", "session");
   await expect(activateVerifiedOfflineScore(record)).rejects.toThrow("local_workspace_owner_changed");
   expect(await findActiveOfflineScore(record.ownerKey, record.choirId, record.scoreId)).toBeUndefined();
+});
+
+it("distinguishes file corruption, incomplete snapshots and temporary Blob read failure", async () => {
+  const { clearDiagnostics, exportDiagnostics } = await import("../diagnostics/diagnostics");
+  const record = await recordFor();
+  clearDiagnostics();
+  expect(await verifyOfflineScore({ ...record, sha256: "0".repeat(64) })).toBe(false);
+  expect(JSON.parse(exportDiagnostics()).records).toEqual([expect.objectContaining({ step: "offline-file", errorType: "ValidationError" })]);
+  clearDiagnostics();
+  expect(await verifyOfflineScore({ ...record, annotationSnapshot: { ...record.annotationSnapshot, verifiedAt: 0 } })).toBe(false);
+  expect(JSON.parse(exportDiagnostics()).records).toEqual([expect.objectContaining({ step: "offline-snapshot", errorType: "ValidationError" })]);
+  clearDiagnostics();
+  const error = new DOMException("private PDF name", "NotReadableError");
+  const read = vi.spyOn(record.blob, "arrayBuffer").mockRejectedValueOnce(error);
+  await expect(verifyOfflineScore(record)).rejects.toBe(error);
+  expect(JSON.parse(exportDiagnostics()).records).toEqual([expect.objectContaining({ step: "offline-file", category: "internal" })]);
+  expect(exportDiagnostics()).not.toContain("private");
+  read.mockRestore();
+  expect(await verifyOfflineScore(record)).toBe(true);
+});
+
+it("offers reinspection after a local read failure without marking the stored copy corrupt", async () => {
+  const { offlinePreparationDescription } = await import("./offline-score-status");
+  const record = await recordFor();
+  await activateVerifiedOfflineScore(record);
+  const read = vi.spyOn(Blob.prototype, "arrayBuffer").mockRejectedValue(new DOMException("unavailable", "NotReadableError"));
+  function Status() {
+    const [attempt, retry] = React.useState(0);
+    const copy = useOfflineScore(record, attempt);
+    return <><span>{offlinePreparationDescription({ phase: "idle" }, copy, record.versionId)}</span><button onClick={() => retry(value => value + 1)}>校验</button></>;
+  }
+  render(<Status />);
+  await screen.findByText("暂时无法读取本机副本，请重试校验");
+  expect(screen.queryByText("本地副本不可用，请重新下载")).not.toBeInTheDocument();
+  expect(await localDatabase.offlineScores.count()).toBe(1);
+  read.mockRestore();
+  fireEvent.click(screen.getByRole("button", { name: "校验" }));
+  await screen.findByText("可离线使用");
+});
+
+it("does not report an old copy after a delayed read crosses a diagnostic reset", async () => {
+  const database = await import("../platform/local-database");
+  const { default: Dexie } = await import("dexie");
+  const { clearDiagnostics, exportDiagnostics } = await import("../diagnostics/diagnostics");
+  const record = await recordFor();
+  let resolve!: (value: OfflineScoreRecord) => void;
+  const pendingRead = new Promise<OfflineScoreRecord>(done => { resolve = done; });
+  const read = vi.spyOn(database, "findActiveOfflineScore").mockImplementationOnce(() => Dexie.Promise.resolve(pendingRead));
+  const inspection = findVerifiedOfflineScore(record);
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  await activateAuthenticatedLocalOwner("new-owner");
+  clearDiagnostics();
+  resolve({ ...record, sha256: "0".repeat(64) });
+  await expect(inspection).rejects.toThrow("local_workspace_owner_changed");
+  expect(JSON.parse(exportDiagnostics()).records).toEqual([]);
+});
+
+it.each([{}, { layers: null, annotations: [] }, { layers: [null], annotations: [] }, { layers: [], annotations: [null] }])("treats malformed stored snapshot structure as invalid content: %j", async snapshot => {
+  const { clearDiagnostics, exportDiagnostics } = await import("../diagnostics/diagnostics");
+  const record = await recordFor();
+  clearDiagnostics();
+  // Round-trip the malformed value through the same structured data boundary
+  // as existing IndexedDB contents; type declarations cannot validate storage.
+  const invalidRecord: OfflineScoreRecord = { ...record, annotationSnapshot: JSON.parse(JSON.stringify({ verifiedAt: 1, cursor: 0, ...snapshot })) };
+  expect(await verifyOfflineScore(invalidRecord)).toBe(false);
+  expect(JSON.parse(exportDiagnostics()).records).toEqual([expect.objectContaining({ step: "offline-snapshot", errorType: "ValidationError" })]);
 });

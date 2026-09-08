@@ -33,3 +33,21 @@ it("preserves trashed-score drafts without attempting synchronization", async ()
   const { actions: sync } = await actions({ authenticated: true, online: true, trashed: true });
   expect(await sync.retry()).toBe("trash-preserved");
 });
+
+it("does not report a late storage error after cancelling a draft save", async () => {
+  const state = await import("../annotations/annotation-state");
+  const { clearDiagnostics, exportDiagnostics } = await import("../diagnostics/diagnostics");
+  let reject!: (error: unknown) => void;
+  const pendingSave = new Promise<number>((_, fail) => { reject = fail; });
+  const queue = vi.spyOn(state, "queueScoreDrafts").mockReturnValueOnce(pendingSave);
+  const { actions: sync } = await actions();
+  clearDiagnostics();
+  try {
+    const saving = sync.saveDrafts();
+    await vi.waitFor(() => expect(queue).toHaveBeenCalled());
+    sync.stop();
+    reject(new DOMException("private storage error", "UnknownError"));
+    expect(await saving).toBeNull();
+    expect(JSON.parse(exportDiagnostics()).records).toEqual([]);
+  } finally { queue.mockRestore(); }
+});

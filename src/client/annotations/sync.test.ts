@@ -55,6 +55,18 @@ describe("bounded annotation push", () => {
     }
   });
 
+  it("records a local pull checkpoint failure without exposing stored data", async () => {
+    const { clearDiagnostics, exportDiagnostics } = await import("../diagnostics/diagnostics");
+    clearDiagnostics();
+    const error = new DOMException("private checkpoint details", "UnknownError");
+    const get = vi.spyOn(localDatabase.annotationSyncCursors, "get").mockRejectedValueOnce(error);
+    try {
+      await expect(syncAnnotations(workspace, { pull: true })).rejects.toBe(error);
+      expect(JSON.parse(exportDiagnostics()).records).toContainEqual(expect.objectContaining({ step: "sync-pull", errorType: "UnknownError" }));
+      expect(exportDiagnostics()).not.toContain("private");
+    } finally { get.mockRestore(); }
+  });
+
   it("pulls readable cloud changes even when push is forbidden", async () => {
     const id = crypto.randomUUID(), layerId = crypto.randomUUID();
     await saveAnnotationDraft(workspace, { id, layerId, payload: { kind: "text", pageNumber: 1, x: .1, y: .2, fontScale: .024, text: "local" } });

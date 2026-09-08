@@ -127,3 +127,16 @@ it("report cleanup failure leaves the other scheduled cleanup tasks running", as
   await expect(waitOnExecutionContext(context)).rejects.toThrow("diagnostic_report_cleanup_failed");
   expect(await env.DB.prepare("SELECT count(*) AS count FROM rate_limits").first()).toEqual({ count: 0 });
 });
+
+
+it("stores safe local failure details and rejects arbitrary steps or exception types", async () => {
+  const value = report();
+  value.records.push({ id: crypto.randomUUID(), time: Date.now(), operation: "storage", category: "internal", stage: "decode",
+    step: "offline-file", errorType: "NotReadableError", serverBuild: null, requestId: null, retryable: true, count: 1 });
+  expect((await submit(value)).status).toBe(201);
+  const saved = await env.DB.prepare("SELECT payload FROM diagnostic_reports WHERE id = ?").bind(value.id).first<{ payload: string }>();
+  expect(JSON.parse(saved!.payload).records).toEqual(value.records);
+  for (const details of [{ step: "private-filename" }, { errorType: "private-custom-error" }]) {
+    expect((await submit({ ...value, id: crypto.randomUUID(), records: [{ ...value.records[0], ...details }] })).status).toBe(400);
+  }
+});
