@@ -77,9 +77,9 @@ export function PdfVersionPreview({ scorePath, choirId, scoreId, versionId, onRe
   }, [onReady]);
   if (preview && (session.isPending || `user:${session.data?.user.id}` !== preview.workspace.ownerKey)) return <p role="alert">登录身份已变化，请重新打开预览。</p>;
   if (error) return <p role="alert">预览加载失败，请关闭后重试。</p>;
-  if (!preview) return <p role="status">正在加载 PDF 与批注…</p>;
-  return <section aria-label="PDF 与现有批注预览">
-    <p>显示云端共享批注与本人的个人批注；本机未同步草稿不参与此预览。</p>
+  if (!preview) return <p role="status">正在加载 PDF 与笔记…</p>;
+  return <section aria-label="PDF 与现有笔记预览">
+    <p>显示云端共享笔记与本人的个人笔记；本机未同步草稿不参与此预览。</p>
     <div className="pdf-version-preview" style={{ aspectRatio: String(ratio) }}>
       <PdfPageCanvas document={preview.document} pageNumber={page} width={600} aspectRatio={ratio} onRenderStart={renderStart} />
       <AnnotationOverlay editor={null} layers={preview.layers} annotations={preview.annotations}

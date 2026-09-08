@@ -5,11 +5,11 @@ import { operationKeys, operationLabels, type Operation, type PermissionSet } fr
 
 const descriptions: Record<Operation, string> = {
   uploadFiles: "向云盘上传新的 PDF 乐谱。不包含修改、删除已有文件的权限。",
-  modifyFiles: "重命名乐谱、替换 PDF、查看和回滚历史 PDF 版本。不会自动重新对齐批注。",
+  modifyFiles: "重命名乐谱、替换 PDF、查看和回滚历史 PDF 版本。不会自动重新对齐笔记。",
   trashFiles: "将乐谱移到回收站，并在三十天内恢复。删除和恢复共用此权限。",
   manageInvites: "查看和轮换云盘邀请码。轮换会使旧邀请码、邀请链接与二维码立即失效。",
   removeMembers: "移除普通成员，并在保留期内恢复成员关系。恢复不会恢复旧权限或笔记分享。",
-  configureLayers: "新增、改名、排序、停用、删除和恢复共享层，影响云盘内全部乐谱。不包含编辑批注或给别人授权。",
+  configureLayers: "新增、改名、排序、停用、删除和恢复共享层，影响云盘内全部乐谱。不包含编辑笔记或给别人授权。",
   editDriveInfo: "修改云盘名称等基本信息。不包含文件、成员或共享层操作。",
 };
 
@@ -27,7 +27,7 @@ export function PermissionMatrix({ operations, management, scope, owner, disable
   }
   return <div className="permission-matrix"><table><caption>操作与授权分别设置</caption><thead><tr><th scope="col">权限</th>{columns.map(column => <th scope="col" key={column.label}>{column.label}</th>)}</tr></thead><tbody>
     {operationKeys.filter(key => scope.operations.includes(key)).map(key => row(operationLabels[key], descriptions[key], key, set => set.operations.includes(key), (set, next) => ({ ...set, operations: next ? [...new Set([...set.operations, key])] : set.operations.filter(item => item !== key) })))}
-    {scope.sharedLayers === "all" && row("编辑全部共享层", "包含当前及未来新增的共享层。只允许编辑共享批注，不允许编辑他人的笔记，也不包含共享层配置。", "all-layers", set => set.sharedLayers === "all", (set, next) => ({ ...set, sharedLayers: next ? "all" : [] }))}
-    {layers.filter(layer => scope.sharedLayers === "all" || scope.sharedLayers.includes(layer.slot)).map(layer => row(`编辑 ${layer.name}`, "允许在此云盘全部乐谱的这个共享层中创建、修改和删除批注。显示选择不会授予编辑权。", layer.slot, set => set.sharedLayers === "all" || set.sharedLayers.includes(layer.slot), (set, next) => ({ ...set, sharedLayers: set.sharedLayers === "all" ? "all" : next ? [...new Set([...set.sharedLayers, layer.slot])] : set.sharedLayers.filter(slot => slot !== layer.slot) }), set => set.sharedLayers === "all"))}
+    {scope.sharedLayers === "all" && row("编辑全部共享层", "包含当前及未来新增的共享层。只允许编辑共享笔记，不允许编辑他人的笔记，也不包含共享层配置。", "all-layers", set => set.sharedLayers === "all", (set, next) => ({ ...set, sharedLayers: next ? "all" : [] }))}
+    {layers.filter(layer => scope.sharedLayers === "all" || scope.sharedLayers.includes(layer.slot)).map(layer => row(`编辑 ${layer.name}`, "允许在此云盘全部乐谱的这个共享层中创建、修改和删除笔记。显示选择不会授予编辑权。", layer.slot, set => set.sharedLayers === "all" || set.sharedLayers.includes(layer.slot), (set, next) => ({ ...set, sharedLayers: set.sharedLayers === "all" ? "all" : next ? [...new Set([...set.sharedLayers, layer.slot])] : set.sharedLayers.filter(slot => slot !== layer.slot) }), set => set.sharedLayers === "all"))}
   </tbody></table></div>;
 }

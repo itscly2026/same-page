@@ -1,6 +1,6 @@
-import { sharedLayerLabel, sharedLayerDisplayName, sharedLayerPrefix } from "../../shared/annotations";
+import { sharedLayerDisplayName } from "../../shared/annotations";
 import { useState } from "react";
-import { ChevronDown, Eraser, Lock, Pencil, Redo2, Type, Undo2, X } from "lucide-react";
+import { ChevronDown, Eraser, Highlighter, Square, Circle, Lock, Pencil, Redo2, Type, Undo2, X } from "lucide-react";
 import { Button,  DialogTrigger, Popover } from "react-aria-components";
 import { Dialog } from "../navigation/overlays";
 
@@ -17,6 +17,8 @@ export function ReaderEditingControls({
   editor,
   layers,
   tool,
+  toolColor,
+  onColorChange,
   activeLayerId,
   onToolChange,
   onLayerChange,
@@ -25,6 +27,8 @@ export function ReaderEditingControls({
   editor: AnnotationEditor;
   layers: AnnotationLayerSummary[];
   tool: AnnotationTool;
+  toolColor: string;
+  onColorChange(color: string): void;
   activeLayerId: string | null;
   onToolChange(tool: AnnotationTool): void;
   onLayerChange(layerId: string): void;
@@ -38,10 +42,10 @@ export function ReaderEditingControls({
     onLayerChange(layerId);
     setChoosingLayer(false);
   };
-  const personalLayer = layers.find((layer) => layer.kind === "personal" && layer.canEdit);
+  const personalLayers = layers.filter((layer) => layer.kind === "personal" && layer.canEdit);
 
   return (
-    <section className="annotation-controls" aria-label="批注工具">
+    <section className="annotation-controls" aria-label="笔记工具">
       {showHint && <div className="reader-edit-first-hint" role="status">
         <span>编辑时仅显示当前层，并锁定本页。点勾号完成后恢复。</span>
         <Button aria-label="关闭编辑提示" onPress={() => { setShowHint(false); try { localStorage.setItem("reader-edit-hint-seen", "true"); } catch { /* Optional hint preference. */ } }}><X aria-hidden="true" size={18} /></Button>
@@ -50,10 +54,9 @@ export function ReaderEditingControls({
         <Button
           isDisabled={isDisabled}
           className="reader-edit-layer-trigger"
-          aria-label={`当前编辑层：${selectedLayer?.kind === "personal" ? "P · 我的笔记" : sharedLayerLabel(selectedLayer?.sharedSlot, selectedLayer?.name ?? "")}，写到哪里`}
+          aria-label={`当前编辑层：${selectedLayer?.name ?? ""}，写到哪里`}
         >
-          <span>{selectedLayer?.kind === "personal" ? "P ·" : sharedLayerPrefix(selectedLayer?.sharedSlot) ? `${sharedLayerPrefix(selectedLayer?.sharedSlot)} ·` : ""}</span>
-          <span>{selectedLayer?.kind === "personal" ? "我的笔记" : sharedLayerDisplayName(selectedLayer?.sharedSlot, selectedLayer?.name ?? "")}</span>
+          <span>{selectedLayer?.name}</span>
           <ChevronDown aria-hidden="true" size={14} />
         </Button>
         <Popover className="reader-edit-layer-popover" placement="top" offset={12}>
@@ -72,26 +75,20 @@ export function ReaderEditingControls({
                 />
               ))}
             </div>
-            <p>个人层 · {personalLayer?.sharing ? "云盘成员可见，只有你能编辑" : "仅自己可见"}</p>
+            <p>个人层 · 只有你能编辑</p>
             <div className="annotation-layer-switcher">
-              <LayerSlotButton
-                isDisabled={isDisabled}
-                slot="P"
-                layer={personalLayer}
-                activeLayerId={activeLayerId}
-                onLayerChange={chooseLayer}
-              />
+              {personalLayers.map(layer => <LayerSlotButton key={layer.id} isDisabled={isDisabled} slot="P" layer={layer} activeLayerId={activeLayerId} onLayerChange={chooseLayer} />)}
             </div>
             <p>编辑时只显示所选层，并锁定当前页。</p>
           </Dialog>
         </Popover>
       </DialogTrigger>
       <div className="annotation-control-group" aria-label="工具">
-        <div className="segmented-control" aria-label="批注工具">
-          {(["text", "ink", "eraser"] as const).map((entry) => (
+        <div className="segmented-control" aria-label="笔记工具">
+          {(["text", "ink", "highlighter", "rectangle", "ellipse", "eraser"] as const).map((entry) => (
             <Button
               isDisabled={isDisabled || !selectedLayer?.canEdit}
-              aria-label={{ text: "文本", ink: "画笔", eraser: "整条橡皮" }[entry]}
+              aria-label={{ text: "文字", ink: "画笔", highlighter: "荧光笔", rectangle: "矩形", ellipse: "椭圆", eraser: "整条橡皮" }[entry]}
               aria-pressed={tool === entry}
               className="annotation-tool-button"
               key={entry}
@@ -102,6 +99,7 @@ export function ReaderEditingControls({
           ))}
         </div>
       </div>
+      {selectedLayer?.kind === "personal" && tool !== "eraser" && <input type="color" aria-label="工具颜色" disabled={isDisabled} value={toolColor} onChange={event => onColorChange(event.target.value)} />}
       <div className="annotation-control-group annotation-history-controls" aria-label="历史">
         <Button
           isDisabled={isDisabled || !selectedLayer?.canEdit}
@@ -137,7 +135,7 @@ function LayerSlotButton({
   activeLayerId: string | null;
   onLayerChange(layerId: string): void;
 }) {
-  const label = slot === "P" ? "P，我的笔记" : sharedLayerLabel(slot, layer?.name ?? "", "，");
+  const label = layer?.name ?? "";
   const button = (
     <Button
       isDisabled={isDisabled}
@@ -148,8 +146,8 @@ function LayerSlotButton({
         if (layer?.canEdit) onLayerChange(layer.id);
       }}
     >
-      <i aria-hidden="true" style={{ background: layer?.displayColor ?? "transparent" }} />
-      <span>{slot === "P" ? "P · 我的笔记" : sharedLayerLabel(slot, layer?.name ?? "")}</span>
+      {layer?.kind === "shared" && <i aria-hidden="true" style={{ background: layer.displayColor }} />}
+      <span>{layer?.name}</span>
       {layer && !layer.canEdit ? (
         <Lock aria-hidden="true" className="annotation-layer-slot__lock" size={11} />
       ) : null}
@@ -182,7 +180,7 @@ function LayerPermissionContent({
         <Lock aria-hidden="true" size={20} />
       </div>
       <h2>仅可查看</h2>
-      <p>{sharedLayerPrefix(layer.sharedSlot) ? `${layer.sharedSlot} · ` : ""}{sharedLayerDisplayName(layer.sharedSlot, layer.name)} 可以查看，但只有云盘拥有者和获得此层编辑权的成员可以编辑。</p>
+      <p>{sharedLayerDisplayName(layer.sharedSlot, layer.name)} 可以查看，但只有云盘拥有者和获得此层编辑权的成员可以编辑。</p>
       <p>如需编辑权限，请联系云盘拥有者。</p>
       <Button className="primary-button" onPress={onClose}>知道了</Button>
     </>
@@ -192,5 +190,8 @@ function LayerPermissionContent({
 function AnnotationToolIcon({ tool }: { tool: AnnotationTool }) {
   if (tool === "text") return <Type aria-hidden="true" size={20} strokeWidth={2} />;
   if (tool === "ink") return <Pencil aria-hidden="true" size={20} strokeWidth={2} />;
+  if (tool === "highlighter") return <Highlighter aria-hidden="true" size={20} />;
+  if (tool === "rectangle") return <Square aria-hidden="true" size={20} />;
+  if (tool === "ellipse") return <Circle aria-hidden="true" size={20} />;
   return <Eraser aria-hidden="true" size={20} strokeWidth={2} />;
 }

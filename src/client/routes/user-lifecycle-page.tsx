@@ -43,11 +43,11 @@ function UserLifecycle() {
       <Button className="secondary-button" isDisabled={blocked} onPress={() => void perform("/api/user/lifecycle/restore", { confirm: true, deletionId: state.deletion!.deletionId }, async isCurrent => { await authClient.getSession(); if (isCurrent()) await navigate("/login"); })}>确认恢复用户</Button>
     </section> : <>
       <section>
-        <p>删除会立即撤销所有会话、云盘访问与同步。身份和个人层保留三十天，期间可重新验证并确认恢复；到期后永久清理。共享批注保留你最后使用的云盘内显示名，不保留登录邮箱或全局资料名作为署名。</p>
+        <p>删除会立即撤销所有会话、云盘访问与同步。身份和个人层保留三十天，期间可重新验证并确认恢复；到期后永久清理。共享笔记保留你最后使用的云盘内显示名，不保留登录邮箱或全局资料名作为署名。</p>
         <p>已下载内容无法远程收回；本机未同步草稿会保留在原用户下，其他用户不能读取。恢复期结束后服务器无法恢复已清理的数据。</p>
         {ownedDrives.length ? <p role="alert">请先在这些云盘完成拥有权转让：{ownedDrives.map((member) => member.name).join("、")}。</p> : null}
         {!state.reauthenticated ? <Button className="secondary-button" isDisabled={blocked || ownedDrives.length > 0} onPress={() => void perform("/api/user/lifecycle/reauthenticate", { expectedUserId: state.userId }, async () => { await navigate("/login"); })}>重新验证原登录方式</Button> : <>
-          <label className="confirmation-checkbox"><input type="checkbox" checked={acceptedUser === state.userId} onChange={(event) => setAcceptedUser(event.target.checked ? state.userId : null)} /><span>我理解删除、三十天恢复期、共享批注署名保留与本机草稿的影响。</span></label>
+          <label className="confirmation-checkbox"><input type="checkbox" checked={acceptedUser === state.userId} onChange={(event) => setAcceptedUser(event.target.checked ? state.userId : null)} /><span>我理解删除、三十天恢复期、共享笔记署名保留与本机草稿的影响。</span></label>
           <Button className="primary-button" isDisabled={blocked || acceptedUser !== state.userId || ownedDrives.length > 0} onPress={() => void perform("/api/user/lifecycle/delete", { confirm: true, expectedUserId: state.userId }, finishDeletion)}>确认删除用户</Button>
         </>}
       </section>

@@ -169,7 +169,7 @@ test("annotation commands retain offline and in-flight edits with real Worker/D1
   await holder.close();
   await page.goto(`${fixture.origin}/choirs/${fixture.choirId}/scores/${fixture.scoreId}`);
   await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
-  await expect(page.getByRole("complementary", { name: "批注同步异常" })).toContainText("本机草稿保留");
+  await expect(page.getByRole("complementary", { name: "笔记同步异常" })).toContainText("本机草稿保留");
   await mkdir("artifacts/verification", { recursive: true });
   await page.screenshot({ path: "artifacts/verification/annotations-135.png", fullPage: true });
   } catch (error) { console.error(error); throw error; }

@@ -86,16 +86,16 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     await page.getByRole("button", { name: "更多", exact: true }).click();
     await page.getByRole("button", { name: "更多", exact: true }).click();
     await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
-    await page.getByRole("button", { name: "文本", exact: true }).click();
+    await page.getByRole("button", { name: "文字", exact: true }).click();
     await page.locator(".annotation-overlay svg").evaluate(element => {
       const bounds = element.getBoundingClientRect();
       const init = { bubbles: true, pointerId: 1, pointerType: "touch", clientX: bounds.left + bounds.width * .35, clientY: bounds.top + bounds.height * .4 };
       element.dispatchEvent(new PointerEvent("pointerdown", init)); element.dispatchEvent(new PointerEvent("pointerup", init));
     });
-    await page.getByRole("textbox", { name: "批注文本", exact: true }).fill("图片离线批注");
+    await page.getByRole("textbox", { name: "笔记文本", exact: true }).fill("图片离线笔记");
     await page.getByRole("button", { name: "完成", exact: true }).click();
     await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
-    await expect(page.getByText("图片离线批注", { exact: true })).toBeVisible();
+    await expect(page.getByText("图片离线笔记", { exact: true })).toBeVisible();
     assert.equal(resources.some(url => /\/assets\/pdf-[A-Za-z0-9_-]{8}\.js/.test(url)), false, "image reopen must not load the PDF.js module");
     if (engineName === "chromium") {
       await context.setOffline(false);
@@ -103,11 +103,11 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
       // Reconnection automatically syncs; the normal state has no manual action.
       await page.evaluate(() => window.dispatchEvent(new Event("online")));
       const annotations = `${fixture.origin}/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/annotations`;
-      await expect.poll(async () => (await (await context.request.get(annotations)).json()).objects.some(o => o.payload?.text === "图片离线批注")).toBe(true);
+      await expect.poll(async () => (await (await context.request.get(annotations)).json()).objects.some(o => o.payload?.text === "图片离线笔记")).toBe(true);
       await page.reload();
       await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({ state: "visible" });
       await expect(page.locator('.page-reader__sheet[data-page-turn-current]')).toHaveAttribute("data-page-number", "2");
-      await expect(page.getByText("图片离线批注", { exact: true })).toBeVisible();
+      await expect(page.getByText("图片离线笔记", { exact: true })).toBeVisible();
     }
     await writeFile(`artifacts/verification/137/${engineName}-images.json`, JSON.stringify({ engine: manifest.engine, pages: manifest.pages.length, sizes: manifest.pages.map(p => p.assets), backend: "local PDFium + Worker/D1/R2 + IndexedDB", cloudContainer: false }, null, 2));
   });

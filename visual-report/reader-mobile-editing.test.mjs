@@ -59,7 +59,7 @@ test(`${engineName}: keeps the capsule at the right edge above its page hint in 
       };
     });
 
-    assert.deepEqual(result.labels, ["编辑", "看哪些批注", "更多"]);
+    assert.deepEqual(result.labels, ["编辑", "看哪些笔记", "更多"]);
     assert.equal(result.states[0], "ready");
     assert.ok(result.sizes.every(({ width: buttonWidth, height }) => buttonWidth >= 44 && height >= 44));
     assert.ok(result.actionLeft >= 0 && result.actionRight <= width);
@@ -73,8 +73,8 @@ test(`${engineName}: keeps the capsule at the right edge above its page hint in 
     await page.locator(".annotation-controls").waitFor();
     const editingActions = await page.locator(".reader-chrome__actions").boundingBox();
     assert.ok(Math.abs(editingActions.x + editingActions.width - result.actionRight) < 1);
-    const editingPage = await page.locator(".reader-page-indicator").boundingBox();
-    assert.ok(editingPage.y >= editingActions.y + editingActions.height);
+    assert.equal(await page.locator(".reader-page-indicator").count(), 0);
+    for (const name of ["返回云盘", "看哪些笔记", "更多"]) assert.equal(await page.getByRole("button", { name, exact: true }).count(), 0);
     await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
 
     await page.getByRole("button", { name: "页面位置", exact: true }).click();
@@ -103,11 +103,11 @@ test("grows and caps the real text composer inside an iPad WebKit visual viewpor
     element.dispatchEvent(new PointerEvent("pointerup", init));
   });
 
-  const input = page.getByRole("textbox", { name: "批注文本", exact: true });
+  const input = page.getByRole("textbox", { name: "笔记文本", exact: true });
   await input.waitFor({ state: "visible" });
   await input.fill("第一行\n第二行\n第三行");
   await assertEventually(page, () => {
-    const element = document.querySelector("textarea[aria-label='批注文本']");
+    const element = document.querySelector("textarea[aria-label='笔记文本']");
     return element instanceof HTMLTextAreaElement && element.clientHeight >= element.scrollHeight;
   });
   const multiline = await input.evaluate((element) => ({
@@ -123,12 +123,12 @@ test("grows and caps the real text composer inside an iPad WebKit visual viewpor
   const longValue = Array(30).fill("很多换行仍然可以继续编辑").join("\n");
   await input.fill(longValue);
   await assertEventually(page, () => {
-    const element = document.querySelector("textarea[aria-label='批注文本']");
+    const element = document.querySelector("textarea[aria-label='笔记文本']");
     return element instanceof HTMLTextAreaElement && getComputedStyle(element).overflowY === "auto";
   });
   await page.setViewportSize({ width: 600, height: 320 });
   await assertEventually(page, () => {
-    const element = document.querySelector("textarea[aria-label='批注文本']");
+    const element = document.querySelector("textarea[aria-label='笔记文本']");
     if (!(element instanceof HTMLTextAreaElement)) return false;
     const bounds = element.getBoundingClientRect();
     return bounds.top >= 0 && bounds.bottom <= innerHeight;
@@ -205,4 +205,26 @@ async function waitForRenderedPdf(page) {
 
 async function assertEventually(page, predicate) {
   await page.waitForFunction(predicate);
+}
+
+for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
+  test(`${engineName}: native repeated clicks keep text open and a subsequent blank gesture completes`, async context => {
+    const browser = await engine.launch({ headless: true });
+    context.after(() => browser.close());
+    const page = await openMemberReader(browser, { width: 834, height: 1100 });
+    await showReaderChrome(page);
+    await page.getByRole("button", { name: "编辑", exact: true }).click();
+    const bounds = await page.locator(".annotation-overlay svg").boundingBox();
+    const x = bounds.x + bounds.width * .85, y = bounds.y + bounds.height * .65;
+    await page.mouse.dblclick(x, y);
+    await page.getByRole("textbox", { name: "笔记文本" }).waitFor();
+    await page.mouse.click(x, y);
+    assert.equal(await page.getByRole("textbox", { name: "笔记文本" }).count(), 1);
+    await page.getByRole("textbox", { name: "笔记文本" }).fill("连续点击后继续输入");
+    await page.locator(".annotation-text-composer").click({ position: { x: 20, y: 300 } });
+    await page.getByRole("textbox", { name: "笔记文本" }).waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "连续点击后继续输入", exact: true }).waitFor();
+    await page.getByRole("button", { name: "完成编辑", exact: true }).click();
+    await page.getByRole("button", { name: "返回云盘", exact: true }).waitFor();
+  });
 }

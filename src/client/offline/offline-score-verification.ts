@@ -72,7 +72,7 @@ export function hasCompleteOfflineLayers(layers: AnnotationLayerSummary[], owner
   const shared = layers.filter(layer => layer.kind === "shared");
   return new Set(shared.map(layer => layer.sharedSlot)).size === shared.length
     && shared.every(layer => !!layer.sharedSlot)
-    && ownPersonal.length === (ownerKey.startsWith("user:") ? 1 : 0);
+    && (ownerKey.startsWith("user:") ? ownPersonal.length >= 1 : ownPersonal.length === 0);
 }
 
 type OfflineInspection = { record: OfflineScoreRecord | null; invalid: boolean };

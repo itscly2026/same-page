@@ -11,7 +11,7 @@ import { activateAuthenticatedLocalOwner, captureLocalWorkspaceSession, authenti
 let workspace: LocalWorkspace;
 const own: AnnotationLayerSummary = {
   id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind: "personal", sharedSlot: null,
-  name: "Personal", sortOrder: 10000, subscribed: true, subscriptionSource: "personal",
+  name: "我的笔记", sortOrder: 10000, subscribed: true, subscriptionSource: "personal",
   displayColor: "#b4235a", colorSource: "personal", adminDefaultColor: null,
   driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null,
   canEdit: true, sharing: false, canShare: true,

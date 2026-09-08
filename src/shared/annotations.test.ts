@@ -6,10 +6,10 @@ import {
 } from "./annotations";
 
 describe("scoreLayerPreferenceUpdateSchema", () => {
-  it("accepts only score subscription overrides", () => {
+  it("accepts score subscription and color overrides", () => {
     expect(scoreLayerPreferenceUpdateSchema.safeParse({ subscribed: false }).success).toBe(true);
     expect(scoreLayerPreferenceUpdateSchema.safeParse({ subscribed: null }).success).toBe(true);
-    expect(scoreLayerPreferenceUpdateSchema.safeParse({ colorOverride: "#445566" }).success).toBe(false);
+    expect(scoreLayerPreferenceUpdateSchema.safeParse({ colorOverride: "#445566" }).success).toBe(true);
   });
 });
 

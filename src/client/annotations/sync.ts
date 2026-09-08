@@ -184,7 +184,13 @@ export async function refreshLayerCapabilities(workspace: LocalWorkspace, signal
   }
   const previous = await readAnnotationLayers(workspace);
   const applied = workspace.ownerKey.startsWith("user:") ? layers : layers.map(layer => ({
-    ...layer, subscribed: previous.find(entry => entry.id === layer.id)?.subscribed ?? layer.subscribed,
+    ...layer,
+    ...(() => {
+      const saved = previous.find(entry => entry.id === layer.id);
+      return saved ? { subscribed: saved.subscribed, scoreSubscriptionOverride: saved.scoreSubscriptionOverride,
+        scoreColorOverride: saved.scoreColorOverride, displayColor: saved.scoreColorOverride ?? layer.displayColor,
+        colorSource: saved.scoreColorOverride ? "score" as const : layer.colorSource } : {};
+    })(),
   }));
   signal.throwIfAborted();
   if (!await cacheAnnotationLayers(workspace, applied, sharedLayerRevision)) throw new Error("shared_layer_state_changed");

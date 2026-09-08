@@ -152,3 +152,9 @@ body:has(.reader-edit-layer-popover) .annotation-text-hint { display: none; }
 .reader-shell:has(.reader-edit-first-hint) .annotation-text-hint { display: none; }
 
 .reader-loading__back { position: absolute; top: max(.75rem, env(safe-area-inset-top)); left: max(.75rem, env(safe-area-inset-left)); z-index: 1; color: #eee; background: transparent; }
+
+.personal-sharing-toggle { border: 1px solid var(--border-color, #d4d4d4); border-radius: 999px; padding: .35rem .6rem; font-size: .8rem; background: transparent; }
+.personal-sharing-toggle[aria-pressed="true"] { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.reader-layer-panel form { display: flex; flex-wrap: wrap; gap: .5rem; margin: .6rem 0; }
+.reader-layer-panel .layer-card__main { flex-wrap: wrap; }
+.reader-layer-panel input[type="color"], .annotation-controls input[type="color"] { width: 36px; height: 36px; padding: 2px; border-radius: 8px; border: 1px solid #ddd; background: transparent; }

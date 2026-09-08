@@ -399,7 +399,7 @@ async function assertScenarioContent(page, scenario) {
   }
   const editing = await page.locator('.reader-icon-button[aria-label="编辑"][aria-pressed="true"]').count() > 0;
   const deleteDrag = scenario.id === "reader-text-delete";
-  if (scenario.id === "reader-layer-save-failure" && !await page.getByRole("checkbox", { name: "显示 E · Ensemble", exact: true }).isChecked()) throw new Error("Failed layer save did not preserve its prior checked value");
+  if (scenario.id === "reader-layer-save-failure" && !await page.getByRole("checkbox", { name: "显示 Ensemble", exact: true }).isChecked()) throw new Error("Failed layer save did not preserve its prior checked value");
   if (editing && !deleteDrag) {
     await page.locator(".reader-edit-layer-trigger").waitFor({ state: "visible" });
     for (const name of ["文本", "画笔", "整条橡皮", "撤销", "重做"]) {

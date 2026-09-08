@@ -1,6 +1,8 @@
 import { RECOVERY_PERIOD_MS } from "../lifecycle/cleanup";
 
 export async function cleanupSharedLayers(db: D1Database, now = Date.now()) {
+  await db.prepare("DELETE FROM annotation_layers WHERE kind = 'personal' AND deleted_at IS NOT NULL AND deleted_at <= ?")
+    .bind(now - RECOVERY_PERIOD_MS).run();
   // Expiry is checked by the same DELETE that triggers all dependent cleanup.
   await db.prepare(`DELETE FROM choir_shared_layer_settings WHERE (choir_id, slot) IN (
     SELECT choir_id, slot FROM choir_shared_layer_settings

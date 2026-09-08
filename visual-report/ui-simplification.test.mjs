@@ -25,7 +25,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
       const body = request.postDataJSON();
       if (method !== "GET") writes.push({ pathname, body });
       if (pathname === "/api/user/lifecycle") return route.fulfill({ json: { userId: "visual-user-admin", deletion: null, reauthenticated: false, methods: ["credential"], memberships: [] } });
-      if (pathname.endsWith("/personal-layer/sharing")) { sharing = body.sharing; return route.fulfill({ json: { sharing } }); }
+      if (/\/personal-layers\/[^/]+$/.test(pathname)) { sharing = body.sharing; return route.fulfill({ json: { sharing } }); }
       if (method === "PUT" && pathname.endsWith("/permissions")) return route.fulfill({ status: 204 });
       const response = fixture.resolve({ pathname, method, body, identity: "admin", cookie: request.headers().cookie ?? "" });
       if (pathname.endsWith("/layers")) {
@@ -103,25 +103,25 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     assert.equal(await page.getByRole("button", { name: "下载离线副本", exact: true }).count(), 0);
     assert.equal(await page.getByRole("button", { name: "立即同步", exact: true }).count(), 0);
     await capture("reader-options");
-    await page.getByRole("button", { name: "分享我的笔记", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "分享我的笔记" })).toBeVisible();
+    await page.getByRole("button", { name: "关闭更多阅读选项" }).click();
+    await page.getByRole("button", { name: "看哪些笔记", exact: true }).click();
+    const shareToggle = page.getByRole("button", { name: "分享 我的笔记", exact: true });
+    await expect(shareToggle).toHaveText("仅自己可见");
     await capture("share-notes");
-    await page.getByRole("button", { name: "向云盘成员分享", exact: true }).click();
-    await expect(page.getByRole("button", { name: "停止分享" })).toBeEnabled();
-    await page.getByRole("button", { name: "停止分享" }).click();
-    await expect(page.getByRole("button", { name: "向云盘成员分享" })).toBeEnabled();
-    assert.deepEqual(writes.filter(write => write.pathname.endsWith("/personal-layer/sharing")).map(write => write.body), [{ sharing: true }, { sharing: false }]);
-    await page.getByRole("dialog", { name: "分享我的笔记" }).getByRole("button", { name: "关闭批注显示" }).click();
-    await expect(page.getByRole("dialog", { name: "分享我的笔记" })).toBeHidden();
-    await page.getByRole("button", { name: "看哪些批注", exact: true }).click();
-    assert.equal(await page.getByRole("button", { name: "向云盘成员分享" }).count(), 0);
-    await page.getByRole("checkbox", { name: "显示 E · Ensemble" }).waitFor();
+    await shareToggle.click();
+    await expect(shareToggle).toHaveText("云盘成员可见");
+    await expect(shareToggle).toBeEnabled();
+    await shareToggle.click();
+    await expect(shareToggle).toHaveText("仅自己可见");
+    await expect(shareToggle).toBeEnabled();
+    assert.deepEqual(writes.filter(write => /\/personal-layers\/[^/]+$/.test(write.pathname)).map(write => write.body.sharing), [true, false]);
+    await page.getByRole("checkbox", { name: "显示 Ensemble" }).waitFor();
     await capture("display-layers");
-    await page.getByRole("dialog", { name: "看哪些批注" }).getByRole("button", { name: "关闭批注显示" }).click();
+    await page.getByRole("dialog", { name: "看哪些笔记" }).getByRole("button", { name: "关闭笔记显示" }).click();
     await page.getByRole("button", { name: "更多", exact: true }).click();
     await page.getByRole("button", { name: "导出 PDF", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "导出 PDF" });
-    await dialog.getByRole("button", { name: "取消全部批注" }).click();
+    await dialog.getByRole("button", { name: "取消全部笔记" }).click();
     assert.equal(await dialog.locator('input:checked').count(), 0);
     assert.equal(writes.some(write => write.pathname.endsWith("/preference")), false);
     await capture("export-original");

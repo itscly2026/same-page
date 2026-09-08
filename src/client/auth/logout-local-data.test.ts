@@ -60,7 +60,7 @@ describe("logout local privacy", () => {
       key: localWorkspaceRecordKey(workspace, "personal-layer"),
       id: "personal-layer",
       kind: "personal" as const,
-      name: "我的批注",
+      name: "我的笔记",
     };
     await localDatabase.annotationLayers.bulkPut([sharedLayer, personalLayer]);
     const annotation = (

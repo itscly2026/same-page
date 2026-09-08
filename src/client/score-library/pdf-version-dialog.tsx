@@ -66,7 +66,7 @@ export function PdfVersionDialog({ choirId, score, historyOnly, onClose, onCompl
       });
       if (!response.ok) { setMessage(uploadMessage(response.status, await response.json())); return; }
       candidate.current = null;
-      await onComplete(historyOnly ? "已回滚 PDF；批注仍使用原页码和坐标。" : "PDF 已替换；批注仍使用原页码和坐标。");
+      await onComplete(historyOnly ? "已回滚 PDF；笔记仍使用原页码和坐标。" : "PDF 已替换；笔记仍使用原页码和坐标。");
     } catch { setMessage("未能确认发布结果，请重试或重新打开版本记录核对。"); }
     finally { if (mounted.current) setBusy(false); }
   };
@@ -92,9 +92,9 @@ export function PdfVersionDialog({ choirId, score, historyOnly, onClose, onCompl
       {busy ? <p role="status">正在处理…</p> : null}
       {selected ? <>
         <p>当前 {currentPages} 页 → 所选版本 {selected.pageCount} 页。</p>
-        {selected.pageCount < currentPages ? <p role="alert">页数减少：超出新 PDF 页数的批注会保留，但暂时不可见。</p> : null}
+        {selected.pageCount < currentPages ? <p role="alert">页数减少：超出新 PDF 页数的笔记会保留，但暂时不可见。</p> : null}
         <PdfVersionPreview key={selected.id} scorePath={path} choirId={choirId} scoreId={score.id} versionId={selected.id} onReady={setReady} />
-        <label className="confirmation-checkbox"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} /><span>我已检查预览，理解排版变化不会迁移批注，批注仍保留原页码和位置。</span></label>
+        <label className="confirmation-checkbox"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} /><span>我已检查预览，理解排版变化不会迁移笔记，笔记仍保留原页码和位置。</span></label>
         <Button className="primary-button" isDisabled={!ready || !accepted || busy} onPress={() => void publish()}>{historyOnly ? "确认回滚" : "确认替换"}</Button>
       </> : null}
       {!historyOnly ? <p>确认前原版保持不变。候选文件计入云盘配额，取消后回收，未确认的上传在 24 小时后到期。</p> : null}

@@ -30,7 +30,7 @@ test("export preserves multipage source geometry and overlays text and ink on ro
       { layerId: "selected", deleted: false, payload: { kind: "ink", pageNumber: i + 1, strokeWidth: .003, points: [{ x: .1, y: .7 }, { x: .3, y: .7 }] } },
       { layerId: "excluded", deleted: false, payload: { kind: "text", pageNumber: i + 1, x: .5, y: .5, fontScale: .08, text: "EXCLUDED" } },
     ]).flat();
-    const blob = await exportAnnotatedPdf(source, annotations, [{ id: "selected", displayColor: "#ff0000" }]);
+    const blob = await exportAnnotatedPdf(source, annotations, [{ id: "selected", kind: "shared", displayColor: "#ff0000" }]);
     const bytesOut = [...new Uint8Array(await blob.arrayBuffer())];
     const exported = loadPdfDocument(new Uint8Array(bytesOut).buffer);
     const { document: target } = await exported.promise;
@@ -112,6 +112,7 @@ test("reader export uses reading subscriptions even when opened from editing", a
   const sheet = page.locator(".page-reader__viewport"); await sheet.waitFor();
   await sheet.click();
   await page.getByRole("button", { name: "编辑", exact: true }).click();
+  await page.getByRole("button", { name: "完成编辑", exact: true }).click();
   await page.getByRole("button", { name: "更多", exact: true }).click();
   await page.getByRole("button", { name: "导出 PDF", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "导出 PDF" }); await dialog.waitFor();
@@ -123,13 +124,49 @@ test("reader export uses reading subscriptions even when opened from editing", a
   assert.equal(await download.failure(), null);
   revoked = true;
   await dialog.getByRole("button", { name: "导出 PDF", exact: true }).click();
-  await dialog.getByText("所选批注层已不可用，请重新选择后导出").waitFor();
+  await dialog.getByText("所选笔记层已不可用，请重新选择后导出").waitFor();
   await dialog.getByRole("button", { name: "移除不可用层" }).click();
   await page.context().setOffline(true);
   await dialog.getByRole("button", { name: "导出 PDF", exact: true }).click();
-  await dialog.getByText("所选批注层的完整离线数据尚未准备好，请联网后导出").waitFor();
+  await dialog.getByText("所选笔记层的完整离线数据尚未准备好，请联网后导出").waitFor();
   for (const checkbox of await dialog.getByRole("checkbox").all()) await checkbox.uncheck();
   const [original] = await Promise.all([page.waitForEvent("download"), dialog.getByRole("button", { name: "导出 PDF", exact: true }).click()]);
   assert.equal(await original.failure(), null);
 
+});
+
+test("personal shapes retain object colors and highlighter exports translucent over the source", async t => {
+  const app = await startVisualServer({ script: "dev" });
+  const browser = await chromium.launch({ headless: true });
+  t.after(async () => { await browser.close(); await app.stop(); });
+  const page = await browser.newPage(); await page.goto(app.origin);
+  const pdf = await PDFDocument.create();
+  const sheet = pdf.addPage([500, 500]);
+  sheet.drawLine({ start: { x: 40, y: 100 }, end: { x: 460, y: 100 }, thickness: 2, color: rgb(0, 0, 0) });
+  const evidence = await page.evaluate(async bytes => {
+    const { loadPdfDocument } = await import("/src/client/reader/pdf-document.ts");
+    const { exportAnnotatedPdf } = await import("/src/client/reader/export-pdf.ts");
+    const loaded = loadPdfDocument(new Uint8Array(bytes).buffer), { document: source } = await loaded.promise;
+    const notes = [
+      { kind: "shape", shape: "rectangle", x: .1, y: .1, width: .3, height: .3, strokeWidth: .003, color: "#ff0000", pageNumber: 1 },
+      { kind: "shape", shape: "ellipse", x: .5, y: .1, width: .3, height: .3, strokeWidth: .003, color: "#0000ff", pageNumber: 1 },
+      { kind: "ink", points: [{ x: .1, y: .8 }, { x: .9, y: .8 }], strokeWidth: .018, opacity: .3, color: "#ffff00", pageNumber: 1 },
+    ].map(payload => ({ layerId: "personal", payload, deleted: false }));
+    const blob = await exportAnnotatedPdf(source, notes, [{ id: "personal", kind: "personal", displayColor: "#00ff00" }]);
+    const output = loadPdfDocument(await blob.arrayBuffer()), { document: result } = await output.promise;
+    const sheet = await result.getPage(1); const canvas = document.createElement("canvas"); canvas.width = canvas.height = 500;
+    await sheet.render({ canvas, viewport: sheet.getViewport({ scale: 1 }) }).promise;
+    const ctx = canvas.getContext("2d");
+    const pixel = (x, y) => [...ctx.getImageData(x, y, 1, 1).data].slice(0, 3);
+    const evidence = { rectangle: pixel(100, 50), ellipse: pixel(325, 50), empty: pixel(325, 125), highlightedWhite: pixel(200, 397), highlightedBlack: pixel(200, 400) };
+    document.body.replaceChildren(canvas);
+    await loaded.destroy(); await output.destroy(); return evidence;
+  }, [...await pdf.save()]);
+  assert.ok(evidence.rectangle[0] > 200 && evidence.rectangle[1] < 150);
+  assert.ok(evidence.ellipse[2] > 200 && evidence.ellipse[0] < 150);
+  assert.deepEqual(evidence.empty, [255, 255, 255]);
+  assert.ok(evidence.highlightedWhite[0] > 240 && evidence.highlightedWhite[2] > 150 && evidence.highlightedWhite[2] < 210);
+  assert.ok(evidence.highlightedBlack.every(value => value < 100));
+  await mkdir("artifacts/verification/pdf-export", { recursive: true });
+  await page.screenshot({ path: "artifacts/verification/pdf-export/personal-tools.png" });
 });

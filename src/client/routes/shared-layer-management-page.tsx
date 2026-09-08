@@ -97,7 +97,7 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
         <button className="secondary-button" disabled={pending || view === "current"} onClick={() => { setLayers([]); setLoading(true); setView("current"); }}>当前共享层</button>
         <button className="secondary-button" disabled={pending || view === "deleted"} onClick={() => { setLayers([]); setLoading(true); setView("deleted"); }}>已删除层</button>
       </div>
-      {view === "deleted" && <p className="settings-copy">删除影响当前云盘全部乐谱。30 天内恢复原层及其批注、授权和阅读偏好，之后永久清理。恢复不会恢复已终止的成员关系。</p>}
+      {view === "deleted" && <p className="settings-copy">删除影响当前云盘全部乐谱。30 天内恢复原层及其笔记、授权和阅读偏好，之后永久清理。恢复不会恢复已终止的成员关系。</p>}
       {!loadError && <>
         <section className="settings-card" aria-label="共享层管理列表" aria-busy={loading || pending}>
           {!loading && !layers.length && <p>{view === "deleted" ? "没有已删除的共享层。" : "没有共享层。"}</p>}
@@ -133,8 +133,8 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
     <ModalOverlay className="modal-overlay" isOpen={deleting !== null} isDismissable={!pending} onOpenChange={open => { if (!open && !pending) setDeleting(null); }}>
       <Modal className="app-modal app-modal--compact"><Dialog className="app-dialog" exitDisabled={pending}>
         <Heading slot="title">删除共享层「{deleting ? sharedLayerLabel(deleting.slot, deleting.name) : ""}」？</Heading>
-        <p>这会删除当前云盘全部乐谱上的此共享层，并立即隐藏其批注、停止云端编辑。</p>
-        <p>30 天内可在“已删除层”恢复原层、批注、授权和阅读偏好；到期后永久清理。停用则保留内容且没有清理期限。</p>
+        <p>这会删除当前云盘全部乐谱上的此共享层，并立即隐藏其笔记、停止云端编辑。</p>
+        <p>30 天内可在“已删除层”恢复原层、笔记、授权和阅读偏好；到期后永久清理。停用则保留内容且没有清理期限。</p>
         <p>断网设备在重新联网确认层状态后停止上传，本机未同步草稿会保留。</p>
         <div className="dialog-actions">
           <Button className="secondary-button" isDisabled={pending} onPress={() => setDeleting(null)}>取消</Button>
