@@ -1,6 +1,6 @@
 import { createLocalAccountIssuer } from "@better-auth/core/db";
 import { hashPassword } from "better-auth/crypto";
-import { createHash, randomUUID, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomUUID, randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { readD1Migrations } from "@cloudflare/vitest-plugin";
@@ -10,8 +10,9 @@ import { startViteServer } from "../scripts/vite-server.mjs";
 
 // Each call owns a fresh local Worker store. Bindings are disposed before Vite
 // opens them, so the seed and server never contend for the same SQLite files.
-export async function startStorageFixture({ authenticated = false, previewEntry = true, script = "preview", expired = false, rendererOrigin, pdf = createSampleScorePdf() } = {}) {
+export async function startStorageFixture({ authenticated = false, invite = false, nonMember = false, previewEntry = true, script = "preview", expired = false, rendererOrigin, pdf = createSampleScorePdf() } = {}) {
   const accounts = authenticated ? [0, 1].map(() => ({ id: randomUUID(), email: `${randomUUID()}@example.test`, password: randomBytes(24).toString("hex") })) : [];
+  const joinCode = invite ? Array.from(randomBytes(8), value => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[value & 31]).join("") : null;
   const choirId = randomUUID(), scoreId = randomUUID(), versionId = randomUUID();
   const fileName = "本地链路测试.pdf";
   const hash = createHash("sha256").update(pdf).digest("hex");
@@ -37,7 +38,7 @@ export async function startStorageFixture({ authenticated = false, previewEntry 
           accountStatements.push(
             DB.prepare("INSERT INTO user (id, name, email, email_verified, created_at, updated_at) VALUES (?, '本地测试用户', ?, 1, ?, ?)").bind(account.id, account.email, now, now),
             DB.prepare("INSERT INTO account (id, issuer, account_id, provider_id, user_id, password, created_at, updated_at) VALUES (?, ?, ?, 'credential', ?, ?, ?, ?)").bind(randomUUID(), createLocalAccountIssuer("credential"), account.id, account.id, await hashPassword(account.password), now, now),
-            DB.prepare("INSERT INTO memberships (id, choir_id, user_id, display_name, status) VALUES (?, ?, ?, '本地测试成员', 'active')").bind(index === 0 ? ownerMembershipId : randomUUID(), choirId, account.id),
+            ...(nonMember && index === 1 ? [] : [DB.prepare("INSERT INTO memberships (id, choir_id, user_id, display_name, status) VALUES (?, ?, ?, '本地测试成员', 'active')").bind(index === 0 ? ownerMembershipId : randomUUID(), choirId, account.id)]),
           );
         }
         await DB.batch([
@@ -46,6 +47,10 @@ export async function startStorageFixture({ authenticated = false, previewEntry 
           DB.prepare("INSERT INTO score_versions (id, choir_id, score_id, version_number, object_key, size_bytes, sha256, etag, page_count, state) VALUES (?, ?, ?, 1, ?, ?, ?, ?, 2, 'ready')").bind(versionId, choirId, scoreId, objectKey, pdf.length, hash, object.etag),
           ...accountStatements,
         ]);
+        if (joinCode) {
+          const inviteHash = createHmac("sha256", platform.env.INVITE_SECRET).update(`join-code:${joinCode}`).digest("base64url");
+          await DB.prepare("UPDATE choirs SET guest_admission_mode = 'invite', is_preview_entry = 0, join_code_hash = ? WHERE id = ?").bind(inviteHash, choirId).run();
+        }
         if (expired) {
           const now = Date.now();
           await DB.prepare("UPDATE scores SET trashed_at = ?, trash_expires_at = ? WHERE id = ?")
@@ -62,5 +67,5 @@ export async function startStorageFixture({ authenticated = false, previewEntry 
     },
   });
   const { buildId } = JSON.parse(await readFile("dist/client/build.json", "utf8"));
-  return { ...server, choirId, scoreId, versionId, fileName, pdf, buildId, accounts };
+  return { ...server, choirId, scoreId, versionId, fileName, pdf, buildId, accounts, joinCode };
 }

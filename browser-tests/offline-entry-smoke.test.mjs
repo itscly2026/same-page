@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { chromium, webkit, request } from "@playwright/test";
+import { chromium, webkit, request, expect } from "@playwright/test";
 import { expectSampleScoreContent } from "./pdf-content.mjs";
 import { startStorageFixture } from "./storage-fixture.mjs";
 
@@ -99,6 +99,8 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     assert.equal(await offline.getByRole("button", { name: "完成编辑", exact: true }).getAttribute("aria-pressed"), "true");
     await offline.screenshot({ path: `artifacts/verification/offline-entry/${engineName}-reconnected-editing.png` });
     await offline.getByRole("button", { name: "完成编辑", exact: true }).click();
+    // Local persistence is asynchronous; back during it only consumes editing.
+    await expect(offline.getByRole("button", { name: "编辑", exact: true })).toHaveAttribute("aria-pressed", "false");
     await offline.getByRole("button", { name: "返回云盘", exact: true }).click();
     await offline.getByRole("searchbox").fill(fixture.fileName.replace(/\.pdf$/i, ""));
     await offline.getByRole("combobox", { name: "乐谱排序" }).selectOption("updated");
