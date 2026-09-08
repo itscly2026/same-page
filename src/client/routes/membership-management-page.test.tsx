@@ -78,3 +78,31 @@ it("clears a failed audit read when a permission save automatically refreshes th
   expect(await screen.findByText("暂无权限变更记录。")).toBeVisible();
   expect(screen.queryByText(/权限记录读取失败/)).not.toBeInTheDocument();
 });
+
+it("lets ordinary members inspect owner, delegated scopes and layer grants from either view", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/permission-layers") ? Response.json({ layers: [{ slot: "S", name: "Soprano" }] }) : Response.json({ ...state, capabilities: effectiveCapabilities(false, emptyPermissions(), emptyPermissions()), memberships: [{ ...member, operations: { operations: ["uploadFiles"], sharedLayers: ["S"] }, management: { operations: ["modifyFiles"], sharedLayers: [] } }] })));
+  render(page());
+  fireEvent.click(await screen.findByRole("heading", { name: "小花" }));
+  expect(screen.getByText(/操作权限：上传文件、Soprano/)).toBeVisible();
+  expect(screen.getByText(/授权管理范围：修改文件/)).toBeVisible();
+  expect(screen.queryByRole("button", { name: "保存 小花 的权限" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "按权限" }));
+  fireEvent.change(screen.getByLabelText("选择权限"), { target: { value: "layer:S" } });
+  expect(screen.getByRole("heading", { name: "小花" })).toBeVisible();
+});
+
+it("shares drafts and revision checks across member and permission views", async () => {
+  const writes: unknown[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === "PUT") { writes.push(JSON.parse(String(init.body))); return new Response(null, { status: 204 }); }
+    return url.endsWith("/permission-layers") ? Response.json({ layers: [{ slot: "S", name: "Soprano" }] }) : url.endsWith("/permission-changes") ? Response.json({ changes: [] }) : Response.json(state);
+  }));
+  render(page());
+  fireEvent.click(await screen.findByRole("heading", { name: "小花" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "上传文件：可以操作" }));
+  fireEvent.click(screen.getByRole("button", { name: "按权限" }));
+  fireEvent.change(screen.getByLabelText("选择权限"), { target: { value: "layer:S" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "编辑 Soprano：可以操作" }));
+  fireEvent.click(screen.getByRole("button", { name: "保存 小花 的权限" }));
+  await waitFor(() => expect(writes).toEqual([{ expectedRevision: 1, operations: { operations: ["uploadFiles"], sharedLayers: ["S"] }, management: emptyPermissions() }]));
+});

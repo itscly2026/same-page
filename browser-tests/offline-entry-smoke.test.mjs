@@ -72,7 +72,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     assert.equal(await offline.getByRole("combobox", { name: "乐谱排序" }).inputValue(), "updated");
     assert.equal(await offline.getByRole("heading", { name: "本机内容" }).count(), 0);
     await offline.getByRole("button", { name: "打开云盘菜单" }).click();
-    await offline.getByRole("link", { name: "返回所有云盘", exact: true }).click();
+    await offline.getByRole("link", { name: "云盘列表", exact: true }).click();
     await offline.getByRole("link").filter({ hasText: "本地链路云盘" }).click();
     await offline.goto(drive);
     await offline.getByRole("heading", { name: "本地链路云盘" }).waitFor();

@@ -76,7 +76,7 @@ it("keeps explicit invitation intent and the switch picker accessible with one m
   fireEvent.click(screen.getByRole("link", { name: /云盘 one.*成员/ }));
   await screen.findByRole("heading", { name: "云盘 one" });
   fireEvent.click(screen.getByRole("button", { name: "打开云盘菜单" }));
-  fireEvent.click(screen.getByRole("link", { name: "返回所有云盘" }));
+  fireEvent.click(screen.getByRole("link", { name: "云盘列表" }));
   await screen.findByRole("link", { name: /云盘 one.*成员/ });
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expectPath("/drives");

@@ -71,9 +71,7 @@ permissionRoutes.get("/choirs/:choirId/permission-changes", async context => {
 });
 permissionRoutes.get("/choirs/:choirId/permission-layers", async context => {
   const choirId = context.req.param("choirId");
-  const member = await readPermissionMember(context.env.DB, await resolveContextPrincipal(context), choirId);
-  const capabilities = memberCapabilities(member);
-  if (!member.isOwner && !isDelegated(capabilities.management) && !capabilities.operations.operations.includes("removeMembers")) throw new AuthorizationError();
+  await readPermissionMember(context.env.DB, await resolveContextPrincipal(context), choirId);
   const rows = await context.env.DB.prepare("SELECT slot, name FROM choir_shared_layer_settings WHERE choir_id = ? ORDER BY sort_order, slot").bind(choirId).all();
   return context.json({ layers: rows.results });
 });

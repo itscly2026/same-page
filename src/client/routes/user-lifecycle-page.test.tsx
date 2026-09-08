@@ -59,7 +59,7 @@ it("keeps deletion behind a secondary entry", async () => {
 it("keeps ordinary personal settings available when lifecycle service fails", () => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
   render(<MemoryRouter><PersonalSettingsPage /></MemoryRouter>);
-  expect(screen.getByRole("link", { name: "帮助与诊断" })).toHaveAttribute("href", "/diagnostics");
+  expect(screen.getByRole("button", { name: "应用菜单" })).toBeVisible();
   expect(screen.getByRole("link", { name: "删除用户" })).toHaveAttribute("href", "/user/lifecycle");
   expect(fetch).not.toHaveBeenCalled();
 });

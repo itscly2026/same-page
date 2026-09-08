@@ -113,7 +113,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
     setMessage(null);
   };
 
-  const headerActions = <Link className="header-action" to="/drives">返回所有云盘</Link>;
+  const headerActions = <Link className="header-action" to="/drives">云盘列表</Link>;
 
   if (access.kind === "join-required") {
     return (
@@ -165,8 +165,9 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
   return (
     <div className="app-page drive-page">
       <DriveHeader choirId={choirId} choirName={choir.name} userId={userId} localOnly={Boolean(access.local)} onEditDisplayName={access.isMember && !access.local ? () => setSettingsField("display-name") : undefined} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
-        management={managementVisible ? close => <section className="drive-drawer-management">
+        management={access.isMember || managementVisible ? close => <section className="drive-drawer-management">
           <h3>云盘管理</h3>
+          {access.isMember && !access.local && <Link className="settings-secondary-link" to={`/choirs/${choirId}/management`} onClick={close}>管理概览</Link>}
           <Menu aria-label="云盘管理菜单" disabledKeys={access.local ? ["name", "memberships", "layers", "trash", "invite"] : []} onAction={key => {
             close();
             if (key === "name") setSettingsField("name");
@@ -174,7 +175,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
             if (key === "invite") setInviteManagementOpen(true);
           }}>
             {visible("editDriveInfo") && <MenuItem id="name">云盘名称</MenuItem>}
-            {(visibleCapabilities.isOwner || isDelegated(visibleCapabilities.management) || visible("removeMembers")) && <MenuItem id="memberships" href={`/choirs/${choirId}/memberships`}>成员与权限</MenuItem>}
+            {(access.isMember || visibleCapabilities.isOwner || isDelegated(visibleCapabilities.management) || visible("removeMembers")) && <MenuItem id="memberships" href={`/choirs/${choirId}/memberships`}>成员与权限</MenuItem>}
             {visible("configureLayers") && <MenuItem id="layers" href={`/choirs/${choirId}/shared-layers`}>共享层</MenuItem>}
             {visible("trashFiles") && <MenuItem id="trash">回收站</MenuItem>}
             {visible("manageInvites") && choir.guestAdmissionMode === "invite" && <MenuItem id="invite">邀请码</MenuItem>}
@@ -266,7 +267,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
               ))}
             </section>
           ) : (
-            <div className="library-empty-state">{access.retained && <BackButton className="secondary-link" to="/drives">返回所有云盘</BackButton>}{search.trim() ? <><p>没有找到包含「{search}」的乐谱。</p><Button className="secondary-button" onPress={() => updateSearch("")}>清除搜索</Button></> : <><p>{access.retained ? "本机没有可用的保留副本。" : access.local ? "本机尚未保存这个云盘的目录或乐谱，请联网后下载。" : "这个云盘还没有乐谱。"}</p><p>{can("uploadFiles") ? "上传第一份 PDF，开始准备排练。" : access.isMember ? "有上传权限的成员上传乐谱后，会显示在这里。" : "暂时没有可浏览的乐谱，请稍后再来。"}</p>{can("uploadFiles") ? <Button className="secondary-button" onPress={() => setUploadOpen(true)}>上传第一份 PDF</Button> : null}</>}</div>
+            <div className="library-empty-state">{access.retained && <BackButton className="secondary-link" to="/drives">云盘列表</BackButton>}{search.trim() ? <><p>没有找到包含「{search}」的乐谱。</p><Button className="secondary-button" onPress={() => updateSearch("")}>清除搜索</Button></> : <><p>{access.retained ? "本机没有可用的保留副本。" : access.local ? "本机尚未保存这个云盘的目录或乐谱，请联网后下载。" : "这个云盘还没有乐谱。"}</p><p>{can("uploadFiles") ? "上传第一份 PDF，开始准备排练。" : access.isMember ? "有上传权限的成员上传乐谱后，会显示在这里。" : "暂时没有可浏览的乐谱，请稍后再来。"}</p>{can("uploadFiles") ? <Button className="secondary-button" onPress={() => setUploadOpen(true)}>上传第一份 PDF</Button> : null}</>}</div>
           )}
         </section>
       </main>

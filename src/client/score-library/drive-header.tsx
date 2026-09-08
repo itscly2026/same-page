@@ -1,3 +1,4 @@
+import { AppMenu } from "../components/app-menu";
 import { InstallButton } from "../install/install-entry";
 import { Menu as MenuIcon, Settings2, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -24,10 +25,10 @@ export function DriveHeader({ choirId, choirName, userId, search, onSearch, onRe
     <ModalOverlay className="drive-drawer-overlay" isOpen={drawerOpen} onOpenChange={setDrawerOpen} isDismissable>
       <Modal className="drive-drawer"><Dialog aria-label="云盘菜单">{({ close }) => <>
         <div className="dialog-heading"><Heading slot="title">{choirName}</Heading><Button className="icon-button" aria-label="关闭" onPress={close}><X size={21} aria-hidden="true" /></Button></div>
-        <Link className="drive-drawer-switch" to="/drives" onClick={close}>返回所有云盘</Link>
+        <Link className="drive-drawer-switch" to="/drives" onClick={close}>云盘列表</Link>
 
         {management?.(close)}
-        <InstallButton />
+        <InstallButton /><AppMenu />
       </>}</Dialog></Modal>
     </ModalOverlay>
   </>;
@@ -39,7 +40,7 @@ function DriveSettingsMenu({ choirId, choirName, onEditDisplayName, localOnly }:
     <Popover className="file-menu-popover account-menu-popover"><Menu aria-label="此云盘设置">
       <MenuItem isDisabled>{choirName} · 我的设置</MenuItem>
       <MenuItem isDisabled={!onEditDisplayName || localOnly} onAction={onEditDisplayName}>我在此云盘的显示名{localOnly ? "（需联网）" : ""}</MenuItem>
-      <MenuItem href={`/choirs/${choirId}/preferences`}>阅读偏好</MenuItem><MenuItem href={`/choirs/${choirId}/storage`}>本机存储</MenuItem><MenuItem href={`/choirs/${choirId}/me`}>退出此云盘</MenuItem>
+      <MenuItem href={`/choirs/${choirId}/preferences`}>阅读偏好</MenuItem><MenuItem href={`/choirs/${choirId}/storage`}>本机存储</MenuItem><MenuItem href={`/choirs/${choirId}/me`}>云盘个人设置</MenuItem>
     </Menu></Popover>
   </MenuTrigger>;
 }

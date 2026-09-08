@@ -13,13 +13,14 @@ const descriptions: Record<Operation, string> = {
   editDriveInfo: "修改云盘名称等基本信息。不包含文件、成员或共享层操作。",
 };
 
-export function PermissionMatrix({ operations, management, scope, owner, disabled, layers, onOperations, onManagement }: {
-  operations: PermissionSet; management: PermissionSet; scope: PermissionSet; owner: boolean; disabled: boolean;
+export function PermissionMatrix({ focus, operations, management, scope, owner, disabled, layers, onOperations, onManagement }: {
+  focus?: string; operations: PermissionSet; management: PermissionSet; scope: PermissionSet; owner: boolean; disabled: boolean;
   layers: { slot: string; name: string }[];
   onOperations: (value: PermissionSet) => void; onManagement: (value: PermissionSet) => void;
 }) {
   const columns = [{ label: "可以操作", value: operations, change: onOperations }, ...(owner ? [{ label: "可以授权他人", value: management, change: onManagement }] : [])];
   function row(name: string, description: string, key: string, checked: (set: PermissionSet) => boolean, update: (set: PermissionSet, next: boolean) => PermissionSet, locked?: (set: PermissionSet) => boolean) {
+    if (focus && focus !== key) return null;
     return <tr key={key}><th scope="row"><span>{name}</span><DialogTrigger>
       <Button className="permission-info icon-button" aria-label={`${name}说明`}><Info size={17} aria-hidden="true" /></Button>
       <Popover className="file-menu-popover permission-help"><Dialog><Heading slot="title">{name}</Heading><p>{description}</p><p>“可以操作”允许本人执行；“可以授权他人”允许在受托范围内调整普通成员的这项操作权限，不授予本人操作能力，也不能继续转委托。</p></Dialog></Popover>
@@ -28,6 +29,6 @@ export function PermissionMatrix({ operations, management, scope, owner, disable
   return <div className="permission-matrix"><table><caption>操作与授权分别设置</caption><thead><tr><th scope="col">权限</th>{columns.map(column => <th scope="col" key={column.label}>{column.label}</th>)}</tr></thead><tbody>
     {operationKeys.filter(key => scope.operations.includes(key)).map(key => row(operationLabels[key], descriptions[key], key, set => set.operations.includes(key), (set, next) => ({ ...set, operations: next ? [...new Set([...set.operations, key])] : set.operations.filter(item => item !== key) })))}
     {scope.sharedLayers === "all" && row("编辑全部共享层", "包含当前及未来新增的共享层。只允许编辑共享笔记，不允许编辑他人的笔记，也不包含共享层配置。", "all-layers", set => set.sharedLayers === "all", (set, next) => ({ ...set, sharedLayers: next ? "all" : [] }))}
-    {layers.filter(layer => scope.sharedLayers === "all" || scope.sharedLayers.includes(layer.slot)).map(layer => row(`编辑 ${layer.name}`, "允许在此云盘全部乐谱的这个共享层中创建、修改和删除笔记。显示选择不会授予编辑权。", layer.slot, set => set.sharedLayers === "all" || set.sharedLayers.includes(layer.slot), (set, next) => ({ ...set, sharedLayers: set.sharedLayers === "all" ? "all" : next ? [...new Set([...set.sharedLayers, layer.slot])] : set.sharedLayers.filter(slot => slot !== layer.slot) }), set => set.sharedLayers === "all"))}
+    {layers.filter(layer => scope.sharedLayers === "all" || scope.sharedLayers.includes(layer.slot)).map(layer => row(`编辑 ${layer.name}`, "允许在此云盘全部乐谱的这个共享层中创建、修改和删除笔记。显示选择不会授予编辑权。", `layer:${layer.slot}`, set => set.sharedLayers === "all" || set.sharedLayers.includes(layer.slot), (set, next) => ({ ...set, sharedLayers: set.sharedLayers === "all" ? "all" : next ? [...new Set([...set.sharedLayers, layer.slot])] : set.sharedLayers.filter(slot => slot !== layer.slot) }), set => set.sharedLayers === "all"))}
   </tbody></table></div>;
 }

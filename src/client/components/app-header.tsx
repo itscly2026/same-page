@@ -1,3 +1,4 @@
+import { AppMenu } from "./app-menu";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import "../settings/settings-ux.css";
@@ -11,7 +12,7 @@ export function AppHeader({ actions }: { actions?: ReactNode }) {
         <span className="brand-name-en" lang="en">Same Page</span>
       </Link>
       <nav className="app-header__actions">
-        {actions}
+        {actions}<AppMenu />
 
       </nav>
     </header>

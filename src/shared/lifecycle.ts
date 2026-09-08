@@ -12,5 +12,5 @@ export const userLifecycleSchema = z.object({
 });
 export const managedMembershipsSchema = z.object({ capabilities: driveCapabilitiesSchema, actorId: z.string(), memberships: z.array(z.object({
   id: z.string(), displayName: z.string(), isOwner: z.number(),
-  operations: permissionSetSchema, management: permissionSetSchema, status: z.enum(["active", "removed"]), removedAt: z.number().nullable(), revision: z.number(), userDeleted: z.number(), recoverable: z.number(),
+  operations: permissionSetSchema, management: permissionSetSchema, status: z.enum(["active", "removed"]), removedAt: z.number().nullable().optional(), revision: z.number(), userDeleted: z.number().optional(), recoverable: z.number().optional(),
 })) });

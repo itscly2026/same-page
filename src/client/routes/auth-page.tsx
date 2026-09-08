@@ -755,7 +755,7 @@ export default function AuthPage() {
           description: "你已经登录，但本次加入云盘没有完成。",
           form: (
             <><Button isDisabled={submitting} onPress={() => void finishAuthentication()}>重试继续加入</Button>
-            <Button className="secondary-button" onPress={() => void cancelEntry()}>取消并返回所有云盘</Button></>
+            <Button className="secondary-button" onPress={() => void cancelEntry()}>取消并返回云盘列表</Button></>
           ),
         };
     }
