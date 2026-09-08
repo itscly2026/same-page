@@ -100,6 +100,11 @@ export function resolveFixtureRequest({
 }) {
   const score = selectedScore;
   const samplePdf = pdf;
+  if (method === "GET" && pathname === `/api/choirs/${choir.id}/management`) {
+    if (identity !== "admin" && identity !== "member") return json({ error: "forbidden" }, 403);
+    return json({ name: choir.name, guestAdmissionMode: choir.guestAdmissionMode, capabilities: capabilities(identity === "admin"),
+      layers: layers.filter(layer => layer.kind === "shared").map(layer => ({ slot: layer.sharedSlot, name: layer.name, active: 1 })) });
+  }
   if (method === "GET" && pathname === `/api/choirs/${choir.id}/memberships`) return json({ actorId: "visual-membership-admin", capabilities: capabilities(true), memberships: [
     { id: "visual-membership-admin", displayName: "林老师", isOwner: 1, status: "active", revision: 0, removedAt: null, userDeleted: 0, recoverable: 0, operations: emptyPermissions(), management: emptyPermissions() },
     { id: "visual-membership-member", displayName: "周宁", isOwner: 0, status: "active", revision: 0, removedAt: null, userDeleted: 0, recoverable: 0, operations: { operations: ["uploadFiles"], sharedLayers: ["S"] }, management: emptyPermissions() },

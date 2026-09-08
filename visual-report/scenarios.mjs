@@ -134,10 +134,11 @@ export const visualReportScenarios = [
     title: "文件库 · 查看当前邀请码",
     description: "管理员打开邀请码面板，直接查看当前有效码。",
     device: "narrow", identity: "admin", route: "/choirs/visual-choir",
-    ready: { type: "selector", selector: ".join-code-result" },
+    ready: { type: "selector", selector: 'output[aria-label="当前有效邀请码"]' },
     actions: [
       { type: "clickRole", role: "button", name: "打开云盘菜单" },
-      { type: "clickRole", role: "menuitem", name: "邀请码" },
+      { type: "clickRole", role: "menuitem", name: "加入方式" },
+      { type: "clickRole", role: "button", name: "查看与轮换邀请码" },
     ],
   },
   {
@@ -148,7 +149,8 @@ export const visualReportScenarios = [
     ready: { type: "role", role: "button", name: "保存原邀请码" },
     actions: [
       { type: "clickRole", role: "button", name: "打开云盘菜单" },
-      { type: "clickRole", role: "menuitem", name: "邀请码" },
+      { type: "clickRole", role: "menuitem", name: "加入方式" },
+      { type: "clickRole", role: "button", name: "查看与轮换邀请码" },
     ],
   },
   {

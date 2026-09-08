@@ -59,12 +59,12 @@ function SharedLayerDetails({ choirId, slotParam }: { choirId: string; slotParam
     <div className="app-page">
       <AppHeader actions={(
         <BackButton className="header-action" to={`/choirs/${choirId}/shared-layers`}>
-          返回共享层管理
+          返回
         </BackButton>
       )} />
       <main className="page-shell settings-page settings-ux">
         <header className="settings-heading">
-          <p className="eyebrow">云盘管理 · {driveName || "共享层"}</p>
+          <p className="eyebrow">云盘设置 · {driveName || "共享层"}</p>
           <h1>{layerName}</h1>
           <p className="settings-copy">配置对当前云盘中的全部乐谱生效，不授予编辑内容的权限。停用的共享层暂停所有人的编辑，恢复后授权继续生效。</p>
         </header>

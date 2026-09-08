@@ -88,7 +88,7 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
     <AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回</BackButton>} />
     <main className="page-shell settings-page settings-ux">
       <header className="settings-heading">
-        <p className="eyebrow">云盘管理 · {driveName}</p><h1>共享层管理</h1>
+        <p className="eyebrow">云盘设置 · {driveName}</p><h1>共享层管理</h1>
         <p className="settings-copy">适用于此云盘的所有乐谱。选择一个层，修改名称、颜色或启用状态。编辑权限在“成员与权限”设置。</p>
       </header>
       <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} />
