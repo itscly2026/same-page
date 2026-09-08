@@ -158,6 +158,24 @@ try {
   query("UPDATE choirs SET owner_membership_id = 'second-member' WHERE id = 'choir'");
   query("UPDATE memberships SET status = 'removed' WHERE id = 'membership'");
   assert.equal(query("SELECT count(*) AS count FROM effective_shared_layer_permissions WHERE membership_id = 'membership'")[0].count, 0);
+  executeD1({ command: `INSERT INTO annotation_layers
+    (id, choir_id, score_id, kind, owner_user_id, name, sort_order, default_color, created_at, updated_at)
+    SELECT 'personal-before-209', 'choir', score_id, 'personal', 'second-user', 'Personal', 10000, '#b4235a', 1, 1
+    FROM annotation_layers WHERE id = 'preserved-layer';`, targetArgs });
+  const before209 = queryNamed({ objects: "SELECT * FROM annotation_objects", colors: "SELECT choir_id, slot, default_color FROM choir_shared_layer_settings ORDER BY choir_id, slot" });
+  applyMigrations("0021_personal_layers_and_score_colors.sql");
+  const after209 = queryNamed({ objects: "SELECT * FROM annotation_objects", colors: "SELECT choir_id, slot, default_color FROM choir_shared_layer_settings ORDER BY choir_id, slot", personal: "SELECT id, name, revision, deleted_at FROM annotation_layers WHERE kind = 'personal'", indexes: "PRAGMA index_list(annotation_layers)", preferences: "PRAGMA table_info(user_score_layer_preferences)", foreignKeys: "PRAGMA foreign_key_check" });
+  assert.deepEqual(after209.objects, before209.objects);
+  assert.deepEqual(after209.colors, before209.colors);
+  assert.deepEqual(after209.personal, [{ id: 'personal-before-209', name: '我的笔记', revision: 0, deleted_at: null }]);
+  assert(!after209.indexes.some(row => row.name === 'annotation_layers_personal_owner_uidx'));
+  assert(after209.preferences.some(row => row.name === 'color_override'));
+  assert.deepEqual(after209.foreignKeys, []);
+  executeD1({ command: `INSERT INTO annotation_layers
+    (id, choir_id, score_id, kind, owner_user_id, name, sort_order, default_color, created_at, updated_at)
+    SELECT 'personal-after-209', choir_id, score_id, kind, owner_user_id, '演出提示', sort_order, default_color, 2, 2
+    FROM annotation_layers WHERE id = 'personal-before-209';`, targetArgs });
+  assert.equal(query("SELECT count(*) AS count FROM annotation_layers WHERE owner_user_id = 'second-user'")[0].count, 2);
   process.stdout.write("Verified legacy score schema migration.\n");
 } finally {
   rmSync(persistencePath, { recursive: true, force: true });

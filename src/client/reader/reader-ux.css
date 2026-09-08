@@ -87,10 +87,8 @@
 @media (max-width: 480px) {
   .reader-shell .annotation-controls { flex-wrap: wrap; width: 280px; max-width: calc(100vw - 24px); justify-content: center; }
   .reader-edit-layer-trigger { flex-basis: 100%; }
-  .annotation-text-hint { bottom: max(8.4rem, calc(env(safe-area-inset-bottom) + 7.7rem)); }
 }
 
-body:has(.reader-edit-layer-popover) .annotation-text-hint { display: none; }
 /* One light control surface, with the page position integrated underneath. */
 .reader-shell .reader-chrome__actions-stack { background: rgb(255 255 255 / 96%); border-radius: 0.65rem; }
 .reader-shell .reader-chrome__back,
@@ -148,7 +146,6 @@ body:has(.reader-edit-layer-popover) .annotation-text-hint { display: none; }
 .reader-edit-first-hint { position: absolute; bottom: calc(100% + .5rem); left: 0; right: 0; display: flex; align-items: center; padding: .5rem .75rem; border-radius: .75rem; background: white; color: #333; box-shadow: 0 2px 12px #0002; font-size: .8rem; line-height: 1.5; }
 .reader-edit-first-hint button { flex-shrink: 0; min-width: 44px; min-height: 44px; border: 0; background: transparent; }
 
-.reader-shell:has(.reader-edit-first-hint) .annotation-text-hint { display: none; }
 
 .reader-loading__back { position: absolute; top: max(.75rem, env(safe-area-inset-top)); left: max(.75rem, env(safe-area-inset-left)); z-index: 1; color: #eee; background: transparent; }
 

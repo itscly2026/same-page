@@ -1816,7 +1816,7 @@ it("keeps a single exit while the PDF never settles", async () => {
                 driveSubscribed: null,
                 driveColorOverride: null,
                 scoreSubscriptionOverride: null,
-                canEdit: false,
+                canEdit: true,
               },
             ]),
             sharedLayerRevision: 0, permissions: { canManageLayers: false },

@@ -111,7 +111,7 @@ describe("AnnotationOverlay", () => {
     expect(screen.queryByRole("form", { name: "文字输入" })).not.toBeInTheDocument();
   });
 
-  it("shows a concise hint and keeps the centered composer open across blur until cancel", async () => {
+  it("keeps the centered composer open across blur until cancel", async () => {
     const visualViewport = installVisualViewport();
     const interactions: AnnotationOverlayInteraction[] = [];
     let handlingPointerUp = false;
@@ -137,7 +137,6 @@ describe("AnnotationOverlay", () => {
       HTMLElement.prototype.focus.call(this);
     });
     renderOverlay([], "text", (interaction) => interactions.push(interaction));
-    expect(screen.getByText("轻点任意位置添加文字")).toBeInTheDocument();
     const overlay = screen.getByLabelText("第 1 页笔记层");
     mockBounds(overlay);
     expect(document.querySelector(".annotation-text-composer textarea")).toBeNull();

@@ -1,6 +1,6 @@
 import { RECOVERY_PERIOD_MS } from "../lifecycle/cleanup";
 
-export async function cleanupSharedLayers(db: D1Database, now = Date.now()) {
+export async function cleanupAnnotationLayers(db: D1Database, now = Date.now()) {
   await db.prepare("DELETE FROM annotation_layers WHERE kind = 'personal' AND deleted_at IS NOT NULL AND deleted_at <= ?")
     .bind(now - RECOVERY_PERIOD_MS).run();
   // Expiry is checked by the same DELETE that triggers all dependent cleanup.

@@ -1,5 +1,5 @@
 import { noCapabilities } from "../src/shared/drive-permissions";
-import { cleanupSharedLayers } from "./annotations/cleanup";
+import { cleanupAnnotationLayers } from "./annotations/cleanup";
 import { RECOVERY_PERIOD_MS } from "./lifecycle/cleanup";
 import type { SharedLayerManagementSummary } from "../src/shared/annotations";
 import { setupNetwork } from "@msw/cloudflare";
@@ -104,7 +104,7 @@ describe("annotation layers and object synchronization", () => {
     expect((await change("restore", deleted.revision, member.cookie)).status).toBe(403);
     expect((await change("restore", original.revision)).status).toBe(409);
     expect((await change("restore", deleted.revision)).status).toBe(200);
-    await cleanupSharedLayers(env.DB, deleted.recoverUntil! + 1);
+    await cleanupAnnotationLayers(env.DB, deleted.recoverUntil! + 1);
     expect(await layerBySlot(fixture, fixture.adminCookie, slot)).toMatchObject({ id: layer!.id, subscribed: true, driveSubscribed: false, driveColorOverride: "#987654" });
     expect(await layerBySlot(fixture, member.cookie, slot)).toMatchObject({ id: layer!.id, canEdit: true });
     expect(await layerBySlot(second, fixture.adminCookie, slot)).toMatchObject({ id: secondLayer!.id });
@@ -129,8 +129,8 @@ describe("annotation layers and object synchronization", () => {
     const expiredAt = Date.now() - RECOVERY_PERIOD_MS - 1;
     await env.DB.prepare("UPDATE choir_shared_layer_settings SET deleted_at = ? WHERE choir_id = ? AND slot = 'E'").bind(expiredAt, fixture.choirId).run();
     expect((await callWorker(`${base}/shared-layers/E/lifecycle`, jsonRequest(fixture.adminCookie, { action: "restore", expectedRevision: 1 }))).status).toBe(409);
-    await cleanupSharedLayers(env.DB);
-    await cleanupSharedLayers(env.DB);
+    await cleanupAnnotationLayers(env.DB);
+    await cleanupAnnotationLayers(env.DB);
     const list = await (await callWorker(`${base}/shared-layers?state=deleted`, { headers: { cookie: fixture.adminCookie } })).json();
     expect(list).toMatchObject({ layers: [] });
     for (const table of ["annotation_layers", "annotation_objects", "annotation_sync_operations", "user_drive_layer_preferences", "user_score_layer_preferences"]) {
@@ -215,7 +215,7 @@ describe("annotation layers and object synchronization", () => {
     expect(subscribe.status).toBe(200);
     expect((await list()).find(layer => layer.id === concert)).toMatchObject({ subscribed: false });
     expect((await update(rehearsal, { action: "delete", expectedRevision: 4 })).status).toBe(200);
-    await cleanupSharedLayers(env.DB, Date.now() + RECOVERY_PERIOD_MS + 1);
+    await cleanupAnnotationLayers(env.DB, Date.now() + RECOVERY_PERIOD_MS + 1);
     expect((await update(rehearsal, { action: "restore", expectedRevision: 5 })).status).toBe(409);
   });
 

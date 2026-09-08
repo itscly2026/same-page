@@ -739,10 +739,6 @@ export function AnnotationOverlay({
             <p>修改仍留在当前编辑器，尚未可靠保存。请保留此页面，释放设备空间后重试。</p>
             <button type="button" onClick={() => void editor?.retry()}>重试本机保存</button>
           </aside>}
-          {canStartEdit && tool === "text" && !textEditor && !transformingText ? (
-            <p className="annotation-text-hint" role="status">轻点任意位置添加文字</p>
-          ) : null}
-
           <div
             aria-hidden={transformingText ? undefined : "true"}
             aria-label="拖到这里删除"

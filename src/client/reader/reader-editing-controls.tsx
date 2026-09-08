@@ -44,6 +44,7 @@ export function ReaderEditingControls({
 
   return (
     <section className="annotation-controls" aria-label="笔记工具">
+      {tool === "text" && !showHint && !choosingLayer && <p className="annotation-text-hint" role="status">轻点任意位置添加文字</p>}
       {showHint && <div className="reader-edit-first-hint" role="status">
         <span>编辑时仅显示当前层，并锁定本页。点勾号完成后恢复。</span>
         <Button aria-label="关闭编辑提示" onPress={() => { setShowHint(false); try { localStorage.setItem("reader-edit-hint-seen", "true"); } catch { /* Optional hint preference. */ } }}><X aria-hidden="true" size={18} /></Button>

@@ -5,7 +5,7 @@ import { chromium, webkit, expect } from "@playwright/test";
 import { startStorageFixture } from "./storage-fixture.mjs";
 
 // Real Worker/D1 with synthetic data. The first response is lost AFTER real persistence.
-test("diagnostic feedback survives lost receipts and preserves reader editing in Chromium/WebKit", { timeout: 150_000 }, async t => {
+test("diagnostic feedback survives lost receipts and returns to reader diagnostics after editing in Chromium/WebKit", { timeout: 150_000 }, async t => {
   const fixture = await startStorageFixture({ authenticated: true, script: "dev" });
   t.after(() => fixture.stop());
   await mkdir("artifacts/verification", { recursive: true });
@@ -80,8 +80,9 @@ test("diagnostic feedback survives lost receipts and preserves reader editing in
       await expect(more).toBeFocused();
       await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
       await expect(page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByRole("button", { name: "更多", exact: true })).toHaveCount(0);
+      await page.getByRole("button", { name: "完成编辑", exact: true }).click();
       await page.getByRole("button", { name: "更多", exact: true }).click();
-      assert.equal(await page.getByRole("button", { name: "连续滚动", exact: true }).count(), 0);
       const readerUrl = page.url();
       await page.getByText("阅读帮助", { exact: true }).click();
       await page.getByRole("button", { name: "故障诊断", exact: true }).click();
@@ -94,7 +95,7 @@ test("diagnostic feedback survives lost receipts and preserves reader editing in
       }), true, "diagnostic heading is unobscured by the reader menu");
       await dialog.getByText("查看诊断内容", { exact: true }).click();
       const snapshot = JSON.parse(await dialog.getByLabel("可发送给支持人员的诊断内容").inputValue());
-      assert.equal(snapshot.reader.interactionMode, "editing");
+      assert.equal(snapshot.reader.interactionMode, "reading");
       assert.equal(snapshot.reader.displayMode, "pdf");
       assert.ok(!JSON.stringify(snapshot).includes(fixture.scoreId));
       assert.ok(!JSON.stringify(snapshot).includes(fixture.fileName));
@@ -105,9 +106,9 @@ test("diagnostic feedback survives lost receipts and preserves reader editing in
       await dialog.getByRole("button", { name: "关闭", exact: true }).click();
       await expect(more).toBeFocused();
       assert.equal(page.url(), readerUrl);
-      await expect(page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true })).toHaveAttribute("aria-pressed", "false");
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-      await writeFile(`artifacts/verification/diagnostic-${name}.json`, JSON.stringify({ engine: name, viewport: { width, height }, realWorkerD1: true, receiptLostAfterPersistence: true, retainedEditing: true, realDevice: false }, null, 2));
+      await writeFile(`artifacts/verification/diagnostic-${name}.json`, JSON.stringify({ engine: name, viewport: { width, height }, realWorkerD1: true, receiptLostAfterPersistence: true, completedEditingBeforeDiagnostics: true, realDevice: false }, null, 2));
       await context.close();
     } catch (error) {
       await activePage?.screenshot({ path: `artifacts/verification/diagnostic-${name}-failure.png`, fullPage: true });

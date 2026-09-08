@@ -2611,10 +2611,10 @@ h1 {
   cursor: move;
 }
 
-.annotation-text-hint {
-  position: fixed;
+.annotation-controls .annotation-text-hint {
+  position: absolute;
   z-index: 24;
-  bottom: max(5.4rem, calc(env(safe-area-inset-bottom) + 4.7rem));
+  bottom: calc(100% + .5rem);
   left: 50%;
   margin: 0;
   border-radius: 999px;
