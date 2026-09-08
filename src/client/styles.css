@@ -491,6 +491,15 @@ h1 {
   min-width: 0;
 }
 
+.marketing-animation-control {
+  display: block;
+  margin: 0.5rem auto 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing-animation-control { display: none; }
+}
+
 .marketing-feature__copy {
   width: 100%;
   max-width: 36rem;

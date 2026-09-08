@@ -27,6 +27,7 @@ import {
 } from "../../shared/choirs";
 import { authClient } from "../auth/auth-client";
 import sharedLayersIllustration from "../assets/home/shared-layers.webp";
+import sharedLayersAnimation from "../assets/home/shared-layers.gif";
 import personalLayerIllustration from "../assets/home/personal-layer.webp";
 import replacePdfIllustration from "../assets/home/replace-pdf.webp";
 import offlineSyncIllustration from "../assets/home/offline-sync.webp";
@@ -102,6 +103,7 @@ export function HomePage({ startup = false }: { startup?: boolean }) {
 }
 
 function HomeContent({ session, startup, linkInvite, finishInvitation }: { session: ReturnType<typeof authClient.useSession>; startup: boolean; linkInvite: ReturnType<typeof readInviteLink>; finishInvitation: () => void }) {
+  const [animateLayers, setAnimateLayers] = useState(true);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const location = useLocation();
@@ -323,7 +325,25 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
                   {feature.description}
                 </p>
               </div>
-              <img
+              {index === 0 ? (
+                <div className="marketing-feature__illustration">
+                  <picture>
+                    <source media="(prefers-reduced-motion: reduce)" srcSet={sharedLayersIllustration} />
+                    <img
+                      src={animateLayers ? sharedLayersAnimation : sharedLayersIllustration}
+                      alt="E、S、A、T、B 共享层的批注依次出现，再叠加到同一份乐谱上。"
+                      width={768}
+                      height={512}
+                      loading="lazy"
+                      decoding="async"
+                      style={{ display: "block", width: "100%", height: "auto" }}
+                    />
+                  </picture>
+                  <button className="text-button marketing-animation-control" type="button" onClick={() => setAnimateLayers(value => !value)}>
+                    {animateLayers ? "显示静态图" : "播放分层示意"}
+                  </button>
+                </div>
+              ) : <img
                 className="marketing-feature__illustration"
                 src={feature.illustration}
                 alt=""
@@ -331,7 +351,7 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
                 height={1024}
                 loading="lazy"
                 decoding="async"
-              />
+              />}
             </article>
           ))}
         </section>
