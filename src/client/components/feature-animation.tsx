@@ -71,7 +71,6 @@ export function FeatureAnimation({ illustration, animation, label }: {
         }}
         onError={() => { if (source) setSource(null); }}
       />
-      {!source && <span className="marketing-animation__replay" aria-hidden="true">{run ? "↻ 重播" : "▶ 播放演示"}</span>}
     </button>
   );
 }
