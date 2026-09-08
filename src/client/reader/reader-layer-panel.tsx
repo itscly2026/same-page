@@ -146,7 +146,6 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
                   <input aria-label={`显示 ${layer.name}`}
                     checked={layer.subscribed} disabled={pending} type="checkbox"
                     onChange={(event) => void save([{ layer, subscribed: event.target.checked }])} />
-                  <span aria-label={`${layer.name} 当前颜色`} className="layer-color-preview" style={{ background: layer.displayColor }} />
                   <span className="layer-card__identity"><strong>
                     {layer.name}
                   </strong></span>
