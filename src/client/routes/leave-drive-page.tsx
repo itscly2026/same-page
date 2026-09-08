@@ -1,11 +1,9 @@
-import { DriveSettingsDialog } from "../score-library/drive-settings-dialog";
 import { SettingsFeedback } from "../settings/settings-feedback";
 import { useState } from "react";
 import { Button } from "react-aria-components";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { authClient } from "../auth/auth-client";
-import { AppHeader } from "../components/app-header";
-import { BackButton } from "../navigation/back-button";
+import { TaskHeader } from "../components/task-header";
 import { ConfirmDialog, type Confirmation } from "../settings/confirm-dialog";
 import { useUserLifecycle } from "../settings/use-user-lifecycle";
 
@@ -17,14 +15,12 @@ export default function LeaveDrivePage() {
 function LeaveDrive({ choirId }: { choirId: string }) {
   const navigate = useNavigate();
   const { state, message, busy, loading, blocked, reload, perform } = useUserLifecycle();
-  const [editingName, setEditingName] = useState(false);
   const member = state?.memberships.find(member => member.choirId === choirId);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   return <div className="app-page">
-    <AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回</BackButton>} />
+    <TaskHeader title={"退出云盘成员身份"} backTo={`/choirs/${choirId}`} />
     <main className="page-shell settings-page settings-ux lifecycle-page">
-      <header className="settings-heading"><h1>云盘个人设置</h1><p>{member?.name}</p></header>
-      <section className="personal-settings-links">{member?.status === "active" && <Button className="management-nav" isDisabled={blocked} onPress={() => setEditingName(true)}><span><strong>云盘内显示名</strong><small>{member.displayName}</small></span><span>修改</span></Button>}<Link className="settings-secondary-link" to={`/choirs/${choirId}/preferences`}>阅读偏好</Link><Link className="settings-secondary-link" to={`/choirs/${choirId}/storage`}>本机存储</Link></section>
+      <header className="settings-heading"><p>{member?.name}</p></header>
       {state && <section className="membership-exit"><h2>成员身份</h2>
         {state.memberships.filter(member => member.choirId === choirId).map((member) => <article className="lifecycle-member" key={member.id}>
           <p className="settings-copy">{member.status === "removed" ? "已退出或移除" : member.isOwner === 1 ? "你是此云盘的拥有者。" : "退出会结束你与此云盘的成员关系。"}</p>
@@ -36,7 +32,6 @@ function LeaveDrive({ choirId }: { choirId: string }) {
       {state && !state.memberships.some(member => member.choirId === choirId) && <p>你在此云盘没有成员关系。</p>}
       <SettingsFeedback loading={loading} loadError={null} message={message} retry={() => void reload().catch(() => undefined)} />
       {message && <Button isDisabled={busy || loading} onPress={() => void reload().catch(() => undefined)}>重新读取状态</Button>}
-      {editingName && <DriveSettingsDialog choirId={choirId} field="display-name" onClose={() => setEditingName(false)} onSaved={async () => { await reload(); }} />}
       <ConfirmDialog confirmation={confirmation} busy={busy} onClose={() => setConfirmation(null)} />
     </main>
   </div>;

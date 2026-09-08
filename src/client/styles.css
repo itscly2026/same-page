@@ -1314,7 +1314,7 @@ h1 {
 }
 
 .library-workspace {
-  min-height: 20rem;
+  min-height: 0;
   overflow: hidden;
   margin-top: 1.25rem;
   border: 1px solid var(--line);
@@ -2143,7 +2143,7 @@ h1 {
 }
 
 .layer-section__restore {
-  min-height: 2rem !important;
+  min-height: 44px !important;
   border: 0 !important;
   padding: 0.25rem !important;
   color: #5f5b57 !important;
@@ -3186,3 +3186,5 @@ h1 {
 .lifecycle-member > summary { cursor: pointer; min-height: 44px; padding: .5rem 0; }
 .lifecycle-member > summary h2 { display: inline; margin: 0; font-size: 1.15rem; }
 .permission-fields .text-button { margin-left: .5rem; min-height: 44px; }
+
+.app-footer a { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }

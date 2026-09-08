@@ -19,6 +19,8 @@ it("keeps confirmed saves and the member list when refreshing fails, and only re
   }));
   render(page());
   fireEvent.click(await screen.findByRole("heading", { name: "小花" }));
+  fireEvent.click(screen.getByText("编辑权限"));
+  fireEvent.click(screen.getByRole("checkbox", { name: "上传文件：可以操作" }));
   fireEvent.click(screen.getByRole("button", { name: "保存 小花 的权限" }));
   expect(await screen.findByText(/已保存。但刷新失败/)).toBeVisible();
   expect(screen.getByRole("heading", { name: "小花" })).toBeVisible();
@@ -74,6 +76,8 @@ it("clears a failed audit read when a permission save automatically refreshes th
   fireEvent.click(await screen.findByText("最近权限变更记录"));
   await screen.findByText(/权限记录读取失败/);
   fireEvent.click(screen.getByRole("heading", { name: "小花" }));
+  fireEvent.click(screen.getByText("编辑权限"));
+  fireEvent.click(screen.getByRole("checkbox", { name: "上传文件：可以操作" }));
   fireEvent.click(screen.getByRole("button", { name: "保存 小花 的权限" }));
   expect(await screen.findByText("暂无权限变更记录。")).toBeVisible();
   expect(screen.queryByText(/权限记录读取失败/)).not.toBeInTheDocument();

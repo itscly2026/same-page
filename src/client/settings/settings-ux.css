@@ -78,7 +78,8 @@
   .settings-ux .settings-layer-row--management { padding: .5rem .75rem; }
 }
 
-.layer-create-form input[type="text"], .layer-details-form input[type="text"] {
+.layer-create-form input[type="text"], .layer-details-form input[type="text"],
+.member-filters input, .member-filters select, .permission-filter select, .permission-edit-entry select {
   box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px;
   padding: .65rem .75rem; border: 1px solid var(--line); border-radius: .6rem;
   background: var(--surface); color: var(--ink); font: inherit;
@@ -160,3 +161,27 @@
 .shared-layer-summary { list-style: none; padding: 0; margin: 0; }
 .shared-layer-summary li { display: flex; justify-content: space-between; padding: 1rem 0; border-bottom: 1px solid var(--line); }
 .shared-layer-summary span { color: var(--muted); font-size: .85rem; }
+
+.task-header { display: flex; align-items: center; gap: .75rem; padding: .75rem max(1rem, env(safe-area-inset-left)); min-height: 64px; border-bottom: 1px solid var(--line); }
+.task-header h1 { font-size: 1.25rem; line-height: 1.4; margin: 0; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.task-header + main { padding-top: 1.5rem; }
+.member-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(8rem, .45fr); gap: .75rem; margin: 1.5rem 0 .5rem; }
+.member-filters label { display: grid; gap: .5rem; min-width: 0; font-size: .85rem; color: var(--muted); }
+.member-filters input, .member-filters select { max-width: 100%; }
+.settings-ux .lifecycle-member { padding-block: .35rem; }
+.settings-ux .lifecycle-member > summary { display: flex; align-items: center; gap: .75rem; min-height: 64px; list-style: none; }
+.settings-ux .lifecycle-member > summary::-webkit-details-marker { display: none; }
+.settings-ux .lifecycle-member > summary::after { content: ""; width: 7px; height: 7px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(-45deg); margin: 0 .5rem 0 auto; flex-shrink: 0; }
+.settings-ux .lifecycle-member[open] > summary::after { transform: rotate(45deg); }
+.member-identity { display: grid; gap: .3rem; min-width: 0; }
+.member-name { display: flex; align-items: center; gap: .5rem; }
+.settings-ux .lifecycle-member > summary h2 { font-size: 1rem; line-height: 1.5; }
+.member-self { padding: .1rem .4rem; border-radius: .35rem; background: var(--brand-soft); color: var(--brand); font-size: .7rem; flex-shrink: 0; }
+.member-role { font-size: .8rem; color: var(--muted); }
+.unsaved-actions { display: grid; gap: .75rem; margin-top: 1.5rem; }
+.unsaved-actions button { width: 100%; min-height: 48px; font: inherit; }
+.unsaved-actions .primary-button { font-weight: 600; }
+.unsaved-discard { border: 0; background: transparent; color: var(--muted); border-radius: .7rem; cursor: pointer; }
+.unsaved-actions button:focus-visible, .settings-ux summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+.unsaved-actions button:disabled { opacity: .55; cursor: default; }
+@media (max-width: 360px) { .member-filters { grid-template-columns: 1fr; } }

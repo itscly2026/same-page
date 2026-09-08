@@ -1,12 +1,11 @@
 import { SettingsFeedback } from "../settings/settings-feedback";
 import { authenticatedLocalOwnerKey, currentLocalOwnerKey } from "../platform/local-workspace";
-import { BackButton } from "../navigation/back-button";
 import { useUserLifecycle } from "../settings/use-user-lifecycle";
 import { useState } from "react";
 import { Button } from "react-aria-components";
 import { Link, useNavigate } from "react-router-dom";
 import { authClient } from "../auth/auth-client";
-import { AppHeader } from "../components/app-header";
+import { TaskHeader } from "../components/task-header";
 import { ACTIVE_LOCAL_OWNER_KEY, LAST_AUTHENTICATED_OWNER_KEY, localDatabase } from "../platform/local-database";
 import { notifyReaderIdentityChange } from "../reader/reader-cache-events";
 
@@ -33,8 +32,8 @@ function UserLifecycle() {
   };
   const ownedDrives = state?.memberships.filter((member) => member.isOwner === 1) ?? [];
   if (state && !state.deletion && (session.isPending || session.data?.user.id !== state.userId)) return <p role="status">正在核对登录身份…</p>;
-  return <div className="app-page"><AppHeader actions={<BackButton className="header-action" to="/user">返回个人设置</BackButton>} /><main className="page-shell settings-page settings-ux lifecycle-page">
-    <header className="settings-heading"><h1>{state?.deletion ? "恢复用户" : "删除用户"}</h1></header>
+  return <div className="app-page"><TaskHeader title={state?.deletion ? "恢复用户" : "删除用户"} backTo={"/user"} /><main className="page-shell settings-page settings-ux lifecycle-page">
+    <header className="settings-heading"></header>
     {state ? state.deletion ? <section>
       <h2>恢复用户</h2>
       <p>用户已停用，云盘访问与同步已撤销。恢复截止：{new Date(state.deletion.expiresAt).toLocaleString()}。</p>

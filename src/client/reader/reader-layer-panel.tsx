@@ -1,3 +1,4 @@
+import { loginHref } from "../auth/login-return";
 import { resolveSharedLayerPreference, annotationLayerListResponseSchema } from "../../shared/annotations";
 import { useEffect, useRef, useState } from "react";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
@@ -131,12 +132,12 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
 
   return (
     <section className="reader-layer-panel" aria-label="看哪些笔记" aria-busy={pending}>
-      <p className="reader-layer-help">此处设置仅影响本谱，默认值可在<Link to={`/choirs/${workspace.choirId}/preferences`}>云盘个人设置</Link>中调整。</p>
+      <p className="reader-layer-help">仅影响你在这份谱上的显示，更改自动保存。</p><div className="reader-layer-preferences">{signedIn ? <Link to={`/choirs/${workspace.choirId}/preferences`}>设置此云盘的默认显示</Link> : <Link to={loginHref(`/choirs/${workspace.choirId}/scores/${workspace.scoreId}`, "layers")}>登录后设置默认显示</Link>}</div>
       <div className="layer-section">
         <div className="layer-section__heading">
           <div><h3>共享层</h3></div>
           <div className="layer-section__actions">
-            <span>{sharedLayers.filter((layer) => layer.subscribed).length} / {sharedLayers.length}</span>
+            <span>显示 {sharedLayers.filter((layer) => layer.subscribed).length} / {sharedLayers.length}</span>
             {overriddenLayers.length > 0 ? (
               <Button className="layer-section__restore" isDisabled={pending}
                 aria-description="将这份乐谱的所有共享层恢复为我的云盘默认显示设置"

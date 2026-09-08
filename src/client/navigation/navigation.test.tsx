@@ -61,3 +61,43 @@ it("retries the original internal destination after a failed save", async () => 
   expect(await screen.findByRole("heading", { name: "设置" })).toBeInTheDocument();
   expect(save).toHaveBeenCalledTimes(2);
 });
+
+it("returns from drawer destinations to the open drawer, but deep links start closed", async () => {
+  const { DriveHeader } = await import("../score-library/drive-header");
+  const router = createMemoryRouter([{ element: <NavigationProvider><Outlet /></NavigationProvider>, children: [
+    { path: "/choirs/one", element: <DriveHeader choirId="one" choirName="排练" search="" onSearch={() => {}} onRefresh={() => {}} /> },
+    { path: "/help", element: <h1>帮助内容</h1> },
+  ] }], { initialEntries: ["/choirs/one"] });
+  render(<RouterProvider router={router} />);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "打开云盘菜单" }));
+  fireEvent.click(await screen.findByRole("link", { name: "帮助" }));
+  await screen.findByRole("heading", { name: "帮助内容" });
+  await act(() => router.navigate(-1));
+  expect(await screen.findByRole("dialog", { name: "云盘菜单" })).toBeInTheDocument();
+});
+
+it("asks before losing a changed form, keeps failed saves and returns after confirmed save", async () => {
+  const { useUnsavedChanges } = await import("../settings/use-unsaved-changes");
+  let succeeds = false;
+  function Settings() {
+    const [name, setName] = useState("");
+    const navigation = useAppNavigation();
+    const dialog = useUnsavedChanges({ dirty: Boolean(name), save: async () => succeeds, discard: () => setName("") });
+    return <><input aria-label="名称" value={name} onChange={event => setName(event.target.value)} /><button onClick={() => navigation.back("/library")}>返回</button>{dialog}</>;
+  }
+  const router = createMemoryRouter([{ element: <NavigationProvider><Outlet /></NavigationProvider>, children: [
+    { path: "/library", element: <h1>云盘</h1> }, { path: "/settings", element: <Settings /> },
+  ] }], { initialEntries: ["/library", "/settings"] });
+  render(<RouterProvider router={router} />);
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "新名称" } });
+  fireEvent.click(screen.getByRole("button", { name: "返回" }));
+  fireEvent.click(await screen.findByRole("button", { name: "继续编辑" }));
+  expect(screen.getByRole("textbox")).toHaveValue("新名称");
+  await act(() => router.navigate(-1));
+  fireEvent.click(await screen.findByRole("button", { name: "保存并返回" }));
+  expect(await screen.findByText("保存尚未确认，请核对后重试；修改仍保留。" )).toBeInTheDocument();
+  succeeds = true;
+  fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
+  expect(await screen.findByRole("heading", { name: "云盘" })).toBeInTheDocument();
+});

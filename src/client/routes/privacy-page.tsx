@@ -1,18 +1,17 @@
-import { BackButton } from "../navigation/back-button";
 import { Link } from "react-router-dom";
 
-import { AppHeader } from "../components/app-header";
+import { TaskHeader } from "../components/task-header";
 
 const CONTACT_EMAIL = "admin@clyapps.com";
 
 export default function PrivacyPage() {
   return (
     <div className="privacy-page">
-      <AppHeader />
-      <main className="privacy-document" aria-labelledby="privacy-title">
+      <TaskHeader title="隐私政策" backTo="/about" />
+      <main className="privacy-document" aria-label="隐私政策">
         <header className="privacy-document__header">
           <p className="eyebrow">合谱 · Same Page</p>
-          <h1 id="privacy-title">隐私政策</h1>
+
           <p className="privacy-document__updated">最后更新：2026 年 9 月 6 日</p>
           <p className="privacy-document__lead">
             合谱（Same Page）是为合唱排练设计的乐谱云盘。本政策说明我们在你使用服务时处理哪些信息、为什么处理，以及你可以如何联系我们。
@@ -113,7 +112,7 @@ export default function PrivacyPage() {
               普通云盘的成员退出或被移除后，该成员关系授予的云端访问与同步立即撤销，个人层保留 30 天，期间可由有成员恢复权限的人恢复。个人层默认仅自己可见。公开体验中，本人个人层的访问与保留不依赖成员关系。
             </li>
             <li>
-              你可以在“个人设置”进入对应云盘完成拥有权转让、重新验证原登录方式并确认删除。删除会立即撤销产品会话与云端访问；身份数据和个人层进入 30 天恢复期。期间使用删除时的登录方式验证后，只能明确确认恢复，不能直接访问云盘。恢复期结束后定时任务清理身份与个人层。共享笔记继续保留最终云盘内显示名，不以登录邮箱或全局资料名作为署名。
+              拥有者可在对应云盘的“成员与权限”中转让拥有权，然后从“我的 → 账户 → 删除用户”重新验证原登录方式并确认删除。删除会立即撤销产品会话与云端访问；身份数据和个人层进入 30 天恢复期。期间使用删除时的登录方式验证后，只能明确确认恢复，不能直接访问云盘。恢复期结束后定时任务清理身份与个人层。共享笔记继续保留最终云盘内显示名，不以登录邮箱或全局资料名作为署名。
             </li>
             <li>
               待确认的候选 PDF 在 24 小时后到期；旧 PDF 离开当前版本后保留 30 天供回滚，移入回收站的乐谱及其版本从移入时起保留 30 天。到期内容由定时任务回收，失败时重试，物理删除可能晚于到期时刻。
@@ -153,10 +152,6 @@ export default function PrivacyPage() {
             服务或数据处理方式发生重要变化时，我们会更新本页面和顶部日期；必要时也会通过服务内提示或邮件说明。
           </p>
         </section>
-
-        <BackButton className="privacy-document__home" to="/drives">
-          返回合谱首页
-        </BackButton>
       </main>
     </div>
   );

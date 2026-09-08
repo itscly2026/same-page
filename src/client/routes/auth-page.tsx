@@ -1,3 +1,4 @@
+import { loginReturn } from "../auth/login-return";
 import { joinDrive, resumeDriveEntry, cancelDriveEntry, type DriveEntryResult } from "../auth/drive-entry";
 import { invalidateSettingsLifetime, useSettingsLifetime, captureSettingsLifetime } from "../settings/use-settings-lifetime";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
@@ -396,6 +397,9 @@ export default function AuthPage() {
 
   const entryLifetimeRef = useSettingsLifetime();
   const pendingEntryRef = useRef<Promise<DriveEntryResult> | null>(null);
+  const returnContext = loginReturn(location.search);
+  const returnTarget = returnContext?.target;
+  const returnPanel = returnContext?.panel;
   const finishAuthentication = useCallback(async () => {
     const isCurrent = captureSettingsLifetime(entryLifetimeRef);
     const lifecycle = await diagnosticFetch("/api/user/lifecycle").then(async (response) => response.ok ? response.json() : null).catch(() => null);
@@ -409,21 +413,22 @@ export default function AuthPage() {
     const result = await pending;
     if (!isCurrent()) return;
     if (result.kind === "none") {
-      await navigate("/", { replace: true, state: { startup: true } });
+      await navigate(returnTarget ?? "/", { replace: true, state: returnTarget ? { readerReturnPanel: returnPanel } : { startup: true } });
     } else if (result.kind === "enter") {
-      await navigate(`/choirs/${result.choir.id}`);
+      await navigate(returnTarget?.startsWith(`/choirs/${result.choir.id}/`) ? returnTarget : `/choirs/${result.choir.id}`, { replace: Boolean(returnTarget), state: { readerReturnPanel: returnPanel } });
     } else if (result.kind === "display-name") {
       setJoinChoir(result.choir); setView("join-choir");
     } else {
       setView("join-result"); setMessage(result.message);
     }
-  }, [navigate, entryLifetimeRef]);
+  }, [navigate, entryLifetimeRef, returnTarget, returnPanel]);
 
   useEffect(() => {
     const oauthResult = new URLSearchParams(location.search).get("oauth");
     if (!oauthResult || oauthCompletionHandledRef.current) return;
     oauthCompletionHandledRef.current = true;
-    void navigate("/login", { replace: true });
+    const remaining = new URLSearchParams(location.search); remaining.delete("oauth");
+    void navigate(`/login${remaining.size ? `?${remaining}` : ""}`, { replace: true });
 
     if (oauthResult === "error") return;
     if (oauthResult !== "complete") return;
@@ -448,8 +453,8 @@ export default function AuthPage() {
     storeSocialEmailDraft(email);
     const { error } = await authClient.signIn.social({
       provider,
-      callbackURL: "/login?oauth=complete",
-      errorCallbackURL: "/login?oauth=error",
+      callbackURL: `/login?oauth=complete${returnTarget ? `&returnTo=${encodeURIComponent(returnTarget)}${returnPanel ? "&panel=layers" : ""}` : ""}`,
+      errorCallbackURL: `/login?oauth=error${returnTarget ? `&returnTo=${encodeURIComponent(returnTarget)}${returnPanel ? "&panel=layers" : ""}` : ""}`,
     });
     if (error) {
       setSubmitting(false);
@@ -461,8 +466,9 @@ export default function AuthPage() {
     invalidateSettingsLifetime(entryLifetimeRef);
     const isCurrent = captureSettingsLifetime(entryLifetimeRef);
     setSubmitting(true);
-    await cancelDriveEntry(pendingEntryRef.current);
-    if (isCurrent()) await navigate("/", { state: { home: true } });
+    if (returnTarget) await pendingEntryRef.current?.catch(() => undefined);
+    else await cancelDriveEntry(pendingEntryRef.current);
+    if (isCurrent()) await navigate(returnTarget ?? "/", { replace: Boolean(returnTarget), state: returnTarget ? { readerReturnPanel: returnPanel } : { home: true } });
   };
 
   const joinCurrentGuestChoir = async (event: FormEvent) => {
@@ -476,7 +482,7 @@ export default function AuthPage() {
     const result = await pending;
     if (!isCurrent()) return;
     setSubmitting(false);
-    if (result.kind === "enter") await navigate(`/choirs/${result.choir.id}`);
+    if (result.kind === "enter") await navigate(returnTarget?.startsWith(`/choirs/${result.choir.id}/`) ? returnTarget : `/choirs/${result.choir.id}`, { replace: Boolean(returnTarget), state: { readerReturnPanel: returnPanel } });
     else if (result.kind === "failed") {
       setMessage(result.message);
       if (result.restart) { setJoinChoir(null); setView("join-result"); }
@@ -765,7 +771,7 @@ export default function AuthPage() {
     <div className="app-page auth-page">
       <AppHeader
         actions={
-          <Button className="header-action" onPress={() => void cancelEntry()}>返回首页</Button>
+          <Button className="header-action" onPress={() => void cancelEntry()}>{returnTarget ? "继续只读浏览" : "返回首页"}</Button>
         }
       />
       <main className="auth-layout">

@@ -56,6 +56,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     const drive = `${app.origin}/choirs/visual-choir`;
     await page.goto(`${drive}/memberships`);
     await page.getByText("周宁", { exact: true }).click();
+    await page.locator("details.lifecycle-member").filter({ has: page.getByRole("heading", { name: "周宁", exact: true }) }).getByText("编辑权限", { exact: true }).click();
     await page.getByRole("checkbox", { name: "上传文件：可以操作" }).uncheck();
     await page.getByRole("checkbox", { name: "修改文件：可以操作" }).check();
     await expect(page.getByRole("checkbox", { name: "修改文件：可以授权他人" })).not.toBeChecked();
@@ -76,6 +77,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByRole("dialog", { name: "移除成员" }).getByRole("button", { name: "取消", exact: true }).click();
     assert.equal(writes.some(write => write.body?.action === "remove"), false);
     delegated = true; await page.reload(); await page.getByText("周宁", { exact: true }).click();
+    await page.locator("details.lifecycle-member").filter({ has: page.getByRole("heading", { name: "周宁", exact: true }) }).getByText("编辑权限", { exact: true }).click();
     await expect(page.getByRole("checkbox", { name: "上传文件：可以操作" })).toBeVisible();
     assert.equal(await page.getByRole("checkbox", { name: /可以授权他人/ }).count(), 0);
     assert.equal(await page.getByRole("checkbox", { name: /修改文件/ }).count(), 0);
@@ -83,8 +85,8 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     assert.equal(await page.getByRole("button", { name: "保存 林老师 的权限" }).count(), 0);
     delegated = false;
     await page.goto(drive);
-    await page.getByRole("button", { name: "此云盘设置" }).click();
-    await expect(page.getByRole("menu", { name: "此云盘设置" })).toBeVisible();
+    await page.getByRole("button", { name: "打开云盘菜单" }).click();
+    await expect(page.getByRole("dialog", { name: "云盘菜单" })).toBeVisible();
     await capture("drive-settings");
     await page.keyboard.press("Escape");
     await page.goto(`${app.origin}/user`);
@@ -130,7 +132,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await dialog.getByRole("button", { name: "导出 PDF", exact: true }).click();
     assert.equal((await download).suggestedFilename().endsWith(".pdf"), true);
     await page.goto(`${drive}/storage`);
-    await expect(page.getByRole("button", { name: /^清理 排练示例/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^移除 排练示例.*的离线副本/ })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await capture("local-storage");
   });

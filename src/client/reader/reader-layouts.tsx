@@ -1,3 +1,4 @@
+import { useReturnViewport } from "../navigation/use-return-viewport";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   type CSSProperties,
@@ -69,6 +70,7 @@ export function PageLayout({
   const contentRef = useRef<HTMLDivElement>(null);
   const previewBoundaryRef = useRef<HTMLDivElement>(null);
   const size = useElementSize(containerRef);
+  useReturnViewport(containerRef, "page", size.width > 0);
   const pageRatio = usePdfPageAspectRatio(document, currentPage);
   const fitWidth = calculateFittedPageWidth(
     size.width,
@@ -272,6 +274,8 @@ export function ContinuousLayout({
       virtualizer.scrollToIndex(currentPage - 1, { align: "start" });
     }
   }, [annotationProps.editing, currentPage, virtualizer]);
+
+  useReturnViewport(scrollRef, "continuous", size.width > 0);
 
   const gestureHandlers = useReaderGestures({
     containerRef: scrollRef,

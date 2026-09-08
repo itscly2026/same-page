@@ -7,29 +7,25 @@ import {
   Form,
   Input,
   Label,
-  Modal,
-  ModalOverlay,
   TextField,
 } from "react-aria-components";
-import { Dialog } from "../navigation/overlays";
 
 import {
   scoreTrashResponseSchema,
   type TrashedScoreSummary,
 } from "../../shared/scores";
-import { LibraryDialogHeading } from "./library-dialog-heading";
 import { uploadMessage } from "./library-format";
 
-export function TrashDialog({
+export function TrashContents({
   choirId,
-  onClose,
   onRestored,
 }: {
   choirId: string;
-  onClose: () => void;
   onRestored: () => void | Promise<void>;
 }) {
   const [trash, setTrash] = useState<TrashedScoreSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [attempt, setAttempt] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [restoreConflict, setRestoreConflict] = useState<TrashedScoreSummary | null>(null);
@@ -41,15 +37,15 @@ export function TrashDialog({
       .then(async (response) => {
         if (!response.ok) throw new Error("trash_unavailable");
         const scores = scoreTrashResponseSchema.parse(await response.json()).scores;
-        if (active) setTrash(scores);
+        if (active) { setTrash(scores); setLoading(false); }
       })
       .catch(() => {
-        if (active) setMessage("暂时无法打开回收站。");
+        if (active) { setMessage("暂时无法打开回收站。"); setLoading(false); }
       });
     return () => {
       active = false;
     };
-  }, [choirId]);
+  }, [choirId, attempt]);
 
   const restoreScore = async (score: TrashedScoreSummary, nextName?: string) => {
     setBusy(true);
@@ -99,23 +95,11 @@ export function TrashDialog({
   };
 
   return (
-    <ModalOverlay
-      className="modal-overlay"
-      isOpen
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      isDismissable={!busy}
-    >
-      <Modal className="app-modal">
-        <Dialog className="app-dialog">
-          {({ close }) => (
-            <>
-              <LibraryDialogHeading title="回收站" close={close} />
+    <section aria-label="回收站文件">
               <p className="dialog-copy">
                 文件保留三十天，到期自动删除。这里不提供手工永久删除。
               </p>
-              {trash.length > 0 ? (
+              {loading ? <p role="status">正在读取回收站…</p> : trash.length > 0 ? (
                 <ul className="trash-list">
                   {trash.map((score) => (
                     <li key={score.id}>
@@ -130,7 +114,7 @@ export function TrashDialog({
                   ))}
                 </ul>
               ) : (
-                <p className="empty-library">回收站是空的。</p>
+                message ? <Button onPress={() => { setMessage(null); setLoading(true); setAttempt(value => value + 1); }}>重新读取回收站</Button> : <p className="empty-library">回收站是空的。</p>
               )}
               {restoreConflict ? (
                 <Form className="entry-form restore-conflict" onSubmit={submitConflict}>
@@ -148,11 +132,7 @@ export function TrashDialog({
                   {message}
                 </p>
               ) : null}
-            </>
-          )}
-        </Dialog>
-      </Modal>
-    </ModalOverlay>
+    </section>
   );
 }
 

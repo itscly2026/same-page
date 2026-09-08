@@ -1,5 +1,5 @@
+import { loginHref } from "../auth/login-return";
 import { runSettingsMutation, settingsMutationMessage } from "../settings/settings-mutation";
-import { BackButton } from "../navigation/back-button";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
@@ -8,15 +8,16 @@ import {
   driveLayerPreferencesResponseSchema,
   type DriveLayerPreferenceSummary,
 } from "../../shared/annotations";
-import { AppHeader } from "../components/app-header";
+import { TaskHeader } from "../components/task-header";
 import { authClient } from "../auth/auth-client";
 import { SettingsFeedback } from "../settings/settings-feedback";
-import { settingsError, settingsResponse } from "../settings/settings-request";
+import { SettingsRequestError, settingsError, settingsResponse } from "../settings/settings-request";
 import { useSettingsLifetime } from "../settings/use-settings-lifetime";
 
 export default function DriveLayerPreferencesPage() {
   const { choirId = "" } = useParams();
   const session = authClient.useSession();
+  if (!session.data && !session.isPending) return <div className="app-page"><TaskHeader title="阅读偏好" backTo={`/choirs/${choirId}`} /><main className="page-shell settings-page"><p>登录后设置你在此云盘的默认显示。访客仍可继续只读浏览。</p><Link to={loginHref(`/choirs/${choirId}/preferences`)}>登录后设置默认显示</Link></main></div>;
   return <DriveLayerPreferences key={`${session.data?.user.id ?? "guest"}:${choirId}`} choirId={choirId} />;
 }
 
@@ -29,11 +30,12 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
   const [driveName, setDriveName] = useState("");
   const [layers, setLayers] = useState<DriveLayerPreferenceSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadStatus, setLoadStatus] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const generation = useSettingsLifetime();
   const retryLoad = () => {
-    setLoadError(null);
+    setLoadError(null); setLoadStatus(null);
     setLoading(true);
     setLoadAttempt((attempt) => attempt + 1);
   };
@@ -54,7 +56,7 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
         setLoading(false);
       })
       .catch((error: unknown) => {
-        if (active) { setLoadError(settingsError(error, "暂时无法读取图层偏好。")); setLoading(false); }
+        if (active) { setLoadStatus(error instanceof SettingsRequestError ? error.status : null); setLoadError(error instanceof SettingsRequestError && error.status === 403 ? "当前身份无法设置此云盘的个人默认，请返回云盘确认访问方式。" : settingsError(error, "暂时无法读取图层偏好。")); setLoading(false); }
       });
     return () => {
       active = false;
@@ -98,19 +100,18 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
 
   return (
     <div className="app-page">
-      <AppHeader actions={<BackButton className="header-action" to={colors ? `/choirs/${choirId}/preferences` : `/choirs/${choirId}`}>
-        返回
-      </BackButton>} />
+      <TaskHeader title={colors ? "笔记颜色" : "阅读偏好"} backTo={colors ? `/choirs/${choirId}/preferences` : `/choirs/${choirId}`} />
       <main className="page-shell settings-page settings-ux reading-preferences">
         <header className="settings-heading">
-          <h1>{colors ? "笔记颜色" : "阅读偏好"}</h1>
+
           {driveName ? <p>{driveName}</p> : null}
           <p className="settings-copy">{colors
-            ? "仅改变你在此云盘看到的共享笔记颜色。"
-            : "适用于此云盘。单独设置过的乐谱保留自己的显示选择。"}</p>
+            ? "应用于此云盘的乐谱，仅影响你。单独调整过颜色的乐谱保持原设置。"
+            : "应用于此云盘的乐谱，仅影响你。单独调整过的乐谱保持原设置。"}</p>
         </header>
-        <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} />
-        <section className="settings-card" aria-label={colors ? "笔记颜色" : "默认显示的笔记"} aria-busy={loading}>
+        <p className="settings-copy">更改自动保存</p>
+        {loadStatus === 401 || loadStatus === 403 ? <div><p role="alert">{loadError}</p>{loadStatus === 401 && <Link to={loginHref(`/choirs/${choirId}/preferences`)}>重新登录</Link>}</div> : <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} />}
+        {!loadError && !loading && <section className="settings-card" aria-label={colors ? "笔记颜色" : "默认显示的笔记"} aria-busy={loading}>
           {!colors ? <h2 className="settings-group-title">默认显示的笔记</h2> : null}
           {layers.map((layer) => {
             const name = layer.name;
@@ -147,7 +148,7 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
               </div> : null}
             </article>;
           })}
-        </section>
+        </section>}
         {!colors && !loading && !loadError ? <Link className="settings-secondary-link" to="?view=colors">
           <span>笔记颜色</span><span aria-hidden="true">›</span>
         </Link> : null}

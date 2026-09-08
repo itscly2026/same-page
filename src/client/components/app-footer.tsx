@@ -4,8 +4,8 @@ export function AppFooter() {
   return (
     <footer className="app-footer">
       <nav aria-label="帮助与关于">
-        <Link to="/privacy">隐私政策</Link>
-        <Link to="/diagnostics">故障诊断</Link>
+        <Link to="/help">帮助</Link>
+        <Link to="/about">关于合谱</Link>
       </nav>
     </footer>
   );

@@ -7,6 +7,8 @@ import { Context, type Exit } from "./navigation-context";
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
   const entries = useRef<Exit[]>([]);
+  const [returnState] = useState(() => new Map<string, unknown>());
+  const [formsOnly, setFormsOnly] = useState(false);
   const [activeCount, update] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const retryAction = useRef<(() => void) | null>(null);
@@ -45,8 +47,8 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   }, [location.key, type]);
   const register = useCallback((exit: Exit) => {
     const releaseUpdate = holdUpdate();
-    entries.current.push(exit); update(entries.current.length);
-    return () => { releaseUpdate(); entries.current = entries.current.filter(item => item !== exit); update(entries.current.length); };
+    entries.current.push(exit); update(entries.current.length); setFormsOnly(entries.current.every(item => item.kind === "form"));
+    return () => { releaseUpdate(); entries.current = entries.current.filter(item => item !== exit); update(entries.current.length); setFormsOnly(entries.current.length > 0 && entries.current.every(item => item.kind === "form")); };
   }, []);
   const consume = (all: boolean): Promise<boolean> => {
     if (running.current) return running.current;
@@ -57,7 +59,9 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     try {
       const ordered = [...entries.current].reverse().sort((a, b) => Number(b.kind === "overlay") - Number(a.kind === "overlay"));
       for (const entry of ordered) {
-        if (!await entry.leave()) { setMessage("本机保存未完成，请保留当前页面并重试。"); return false; }
+        const result = await entry.leave(all);
+        if (result === "cancelled") return false;
+        if (!result) { setMessage("本机保存未完成，请保留当前页面并重试。"); return false; }
         if (!all) break;
       }
       return true;
@@ -65,24 +69,29 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     }).finally(() => { running.current = null; releaseUpdate(); });
     return running.current;
   };
-  const back = (fallback: string) => {
-    if (entries.current.length) { void consume(false); return; }
+  const leaveRoute = (fallback: string) => {
     if (location.state?.exitCheckpoint) { pendingFallback.current = fallback; void navigate(-1); return; }
     if (history.current.length > 1 || (window.history.state?.idx ?? 0) > 0) void navigate(-1);
     else void navigate(fallback, { replace: true });
+  };
+  const back = (fallback: string) => {
+    if (!entries.current.length) { leaveRoute(fallback); return; }
+    if (entries.current.every(entry => entry.kind === "form")) {
+      void consume(true).then(ok => { if (ok) leaveRoute(fallback); });
+    } else void consume(false);
   };
   const afterEditing = (action: () => void) => {
     const intent = ++latestIntent.current;
     void consume(true).then(ok => { if (ok && intent === latestIntent.current) action(); });
   };
-  return <AriaRouterProvider navigate={(to, options) => { void navigate(to, options); }} useHref={useHref}><Context value={{ register, back, afterEditing }}>
-    {dataRouter && <HistoryExit active={activeCount > 0} consume={consume} setRetry={setRetry} />}
+  return <AriaRouterProvider navigate={(to, options) => { void navigate(to, options); }} useHref={useHref}><Context value={{ register, back, afterEditing, returnState }}>
+    {dataRouter && <HistoryExit routeExit={formsOnly} active={activeCount > 0} consume={consume} setRetry={setRetry} />}
     {children}
     {message && <aside className="navigation-error" role="alert">{message}<button onClick={() => { if (retryAction.current) retryAction.current(); else void consume(false); }}>重试</button></aside>}
   </Context></AriaRouterProvider>;
 }
 
-function HistoryExit({ active, consume, setRetry }: { active: boolean; consume(all: boolean): Promise<boolean>; setRetry(retry: (() => void) | null): void }) {
+function HistoryExit({ active, consume, setRetry, routeExit }: { routeExit: boolean; active: boolean; consume(all: boolean): Promise<boolean>; setRetry(retry: (() => void) | null): void }) {
   const navigate = useNavigate();
   const action = useRef<"POP" | "PUSH" | "REPLACE">("POP");
   const blocker = useBlocker(({ historyAction, currentLocation, nextLocation }) => {
@@ -97,13 +106,13 @@ function HistoryExit({ active, consume, setRetry }: { active: boolean; consume(a
     if (blocker.state !== "blocked" || processing.current || handled.current === blocker) return;
     handled.current = blocker;
     processing.current = true;
-    const internal = action.current !== "POP";
+    const internal = action.current !== "POP" || routeExit;
     // Reset a history gesture immediately: it consumes a local level, never a route.
     if (!internal) blocker.reset();
     void consume(internal).then(ok => {
       if (internal && latest.current.state === "blocked") {
         const pending = latest.current;
-        if (ok && action.current !== "POP") pending.proceed();
+        if (ok && internal) pending.proceed();
         else {
           const replace = action.current === "REPLACE";
           pending.reset();
@@ -111,7 +120,7 @@ function HistoryExit({ active, consume, setRetry }: { active: boolean; consume(a
         }
       }
     }).finally(() => { processing.current = false; });
-  }, [blocker, consume, navigate, setRetry]);
+  }, [blocker, consume, navigate, setRetry, routeExit]);
   return null;
 }
 

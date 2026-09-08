@@ -1,15 +1,15 @@
+import { driveManagementSchema } from "../../shared/drive-management";
 import { runSettingsMutation, settingsMutationMessage } from "../settings/settings-mutation";
 import { captureLocalWorkspaceSession, resolveLocalWorkspace, type LocalWorkspace } from "../platform/local-workspace";
 import { applySharedLayerAvailability } from "../annotations/annotation-state";
 import { Button, Heading, Modal, ModalOverlay } from "react-aria-components";
 import { Dialog } from "../navigation/overlays";
-import { BackButton } from "../navigation/back-button";
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { sharedLayerAvailabilitySchema, sharedLayerManagementResponseSchema, type SharedLayerManagementSummary } from "../../shared/annotations";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
-import { AppHeader } from "../components/app-header";
+import { TaskHeader } from "../components/task-header";
 import { authClient } from "../auth/auth-client";
 import { SettingsFeedback } from "../settings/settings-feedback";
 import { settingsError, settingsResponse } from "../settings/settings-request";
@@ -18,7 +18,25 @@ import { useSettingsLifetime } from "../settings/use-settings-lifetime";
 export default function SharedLayerManagementPage() {
   const { choirId = "" } = useParams();
   const session = authClient.useSession();
-  return <SharedLayerManagement key={`${session.data?.user.id ?? "guest"}:${choirId}`} choirId={choirId} userId={session.data?.user.id ?? null} />;
+  return <SharedLayerAccess key={`${session.data?.user.id ?? "guest"}:${choirId}`} choirId={choirId} userId={session.data?.user.id ?? null} />;
+}
+
+function SharedLayerAccess({ choirId, userId }: { choirId: string; userId: string | null }) {
+  const [overview, setOverview] = useState<ReturnType<typeof driveManagementSchema.parse> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    void diagnosticFetch(`/api/choirs/${choirId}/management`, { signal: controller.signal })
+      .then(settingsResponse).then(value => { if (!controller.signal.aborted) setOverview(driveManagementSchema.parse(value)); })
+      .catch(error => { if (!controller.signal.aborted) setError(settingsError(error, "无法读取共享层，请重试。")); });
+    return () => controller.abort();
+  }, [choirId, attempt]);
+  if (overview?.capabilities.operations.operations.includes("configureLayers")) return <SharedLayerManagement choirId={choirId} userId={userId} />;
+  return <div className="app-page"><TaskHeader title="共享层" backTo={`/choirs/${choirId}`} /><main className="page-shell settings-page settings-ux">
+    <p>{overview?.name}</p><p>此云盘全部乐谱的共享笔记层。查看配置不授予编辑或管理权限。</p>
+    {overview ? <><ul className="shared-layer-summary">{overview.layers.map(layer => <li key={layer.slot}><strong>{layer.name}</strong><span>{layer.active ? "启用" : "停用"}</span></li>)}</ul><p>需要调整时，可查找有共享层配置或授权权限的人。</p><Link to={`/choirs/${choirId}/memberships`}>查看成员与权限</Link></> : <SettingsFeedback loading={!error} loadError={error} message={null} retry={() => { setError(null); setAttempt(value => value + 1); }} />}
+  </main></div>;
 }
 
 function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: string | null }) {
@@ -85,10 +103,10 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
   };
 
   return <div className="app-page">
-    <AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回</BackButton>} />
+    <TaskHeader title={"共享层"} backTo={`/choirs/${choirId}`} />
     <main className="page-shell settings-page settings-ux">
       <header className="settings-heading">
-        <p className="eyebrow">云盘设置 · {driveName}</p><h1>共享层管理</h1>
+        <p className="eyebrow">云盘设置 · {driveName}</p>
         <p className="settings-copy">适用于此云盘的所有乐谱。选择一个层，修改名称、颜色或启用状态。编辑权限在“成员与权限”设置。</p>
       </header>
       <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} />

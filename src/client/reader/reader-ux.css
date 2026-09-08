@@ -177,3 +177,8 @@
 
 .reader-layer-panel .layer-section--personal .reader-layer-toggle input { margin-left: auto; flex-shrink: 0; }
 .reader-layer-panel .layer-section--personal .reader-layer-toggle strong { overflow-wrap: anywhere; }
+
+.reader-layer-preferences { margin: -.25rem 0 1rem; }
+.reader-layer-preferences a { display: flex; align-items: center; min-height: 44px; color: inherit; font-size: .85rem; text-underline-offset: 3px; }
+.reader-layer-preferences a:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.reader-layer-panel > .reader-layer-help { font-size: .85rem; }

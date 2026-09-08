@@ -141,7 +141,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
   if (access.kind === "loading") {
     return (
       <div className="app-page drive-page">
-        <DriveHeader choirId={choirId} choirName={access.choir?.name ?? "云盘"} userId={userId} resolvingIdentity={identity.restoring || identity.onlineState === "checking"} search={search} onSearch={updateSearch} onRefresh={() => void refresh()} />
+        <DriveHeader loading choirId={choirId} choirName={access.choir?.name ?? "云盘"} userId={userId} resolvingIdentity={identity.restoring || identity.onlineState === "checking"} search={search} onSearch={updateSearch} onRefresh={() => void refresh()} />
         <main className="page-shell file-library">{access.choir && <h1 className="visually-hidden">{access.choir.name}</h1>}<p className="route-loading" role="status">正在加载乐谱…</p></main>
       </div>
     );
@@ -160,30 +160,25 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
   return (
     <div className="app-page drive-page">
       <DriveHeader choirId={choirId} choirName={choir.name} userId={userId} localOnly={Boolean(access.local)} onEditDisplayName={access.isMember && !access.local ? () => setSettingsField("display-name") : undefined} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
-        management={access.isMember || managementVisible ? close => <section className="drive-drawer-management">
-          <h3>云盘设置</h3>
-          <Menu aria-label="云盘管理菜单" disabledKeys={access.local ? ["info", "memberships", "layers", "trash", "admission"] : []} onAction={close}>
-            <MenuItem id="info" href={`/choirs/${choirId}/settings/info`}>基本信息</MenuItem>
-            <MenuItem id="memberships" href={`/choirs/${choirId}/memberships`}>成员与权限</MenuItem>
-            <MenuItem id="layers" href={`/choirs/${choirId}/settings/layers`}>共享层</MenuItem>
-            <MenuItem id="admission" href={`/choirs/${choirId}/settings/admission`}>加入方式</MenuItem>
-            <MenuItem id="trash" href={`/choirs/${choirId}/settings/trash`}>回收站</MenuItem>
-          </Menu>
+        management={access.isMember || managementVisible ? () => <section className="drive-drawer-management">
+          <h3>云盘管理</h3>
+          <nav aria-label="云盘管理菜单">{[
+            ["settings/info", "基本信息"], ["memberships", "成员与权限"], ["shared-layers", "共享层"], ["settings/admission", "加入方式"], ["settings/trash", "回收站"],
+          ].map(([path, label]) => access.local ? <span key={path} aria-disabled="true">{label}（需联网）</span> : <Link key={path} to={`/choirs/${choirId}/${path}`}>{label}</Link>)}</nav>
           {access.local && <p role="status">管理操作需联网并确认权限后使用。</p>}
-          <p className="drive-storage">云盘存储：{formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}</p>
         </section> : undefined}
       />
       <main className="page-shell file-library">
         <h1 className={access.retained ? undefined : "visually-hidden"}>{choir.name}</h1>
         {access.retained && <p role="status">已无法访问此云盘，以下为本机保留内容</p>}
-        {(!online || identity.onlineState === "signed-out" || identity.onlineState === "unreachable" || searchMessage) && <details className="drive-connection-notice"><summary>{!online ? "离线" : searchMessage ? "列表更新失败" : identity.onlineState === "unreachable" ? "连接暂不可用" : "需要重新登录"}</summary>
+        {(!online || (Boolean(userId) && identity.onlineState === "signed-out") || identity.onlineState === "unreachable" || searchMessage) && <details className="drive-connection-notice"><summary>{!online ? "离线" : searchMessage ? "列表更新失败" : identity.onlineState === "unreachable" ? "连接暂不可用" : "需要重新登录"}</summary>
           <IdentityNotice identity={identity} />
           {searchMessage && <p role="status">{searchMessage}<Button onPress={() => void refresh()}>重试</Button></p>}
         </details>}
         <section className="library-workspace" aria-labelledby="library-content-title">
           <div className="library-toolbar">
             <div className="library-controls">
-              <h2 id="library-content-title">乐谱 <span className="drive-score-count">{result.scores.length}</span></h2>
+              <h2 id="library-content-title">{search.trim() ? `找到 ${visibleScores.length} 份乐谱` : <>乐谱 <span className="drive-score-count">{result.scores.length}</span></>}</h2>
               <label className="library-sort-label">
                 排序
                 <span className="library-sort-control">
@@ -201,7 +196,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
               </label>
             </div>
           </div>
-          {search.trim() ? <p className="library-results-summary" role="status">{localFilesOnly ? "仅搜索本机记录 · " : ""}找到 {visibleScores.length} 份，共 {result.scores.length} 份乐谱</p> : null}
+          {search.trim() && <p className="visually-hidden" role="status">找到 {visibleScores.length} 份乐谱{localFilesOnly ? "，仅搜索本机记录" : ""}</p>}
 
           {can("uploadFiles") && (storageRatio >= 0.8 || quotaBlocked) ? (
             <p className="storage-warning" role="status">

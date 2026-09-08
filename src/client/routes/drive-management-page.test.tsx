@@ -5,7 +5,7 @@ import { noCapabilities, emptyPermissions } from "../../shared/drive-permissions
 import DriveManagementPage from "./drive-management-page";
 vi.mock("../auth/auth-client", () => ({ authClient: { useSession: () => ({ data: { user: { id: "member" } } }) } }));
 afterEach(() => vi.unstubAllGlobals());
-const page = () => <MemoryRouter initialEntries={["/choirs/drive/settings/admission"]}><Routes><Route path="/choirs/:choirId/settings/:section" element={<DriveManagementPage />} /></Routes></MemoryRouter>;
+const page = () => <MemoryRouter initialEntries={["/choirs/drive/settings/admission"]}><Routes><Route path="/choirs/:choirId/settings/:section" element={<DriveManagementPage section="admission" />} /></Routes></MemoryRouter>;
 it("shows safe configuration and explains locked actions before opening an edit form or requesting credentials", async () => {
   const fetch = vi.fn(async (url: string) => Response.json(url.endsWith("/management") ? { name: "排练云盘", guestAdmissionMode: "invite", capabilities: noCapabilities(), layers: [{ slot: "S", name: "Soprano", active: 1 }] } : { actorId: "member", capabilities: noCapabilities(), memberships: [{ id: "owner", displayName: "小林", isOwner: 1, status: "active", revision: 0, operations: emptyPermissions(), management: emptyPermissions() }] }));
   vi.stubGlobal("fetch", fetch);

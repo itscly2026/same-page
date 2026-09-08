@@ -73,6 +73,27 @@ describe("AuthPage", () => {
     expect(await screen.findByLabelText("current route")).toHaveTextContent("/user/lifecycle");
   });
 
+  it.each(["none", "preview", "joined"])("returns a reader login to the requested score with %s admission", async admission => {
+    const previous = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (admission !== "none" && input === "/api/guest/session" && !init?.method) return Response.json({ choir: { id: "drive", name: "排练", guestAdmissionMode: "open" }, entryKind: admission === "preview" ? "preview" : "admission" });
+      if (input === "/api/choirs/current-guest/join-state") return Response.json({ status: "joined", choir: { id: "drive", name: "排练", guestAdmissionMode: "open" } });
+      return previous(input, init);
+    });
+    renderAuthPage("/login?returnTo=%2Fchoirs%2Fdrive%2Fscores%2Fscore&panel=layers");
+    await identify("singer@example.test");
+    fireEvent.change(await screen.findByLabelText("密码"), { target: { value: "correct horse battery staple" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    expect(await screen.findByLabelText("current route")).toHaveTextContent("/choirs/drive/scores/score");
+  });
+
+  it("lets a guest cancel login and continue the requested score", async () => {
+    renderAuthPage("/login?returnTo=%2Fchoirs%2Fdrive%2Fscores%2Fscore");
+    fireEvent.click(screen.getByRole("button", { name: "继续只读浏览" }));
+    expect(await screen.findByLabelText("current route")).toHaveTextContent("/choirs/drive/scores/score");
+    expect(vi.mocked(fetch).mock.calls.some(([url, init]) => url === "/api/guest/session" && init?.method === "DELETE")).toBe(false);
+  });
+
   it("keeps email primary and routes an existing user to password sign-in", async () => {
     renderAuthPage();
 

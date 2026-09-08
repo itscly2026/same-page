@@ -1,4 +1,3 @@
-import { BackButton } from "../navigation/back-button";
 import { SharedLayerDetailsForm } from "../settings/shared-layer-details-form";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useState } from "react";
@@ -9,7 +8,7 @@ import {
   sharedLayerManagementResponseSchema,
   type SharedLayerManagementSummary,
 } from "../../shared/annotations";
-import { AppHeader } from "../components/app-header";
+import { TaskHeader } from "../components/task-header";
 import { authClient } from "../auth/auth-client";
 import { SettingsFeedback } from "../settings/settings-feedback";
 import { settingsError, settingsResponse } from "../settings/settings-request";
@@ -36,7 +35,7 @@ function SharedLayerDetails({ choirId, slotParam }: { choirId: string; slotParam
   useEffect(() => {
     if (!slot) return;
     let active = true;
-    void 
+    void
       diagnosticFetch(`/api/choirs/${choirId}/shared-layers`).then(async (response) => {
         return sharedLayerManagementResponseSchema.parse(await settingsResponse(response));
       }).then((management) => {
@@ -57,15 +56,11 @@ function SharedLayerDetails({ choirId, slotParam }: { choirId: string; slotParam
 
   return (
     <div className="app-page">
-      <AppHeader actions={(
-        <BackButton className="header-action" to={`/choirs/${choirId}/shared-layers`}>
-          返回
-        </BackButton>
-      )} />
+      <TaskHeader title={layerName} backTo={`/choirs/${choirId}/shared-layers`} />
       <main className="page-shell settings-page settings-ux">
         <header className="settings-heading">
           <p className="eyebrow">云盘设置 · {driveName || "共享层"}</p>
-          <h1>{layerName}</h1>
+
           <p className="settings-copy">配置对当前云盘中的全部乐谱生效，不授予编辑内容的权限。停用的共享层暂停所有人的编辑，恢复后授权继续生效。</p>
         </header>
         {slot ? <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} /> : <p role="alert">共享层不存在。</p>}

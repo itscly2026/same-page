@@ -105,9 +105,9 @@ describe("AppRoutes", () => {
       screen.getByText("为合唱排练与共享笔记打造的乐谱云盘。"),
     ).toHaveAttribute("lang", "zh-CN");
     expect(screen.getByRole("link", { name: "登录" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "隐私政策" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "关于合谱" })).toHaveAttribute(
       "href",
-      "/privacy",
+      "/about",
     );
     expect(screen.queryByLabelText("邀请码")).not.toBeInTheDocument();
 
@@ -242,6 +242,7 @@ describe("AppRoutes", () => {
         if (lost) { lost = false; throw new TypeError("response_lost"); }
         return Response.json({ action: body.action, revision: layer.revision, sharedLayerRevision: layer.revision, activeSharedSlots: layer.deletedAt === null && layer.active ? ["E"] : [] });
       }
+      if (input.endsWith("/management")) return Response.json({ name: "测试云盘", guestAdmissionMode: "open", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), layers: [] });
       if (input.includes("/shared-layers")) return Response.json({ drive: { id: "choir-1", name: "测试云盘" }, sharedLayerRevision: layer.revision, activeSharedSlots: layer.deletedAt === null && layer.active ? ["E"] : [], layers: input.includes("state=deleted") === (layer.deletedAt !== null) ? [layer] : [] });
       return new Response(null, { status: 404 });
     }));
@@ -961,11 +962,11 @@ describe("AppRoutes", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "打开云盘菜单" }));
-    expect(await screen.findByRole("menuitem", { name: "共享层" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "共享层" })).toHaveAttribute(
       "href",
-      "/choirs/choir-1/settings/layers",
+      "/choirs/choir-1/shared-layers",
     );
-    fireEvent.click(await screen.findByRole("menuitem", { name: "加入方式" }));
+    fireEvent.click(await screen.findByRole("link", { name: "加入方式" }));
     fireEvent.click(await screen.findByRole("button", { name: "查看与轮换邀请码" }));
     expect(await screen.findByRole("dialog", { name: "邀请加入云盘" })).toBeInTheDocument();
     expect(await screen.findByLabelText("当前有效邀请码")).toHaveTextContent("HGFEDCBA");
@@ -1008,8 +1009,8 @@ describe("AppRoutes", () => {
     );
 
     await screen.findByRole("searchbox", { name: /搜索.*中的乐谱/ });
-    fireEvent.click(await screen.findByRole("button", { name: "此云盘设置" }));
-    expect(await screen.findByRole("menuitem", { name: "阅读偏好" })).toHaveAttribute(
+    fireEvent.click(await screen.findByRole("button", { name: "打开云盘菜单" }));
+    expect(await screen.findByRole("link", { name: "阅读偏好" })).toHaveAttribute(
       "href",
       "/choirs/choir-1/preferences",
     );
@@ -1069,8 +1070,8 @@ describe("AppRoutes", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/云盘存储已使用 858\.3 MB/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "打开云盘菜单" }));
-    expect(await screen.findByText(/云盘存储：858\.3 MB/)).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "回收站" })).toBeInTheDocument();
+    expect(screen.queryByText(/云盘存储：/)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "回收站" })).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "轮换邀请码" }),
     ).not.toBeInTheDocument();
@@ -1150,7 +1151,7 @@ describe("AppRoutes", () => {
     fireEvent.change(screen.getByRole("searchbox", { name: /搜索.*中的乐谱/ }), {
       target: { value: "排练" },
     });
-    expect(screen.getByText("找到 1 份，共 1 份乐谱")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "找到 1 份乐谱" })).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("?q="))).toBe(false);
 
     fetchMock.mockImplementationOnce(() =>

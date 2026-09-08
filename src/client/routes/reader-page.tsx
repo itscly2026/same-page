@@ -1,3 +1,6 @@
+import { loginHref } from "../auth/login-return";
+import { useLocation, useNavigationType } from "react-router-dom";
+import { useReturnState } from "../navigation/navigation-context";
 import { useReaderAnnotationActions } from "../reader/use-reader-annotation-actions";
 import { useToolColor } from "../reader/use-tool-color";
 import { offlinePreparationDescription } from "../offline/offline-score-status";
@@ -13,7 +16,7 @@ import { useReaderSession } from "../reader/use-reader-session";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   ArrowLeft, Download, Ellipsis, Layers, Maximize2, Minus, Pencil, Plus, BookOpen,
-  RefreshCw, Rows3, Check,
+  RefreshCw, Rows3, Check, X,
 } from "lucide-react";
 import {
   useEffect,
@@ -96,6 +99,9 @@ export default function ReaderPage() {
 }
 
 function ReaderPageContent() {
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const returnedPanel = navigationType !== "POP" && location.state?.readerReturnPanel === "layers";
   const { choirId = "", scoreId = "" } = useParams();
   const identity = useApplicationIdentity();
   const [resolvedWorkspace, setResolvedWorkspace] =
@@ -110,7 +116,7 @@ function ReaderPageContent() {
     false,
   );
   const navigation = useAppNavigation();
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useReturnState("zoom", 1);
   const [editingEditor, setEditingEditor] = useState<AnnotationEditor | null>(null);
   const [annotationInteraction, setAnnotationInteraction] =
     useState<AnnotationOverlayInteraction>("idle");
@@ -131,11 +137,20 @@ function ReaderPageContent() {
   useEffect(() => subscribeAnnotationSync(() => {
     if (getAnnotationSyncActivity(resolvedWorkspace?.scopeKey ?? "") === "running") setSyncOutcome("none");
   }), [resolvedWorkspace?.scopeKey]);
-  const [chromeVisible, setChromeVisible] = useState(false);
-  const [readerPanel, setReaderPanel] = useState<ReaderPanel | null>(null);
+  const [chromeVisible, setChromeVisible] = useReturnState("chrome", returnedPanel);
+  const [readerPanel, setReaderPanel] = useReturnState<ReaderPanel | null>("panel", returnedPanel ? "layers" : null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
   const moreTrigger = useRef<HTMLButtonElement>(null);
+  const layersTrigger = useRef<HTMLButtonElement>(null);
+  const previousPanel = useRef(readerPanel);
+  useEffect(() => {
+    const closedLayers = previousPanel.current === "layers" && readerPanel === null;
+    previousPanel.current = readerPanel;
+    if (!closedLayers) return;
+    const frame = requestAnimationFrame(() => layersTrigger.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [readerPanel]);
   const [showGestureHint, setShowGestureHint] = useState(
     () => !readBooleanPreference("reader-gesture-hint-seen"),
   );
@@ -270,7 +285,7 @@ function ReaderPageContent() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [editing, layout, moreOpen, diagnosticOpen, readerPanel, requestPage]);
+  }, [editing, layout, moreOpen, diagnosticOpen, readerPanel, requestPage, setZoom]);
 
   const beginEditing = () => {
     if (cloudState === "trashed") {
@@ -487,6 +502,7 @@ function ReaderPageContent() {
                 {editing ? <Check aria-hidden="true" size={21} /> : <Pencil aria-hidden="true" size={21} />}
               </Button>
               {!editing && <><Button
+                ref={layersTrigger}
                 aria-label="看哪些笔记"
                 aria-expanded={readerPanel === "layers"}
                 className="reader-icon-button"
@@ -516,7 +532,7 @@ function ReaderPageContent() {
             {editing && annotationInteraction !== "composing-text" && <span className="reader-save-feedback" role="status">
               {persistence === "saving" ? "正在保存到本机…" : persistence === "failed" ? "本机保存失败" : annotations.some(annotation => annotation.state === "draft") ? "已保存在本机" : "正在编辑当前页"}
             </span>}
-            {editAvailability !== "ready" ? (
+            {editAvailability !== "ready" && !(editAvailability === "preparing" && readerPanel !== null) ? (
               <p
                 className="reader-edit-status"
                 data-state={editAvailability}
@@ -528,7 +544,7 @@ function ReaderPageContent() {
                   : editAvailability === "failed"
                     ? "编辑准备失败，点按铅笔重试"
                     : editAvailability === "read-only"
-                      ? "此乐谱为只读状态"
+                      ? <>此乐谱为只读状态{!identity.localUserId && <Link to={loginHref(`/choirs/${choirId}/scores/${scoreId}`)}>登录后写自己的笔记</Link>}</>
                       : "乐谱在回收站中，恢复后可编辑"}
               </p>
             ) : null}
@@ -660,11 +676,11 @@ function ReaderPageContent() {
         <ModalOverlay className="reader-panel-backdrop" isOpen isDismissable
           onOpenChange={(open) => { if (!open) setReaderPanel(null); }}>
           <Modal className="reader-panel reader-layers-dialog">
-            <Dialog aria-label={"看哪些笔记"} className="reader-layers-content">
+            <Dialog preserveOnNavigate aria-label={"看哪些笔记"} className="reader-layers-content">
               <header className="reader-panel__header">
                 <strong>{"看哪些笔记"}</strong>
-                <Button aria-label="关闭笔记显示" onPress={() => setReaderPanel(null)}>
-                  关闭
+                <Button className="icon-button" aria-label="关闭笔记显示" onPress={() => setReaderPanel(null)}>
+                  <X aria-hidden="true" size={21} />
                 </Button>
               </header>
               <Suspense fallback={<p role="status">正在准备图层…</p>}>
