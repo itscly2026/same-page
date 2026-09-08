@@ -3,6 +3,7 @@ import Dexie from "dexie";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  ACTIVE_LOCAL_OWNER_KEY,
   LEGACY_LAST_AUTHENTICATED_USER_ID_KEY,
   localDatabase,
 } from "./local-database";
@@ -115,6 +116,17 @@ describe("local workspace identity transitions", () => {
     await expect(assertLocalWorkspaceActive(previous)).rejects.toThrow("local_workspace_owner_changed");
     const restored = await resolveLocalWorkspace({ authenticatedUserId: "user-a", choirId: "choir-1", scoreId: "score-1" });
     expect(restored.ownerKey).toBe(previous.ownerKey);
+  });
+
+  it("rolls back an explicit guest switch cancelled during persistence", async () => {
+    const previous = await resolveLocalWorkspace({ authenticatedUserId: "user-a", choirId: "choir-1", scoreId: "score-1" });
+    const controller = new AbortController();
+    const cancelWrite = (_changes: object, key: string) => { if (key === ACTIVE_LOCAL_OWNER_KEY) controller.abort(); };
+    localDatabase.system.hook("updating", cancelWrite);
+    try {
+      await expect(activateGuestLocalOwner("choir-1", controller.signal)).rejects.toThrow();
+      await expect(assertLocalWorkspaceActive(previous)).resolves.toBeUndefined();
+    } finally { localDatabase.system.hook("updating").unsubscribe(cancelWrite); }
   });
 
   it("does not promote a guest workspace when the guest signs in", async () => {

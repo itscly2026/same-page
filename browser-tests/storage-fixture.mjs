@@ -10,7 +10,7 @@ import { startViteServer } from "../scripts/vite-server.mjs";
 
 // Each call owns a fresh local Worker store. Bindings are disposed before Vite
 // opens them, so the seed and server never contend for the same SQLite files.
-export async function startStorageFixture({ authenticated = false, invite = false, previewEntry = true, script = "preview", expired = false, rendererOrigin, pdf = createSampleScorePdf() } = {}) {
+export async function startStorageFixture({ authenticated = false, invite = false, nonMember = false, previewEntry = true, script = "preview", expired = false, rendererOrigin, pdf = createSampleScorePdf() } = {}) {
   const accounts = authenticated ? [0, 1].map(() => ({ id: randomUUID(), email: `${randomUUID()}@example.test`, password: randomBytes(24).toString("hex") })) : [];
   const joinCode = invite ? Array.from(randomBytes(8), value => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[value & 31]).join("") : null;
   const choirId = randomUUID(), scoreId = randomUUID(), versionId = randomUUID();
@@ -38,7 +38,7 @@ export async function startStorageFixture({ authenticated = false, invite = fals
           accountStatements.push(
             DB.prepare("INSERT INTO user (id, name, email, email_verified, created_at, updated_at) VALUES (?, '本地测试用户', ?, 1, ?, ?)").bind(account.id, account.email, now, now),
             DB.prepare("INSERT INTO account (id, issuer, account_id, provider_id, user_id, password, created_at, updated_at) VALUES (?, ?, ?, 'credential', ?, ?, ?, ?)").bind(randomUUID(), createLocalAccountIssuer("credential"), account.id, account.id, await hashPassword(account.password), now, now),
-            DB.prepare("INSERT INTO memberships (id, choir_id, user_id, display_name, status) VALUES (?, ?, ?, '本地测试成员', 'active')").bind(index === 0 ? ownerMembershipId : randomUUID(), choirId, account.id),
+            ...(nonMember && index === 1 ? [] : [DB.prepare("INSERT INTO memberships (id, choir_id, user_id, display_name, status) VALUES (?, ?, ?, '本地测试成员', 'active')").bind(index === 0 ? ownerMembershipId : randomUUID(), choirId, account.id)]),
           );
         }
         await DB.batch([

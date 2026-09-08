@@ -158,6 +158,7 @@ export async function activateGuestLocalOwner(choirId: string, signal?: AbortSig
       { key, value: ownerKey },
       { key: ACTIVE_LOCAL_OWNER_KEY, value: ownerKey },
     ]);
+    signal?.throwIfAborted(); // Abort rolls back both ownership and epoch writes.
     return ownerKey;
   });
 }

@@ -183,16 +183,22 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
     pendingEntryRef.current = pending;
     const result = await pending;
     if (generation !== entryLifetimeRef.current) return;
-    setSubmitting(false);
     if (result.kind === "enter") {
       if (!userId) {
         try { await activateGuestLocalOwner(result.choir.id, controller.signal); }
-        catch { if (!controller.signal.aborted) setJoinMessage("无法准备本机访客空间，请重试。"); return; }
+        catch {
+          if (!controller.signal.aborted) { setSubmitting(false); setJoinMessage("无法准备本机访客空间，请重试。"); }
+          return;
+        }
         if (generation !== entryLifetimeRef.current) return;
       }
+      setSubmitting(false);
       finishJoinDialog();
       await navigate(`/choirs/${result.choir.id}`);
-    } else if (result.kind === "display-name") {
+      return;
+    }
+    setSubmitting(false);
+    if (result.kind === "display-name") {
       setJoinStep({ kind: "display-name", choir: result.choir });
     } else if (result.kind === "failed") setJoinMessage(result.message);
   };
@@ -208,13 +214,17 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
     // Start only the committed lifetime, keeping automatic admission single-shot.
     void Promise.resolve().then(() => {
       if (!active || session.isPending || !linkInvite || linkHandled.current) return;
+      // Router navigation can complete asynchronously. Admit only on the next
+      // committed location, once the shared credential has left the address bar.
+      if (location.hash) {
+        void navigate({ pathname: location.pathname, search: location.search, hash: "" }, { replace: true });
+        return;
+      }
       linkHandled.current = true;
-      // Remove the shared credential before making admission requests.
-      void navigate({ pathname: location.pathname, search: location.search, hash: "" }, { replace: true });
       enterLinkedDrive();
     });
     return () => { active = false; };
-  }, [session.isPending, linkInvite, navigate, location.pathname, location.search]);
+  }, [session.isPending, linkInvite, navigate, location.pathname, location.search, location.hash]);
 
   const joinValidatedDrive = async (event: FormEvent) => {
     event.preventDefault();
