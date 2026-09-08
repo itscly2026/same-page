@@ -69,8 +69,5 @@ for n in range(110):
         p=(t-9)/1.5; spread,reveal=p*p*(3-2*p),5
     else: spread,reveal=1,5*(11-t)/.5
     frames.append(frame(spread,reveal))
-# A shared palette prevents flicker between frames.
-palette=frame(1,5).quantize(colors=96)
-frames=[f.quantize(palette=palette,dither=Image.Dither.NONE) for f in frames]
-frames[0].save(OUT/'shared-layers.gif',save_all=True,append_images=frames[1:],duration=100,loop=0,optimize=True)
-print(OUT/'shared-layers.gif')
+frames[0].save(OUT/'shared-layers-animation.webp',save_all=True,append_images=frames[1:],duration=100,loop=0,lossless=True,method=6)
+print(OUT/'shared-layers-animation.webp')

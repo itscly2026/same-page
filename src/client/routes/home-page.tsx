@@ -27,8 +27,8 @@ import {
 } from "../../shared/choirs";
 import { authClient } from "../auth/auth-client";
 import sharedLayersIllustration from "../assets/home/shared-layers.webp";
-import sharedLayersAnimation from "../assets/home/shared-layers.gif";
-import personalLayerAnimation from "../assets/home/personal-layer.gif";
+import sharedLayersAnimation from "../assets/home/shared-layers-animation.webp";
+import personalLayerAnimation from "../assets/home/personal-layer-animation.webp";
 import personalLayerIllustration from "../assets/home/personal-layer.webp";
 import replacePdfAnimation from "../assets/home/replace-pdf-animation.webp";
 import replacePdfIllustration from "../assets/home/replace-pdf.webp";

@@ -93,6 +93,5 @@ for n in range(130):
     else: spread,selection,personal=1,13-t,13-t
     frames.append(frame(spread,selection,personal))
 frame(1,1,1).save(OUT/'personal-layer.webp',quality=90)
-palette=frame(1,0,1).quantize(colors=96)
-frames=[f.quantize(palette=palette,dither=Image.Dither.NONE) for f in frames]
-frames[0].save(OUT/'personal-layer.gif',save_all=True,append_images=frames[1:],duration=100,loop=0,optimize=True)
+frames[0].save(OUT/'personal-layer-animation.webp',save_all=True,append_images=frames[1:],duration=100,loop=0,lossless=True,method=6)
+print(OUT/'personal-layer-animation.webp')
