@@ -43,7 +43,7 @@ beforeEach(async () => {
     const url = String(input);
     if (init?.method === "POST" && url.endsWith("/personal-layers")) {
       const body = JSON.parse(String(init.body)); requests.push({ url, body });
-      serverLayers.push({ ...own, id: body.id, name: body.name });
+      if (!serverLayers.some(layer => layer.id === body.id)) serverLayers.push({ ...own, id: body.id, name: body.name });
       return Response.json({ id: body.id }, { status: 201 });
     }
     if (init?.method === "PUT") {
@@ -106,4 +106,74 @@ it("creates another private layer, caches both editing targets, and protects uns
   fireEvent.click(within(card).getByRole("button", { name: "确认删除" }));
   await screen.findByText(/此层有未同步内容或冲突/);
   expect(requests.filter(request => request.url.endsWith(`/personal-layers/${newLayer.id}`))).toHaveLength(0);
+});
+
+it.each(["submit", "retry"])("reuses the creation identity after a lost response through %s", async route => {
+  const originalFetch = fetch;
+  let loseResponse = true;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const result = await originalFetch(input, init);
+    if (init?.method === "POST" && String(input).endsWith("/personal-layers") && loseResponse) {
+      loseResponse = false;
+      throw new Error("response lost after commit");
+    }
+    return result;
+  }));
+  render(<Reader />);
+  fireEvent.click(await screen.findByRole("button", { name: /新建个人层/ }));
+  fireEvent.change(screen.getByRole("textbox", { name: "新个人层名称" }), { target: { value: "排练记录" } });
+  fireEvent.click(screen.getByRole("button", { name: "新建个人层" }));
+  await screen.findByRole("button", { name: "重试" });
+  fireEvent.click(screen.getByRole("button", { name: route === "retry" ? "重试" : "新建个人层" }));
+  await screen.findByRole("button", { name: "管理 排练记录" });
+  expect(serverLayers.filter(layer => layer.name === "排练记录")).toHaveLength(1);
+  expect(requests[0].body).toEqual(requests[1].body);
+  expect(screen.queryByRole("textbox", { name: "新个人层名称" })).not.toBeInTheDocument();
+});
+
+it("closes a confirmed creation even when refreshing fails and retries only the refresh", async () => {
+  const originalFetch = fetch;
+  let failRefresh = true;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith("/layers") && failRefresh) throw new Error("offline");
+    return originalFetch(input, init);
+  }));
+  render(<Reader />);
+  fireEvent.click(await screen.findByRole("button", { name: /新建个人层/ }));
+  fireEvent.change(screen.getByRole("textbox", { name: "新个人层名称" }), { target: { value: "排练记录" } });
+  fireEvent.click(screen.getByRole("button", { name: "新建个人层" }));
+  await screen.findByRole("button", { name: "重试" });
+  expect(screen.queryByRole("textbox", { name: "新个人层名称" })).not.toBeInTheDocument();
+  failRefresh = false;
+  fireEvent.click(screen.getByRole("button", { name: "重试" }));
+  await screen.findByRole("button", { name: "管理 排练记录" });
+  expect(requests.filter(request => request.url.endsWith("/personal-layers"))).toHaveLength(1);
+});
+
+it("keeps other deleted layers available after restoring one and after unrelated mutations", async () => {
+  const originalFetch = fetch;
+  let deletedLayers = [
+    { ...own, id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "旧排练", deletedAt: Date.now(), revision: 1 },
+    { ...own, id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", name: "旧演出", deletedAt: Date.now(), revision: 1 },
+  ];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith("/layers?state=deleted")) return Response.json({ layers: deletedLayers, sharedLayerRevision: 0, permissions: { canManageLayers: false } });
+    if (init?.method === "PUT" && JSON.parse(String(init.body)).action === "restore") {
+      const restored = deletedLayers.find(layer => String(input).endsWith(layer.id))!;
+      serverLayers.push({ ...restored, deletedAt: null });
+      deletedLayers = deletedLayers.filter(layer => layer.id !== restored.id);
+    }
+    return originalFetch(input, init);
+  }));
+  render(<Reader />);
+  fireEvent.click(await screen.findByRole("button", { name: "已删除个人层" }));
+  fireEvent.click(await screen.findByRole("button", { name: "恢复 旧排练" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "恢复 旧排练" })).not.toBeInTheDocument());
+  expect(screen.getByRole("button", { name: "恢复 旧演出" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "管理 我的笔记" }));
+  fireEvent.click(screen.getByRole("button", { name: "分享 我的笔记" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "恢复 旧演出" })).toBeEnabled());
+  expect(screen.queryByText("没有可恢复的个人层。")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "恢复 旧演出" }));
+  await screen.findByText("没有可恢复的个人层。");
 });

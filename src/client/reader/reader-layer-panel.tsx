@@ -18,7 +18,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
   layers: AnnotationLayerSummary[];
   signedIn: boolean;
 }) {
-  const [creating, setCreating] = useState(false);
+  const [creationId, setCreationId] = useState<string | null>(null);
   const [managing, setManaging] = useState(false);
   const [newName, setNewName] = useState("");
   const [deleted, setDeleted] = useState<AnnotationLayerSummary[]>([]);
@@ -77,6 +77,15 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
     setPending(false);
   };
 
+  const refreshDeleted = async () => {
+    await assertLocalWorkspaceActive(workspace);
+    const response = await diagnosticFetch(`/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/layers?state=deleted`);
+    if (!response.ok) throw new Error("deleted_layers_refresh_failed");
+    const result = annotationLayerListResponseSchema.parse(await response.json());
+    await assertLocalWorkspaceActive(workspace);
+    if (active.current) setDeleted(result.layers.filter(layer => layer.kind === "personal" && layer.canEdit && layer.deletedAt));
+  };
+
   const personalRequest = async (path: string, method: string, body?: unknown) => {
     if (busy.current) return;
     busy.current = true; setPending(true); setMessage(""); setFailed([]); setPersonalRetry(null);
@@ -93,10 +102,14 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
       confirmed = true;
       if (method === "GET") {
         const result = annotationLayerListResponseSchema.parse(await response.json());
-        if (active.current) setDeleted(result.layers.filter(layer => layer.kind === "personal" && layer.canEdit && layer.deletedAt));
+        if (active.current) {
+          setDeleted(result.layers.filter(layer => layer.kind === "personal" && layer.canEdit && layer.deletedAt));
+          setManaging(true);
+        }
       } else {
+        if (active.current && method === "POST" && path === "personal-layers") { setCreationId(null); setNewName(""); }
         await syncAnnotations(workspace, { pull: true });
-        if (active.current) { setNewName(""); setDeleted([]); }
+        if (managing) await refreshDeleted();
       }
       return true;
     } catch {
@@ -104,7 +117,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
         setMessage("未能完成保存或刷新，请检查网络后重试。若内容已改变，请刷新图层后再操作。");
         setPersonalRetry(() => confirmed || changed ? async () => {
           setPending(true);
-          try { await syncAnnotations(workspace, { pull: true }); if (active.current) { setMessage(changed ? "图层已刷新，请核对当前状态后重新操作。" : ""); setPersonalRetry(null); } }
+          try { await syncAnnotations(workspace, { pull: true }); if (managing) await refreshDeleted(); if (active.current) { setMessage(changed ? "图层已刷新，请核对当前状态后重新操作。" : ""); setPersonalRetry(null); } }
           catch { if (active.current) setMessage("图层刷新失败，请重试。"); }
           finally { if (active.current) setPending(false); }
         } : async () => { await personalRequest(path, method, body); });
@@ -164,14 +177,14 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
           onSubscribe={subscribed => void personalRequest(`personal-layers/${layer.id}/subscription`, "PUT", { subscribed })} />)}
         {signedIn && <>
           <div className="personal-layer-footer">
-            {!creating && <Button className="personal-layer-create" isDisabled={pending} onPress={() => setCreating(true)}>＋ 新建个人层</Button>}
+            {!creationId && <Button className="personal-layer-create" isDisabled={pending} onPress={() => setCreationId(crypto.randomUUID())}>＋ 新建个人层</Button>}
             <Button className="personal-layer-deleted" isDisabled={pending} aria-expanded={managing}
-              onPress={() => { if (managing) setManaging(false); else void personalRequest("layers?state=deleted", "GET").then(loaded => { if (loaded) setManaging(true); }); }}>已删除个人层</Button>
+              onPress={() => { if (managing) setManaging(false); else void personalRequest("layers?state=deleted", "GET"); }}>已删除个人层</Button>
           </div>
-          {creating && <form onSubmit={event => { event.preventDefault(); void personalRequest("personal-layers", "POST", { id: crypto.randomUUID(), name: newName.trim() }).then(saved => { if (saved) setCreating(false); }); }}>
+          {creationId && <form onSubmit={event => { event.preventDefault(); void personalRequest("personal-layers", "POST", { id: creationId, name: newName.trim() }); }}>
             <input aria-label="新个人层名称" placeholder="例如：排练记录" required maxLength={60} value={newName} onChange={event => setNewName(event.target.value)} />
             <button disabled={pending || !newName.trim()}>新建个人层</button>
-          <Button isDisabled={pending} onPress={() => setCreating(false)}>取消</Button>
+          <Button isDisabled={pending} onPress={() => setCreationId(null)}>取消</Button>
           </form>}
           {managing && deleted.length === 0 && <p className="reader-layer-help" role="status">没有可恢复的个人层。</p>}
           {managing && deleted.map(layer => <div key={layer.id}>{layer.name}<Button isDisabled={pending}
