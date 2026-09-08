@@ -64,7 +64,7 @@ function DriveManagement({ choirId, section }: { choirId: string; section: strin
         {section === "admission" && (data.overview.guestAdmissionMode === "invite" ? row("访客进入方式", "需要邀请码", "查看与轮换邀请码", "manageInvites", () => setDialog("invite")) : <section className="management-row"><h2>访客进入方式</h2><p>开放进入</p></section>)}
         {section === "layers" && <>
           <ul className="shared-layer-summary">{data.overview.layers.map(layer => <li key={layer.slot}><strong>{layer.name}</strong><span>{layer.active ? "启用" : "停用"}</span></li>)}</ul>
-          {row("共享层配置", "供成员共同查看和使用的批注层", "管理共享层配置", "configureLayers", `/choirs/${choirId}/shared-layers`)}
+          {row("共享层配置", "供成员共同查看和使用的笔记层", "管理共享层配置", "configureLayers", `/choirs/${choirId}/shared-layers`)}
         </>}
         {section === "trash" && row("回收站", "删除的乐谱保留三十天", "打开回收站", "trashFiles", () => setDialog("trash"))}
       </div>
