@@ -25,3 +25,19 @@
 ## Review 修正
 
 首轮 Standards 发现 1 项会话隔离问题；Spec 发现 3 项，其中该会话问题重复。已按三个独立问题修正：整个离线检查沿用入口捕获的诊断 scope；阅读器操作传入原始取消信号并在记录前检查；已读到的损坏笔记快照先做结构校验，按无效副本处理。新增延迟读取跨身份重置、取消后的迟到数据库错误、缺失/空值快照数组回归。临时恢复首轮代码后这些回归失败，修正后通过。
+
+## 最终验证
+
+代码提交 `79001cb` 经 Standards/Spec 两个独立 reviewer 复审，剩余问题均为 0。
+
+使用 worktree 独立 `npm ci --ignore-scripts` 依赖与 CI 同系列 Node 24（本地 v24.20.0）：
+
+- `npm run test:client -- --maxWorkers=2`：55 文件、468 项通过。
+- `npm run test:unit -- --maxWorkers=2`：21 文件、79 项通过。
+- `npm run test:worker:integration -- worker/diagnostic-reports.test.ts`：11 项通过。
+- `node --test browser-tests/outbox-browser.test.mjs`：Chromium/WebKit 2 项通过。
+- `npm run lint`、`npm run build`（含 TypeScript 与 precache 校验）：通过。
+
+此前 Node 25 的实验性 localStorage、共享依赖软链的 Vite 文件访问限制以及高并发时本机资源争用影响了全量验证；改用上述独立依赖、Node 24 和两 worker 后全量通过。没有为这些环境失败修改产品行为或放宽断言。
+
+以上为本地证据；未执行远程 CI、部署或用户 iOS PWA 验收。
