@@ -1,131 +1,134 @@
-"""Rebuild the homepage replace-PDF diagram: python scripts/artwork/replace-pdf.py (Pillow)."""
+"""Rebuild the 2D homepage replace-PDF animation (Pillow)."""
 from pathlib import Path
-from math import sin, pi
 from PIL import Image, ImageDraw, ImageFont
 
 OUT = Path(__file__).resolve().parents[2] / "src/client/assets/home"
-W, H, SCALE = 768, 512, 2
-FONT = ImageFont.truetype("DejaVuSans.ttf", 21 * SCALE)
-SMALL = ImageFont.truetype("DejaVuSans.ttf", 15 * SCALE)
-INK, STAFF, EDGE, BG = "#4c625d", "#b3bfba", "#78908c", "#f8faf9"
-ANN = ["#ab5571", "#b87a35", "#37799c"]
+W, H = 768, 512
+BG = (248, 250, 249, 255)
+INK = (84, 106, 103, 255)
+STAFF = (192, 202, 199, 255)
+EDGE = (106, 129, 124, 255)
+BLUE = (28, 131, 229, 255)
+BLUE_NOTE = (47, 125, 168, 255)
+RED = (227, 69, 97, 255)
+ORANGE = (233, 149, 38, 255)
+MUTED = (144, 162, 158, 255)
+FONT = ImageFont.truetype("DejaVuSans.ttf", 23)
+SMALL = ImageFont.truetype("DejaVuSans.ttf", 15)
 
 
 def ease(p):
-    p = max(0, min(1, p))
+    p = max(0.0, min(1.0, p))
     return p * p * (3 - 2 * p)
 
 
-def frame(lift, swap, settle, show_arrow=False):
-    im = Image.new("RGB", (W * SCALE, H * SCALE), BG)
+def draw_note(d, x, y, color=INK, scale=1.0):
+    rx, ry = 6 * scale, 4 * scale
+    d.ellipse((x - rx, y - ry, x + rx, y + ry), fill=color)
+    d.line((x + rx, y, x + rx, y - 28 * scale), fill=color, width=max(1, round(2 * scale)))
+
+
+def draw_sharp(d, x, y, color=INK, scale=1.0):
+    width = max(1, round(2 * scale))
+    d.line((x - 5 * scale, y - 15 * scale, x - 5 * scale, y + 15 * scale), fill=color, width=width)
+    d.line((x + 5 * scale, y - 17 * scale, x + 5 * scale, y + 13 * scale), fill=color, width=width)
+    d.line((x - 10 * scale, y - 4 * scale, x + 10 * scale, y - 8 * scale), fill=color, width=max(1, round(3 * scale)))
+    d.line((x - 10 * scale, y + 7 * scale, x + 10 * scale, y + 3 * scale), fill=color, width=max(1, round(3 * scale)))
+
+
+def staff(d, x1, y, x2):
+    for k in range(5):
+        d.line((x1, y + k * 6, x2, y + k * 6), fill=STAFF, width=1)
+
+
+def draw_page(d, x, y, label, version):
+    pw, ph = 250, 352
+    d.rounded_rectangle((x + 6, y + 7, x + pw + 6, y + ph + 7), radius=9, fill=(230, 235, 233, 255))
+    d.rounded_rectangle((x, y, x + pw, y + ph), radius=9, fill=(255, 255, 255, 255), outline=EDGE, width=2)
+    d.text((x + 18, y + 14), label, font=FONT, fill=INK)
+    d.line((x + 18, y + 48, x + pw - 18, y + 48), fill=(222, 227, 225, 255), width=1)
+
+    for row, sy in enumerate((104, 194, 284)):
+        staff(d, x + 28, y + sy, x + pw - 24)
+        if row == 0:
+            draw_note(d, x + 92, y + sy + 12)
+            draw_note(d, x + 174, y + sy + 6)
+        elif row == 1:
+            draw_note(d, x + 84, y + sy + 16)
+            # The only score edit: same note becomes a clearly marked sharp in v2.
+            if version == 1:
+                draw_note(d, x + 176, y + sy + 12, color=ORANGE, scale=1.45)
+            else:
+                draw_sharp(d, x + 150, y + sy + 10, color=BLUE_NOTE, scale=1.12)
+                draw_note(d, x + 180, y + sy + 12, color=BLUE_NOTE, scale=1.5)
+        else:
+            draw_note(d, x + 104, y + sy + 18)
+            draw_note(d, x + 190, y + sy + 8)
+
+
+def notes_layer(x, y, alpha=1.0):
+    w, h = 222, 268
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    a = int(255 * alpha)
+    d.rounded_rectangle(
+        (x, y, x + w, y + h),
+        radius=8,
+        fill=(224, 242, 249, int(64 * alpha)),
+        outline=(BLUE[0], BLUE[1], BLUE[2], a),
+        width=3,
+    )
+    # Put the label below the PDF filename area so the two never collide.
+    d.text((x + 14, y + 14), "Notes", font=FONT, fill=(BLUE[0], BLUE[1], BLUE[2], a))
+    d.arc((x + 24, y + 80, x + 92, y + 124), 200, 340, fill=(RED[0], RED[1], RED[2], a), width=4)
+    d.line((x + 38, y + 134, x + 96, y + 151), fill=(RED[0], RED[1], RED[2], a), width=4)
+    d.line((x + 48, y + 184, x + 108, y + 220, x + 52, y + 221), fill=(ORANGE[0], ORANGE[1], ORANGE[2], a), width=4, joint="curve")
+    d.ellipse((x + 144, y + 198, x + 184, y + 238), outline=(BLUE[0], BLUE[1], BLUE[2], a), width=4)
+    return layer
+
+
+def frame(t):
+    im = Image.new("RGBA", (W, H), BG)
     d = ImageDraw.Draw(im)
+    left_x, right_x, top_y = 70, 448, 70
 
-    def point(x, y, u, v):
-        return ((x + u) * SCALE, (y + v + u * .38) * SCALE)
+    draw_page(d, left_x, top_y, "final.pdf", 1)
+    draw_page(d, right_x, top_y, "final_v2.pdf", 2)
 
-    def line(x, y, pts, color, width=1):
-        d.line([point(x, y, *p) for p in pts], fill=color, width=max(1, width * SCALE), joint="curve")
+    d.line((344, 246, 410, 246), fill=EDGE, width=4)
+    d.polygon([(410, 246), (394, 236), (394, 256)], fill=EDGE)
+    d.text((347, 267), "copy notes", font=SMALL, fill=EDGE)
 
-    def poly(x, y, pts, fill=None, outline=None, width=1):
-        mapped = [point(x, y, *p) for p in pts]
-        if fill is not None:
-            d.polygon(mapped, fill=fill)
-        if outline:
-            d.line(mapped + [mapped[0]], fill=outline, width=width * SCALE, joint="curve")
-
-    bx, by = 332, 72
-    corners = [(0, 0), (176, 0), (176, 294), (0, 294)]
-    slide = ease(swap)
-    old_x, new_x = bx - 230 * slide, bx + 230 * (1 - slide)
-
-    def score(x, y, version, alpha=1):
-        def mix(hexcolor):
-            if alpha >= .999:
-                return hexcolor
-            a = tuple(int(hexcolor[i:i + 2], 16) for i in (1, 3, 5))
-            b = tuple(int(BG[i:i + 2], 16) for i in (1, 3, 5))
-            return tuple(round(bi + (ai - bi) * alpha) for ai, bi in zip(a, b))
-
-        poly(x, y, corners, mix("#ffffff"), mix(EDGE), 2)
-        px, py = point(x, y, 118, 16)
-        d.rounded_rectangle((px, py, px + 42 * SCALE, py + 24 * SCALE), radius=7 * SCALE, fill=mix("#e8efed"))
-        d.text((px + 8 * SCALE, py + 2 * SCALE), f"PDF {version}", font=SMALL, fill=mix(INK))
-        for row in range(5):
-            v = 52 + row * 48
-            for staff in range(5):
-                line(x, y, [(18, v + staff * 5), (158, v + staff * 5)], mix(STAFF))
-            for n in range(6):
-                u = 29 + n * 20
-                delta = ((n + row) % 3 - 1) * 5
-                if version == 2 and row == 2 and n in (2, 3):
-                    delta += -9 if n == 2 else 8
-                if version == 2 and row == 4 and n == 4:
-                    delta -= 10
-                vv = v + 10 + delta
-                cx, cy = point(x, y, u, vv)
-                d.ellipse((cx - 4 * SCALE, cy - 2 * SCALE, cx + 4 * SCALE, cy + 2 * SCALE), fill=mix(INK))
-                line(x, y, [(u + 4, vv), (u + 4, vv - 18)], mix(INK))
-        if version == 2:
-            p1, p2 = point(x, y, 62, 143), point(x, y, 117, 185)
-            d.rounded_rectangle((p1[0] - 4 * SCALE, p1[1] - 4 * SCALE, p2[0] + 4 * SCALE, p2[1] + 4 * SCALE), radius=6 * SCALE, outline=mix("#a8bbb6"), width=2 * SCALE)
-
-    if slide < .999:
-        score(old_x, by, 1, 1 - max(0, (slide - .35) / .65) * .55)
-    if slide > .001:
-        score(new_x, by, 2, max(.45, min(1, slide / .55)))
-
-    active_lift = lift * (1 - settle)
-    ax, ay = bx - 118 * active_lift, by + 38 * active_lift
-    if active_lift > .02:
-        poly(ax, ay, corners, None, ANN[2], 2)
-        px, py = point(ax, ay, 12, 10)
-        d.text((px, py), "Notes", font=FONT, fill=ANN[2])
-
-    marks = [
-        (ANN[0], [(28 + j * 2, 88 - 11 * sin(j * pi / 30)) for j in range(31)]),
-        (ANN[1], [(63, 169), (119, 154), (68, 146)]),
-        (ANN[2], [(97 + 16 * sin(j * 2 * pi / 44), 246 + 15 * sin(j * 2 * pi / 44 + pi / 2)) for j in range(45)]),
-    ]
-    for color, pts in marks:
-        line(ax, ay, pts, color, 3)
-    line(ax, ay, [(46, 112), (88, 112)], ANN[0], 3)
-    line(ax, ay, [(116, 184), (144, 184)], ANN[1], 3)
-    line(ax, ay, [(118, 266), (148, 266)], ANN[2], 3)
-
-    if show_arrow and active_lift > .65 and .08 < swap < .92:
-        cx, cy = 228 * SCALE, 322 * SCALE
-        d.line((cx - 42 * SCALE, cy, cx + 42 * SCALE, cy), fill=EDGE, width=3 * SCALE)
-        d.polygon([(cx + 42 * SCALE, cy), (cx + 29 * SCALE, cy - 8 * SCALE), (cx + 29 * SCALE, cy + 8 * SCALE)], fill=EDGE)
-        d.text((cx - 33 * SCALE, cy + 13 * SCALE), "replace", font=SMALL, fill=EDGE)
-
-    return im.resize((576, 384), Image.Resampling.LANCZOS)
-
-
-frames = []
-for n in range(60):
-    t = n / 5
-    if t < 1.3:
-        lift, swap, settle = 0, 0, 0
-    elif t < 2.7:
-        lift, swap, settle = ease((t - 1.3) / 1.4), 0, 0
-    elif t < 4.5:
-        lift, swap, settle = 1, ease((t - 2.7) / 1.8), 0
-    elif t < 5.3:
-        lift, swap, settle = 1, 1, 0
-    elif t < 6.7:
-        lift, swap, settle = 1, 1, ease((t - 5.3) / 1.4)
-    elif t < 8.8:
-        lift, swap, settle = 0, 1, 1
-    elif t < 9.7:
-        lift, swap, settle = ease((t - 8.8) / .9), 1, 0
-    elif t < 10.8:
-        lift, swap, settle = 1, 1 - ease((t - 9.7) / 1.1), 0
+    if t < 1.4:
+        p = 0.0
+    elif t < 4.4:
+        p = ease((t - 1.4) / 3.0)
     else:
-        lift, swap, settle = 1, 0, ease((t - 10.8) / 1.2)
-    frames.append(frame(lift, swap, settle, 2.7 <= t < 4.5))
+        p = 1.0
 
-frame(0, 1, 1).save(OUT / "replace-pdf.webp", quality=90)
-palette = frame(1, 1, 0).quantize(colors=40)
-gif_frames = [f.quantize(palette=palette, dither=Image.Dither.NONE) for f in frames]
-gif_frames[0].save(OUT / "replace-pdf.gif", save_all=True, append_images=gif_frames[1:], duration=200, loop=0, optimize=True)
-print(OUT / "replace-pdf.gif")
+    start_x, end_x = left_x + 14, right_x + 14
+    nx = round(start_x + (end_x - start_x) * p)
+    ny = top_y + 62
+
+    if 1.55 < t < 4.25:
+        for trailing, alpha in ((0.08, 0.12), (0.16, 0.07)):
+            ghost_p = max(0.0, p - trailing)
+            gx = round(start_x + (end_x - start_x) * ghost_p)
+            im.alpha_composite(notes_layer(gx, ny, alpha))
+
+    im.alpha_composite(notes_layer(nx, ny))
+    return im.convert("RGB")
+
+
+frames = [frame(n / 10) for n in range(64)]
+frames[0].save(
+    OUT / "replace-pdf-animation.webp",
+    save_all=True,
+    append_images=frames[1:],
+    duration=100,
+    loop=0,
+    quality=84,
+    method=6,
+)
+frames[-1].save(OUT / "replace-pdf.webp", quality=90, method=6)
+print(OUT / "replace-pdf-animation.webp")
