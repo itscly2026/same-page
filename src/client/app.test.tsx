@@ -175,7 +175,7 @@ describe("AppRoutes", () => {
     await waitFor(() => {
       expect(screen.getByRole("checkbox", { name: "E · Ensemble 默认显示" })).toBeChecked();
       expect(screen.getByRole("checkbox", { name: "S · Soprano 默认显示" })).not.toBeChecked();
-      expect(screen.getByRole("alert")).toHaveTextContent("保存失败，原设置已保留。");
+      expect(screen.getByRole("alert")).toHaveTextContent("保存失败，修改已保留，请核对后重试。");
       expect(screen.getByRole("button", { name: "重试 E · Ensemble" })).toBeInTheDocument();
     });
   });
@@ -204,7 +204,7 @@ describe("AppRoutes", () => {
     const color = screen.getByLabelText("E · Ensemble 批注颜色");
     expect(screen.queryByRole("button", { name: /恢复默认颜色/ })).not.toBeInTheDocument();
     fireEvent.change(color, { target: { value: "#123456" } });
-    expect(await screen.findByRole("alert")).toHaveTextContent("保存失败，原设置已保留。");
+    expect(await screen.findByRole("alert")).toHaveTextContent("保存失败，修改已保留，请核对后重试。");
     expect(color).toHaveValue("#a12652");
     expect(screen.queryByText("已保存")).not.toBeInTheDocument();
     fail = false;
@@ -252,7 +252,7 @@ describe("AppRoutes", () => {
     expect(within(dialog).getByText(/30 天内/)).toBeVisible();
     expect(actions).toEqual([]);
     fireEvent.click(within(dialog).getByRole("button", { name: "删除整个共享层" }));
-    await screen.findByText(loseResponse ? /未能确认操作结果/ : "共享层已删除，可在已删除层入口查看并恢复。");
+    await screen.findByText(loseResponse ? /操作结果未确认/ : "共享层已删除，可在已删除层入口查看并恢复。");
     await waitFor(() => expect(screen.queryByRole("button", { name: "删除 E · Ensemble" })).not.toBeInTheDocument());
     await waitFor(async () => expect(await readAnnotationLayers(workspace)).toEqual([]));
     expect((await localDatabase.offlineScores.get("management-offline"))?.annotationSnapshot.layers).toEqual([]);

@@ -1,3 +1,4 @@
+import { offlineScoreSummary as scoreFromOffline } from "../offline/retained-scores";
 import { revokeOfflinePreparationIdentity, OfflinePreparation, type OfflinePreparationState } from "../offline/offline-score";
 import { liveQuery } from "dexie";
 import { captureOfflineFileFence } from "../offline/local-files";
@@ -430,9 +431,6 @@ async function lookupScore(workspace: LocalWorkspace, signal: AbortSignal): Prom
 }
 function failureMessage(state: Exclude<CloudLookup["state"], "active">) {
   return { trashed: "这份乐谱已移入回收站，当前设备没有可用的离线副本。", "permission-denied": "当前账号没有访问这份乐谱的权限。请返回云盘确认成员关系。", "network-unavailable": "网络暂时不可用，且当前设备没有这份乐谱的离线副本。", "service-unavailable": "服务暂时不可用或返回内容异常，请稍后重试；本机内容仍然保留。", missing: "这份乐谱不存在或已经被永久移除。" }[state];
-}
-function scoreFromOffline(record: OfflineScoreRecord): ScoreSummary {
-  return { id: record.scoreId, choirId: record.choirId, fileName: record.fileName, updatedAt: record.verifiedAt, currentVersion: { id: record.versionId, versionNumber: 1, sizeBytes: record.blob.size, sha256: record.imageManifest?.sourceSha256 ?? record.sha256, etag: "offline", pageCount: record.pageCount, createdAt: record.verifiedAt } };
 }
 
 export function isRecoverablePdfFailure(error: unknown) {

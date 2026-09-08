@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { chromium, webkit } from "@playwright/test";
+import { chromium, webkit, request } from "@playwright/test";
 import { expectSampleScoreContent } from "./pdf-content.mjs";
 import { startStorageFixture } from "./storage-fixture.mjs";
 
@@ -98,5 +98,29 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     assert.equal(offline.url(), readerUrl);
     assert.equal(await offline.getByRole("button", { name: "完成编辑", exact: true }).getAttribute("aria-pressed"), "true");
     await offline.screenshot({ path: `artifacts/verification/offline-entry/${engineName}-reconnected-editing.png` });
+    await offline.getByRole("button", { name: "完成编辑", exact: true }).click();
+    await offline.getByRole("button", { name: "返回云盘", exact: true }).click();
+    await offline.getByRole("searchbox").fill(fixture.fileName.replace(/\.pdf$/i, ""));
+    await offline.getByRole("combobox", { name: "乐谱排序" }).selectOption("updated");
+    const admin = await request.newContext({ baseURL: fixture.origin, extraHTTPHeaders: { origin: fixture.origin } });
+    t.after(() => admin.dispose());
+    const owner = fixture.accounts[0];
+    assert.equal((await admin.post("/api/auth/sign-in/email", { data: { email: owner.email, password: owner.password } })).status(), 200);
+    const memberships = await (await admin.get(`/api/choirs/${fixture.choirId}/memberships`)).json();
+    const target = memberships.memberships.find(member => member.id !== memberships.actorId);
+    assert.ok(target);
+    assert.equal((await admin.post(`/api/choirs/${fixture.choirId}/memberships/${target.id}`, { data: { action: "remove", expectedRevision: target.revision } })).status(), 204);
+    await offline.reload();
+    await offline.getByRole("heading", { name: "本机保留的乐谱", exact: true }).waitFor();
+    await offline.getByText("已无法访问此云盘，以下为本机保留内容", { exact: true }).waitFor();
+    assert.equal(await offline.getByRole("combobox", { name: "乐谱排序" }).inputValue(), "updated");
+    assert.equal(await offline.getByRole("searchbox").inputValue(), fixture.fileName.replace(/\.pdf$/i, ""));
+    await offline.getByRole("link", { name: new RegExp(fixture.fileName.replace(/\.pdf$/i, "")) }).waitFor();
+    await offline.screenshot({ path: `artifacts/verification/offline-entry/${engineName}-revoked-mobile.png` });
+    await offline.setViewportSize({ width: 1280, height: 900 });
+    await offline.screenshot({ path: `artifacts/verification/offline-entry/${engineName}-revoked-desktop.png` });
+    await offline.getByRole("link", { name: new RegExp(fixture.fileName.replace(/\.pdf$/i, "")) }).click();
+    await expectSampleScoreContent(offline);
+
   });
 }

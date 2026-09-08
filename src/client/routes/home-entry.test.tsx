@@ -228,3 +228,28 @@ it("browser back to a selection entry does not become a new startup intent", asy
   expectPath("/");
   expect(await screen.findByRole("link", { name: /云盘 one.*成员/ })).toBeInTheDocument();
 });
+
+it("cancels a delayed invitation without late navigation and clears its guest session", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let finish!: (response: Response) => void;
+  let guest = false;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (input === "/api/guest/session" && init?.method === "POST") {
+      const response = await new Promise<Response>(resolve => { finish = resolve; });
+      guest = true;
+      return response;
+    }
+    if (input === "/api/guest/session" && init?.method === "DELETE") { guest = false; return new Response(null, { status: 204 }); }
+    if (input === "/api/choirs/current-guest/join-state") return Response.json({ status: "joined", choir: membership("one").choir });
+    return original(input, init);
+  });
+  render(tree(["/?join=1"]));
+  fireEvent.change(await screen.findByLabelText("邀请码"), { target: { value: "ABCDEFGH" } });
+  fireEvent.click(screen.getByRole("button", { name: "进入" }));
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
+  fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+  await act(async () => { finish(Response.json({ choir: membership("one").choir, entryKind: "admission" })); });
+  await waitFor(() => expect(guest).toBe(false));
+  expectPath("/?join=1");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});

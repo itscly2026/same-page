@@ -1,3 +1,4 @@
+import { runSettingsMutation, settingsMutationMessage } from "../settings/settings-mutation";
 import { captureLocalWorkspaceSession, resolveLocalWorkspace, type LocalWorkspace } from "../platform/local-workspace";
 import { applySharedLayerAvailability } from "../annotations/annotation-state";
 import { Button, Heading, Modal, ModalOverlay } from "react-aria-components";
@@ -34,7 +35,7 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [pending, setPending] = useState(false);
   const busy = useRef(false);
-  const [feedback, setFeedback] = useState<{ message: string; failed?: boolean } | null>(null);
+  const [feedback, setFeedback] = useState<{ message: string; failed?: boolean; refreshFailed?: boolean } | null>(null);
   const generation = useSettingsLifetime();
   const retryLoad = () => { setLoading(true); setLoadError(null); setLoadAttempt(value => value + 1); };
 
@@ -51,8 +52,9 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
       if (!await applySharedLayerAvailability(workspace, body)) throw new Error("shared_layer_state_changed");
       if (controller.signal.aborted) return;
       setDriveName(body.drive.name); setLayers(body.layers); setLoading(false);
+      setFeedback(current => current?.refreshFailed ? { message: "已保存，已读取最新状态。" } : current);
     })().catch(error => {
-      if (!controller.signal.aborted) { setLoadError(settingsError(error, "暂时无法读取共享层管理设置。")); setLoading(false); }
+      if (!controller.signal.aborted) { setFeedback(current => current && !current.failed ? { message: `${current.message}但刷新失败，请重新加载，不必再次提交。`, failed: true, refreshFailed: true } : current); setLoadError(settingsError(error, "暂时无法读取共享层管理设置。")); setLoading(false); }
     });
     return () => controller.abort();
   }, [choirId, loadAttempt, view, userId]);
@@ -62,29 +64,24 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
     const lifetime = generation.current;
     const workspace = workspaceRef.current;
     busy.current = true; setPending(true); setFeedback({ message: "正在保存…" });
-    try {
-      const result = await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/shared-layers${path}`, {
+    const result = await runSettingsMutation(
+      () => diagnosticFetch(`/api/choirs/${choirId}/shared-layers${path}`, {
         method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-      }));
-      if (lifetime !== generation.current) return;
-      if (path.endsWith("/lifecycle")) {
-        const state = sharedLayerAvailabilitySchema.parse(result);
-        if (!workspace || !await applySharedLayerAvailability(workspace, state)) throw new Error("shared_layer_state_changed");
+      }),
+      async response => {
         if (lifetime !== generation.current) return;
-      }
-      setFeedback({ message });
-      if (method === "POST") setNewName("");
-      setDeleting(null);
-      retryLoad();
-    } catch (error) {
-      if (lifetime === generation.current) {
-        setFeedback({ message: settingsError(error, "未能确认操作结果，正在重新查询。请核对当前列表后重试；可能已由其他有权成员更改或超过恢复期限。"), failed: true });
-        setDeleting(null);
-        retryLoad();
-      }
-    } finally {
-      if (lifetime === generation.current) { busy.current = false; setPending(false); }
-    }
+        if (path.endsWith("/lifecycle")) {
+          const state = sharedLayerAvailabilitySchema.parse(await response.json());
+          if (!workspace || !await applySharedLayerAvailability(workspace, state)) throw new Error("shared_layer_state_changed");
+        }
+      },
+    );
+    if (lifetime !== generation.current) return;
+    setFeedback({ message: settingsMutationMessage(result, message), failed: result.kind !== "saved", refreshFailed: result.kind === "saved-refresh-failed" });
+    if ((result.kind === "saved" || result.kind === "saved-refresh-failed") && method === "POST") setNewName("");
+    setDeleting(null);
+    retryLoad();
+    busy.current = false; setPending(false);
   };
 
   return <div className="app-page">

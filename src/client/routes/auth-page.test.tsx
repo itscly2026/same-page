@@ -70,7 +70,7 @@ describe("AuthPage", () => {
       return new Response(null, { status: 404 });
     }));
     renderAuthPage("/login?oauth=complete");
-    expect(await screen.findByLabelText("current route")).toHaveTextContent("/user");
+    expect(await screen.findByLabelText("current route")).toHaveTextContent("/user/lifecycle");
   });
 
   it("keeps email primary and routes an existing user to password sign-in", async () => {

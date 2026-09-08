@@ -1,5 +1,5 @@
 export class SettingsRequestError extends Error {
-  constructor(readonly status: number) {
+  constructor(readonly status: number, readonly code?: string) {
     super("settings_request_failed");
   }
 }

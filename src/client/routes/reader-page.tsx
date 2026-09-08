@@ -1,3 +1,4 @@
+import { useReaderAnnotationActions } from "../reader/use-reader-annotation-actions";
 import { ReaderNoteSharing } from "../reader/reader-note-sharing";
 import { offlinePreparationDescription } from "../offline/offline-score-status";
 import { ExportDialog } from "../reader/export-dialog";
@@ -37,13 +38,8 @@ import type {
 import {
   cleanupUncreatedDeleteConflicts,
   readScoreAnnotationState,
-  discardAnnotationConflict,
-  queueScoreDrafts,
-  reapplyAnnotationConflict,
-  retryScoreSyncErrors,
 } from "../annotations/annotation-state";
-import { requestOutboxRecovery } from "../annotations/outbox-recovery";
-import { getAnnotationSyncActivity, subscribeAnnotationSync, syncAnnotations } from "../annotations/sync";
+import { getAnnotationSyncActivity, subscribeAnnotationSync } from "../annotations/sync";
 import { useAnnotationEditor } from "../annotations/use-annotation-editor";
 import type { AnnotationEditor } from "../annotations/annotation-editor";
 import { useApplicationIdentity } from "../auth/application-identity";
@@ -310,68 +306,31 @@ function ReaderPageContent() {
     if (editAvailability === "ready") beginEditing();
   };
 
+  const annotationActions = useReaderAnnotationActions(workspace, identity.authenticatedUserId, identity.authenticatedSessionId, online, cloudState === "trashed", identity.session.refetch);
   const finishEditing = async () => {
-    if (!workspace || !editor || !await editor.prepareFinish()) return false;
-    try { await queueScoreDrafts(workspace); }
-    catch { setSyncOutcome("failed"); return false; }
+    if (!annotationActions || !editor || !await editor.prepareFinish()) return false;
+    const result = await annotationActions.saveDrafts();
+    if (result !== "local-saved") { if (result) setSyncOutcome(result); return false; }
     if (!editor.finish()) return false;
     setEditingEditor(null);
-    setSyncOutcome("local-saved");
-    requestOutboxRecovery();
+    setSyncOutcome(result);
     return true;
   };
   useExitLayer(editing, "editing", finishEditing);
   useExitLayer(readerPanel === "pages", "overlay", () => { setReaderPanel(null); return true; });
 
   const manualSync = async () => {
-    if (!workspace) return;
-    if (cloudState === "trashed") {
-      setSyncOutcome("trash-preserved");
-      return;
-    }
-    if (!identity.authenticatedUserId) {
-      // A manual retry must also recover a missed connectivity notification.
-      await identity.session.refetch();
-      setSyncOutcome("local-saved");
-      return; // The identity observer resumes queued work after confirmation.
-    }
+    if (!annotationActions || syncing) return;
     setSyncing(true);
-    requestOutboxRecovery();
-    try {
-      await retryScoreSyncErrors(workspace);
-      await queueScoreDrafts(workspace);
-      await syncAnnotations(workspace, { pull: true });
-      const remainingErrors = (await readScoreAnnotationState(workspace)).syncErrorCount;
-      setSyncOutcome(remainingErrors > 0 ? "failed" : "synced");
-    } catch {
-      setSyncOutcome("failed");
-    } finally {
-      setSyncing(false);
-    }
+    const result = await annotationActions.retry();
+    if (result) setSyncOutcome(result);
+    setSyncing(false);
   };
 
-  const resolveConflict = async (
-    opId: string,
-    strategy: "discard" | "reapply" | "keep-both",
-  ) => {
-    if (!workspace) return;
-    if (strategy === "discard") {
-      await discardAnnotationConflict(workspace, opId);
-      setSyncOutcome("conflict-discarded");
-      return;
-    }
-    await reapplyAnnotationConflict(workspace, opId, strategy === "keep-both");
-    await queueScoreDrafts(workspace);
-    if (!navigator.onLine || !identity.authenticatedUserId) {
-      setSyncOutcome("local-saved");
-      return;
-    }
-    try {
-      await syncAnnotations(workspace, { pull: false });
-      setSyncOutcome("conflict-reapplied");
-    } catch {
-      setSyncOutcome("local-saved");
-    }
+  const resolveConflict = async (opId: string, strategy: "discard" | "reapply" | "keep-both") => {
+    if (!annotationActions) return;
+    const result = await annotationActions.resolveConflict(opId, strategy);
+    if (result) setSyncOutcome(result);
   };
 
   const diagnosticReader: DiagnosticReader = {

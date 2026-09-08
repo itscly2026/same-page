@@ -39,3 +39,14 @@ export async function removeLocalDriveScore(workspace: LocalWorkspace, scoreId: 
     if (directory) await localDatabase.driveDirectories.put({ ...directory, scores: directory.scores.filter(score => score.id !== scoreId) });
   });
 }
+
+export async function rememberDriveAccessRevoked(workspace: LocalWorkspace, signal: AbortSignal) {
+  await withLocalWorkspaceTransaction(workspace, "rw", [localDatabase.driveDirectories], async () => {
+    signal.throwIfAborted();
+    const key = JSON.stringify([workspace.ownerKey, workspace.choirId]);
+    const directory = await localDatabase.driveDirectories.get(key);
+    await localDatabase.driveDirectories.put({ key, ownerKey: workspace.ownerKey, choirId: workspace.choirId,
+      choir: directory?.choir ?? { id: workspace.choirId, name: "云盘", guestAdmissionMode: "invite" },
+      scores: [], membership: false, capabilities: noCapabilities(), accessRevoked: true });
+  });
+}

@@ -1,3 +1,4 @@
+import { runSettingsMutation, settingsMutationMessage } from "../settings/settings-mutation";
 import { BackButton } from "../navigation/back-button";
 import { sharedLayerLabel } from "../../shared/annotations";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
@@ -71,17 +72,12 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
     setPendingSlots(new Set(pendingSlotsRef.current));
     const resultKey = `${layer.slot}:${changes.subscribed === undefined ? "colors" : "display"}`;
     setResults((current) => ({ ...current, [resultKey]: { message: "正在保存…" } }));
-    try {
-      const response = await diagnosticFetch(
-        `/api/choirs/${choirId}/shared-layers/${layer.slot}/preference`,
-        {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(changes),
-        },
-      );
-      await settingsResponse(response);
-      if (requestGeneration !== generation.current) return;
+    const result = await runSettingsMutation(() => diagnosticFetch(
+      `/api/choirs/${choirId}/shared-layers/${layer.slot}/preference`,
+      { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(changes) },
+    ));
+    if (requestGeneration !== generation.current) return;
+    if (result.kind === "saved") {
       setLayers((current) => current.map((entry) => {
         if (entry.slot !== layer.slot) return entry;
         const colorOverride = changes.colorOverride === undefined ? entry.colorOverride : changes.colorOverride;
@@ -89,18 +85,16 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
           displayColor: colorOverride ?? entry.adminDefaultColor,
           colorSource: colorOverride ? "drive" : "admin" };
       }));
-      setResults((current) => ({ ...current, [resultKey]: { message: "已保存" } }));
-    } catch (error: unknown) {
-      if (requestGeneration !== generation.current) return;
-      setResults((current) => ({ ...current, [resultKey]: {
-        message: settingsError(error, "保存失败，原设置已保留。"), failed: changes,
-      } }));
-    } finally {
-      if (requestGeneration === generation.current) {
-        pendingSlotsRef.current.delete(layer.slot);
-        setPendingSlots(new Set(pendingSlotsRef.current));
-      }
     }
+    if (result.kind === "revoked") setLoadError(settingsMutationMessage(result));
+    setResults(current => ({ ...current, [resultKey]: {
+      message: settingsMutationMessage(result, "已保存"),
+      // PUT is idempotent: explicitly retrying the same intent is safe even
+      // when its first response was lost.
+      ...(result.kind === "failed" || result.kind === "unconfirmed" ? { failed: changes } : {}),
+    } }));
+    pendingSlotsRef.current.delete(layer.slot);
+    setPendingSlots(new Set(pendingSlotsRef.current));
   };
 
   return (
@@ -129,7 +123,7 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
                   <label className="settings-color-control">
                     <span>{layer.colorOverride ? "自定义" : "云盘默认"}</span>
                     <input aria-label={`${name} 批注颜色`} type="color" value={layer.displayColor}
-                      disabled={pendingSlots.has(layer.slot)}
+                      disabled={Boolean(loadError) || loading || pendingSlots.has(layer.slot)}
                       onChange={(event) => void updatePreference(layer, { colorOverride: event.target.value })} />
                   </label>
                 </div>
@@ -138,18 +132,18 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
                   <span>渐弱 · 留意呼吸</span>
                 </div>
                 {layer.colorOverride ? <button className="text-button" type="button"
-                  disabled={pendingSlots.has(layer.slot)} aria-label={`${name} 恢复默认颜色`}
+                  disabled={Boolean(loadError) || loading || pendingSlots.has(layer.slot)} aria-label={`${name} 恢复默认颜色`}
                   onClick={() => void updatePreference(layer, { colorOverride: null })}>恢复默认颜色</button> : null}
               </> : <label className="preference-display-toggle">
                 <span className="settings-layer-swatch" aria-hidden="true" style={{ background: layer.displayColor }} />
                 <strong>{name}</strong>
                 <input aria-label={`${name} 默认显示`} type="checkbox" checked={layer.subscribed}
-                  disabled={pendingSlots.has(layer.slot)}
+                  disabled={Boolean(loadError) || loading || pendingSlots.has(layer.slot)}
                   onChange={(event) => void updatePreference(layer, { subscribed: event.target.checked })} />
               </label>}
               {result ? <div className="settings-row-feedback">
                 <span role={result.failed ? "alert" : "status"}>{result.message}</span>
-                {result.failed ? <button className="text-button" type="button" disabled={pendingSlots.has(layer.slot)}
+                {result.failed ? <button className="text-button" type="button" disabled={Boolean(loadError) || loading || pendingSlots.has(layer.slot)}
                   aria-label={`重试 ${name}`} onClick={() => void updatePreference(layer, result.failed!)}>重试</button> : null}
               </div> : null}
             </article>;
