@@ -143,7 +143,7 @@ function MemberEditor({ focus, member, state, layers, busy, save, change, transf
       {canAuthorize && <>
         {member.isOwner === 1 && <p>拥有者始终具备全部能力。以下是转让后保留的显式授权。</p>}
         <details open={focus ? true : undefined}><summary>编辑权限</summary><PermissionMatrix focus={focus} operations={operations} management={management} onOperations={operations => onDraft({ operations, management })} onManagement={management => onDraft({ operations, management })} scope={owner ? allPermissions() : state.capabilities.management} owner={owner} layers={layers} disabled={busy} />
-        <Button className="primary-button" isDisabled={busy || !dirty} onPress={() => save(operations, management)}>保存 {member.displayName} 的权限</Button>{dirty && <><span role="status">未保存</span><Button isDisabled={busy} onPress={cancel}>取消修改</Button></>}</details>
+        <Button className="primary-button" isDisabled={busy || !dirty} onPress={() => save(operations, management)}>保存 {member.displayName} 的权限</Button>{dirty && <><span role="status">未保存</span><Button className="secondary-button" isDisabled={busy} onPress={cancel}>取消修改</Button></>}</details>
       </>}
       {!member.isOwner && (owner || (!protectedMember && state.capabilities.operations.operations.includes("removeMembers"))) && <details className="member-actions"><summary>成员操作</summary>
         <div className="settings-actions"><Button className="secondary-button destructive-link" isDisabled={busy} onPress={() => change("remove")}>移除 {member.displayName}</Button>

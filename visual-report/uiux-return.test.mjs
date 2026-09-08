@@ -39,6 +39,14 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.getByRole("searchbox", { name: "搜索成员" }).fill("周宁");
     await expect(page.getByRole("heading", { name: "周宁" })).toBeVisible();
     await expect(page.getByRole("heading", { name: /林老师/ })).toHaveCount(0);
+    await page.getByRole("heading", { name: "周宁", exact: true }).click();
+    await page.getByText("编辑权限", { exact: true }).click();
+    await page.getByRole("checkbox", { name: "上传文件：可以操作", exact: true }).click();
+    const cancelPermission = page.getByRole("button", { name: "取消修改", exact: true });
+    await expect(cancelPermission).toBeVisible();
+    expect((await cancelPermission.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    await cancelPermission.click();
+    await expect(cancelPermission).toHaveCount(0);
     await page.getByRole("button", { name: "返回", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "云盘菜单" })).toBeVisible();
     await expect(page.getByRole("link", { name: "成员与权限", exact: true })).toBeFocused();
