@@ -1,3 +1,4 @@
+import { diagnoseLocalOperation } from "../diagnostics/local-operation";
 import { discardAnnotationConflict, queueScoreDrafts, readScoreAnnotationState, reapplyAnnotationConflict, retryScoreSyncErrors } from "../annotations/annotation-state";
 import { requestOutboxRecovery } from "../annotations/outbox-recovery";
 import { syncAnnotations } from "../annotations/sync";
@@ -24,7 +25,7 @@ export class ReaderAnnotationActions {
     const signal = this.controller.signal;
     try {
       await this.check(signal);
-      await queueScoreDrafts(this.workspace);
+      await diagnoseLocalOperation("draft-save", () => queueScoreDrafts(this.workspace));
       await this.check(signal);
       requestOutboxRecovery();
       return "local-saved";
@@ -42,13 +43,13 @@ export class ReaderAnnotationActions {
         return "local-saved";
       }
       requestOutboxRecovery();
-      await retryScoreSyncErrors(this.workspace);
+      await diagnoseLocalOperation("sync-retry", () => retryScoreSyncErrors(this.workspace));
       await this.check(signal);
-      await queueScoreDrafts(this.workspace);
+      await diagnoseLocalOperation("draft-save", () => queueScoreDrafts(this.workspace));
       await this.check(signal);
       await syncAnnotations(this.workspace, { pull: true });
       await this.check(signal);
-      const state = await readScoreAnnotationState(this.workspace);
+      const state = await diagnoseLocalOperation("sync-retry", () => readScoreAnnotationState(this.workspace));
       await this.check(signal);
       return state.syncErrorCount > 0 ? "failed" : "synced";
     } catch { return signal.aborted ? null : "failed"; }
@@ -60,13 +61,13 @@ export class ReaderAnnotationActions {
     try {
       await this.check(signal);
       if (strategy === "discard") {
-        await discardAnnotationConflict(this.workspace, opId);
+        await diagnoseLocalOperation("conflict-resolve", () => discardAnnotationConflict(this.workspace, opId));
         await this.check(signal);
         return "conflict-discarded";
       }
       await reapplyAnnotationConflict(this.workspace, opId, strategy === "keep-both");
       await this.check(signal);
-      await queueScoreDrafts(this.workspace);
+      await diagnoseLocalOperation("draft-save", () => queueScoreDrafts(this.workspace));
       saved = true;
       await this.check(signal);
       if (!this.access.online || !this.access.authenticated || this.access.trashed) return "local-saved";

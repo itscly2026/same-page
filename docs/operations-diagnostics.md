@@ -52,3 +52,9 @@ npm run diagnostics:inbox -- mark --remote --id REPORT_UUID --status resolved
 服务端存储完整报告但运行日志只输出固定分类，不记录描述、原始异常/堆栈、URL、请求/响应正文、原始邮箱/IP、文件名或用户/云盘/乐谱标识。自动 invocation logs、traces 和 Better Auth 原始 logger 保持禁用。平台附加的元数据、备份和安全日志受其自身策略约束。
 
 复用当前 Cloudflare Worker、D1 和 Logs，不开通第三方平台或升级套餐。依据 [Workers Logs 官方文档](https://developers.cloudflare.com/workers/observability/logs/workers-logs/)（2026-09-06 核对），Free 保留 3 天、Paid 保留 7 天。D1 报告的存储/读写受现有套餐额度约束，本实现不设置套餐付费上限。上线后核对收件量、限流、清理结果及账户授权。
+
+## 本机失败的细分字段
+
+`step` 和 `errorType` 为可选白名单字段。先用 step 区分 outbox-scan、sync-lock/layers/push/pull/apply、draft-save/sync-retry/conflict-resolve、offline-read/file/manifest/snapshot；再结合固定错误类型判断数据库/Blob 读取异常、配额不足或验证失败。ValidationError 代表校验拒绝，OtherError 代表不在白名单内的异常类型，不保留原始名称、message 或 stack。同阶段但步骤或错误类型不同的事件分别保存。
+
+“暂时无法读取本机副本，请重试校验”表示尚未确认副本有效性；点击“重试校验”重新读取和验证，不删除、替换或重新下载副本。与已读到内容但校验未通过的“本地副本不可用，请重新下载”分开。相关实现和真实浏览器负对照见 `docs/verification/webkit-sync-diagnostics.md`。

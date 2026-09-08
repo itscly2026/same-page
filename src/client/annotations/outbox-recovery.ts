@@ -1,5 +1,5 @@
-import Dexie from "dexie";
-import { parseDiagnosticResponse, diagnosticFetch, diagnosticScope } from "../diagnostics/diagnostics";
+import Dexie, { type IndexableType } from "dexie";
+import { parseDiagnosticResponse, diagnosticFetch, diagnosticScope, diagnosticErrorType } from "../diagnostics/diagnostics";
 import { scoreCloudStateSchema } from "../../shared/scores";
 import { localDatabase } from "../platform/local-database";
 import {
@@ -88,13 +88,7 @@ export async function recoverAnnotationOutbox(
       .equals(ownerKey);
     const cursorKey = `annotation-recovery-cursor:${ownerKey}`;
     const cursor = (await localDatabase.system.get(cursorKey))?.value ?? "";
-    const scopeKeys = await localDatabase.annotationOutbox
-      .where("[ownerKey+scopeKey]").between([ownerKey, cursor], [ownerKey, Dexie.maxKey], false, true)
-      .limit(OUTBOX_RECOVERY_LIMITS.discoveredScopes).uniqueKeys();
-    const wrapped = await localDatabase.annotationOutbox
-      .where("[ownerKey+scopeKey]").between([ownerKey, Dexie.minKey], [ownerKey, cursor], true, true)
-      .limit(OUTBOX_RECOVERY_LIMITS.discoveredScopes).uniqueKeys();
-    const discovered = [...scopeKeys, ...wrapped].slice(0, OUTBOX_RECOVERY_LIMITS.discoveredScopes);
+    const discovered = await discoverOutboxScopes(ownerKey, cursor);
     const results: OutboxRecoveryScopeResult[] = [];
     let nextAttemptAt = Date.now() + 1_000;
     let earliestRetry = Number.POSITIVE_INFINITY;
@@ -140,8 +134,8 @@ export async function recoverAnnotationOutbox(
       nextAttemptAt: Number.isFinite(nextAttemptAt) ? nextAttemptAt : undefined,
       results,
     });
-  } catch {
-    reportFailure({ operation: "sync", category: "internal", stage: "prepare" });
+  } catch (error) {
+    reportFailure({ operation: "sync", category: "internal", stage: "prepare", step: "outbox-scan", errorType: diagnosticErrorType(error) });
     return complete({
       ownerKey,
       trigger,
@@ -153,6 +147,31 @@ export async function recoverAnnotationOutbox(
       results: [],
     });
   }
+}
+
+// Seek past each complete compound key: ordinary cursors work in WebKit, while
+// nextunique cursors can fail even on an empty store. Each seek skips all duplicate
+// operations for a scope, so a large score cannot consume the discovery budget.
+async function discoverOutboxScopes(ownerKey: LocalWorkspaceOwnerKey, cursor: string) {
+  return localDatabase.transaction("r", localDatabase.annotationOutbox, async () => {
+    const scopes: unknown[][] = [];
+    for (const [lower, upper, includeLower] of [
+      [[ownerKey, cursor], [ownerKey, Dexie.maxKey], false],
+      [[ownerKey, Dexie.minKey], [ownerKey, cursor], true],
+    ] as const) {
+      let after: IndexableType = [...lower];
+      let inclusive = includeLower;
+      while (scopes.length < OUTBOX_RECOVERY_LIMITS.discoveredScopes) {
+        const key = await localDatabase.annotationOutbox.where("[ownerKey+scopeKey]")
+          .between(after, [...upper], inclusive, true).firstKey();
+        if (!Array.isArray(key)) break;
+        scopes.push(key);
+        after = key;
+        inclusive = false;
+      }
+    }
+    return scopes;
+  });
 }
 
 async function recoverScope(

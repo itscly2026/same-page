@@ -5,6 +5,11 @@ export type DiagnosticCategory = typeof diagnosticCategories[number];
 export const diagnosticStages = ["request", "prepare", "decode", "push", "cleanup"] as const;
 export type DiagnosticStage = typeof diagnosticStages[number];
 
+export const diagnosticSteps = ["outbox-scan", "sync-lock", "sync-layers", "sync-push", "sync-pull", "sync-apply", "draft-save", "sync-retry", "conflict-resolve", "offline-read", "offline-file", "offline-manifest", "offline-snapshot"] as const;
+export type DiagnosticStep = typeof diagnosticSteps[number];
+export const diagnosticErrorTypes = ["UnknownError", "NotReadableError", "DatabaseClosedError", "TransactionInactiveError", "QuotaExceededError", "DataError", "SchemaError", "InvalidStateError", "AbortError", "SecurityError", "NotFoundError", "ConstraintError", "TypeError", "ValidationError", "OtherError"] as const;
+export type DiagnosticErrorType = typeof diagnosticErrorTypes[number];
+
 export function categoryForStatus(status: number): DiagnosticCategory {
   if (status === 401 || status === 403) return "permission";
   if (status === 404) return "not-found";

@@ -1,3 +1,4 @@
+import { diagnoseLocalOperation } from "../diagnostics/local-operation";
 import { hasCompleteOfflineLayers } from "../offline/offline-score-verification";
 import { parseDiagnosticResponse, diagnosticFetch, recordFailure } from "../diagnostics/diagnostics";
 import {
@@ -50,7 +51,7 @@ export async function syncAnnotations(workspace: LocalWorkspace, options: SyncOp
   }
   const requestedAt = ++refreshOrder;
   options.signal?.throwIfAborted();
-  workspace = await captureLocalWorkspaceSession(workspace);
+  workspace = await diagnoseLocalOperation("sync-lock", () => captureLocalWorkspaceSession(workspace));
   options.signal?.throwIfAborted();
   const key = JSON.stringify([workspace.scopeKey, workspace.sessionEpoch, options.push !== false]);
   // Re-entering the same account must neither reuse nor wait for its old
@@ -129,7 +130,7 @@ async function refreshAnnotations(
   push: boolean,
 ): Promise<SyncResult> {
   startingLayers();
-  const applied = await refreshLayerCapabilities(workspace, signal);
+  const applied = await diagnoseLocalOperation("sync-layers", () => refreshLayerCapabilities(workspace, signal));
   layersApplied(applied);
   const base = `/api/choirs/${encodeURIComponent(workspace.choirId)}/scores/${encodeURIComponent(workspace.scoreId)}`;
 
@@ -137,16 +138,16 @@ async function refreshAnnotations(
   // still allows readable cloud changes and revocations to reach this device.
   let pushed = 0;
   let pushError: unknown;
-  try { if (push) pushed = await drainAnnotationOutbox(workspace, { signal, layers: applied }); }
+  try { if (push) pushed = await diagnoseLocalOperation("sync-push", () => drainAnnotationOutbox(workspace, { signal, layers: applied })); }
   catch (error) { pushError = error; }
   signal.throwIfAborted();
   await assertLocalWorkspaceActive(workspace);
-  const checkpoint = await localDatabase.annotationSyncCursors.get(workspace.scopeKey);
+  const checkpoint = await diagnoseLocalOperation("sync-pull", () => localDatabase.annotationSyncCursors.get(workspace.scopeKey));
   const layerIds = applied.map(layer => layer.id).sort();
   let cursor = JSON.stringify(checkpoint?.layerIds) === JSON.stringify(layerIds) ? checkpoint?.cursor ?? 0 : 0;
   let pulled = 0;
   while (true) {
-    const response = await refreshRequest(`${base}/annotations?cursor=${cursor}`, signal);
+    const response = await diagnoseLocalOperation("sync-pull", () => refreshRequest(`${base}/annotations?cursor=${cursor}`, signal));
     await assertLocalWorkspaceActive(workspace);
     signal.throwIfAborted();
     if (!response.ok) {
@@ -155,7 +156,7 @@ async function refreshAnnotations(
     }
     const body = await parseDiagnosticResponse(response, annotationPullResponseSchema);
     signal.throwIfAborted();
-    await applyPulledAnnotations(workspace, body.cursor, body.objects, layerIds);
+    await diagnoseLocalOperation("sync-apply", () => applyPulledAnnotations(workspace, body.cursor, body.objects, layerIds));
     pulled += body.objects.length;
     if (!body.hasMore || body.cursor <= cursor) break;
     cursor = body.cursor;
@@ -293,7 +294,7 @@ export async function withScoreSyncLock<T>(
   action: (workspace: LocalWorkspace) => Promise<T>,
   options: { ifAvailable?: boolean; signal?: AbortSignal } = {},
 ) {
-  workspace = await captureLocalWorkspaceSession(workspace);
+  workspace = await diagnoseLocalOperation("sync-lock", () => captureLocalWorkspaceSession(workspace));
   options.signal?.throwIfAborted();
   const scopeKey = workspace.scopeKey;
   if (navigator.locks) {

@@ -1,3 +1,6 @@
+import { diagnosticScope, diagnosticErrorType } from "../diagnostics/diagnostics";
+import { diagnoseLocalOperation } from "../diagnostics/local-operation";
+import type { DiagnosticStep } from "../../shared/diagnostics";
 import { imageManifestSchema } from "../../shared/score-images";
 import Dexie from "dexie";
 import { annotationLayerSummarySchema, annotationPayloadSchema, type AnnotationLayerSummary } from "../../shared/annotations";
@@ -10,6 +13,7 @@ let running = 0;
 
 // Deduplicate only in-flight checks. Opening again always validates current bytes.
 export function verifyOfflineScore(record: OfflineScoreRecord) {
+  const report = diagnosticScope();
   const identity = JSON.stringify([record.key, record.verifiedAt, record.sha256, record.blob.size, record.annotationSnapshot, record.imageManifest]);
   let tasks = verificationTasks.get(record.blob);
   if (!tasks) { tasks = new Map(); verificationTasks.set(record.blob, tasks); }
@@ -18,7 +22,7 @@ export function verifyOfflineScore(record: OfflineScoreRecord) {
     task = (async () => {
       if (running >= 2) await new Promise<void>((resolve) => waiting.push(resolve));
       else running++;
-      try { return await verifyRecord(record); }
+      try { return await verifyRecord(record, report); }
       finally {
         const next = waiting.shift();
         if (next) next();
@@ -31,39 +35,49 @@ export function verifyOfflineScore(record: OfflineScoreRecord) {
   return task;
 }
 
-async function verifyRecord(record: OfflineScoreRecord) {
+async function verifyRecord(record: OfflineScoreRecord, report: ReturnType<typeof diagnosticScope>) {
+  let step: DiagnosticStep = "offline-file";
+  const invalid = () => {
+    report({ operation: "storage", category: "validation", stage: "decode", step, errorType: "ValidationError" });
+    return false;
+  };
   try {
-    if (!record.blob.size || !record.verifiedAt || !record.annotationSnapshot?.verifiedAt) return false;
-    if (await sha256Hex(await record.blob.arrayBuffer()) !== record.sha256) return false;
+    if (!record.blob.size || !record.verifiedAt) return invalid();
+    if (await sha256Hex(await record.blob.arrayBuffer()) !== record.sha256) return invalid();
     if (record.imageManifest) {
+      step = "offline-manifest";
       const manifest = imageManifestSchema.parse(record.imageManifest);
-      if (manifest.versionId !== record.versionId || manifest.pages.length !== record.pageCount) return false;
+      if (manifest.versionId !== record.versionId || manifest.pages.length !== record.pageCount) return invalid();
       let offset = 0;
       for (const page of manifest.pages) {
         const asset = page.assets[0];
         const bytes = await record.blob.slice(offset, offset + asset.sizeBytes).arrayBuffer();
-        if (bytes.byteLength !== asset.sizeBytes || await sha256Hex(bytes) !== asset.sha256) return false;
-        if (bytes.byteLength < 24) return false;
+        if (bytes.byteLength !== asset.sizeBytes || await sha256Hex(bytes) !== asset.sha256) return invalid();
+        if (bytes.byteLength < 24) return invalid();
         const header = new DataView(bytes);
-        if (header.getUint32(0) !== 0x89504e47 || header.getUint32(4) !== 0x0d0a1a0a || header.getUint32(16) !== asset.width || header.getUint32(20) !== asset.height) return false;
+        if (header.getUint32(0) !== 0x89504e47 || header.getUint32(4) !== 0x0d0a1a0a || header.getUint32(16) !== asset.width || header.getUint32(20) !== asset.height) return invalid();
         offset += asset.sizeBytes;
       }
-      if (offset !== record.blob.size) return false;
+      if (offset !== record.blob.size) return invalid();
     }
+    step = "offline-snapshot";
+    if (!record.annotationSnapshot?.verifiedAt) return invalid();
     const layers = record.annotationSnapshot.layers;
-    if (!hasCompleteOfflineLayers(layers, record.ownerKey)) return false;
+    if (!hasCompleteOfflineLayers(layers, record.ownerKey)) return invalid();
     const layerIds = new Set(layers.map((layer) => layer.id));
     for (const layer of record.annotationSnapshot.layers) {
       annotationLayerSummarySchema.parse(layer);
-      if (layer.scopeKey !== record.scopeKey) return false;
+      if (layer.scopeKey !== record.scopeKey) return invalid();
     }
     for (const annotation of record.annotationSnapshot.annotations) {
-      if (annotation.scopeKey !== record.scopeKey || !layerIds.has(annotation.layerId)) return false;
+      if (annotation.scopeKey !== record.scopeKey || !layerIds.has(annotation.layerId)) return invalid();
       if (annotation.payload) annotationPayloadSchema.parse(annotation.payload);
     }
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (diagnosticErrorType(error) === "ValidationError") return invalid();
+    report({ operation: "storage", category: "internal", stage: "decode", step, errorType: diagnosticErrorType(error) });
+    throw error;
   }
 }
 
@@ -87,7 +101,7 @@ export async function inspectOfflineScore(workspace: LocalWorkspace): Promise<Of
   let task = inspections.get(identity);
   if (!task) {
     task = (async () => {
-      const record = await findActiveOfflineScore(workspace.ownerKey, workspace.choirId, workspace.scoreId);
+      const record = await diagnoseLocalOperation("offline-read", () => findActiveOfflineScore(workspace.ownerKey, workspace.choirId, workspace.scoreId));
       const valid = record ? await verifyOfflineScore(record) : false;
       return { record: valid ? record ?? null : null, invalid: Boolean(record && !valid) };
     })();

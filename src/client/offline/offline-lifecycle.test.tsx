@@ -1,3 +1,4 @@
+import React from "react";
 import { cacheAnnotationLayers } from "../annotations/annotation-state";
 /// <reference types="node" />
 
@@ -174,4 +175,42 @@ it("the activation transaction rejects a logout fence before asynchronous watche
   await beginLogout("a", "session");
   await expect(activateVerifiedOfflineScore(record)).rejects.toThrow("local_workspace_owner_changed");
   expect(await findActiveOfflineScore(record.ownerKey, record.choirId, record.scoreId)).toBeUndefined();
+});
+
+it("distinguishes file corruption, incomplete snapshots and temporary Blob read failure", async () => {
+  const { clearDiagnostics, exportDiagnostics } = await import("../diagnostics/diagnostics");
+  const record = await recordFor();
+  clearDiagnostics();
+  expect(await verifyOfflineScore({ ...record, sha256: "0".repeat(64) })).toBe(false);
+  expect(JSON.parse(exportDiagnostics()).records).toEqual([expect.objectContaining({ step: "offline-file", errorType: "ValidationError" })]);
+  clearDiagnostics();
+  expect(await verifyOfflineScore({ ...record, annotationSnapshot: { ...record.annotationSnapshot, verifiedAt: 0 } })).toBe(false);
+  expect(JSON.parse(exportDiagnostics()).records).toEqual([expect.objectContaining({ step: "offline-snapshot", errorType: "ValidationError" })]);
+  clearDiagnostics();
+  const error = new DOMException("private PDF name", "NotReadableError");
+  const read = vi.spyOn(record.blob, "arrayBuffer").mockRejectedValueOnce(error);
+  await expect(verifyOfflineScore(record)).rejects.toBe(error);
+  expect(JSON.parse(exportDiagnostics()).records).toEqual([expect.objectContaining({ step: "offline-file", category: "internal" })]);
+  expect(exportDiagnostics()).not.toContain("private");
+  read.mockRestore();
+  expect(await verifyOfflineScore(record)).toBe(true);
+});
+
+it("offers reinspection after a local read failure without marking the stored copy corrupt", async () => {
+  const { offlinePreparationDescription } = await import("./offline-score-status");
+  const record = await recordFor();
+  await activateVerifiedOfflineScore(record);
+  const read = vi.spyOn(Blob.prototype, "arrayBuffer").mockRejectedValue(new DOMException("unavailable", "NotReadableError"));
+  function Status() {
+    const [attempt, retry] = React.useState(0);
+    const copy = useOfflineScore(record, attempt);
+    return <><span>{offlinePreparationDescription({ phase: "idle" }, copy, record.versionId)}</span><button onClick={() => retry(value => value + 1)}>校验</button></>;
+  }
+  render(<Status />);
+  await screen.findByText("暂时无法读取本机副本，请重试校验");
+  expect(screen.queryByText("本地副本不可用，请重新下载")).not.toBeInTheDocument();
+  expect(await localDatabase.offlineScores.count()).toBe(1);
+  read.mockRestore();
+  fireEvent.click(screen.getByRole("button", { name: "校验" }));
+  await screen.findByText("可离线使用");
 });

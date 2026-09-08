@@ -3,25 +3,27 @@ import type { ScoreSummary } from "../../shared/scores";
 import { OfflinePreparation, type OfflinePreparationState } from "./offline-score";
 import { useLiveQuery } from "dexie-react-hooks";
 import { localDatabase, type OfflineScoreRecord } from "../platform/local-database";
-import { createLocalWorkspace, isLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
+import { createLocalWorkspace, isLocalWorkspaceActive, LocalWorkspaceOwnerChangedError, type LocalWorkspace } from "../platform/local-workspace";
+import { diagnoseLocalOperation } from "../diagnostics/local-operation";
 import { inspectOfflineScore } from "./offline-score-verification";
 
-export function useOfflineScore(workspace: LocalWorkspace | null) {
-  return useLiveQuery(async (): Promise<{ scopeKey: string; record: OfflineScoreRecord | null; invalid: boolean } | null> => {
+export function useOfflineScore(workspace: LocalWorkspace | null, inspectionAttempt = 0) {
+  return useLiveQuery(async (): Promise<{ scopeKey: string; record: OfflineScoreRecord | null; invalid: boolean; readFailed?: boolean } | null> => {
     if (!workspace) return null;
     try {
-    if (!(await isLocalWorkspaceActive(workspace))) return null;
-    // Track the scope in this live query even when the shared inspection was
-    // started by a reader outside Dexie's observation context. No Blob is read.
-    await localDatabase.offlineScores.where("[ownerKey+choirId+scoreId]")
-      .equals([workspace.ownerKey, workspace.choirId, workspace.scoreId]).count();
-    const result = await inspectOfflineScore(workspace);
-    if (!(await isLocalWorkspaceActive(workspace))) return null;
-    return { scopeKey: workspace.scopeKey, ...result };
-    } catch {
-      return { scopeKey: workspace.scopeKey, record: null, invalid: true };
+      if (!(await diagnoseLocalOperation("offline-read", () => isLocalWorkspaceActive(workspace)))) return null;
+      // Track the scope in this live query even when the shared inspection was
+      // started by a reader outside Dexie's observation context. No Blob is read.
+      await diagnoseLocalOperation("offline-read", () => localDatabase.offlineScores.where("[ownerKey+choirId+scoreId]")
+        .equals([workspace.ownerKey, workspace.choirId, workspace.scoreId]).count());
+      const result = await inspectOfflineScore(workspace);
+      if (!(await diagnoseLocalOperation("offline-read", () => isLocalWorkspaceActive(workspace)))) return null;
+      return { scopeKey: workspace.scopeKey, ...result };
+    } catch (error) {
+      if (error instanceof LocalWorkspaceOwnerChangedError) return null;
+      return { scopeKey: workspace.scopeKey, record: null, invalid: false, readFailed: true };
     }
-  }, [workspace?.scopeKey]);
+  }, [workspace?.scopeKey, inspectionAttempt]);
 }
 
 export function useOfflinePreparation(workspace: LocalWorkspace | null, score: ScoreSummary, authenticatedUserId: string | null, sessionId: string | null) {

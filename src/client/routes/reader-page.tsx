@@ -196,7 +196,8 @@ function ReaderPageContent() {
   const reader = useReaderSession(workspace, identity.authenticatedUserId, identity.authenticatedSessionId);
   const { score, document, offline: loadedOffline, cloudState, downloading, downloadMessage, preparation } = reader.snapshot;
   const documentScopeKey = document ? workspace?.scopeKey ?? null : null;
-  const offlineStatus = useOfflineScore(workspace);
+  const [inspectionAttempt, setInspectionAttempt] = useState(0);
+  const offlineStatus = useOfflineScore(workspace, inspectionAttempt);
   const offline = offlineStatus?.scopeKey === workspace?.scopeKey ? offlineStatus?.record ?? null : loadedOffline;
   const downloadOffline = reader.download;
   useEffect(() => {
@@ -577,9 +578,10 @@ function ReaderPageContent() {
               </section>
               <section aria-label="本机离线副本"><h2>离线使用</h2>
               <p className="reader-more-menu__status" role="status">
-                {offlinePreparationDescription(preparation, offlineStatus ? { record: offline, invalid: offlineStatus.invalid } : null, score.currentVersion.id, reader.snapshot.mode)}
+                {offlinePreparationDescription(preparation, offlineStatus ? { record: offline, invalid: offlineStatus.invalid, readFailed: offlineStatus.readFailed } : null, score.currentVersion.id, reader.snapshot.mode)}
               </p>
-              {(!offlineStatus || !offline || offlineStatus.invalid || hasNewOfflineVersion || preparation.phase === "failed" || downloading || (offline.imageManifest ? "images" : "pdf") !== reader.snapshot.mode) && (
+              {offlineStatus?.readFailed && <Button className="secondary-button" onPress={() => setInspectionAttempt(value => value + 1)}>重试校验</Button>}
+              {!offlineStatus?.readFailed && (!offlineStatus || !offline || offlineStatus.invalid || hasNewOfflineVersion || preparation.phase === "failed" || downloading || (offline.imageManifest ? "images" : "pdf") !== reader.snapshot.mode) && (
               <Button
                 isDisabled={(preparation.phase === "preparing" && preparation.intent === "explicit") || cloudState === "trashed"}
                 onPress={() => void downloadOffline()}

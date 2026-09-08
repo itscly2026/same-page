@@ -34,19 +34,21 @@ export function OfflineScoreControl({ score, authenticatedUserId, authenticatedS
     return () => controller.abort();
   }, [owner, disabled, authenticatedUserId, score.choirId, score.id]);
   const workspace = owner ? createLocalWorkspace(owner, score.choirId, score.id) : null;
-  const offline = useOfflineScore(workspace);
+  const [inspectionAttempt, setInspectionAttempt] = useState(0);
+  const offline = useOfflineScore(workspace, inspectionAttempt);
   const { state: attempt, prepare } = useOfflinePreparation(workspace, score, authenticatedUserId, authenticatedSessionId);
   const phase = attempt.phase;
   const inspected = Boolean(workspace && offline?.scopeKey === workspace.scopeKey);
   const record = offline?.scopeKey === workspace?.scopeKey ? offline?.record ?? null : null;
   const invalid = offline?.scopeKey === workspace?.scopeKey && offline?.invalid;
+  const readFailed = inspected && offline?.readFailed;
   const downloading = phase === "preparing";
   const explicitDownload = attempt.phase === "preparing" && attempt.intent === "explicit";
   const failed = phase === "failed";
   const stale = Boolean(record && record.versionId !== score.currentVersion.id);
   const needsDownload = !record || invalid || stale || failed;
-  const state = downloading ? "downloading" : failed || invalid ? "error" : stale ? "stale" : record ? "ready" : "missing";
-  const description = offlinePreparationDescription(attempt, inspected ? { record, invalid: Boolean(invalid) } : null, score.currentVersion.id);
+  const state = downloading ? "downloading" : failed || invalid || readFailed ? "error" : stale ? "stale" : record ? "ready" : "missing";
+  const description = offlinePreparationDescription(attempt, inspected ? { record, invalid: Boolean(invalid), readFailed } : null, score.currentVersion.id);
   const actionLabel = failed ? "重试下载" : stale ? "下载新版离线副本" : "下载离线副本";
   const Icon = state === "downloading" ? LoaderCircle : state === "error" ? CircleAlert : state === "stale" ? RefreshCw : state === "ready" ? HardDrive : Download;
 
@@ -75,7 +77,8 @@ export function OfflineScoreControl({ score, authenticatedUserId, authenticatedS
         <Heading slot="title"><HardDriveDownload aria-hidden="true" size={18} />离线副本</Heading>
         <p role="status">{description}</p>
         <p>保存在这台设备上，供断网时打开。</p>
-        {needsDownload && <Button className="secondary-button" isDisabled={disabled || !workspace || explicitDownload} onPress={() => void prepare()}>{downloading ? explicitDownload ? "正在下载…" : "继续下载（切换页面不中断）" : actionLabel}</Button>}
+        {readFailed && <Button className="secondary-button" onPress={() => setInspectionAttempt(value => value + 1)}>重试校验</Button>}
+        {!readFailed && needsDownload && <Button className="secondary-button" isDisabled={disabled || !workspace || explicitDownload} onPress={() => void prepare()}>{downloading ? explicitDownload ? "正在下载…" : "继续下载（切换页面不中断）" : actionLabel}</Button>}
         <Button className="text-button" onPress={() => setDetailsOpen(false)}>关闭</Button>
       </Dialog>
     </Popover>
