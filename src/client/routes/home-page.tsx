@@ -28,6 +28,7 @@ import {
 import { authClient } from "../auth/auth-client";
 import sharedLayersIllustration from "../assets/home/shared-layers.webp";
 import sharedLayersAnimation from "../assets/home/shared-layers.gif";
+import personalLayerAnimation from "../assets/home/personal-layer.gif";
 import personalLayerIllustration from "../assets/home/personal-layer.webp";
 import replacePdfIllustration from "../assets/home/replace-pdf.webp";
 import offlineSyncIllustration from "../assets/home/offline-sync.webp";
@@ -103,7 +104,7 @@ export function HomePage({ startup = false }: { startup?: boolean }) {
 }
 
 function HomeContent({ session, startup, linkInvite, finishInvitation }: { session: ReturnType<typeof authClient.useSession>; startup: boolean; linkInvite: ReturnType<typeof readInviteLink>; finishInvitation: () => void }) {
-  const [animateLayers, setAnimateLayers] = useState(true);
+  const [pausedIllustrations, setPausedIllustrations] = useState<number[]>([]);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const location = useLocation();
@@ -325,13 +326,13 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
                   {feature.description}
                 </p>
               </div>
-              {index === 0 ? (
+              {index < 2 ? (
                 <div className="marketing-feature__illustration">
                   <picture>
-                    <source media="(prefers-reduced-motion: reduce)" srcSet={sharedLayersIllustration} />
+                    <source media="(prefers-reduced-motion: reduce)" srcSet={feature.illustration} />
                     <img
-                      src={animateLayers ? sharedLayersAnimation : sharedLayersIllustration}
-                      alt="从右到左 B、T、A、S、E 共享层各画两笔批注，再叠加到同一份乐谱上。"
+                      src={pausedIllustrations.includes(index) ? feature.illustration : index === 0 ? sharedLayersAnimation : personalLayerAnimation}
+                      alt={index === 0 ? "从右到左 B、T、A、S、E 共享层各画两笔批注，再叠加到同一份乐谱上。" : "选择显示 E 和 T 共享批注，隐藏其他共享层；在默认私密的 P 个人层留下两笔笔记，再叠加到原谱上。"}
                       width={768}
                       height={512}
                       loading="lazy"
@@ -339,8 +340,8 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
                       style={{ display: "block", width: "100%", height: "auto" }}
                     />
                   </picture>
-                  <button className="text-button marketing-animation-control" type="button" onClick={() => setAnimateLayers(value => !value)}>
-                    {animateLayers ? "显示静态图" : "播放分层示意"}
+                  <button className="text-button marketing-animation-control" type="button" onClick={() => setPausedIllustrations(values => values.includes(index) ? values.filter(value => value !== index) : [...values, index])}>
+                    {pausedIllustrations.includes(index) ? "播放分层示意" : "显示静态图"}
                   </button>
                 </div>
               ) : <img
