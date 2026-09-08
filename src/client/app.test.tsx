@@ -1070,7 +1070,7 @@ describe("AppRoutes", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/云盘存储已使用 858\.3 MB/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "打开云盘菜单" }));
-    expect(await screen.findByText(/云盘存储：858\.3 MB/)).toBeInTheDocument();
+    expect(screen.queryByText(/云盘存储：/)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "回收站" })).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "轮换邀请码" }),
@@ -1151,7 +1151,7 @@ describe("AppRoutes", () => {
     fireEvent.change(screen.getByRole("searchbox", { name: /搜索.*中的乐谱/ }), {
       target: { value: "排练" },
     });
-    expect(screen.getByText("找到 1 份，共 1 份乐谱")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "找到 1 份乐谱" })).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("?q="))).toBe(false);
 
     fetchMock.mockImplementationOnce(() =>

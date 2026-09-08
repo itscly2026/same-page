@@ -106,10 +106,10 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
 
           {driveName ? <p>{driveName}</p> : null}
           <p className="settings-copy">{colors
-            ? "此云盘所有谱的个人默认 · 仅我。单独设置过的乐谱保留自己的颜色。"
-            : "此云盘所有谱的个人默认 · 仅我。单独设置过的乐谱保留自己的显示选择。"}</p>
+            ? "应用于此云盘的乐谱，仅影响你。单独调整过颜色的乐谱保持原设置。"
+            : "应用于此云盘的乐谱，仅影响你。单独调整过的乐谱保持原设置。"}</p>
         </header>
-        <p className="settings-copy">更改自动保存；不改变其他成员的显示或编辑权限。</p>
+        <p className="settings-copy">更改自动保存</p>
         {loadStatus === 401 || loadStatus === 403 ? <div><p role="alert">{loadError}</p>{loadStatus === 401 && <Link to={loginHref(`/choirs/${choirId}/preferences`)}>重新登录</Link>}</div> : <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} />}
         {!loadError && !loading && <section className="settings-card" aria-label={colors ? "笔记颜色" : "默认显示的笔记"} aria-busy={loading}>
           {!colors ? <h2 className="settings-group-title">默认显示的笔记</h2> : null}

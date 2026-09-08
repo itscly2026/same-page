@@ -1314,7 +1314,7 @@ h1 {
 }
 
 .library-workspace {
-  min-height: 20rem;
+  min-height: 0;
   overflow: hidden;
   margin-top: 1.25rem;
   border: 1px solid var(--line);
@@ -2143,7 +2143,7 @@ h1 {
 }
 
 .layer-section__restore {
-  min-height: 2rem !important;
+  min-height: 44px !important;
   border: 0 !important;
   padding: 0.25rem !important;
   color: #5f5b57 !important;

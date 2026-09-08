@@ -37,10 +37,9 @@ export function DriveHeader({ choirId, choirName, userId, search, onSearch, onRe
           {onEditDisplayName && <Button isDisabled={localOnly} onPress={() => { close(); onEditDisplayName(); }}>云盘内显示名</Button>}
           <Link to={`/choirs/${choirId}/preferences`}>阅读偏好</Link>
           <Link to={`/choirs/${choirId}/storage`}>本机存储</Link>
-          {onEditDisplayName && <Link to={`/choirs/${choirId}/me`}>退出云盘成员身份</Link>}
         </section>}
         {management?.(close)}
-        <footer className="drive-drawer-footer"><Link to="/help" >帮助</Link></footer>
+        <footer className="drive-drawer-footer"><Link to="/help">帮助</Link>{onEditDisplayName && <Link to={`/choirs/${choirId}/me`}>退出云盘成员身份</Link>}</footer>
       </DrawerBody>}</Dialog></Modal>
     </ModalOverlay>
   </>;

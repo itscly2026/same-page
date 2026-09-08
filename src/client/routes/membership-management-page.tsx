@@ -85,7 +85,7 @@ function MembershipManagement({ choirId }: { choirId: string }) {
     return result.kind === "saved";
   };
   const dirtyMembers = state?.memberships.filter(member => drafts[member.id] && !sameMemberPermissions(drafts[member.id], member)) ?? [];
-  const exitDialog = useUnsavedChanges({ dirty: dirtyMembers.length > 0,
+  const exitDialog = useUnsavedChanges({ subject: "成员权限", dirty: dirtyMembers.length > 0,
     discard: () => setDrafts({}),
     save: async () => {
       for (const member of dirtyMembers) {
@@ -133,7 +133,7 @@ function MemberEditor({ focus, member, state, layers, busy, save, change, transf
   const outsideScope = Boolean(focus && !owner && !hasPermission(state.capabilities.management, focus));
   const canAuthorize = !outsideScope && (owner || (isDelegated(state.capabilities.management) && !member.isOwner && !isDelegated(member.management) && member.id !== state.actorId));
   const protectedMember = Boolean(member.isOwner) || isDelegated(member.management);
-  return <details className="lifecycle-member" open={focus ? true : undefined}><summary><h2>{member.displayName}{member.id === state.actorId ? " · 我" : ""}</h2><span>{member.isOwner ? "拥有者" : isDelegated(member.management) ? "受托权限管理者" : member.status === "removed" ? "已移除" : "成员"}</span></summary>
+  return <details className="lifecycle-member" open={focus ? true : undefined}><summary><span className="member-identity"><span className="member-name"><h2>{member.displayName}</h2>{member.id === state.actorId && <span className="member-self">我</span>}</span><span className="member-role">{member.isOwner ? "拥有者" : isDelegated(member.management) ? "受托权限管理者" : member.status === "removed" ? "已移除" : "成员"}</span></span></summary>
     <p>{member.status === "removed" ? "已移除" : member.isOwner ? "拥有者" : isDelegated(member.management) ? "受托权限管理者" : "普通成员"}</p>
     {!focus && <><p>操作权限：{describe(member.isOwner ? allPermissions() : member.operations, layers)}</p>
     <p>授权管理范围：{describe(member.isOwner ? allPermissions() : member.management, layers)}</p></>}

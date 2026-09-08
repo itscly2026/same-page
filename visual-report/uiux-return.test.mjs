@@ -70,7 +70,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.getByRole("button", { name: "放大", exact: true }).click();
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "看哪些笔记", exact: true }).click();
-    await page.getByRole("link", { name: "此云盘的默认显示" }).click();
+    await page.getByRole("link", { name: "设置此云盘的默认显示" }).click();
     await expect(page.getByRole("heading", { name: "阅读偏好", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "返回", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "看哪些笔记" })).toBeVisible();

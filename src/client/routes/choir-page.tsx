@@ -166,7 +166,6 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
             ["settings/info", "基本信息"], ["memberships", "成员与权限"], ["shared-layers", "共享层"], ["settings/admission", "加入方式"], ["settings/trash", "回收站"],
           ].map(([path, label]) => access.local ? <span key={path} aria-disabled="true">{label}（需联网）</span> : <Link key={path} to={`/choirs/${choirId}/${path}`}>{label}</Link>)}</nav>
           {access.local && <p role="status">管理操作需联网并确认权限后使用。</p>}
-          <p className="drive-storage">云盘存储：{formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}</p>
         </section> : undefined}
       />
       <main className="page-shell file-library">
@@ -179,7 +178,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
         <section className="library-workspace" aria-labelledby="library-content-title">
           <div className="library-toolbar">
             <div className="library-controls">
-              <h2 id="library-content-title">乐谱 <span className="drive-score-count">{result.scores.length}</span></h2>
+              <h2 id="library-content-title">{search.trim() ? `找到 ${visibleScores.length} 份乐谱` : <>乐谱 <span className="drive-score-count">{result.scores.length}</span></>}</h2>
               <label className="library-sort-label">
                 排序
                 <span className="library-sort-control">
@@ -197,7 +196,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
               </label>
             </div>
           </div>
-          {search.trim() ? <p className="library-results-summary" role="status">{localFilesOnly ? "仅搜索本机记录 · " : ""}找到 {visibleScores.length} 份，共 {result.scores.length} 份乐谱</p> : null}
+          {search.trim() && <p className="visually-hidden" role="status">找到 {visibleScores.length} 份乐谱{localFilesOnly ? "，仅搜索本机记录" : ""}</p>}
 
           {can("uploadFiles") && (storageRatio >= 0.8 || quotaBlocked) ? (
             <p className="storage-warning" role="status">

@@ -31,7 +31,7 @@ export function SharedLayerDetailsForm({ choirId, layer, onSaved }: {
     busy.current = false; setPending(false);
     return result.kind === "saved";
   };
-  const exitDialog = useUnsavedChanges({ dirty, save, discard });
+  const exitDialog = useUnsavedChanges({ subject: "共享层配置", dirty, save, discard });
   return <form className="settings-card layer-details-form" aria-label="共享层设置" onSubmit={event => { event.preventDefault(); void save(); }}>
     {exitDialog}<p role="status">{dirty ? "未保存" : "所有修改已保存"}</p>
     <p className="settings-copy">此云盘所有成员的默认；个人显示覆盖仍保留。</p>

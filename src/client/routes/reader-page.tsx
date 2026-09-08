@@ -16,7 +16,7 @@ import { useReaderSession } from "../reader/use-reader-session";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   ArrowLeft, Download, Ellipsis, Layers, Maximize2, Minus, Pencil, Plus, BookOpen,
-  RefreshCw, Rows3, Check,
+  RefreshCw, Rows3, Check, X,
 } from "lucide-react";
 import {
   useEffect,
@@ -532,7 +532,7 @@ function ReaderPageContent() {
             {editing && annotationInteraction !== "composing-text" && <span className="reader-save-feedback" role="status">
               {persistence === "saving" ? "正在保存到本机…" : persistence === "failed" ? "本机保存失败" : annotations.some(annotation => annotation.state === "draft") ? "已保存在本机" : "正在编辑当前页"}
             </span>}
-            {editAvailability !== "ready" ? (
+            {editAvailability !== "ready" && !(editAvailability === "preparing" && readerPanel !== null) ? (
               <p
                 className="reader-edit-status"
                 data-state={editAvailability}
@@ -679,8 +679,8 @@ function ReaderPageContent() {
             <Dialog preserveOnNavigate aria-label={"看哪些笔记"} className="reader-layers-content">
               <header className="reader-panel__header">
                 <strong>{"看哪些笔记"}</strong>
-                <Button aria-label="关闭笔记显示" onPress={() => setReaderPanel(null)}>
-                  关闭
+                <Button className="icon-button" aria-label="关闭笔记显示" onPress={() => setReaderPanel(null)}>
+                  <X aria-hidden="true" size={21} />
                 </Button>
               </header>
               <Suspense fallback={<p role="status">正在准备图层…</p>}>
