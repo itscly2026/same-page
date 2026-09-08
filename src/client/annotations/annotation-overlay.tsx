@@ -24,12 +24,13 @@ export type AnnotationTool = "text" | "ink" | "highlighter" | "rectangle" | "ell
 export type AnnotationOverlayInteraction =
   | "idle"
   | "composing-text"
-  | "transforming-text";
+  | "transforming-object";
 
 type TextPayload = Extract<AnnotationPayload, { kind: "text" }>;
+type MovablePayload = Extract<AnnotationPayload, { kind: "text" | "shape" }>;
 
 const ERASER_HIT_RADIUS_PX = 14;
-const TEXT_DRAG_THRESHOLD_PX = 6;
+const OBJECT_DRAG_THRESHOLD_PX = 6;
 
 interface TextEditorBase {
   id: string;
@@ -45,18 +46,18 @@ interface TextEditorBase {
 type TextEditorState = TextEditorBase &
   ({ source: "new" } | { source: "existing" });
 
-interface TextTransformState {
+interface ObjectTransformState {
   id: string;
   layerId: string;
-  payload: TextPayload;
-  preview: TextPayload;
+  payload: MovablePayload;
+  preview: MovablePayload;
   element: HTMLButtonElement;
   pointers: Map<number, { startX: number; startY: number; x: number; y: number }>;
   pinch: {
     distance: number;
     centerX: number;
     centerY: number;
-    payload: TextPayload;
+    payload: MovablePayload;
   } | null;
   moved: boolean;
 }
@@ -118,18 +119,19 @@ export function AnnotationOverlay({
   const strokeHistoryStarted = useRef(false);
   const eraserPointerId = useRef<number | null>(null);
   const erasedStrokeIds = useRef(new Set<string>());
-  const textTransform = useRef<TextTransformState | null>(null);
-  const [textTransformPreview, setTextTransformPreview] = useState<{
+  const objectTransform = useRef<ObjectTransformState | null>(null);
+  const [objectTransformPreview, setObjectTransformPreview] = useState<{
     id: string;
-    payload: TextPayload;
+    payload: MovablePayload;
   } | null>(null);
-  const [transformingText, setTransformingText] = useState(false);
+  const [transformingObject, setTransformingObject] = useState(false);
   const interactionRef = useRef<AnnotationOverlayInteraction>("idle");
   const [deleteActive, setDeleteActive] = useState(false);
   const deleteActiveRef = useRef(false);
   const deleteTargetRef = useRef<HTMLDivElement>(null);
   const visualViewport = useVisualViewport(editing);
   const canStartEdit = editing && layers.some(layer => layer.id === activeLayerId && layer.canEdit);
+  const canMoveObjects = canStartEdit && ["text", "rectangle", "ellipse"].includes(tool);
   const visibleLayerIds = new Set(
     layers
       .filter((layer) => (editing ? layer.id === activeLayerId : layer.subscribed))
@@ -182,7 +184,7 @@ export function AnnotationOverlay({
   const updateInteraction = (interaction: AnnotationOverlayInteraction) => {
     if (interactionRef.current === interaction) return;
     interactionRef.current = interaction;
-    setTransformingText(interaction === "transforming-text");
+    setTransformingObject(interaction === "transforming-object");
     onInteractionChange?.(interaction);
   };
 
@@ -210,15 +212,12 @@ export function AnnotationOverlay({
       const payload = annotation.payload;
       if (
         annotation.layerId !== activeLayerId ||
-        !payload || payload.kind === "text" ||
+        !payload || payload.kind !== "ink" ||
         erasedStrokeIds.current.has(annotation.id)
       ) {
         continue;
       }
-      const outline = payload.kind === "ink" ? payload.points : payload.shape === "rectangle"
-        ? [{ x: payload.x, y: payload.y }, { x: payload.x + payload.width, y: payload.y }, { x: payload.x + payload.width, y: payload.y + payload.height }, { x: payload.x, y: payload.y + payload.height }, { x: payload.x, y: payload.y }]
-        : Array.from({ length: 65 }, (_, index) => ({ x: payload.x + payload.width / 2 * (1 + Math.cos(index * Math.PI / 32)), y: payload.y + payload.height / 2 * (1 + Math.sin(index * Math.PI / 32)) }));
-      const points = outline.map((entry) => ({
+      const points = payload.points.map((entry) => ({
         x: entry.x * bounds.width,
         y: entry.y * bounds.height,
       }));
@@ -317,7 +316,7 @@ export function AnnotationOverlay({
 
   const addTransformPointer = (
     event: ReactPointerEvent<Element>,
-    transform: TextTransformState,
+    transform: ObjectTransformState,
   ) => {
     event.preventDefault();
     capturePointer(event.currentTarget, event.pointerId);
@@ -338,19 +337,21 @@ export function AnnotationOverlay({
     }
   };
 
-  const beginTextTransform = (
+  const beginObjectTransform = (
     event: ReactPointerEvent<HTMLButtonElement>,
     annotation: LocalAnnotationRecord,
-    payload: TextPayload,
+    payload: MovablePayload,
   ) => {
-    if (!canStartEdit || annotation.layerId !== activeLayerId || tool !== "text") return;
+    if (!canMoveObjects || annotation.layerId !== activeLayerId) return;
+    event.stopPropagation();
     if (textEditor) return;
-    const active = textTransform.current;
+    const active = objectTransform.current;
+    if (active && active.id !== annotation.id) return;
     if (active?.id === annotation.id) {
       addTransformPointer(event, active);
       return;
     }
-    const transform: TextTransformState = {
+    const transform: ObjectTransformState = {
       id: annotation.id,
       layerId: annotation.layerId,
       payload,
@@ -360,40 +361,43 @@ export function AnnotationOverlay({
       pinch: null,
       moved: false,
     };
-    textTransform.current = transform;
-    setTextTransformPreview(null);
+    objectTransform.current = transform;
+    setObjectTransformPreview(null);
     addTransformPointer(event, transform);
   };
 
-  const updateTextTransform = (event: ReactPointerEvent<Element>) => {
-    const transform = textTransform.current;
+  const updateObjectTransform = (event: ReactPointerEvent<Element>) => {
+    const transform = objectTransform.current;
     const pointer = transform?.pointers.get(event.pointerId);
     const bounds = overlayRef.current?.getBoundingClientRect();
     if (!transform || !pointer || !bounds || bounds.width <= 0 || bounds.height <= 0) return;
     pointer.x = event.clientX;
     pointer.y = event.clientY;
 
-    let next: TextPayload;
+    let next: MovablePayload;
     const entries = [...transform.pointers.values()];
     if (entries.length >= 2 && transform.pinch) {
       const [first, second] = entries;
       const centerX = (first.x + second.x) / 2;
       const centerY = (first.y + second.y) / 2;
       const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
+      const base = transform.pinch.payload;
+      const scale = distance / transform.pinch.distance;
       next = {
-        ...transform.pinch.payload,
+        ...base,
         x: transform.pinch.payload.x + (centerX - transform.pinch.centerX) / bounds.width,
         y: transform.pinch.payload.y + (centerY - transform.pinch.centerY) / bounds.height,
-        fontScale: clampRange(
-          transform.pinch.payload.fontScale * (distance / transform.pinch.distance),
-          MIN_TEXT_FONT_SCALE,
-          MAX_TEXT_FONT_SCALE,
-        ),
+        ...(base.kind === "text" ? {
+          fontScale: clampRange(base.fontScale * scale, MIN_TEXT_FONT_SCALE, MAX_TEXT_FONT_SCALE),
+        } : {
+          width: Math.min(1, base.width * scale),
+          height: Math.min(1, base.height * scale),
+        }),
       };
       transform.moved = true;
     } else {
       const distance = Math.hypot(pointer.x - pointer.startX, pointer.y - pointer.startY);
-      if (!transform.moved && distance <= TEXT_DRAG_THRESHOLD_PX) return;
+      if (!transform.moved && distance <= OBJECT_DRAG_THRESHOLD_PX) return;
       transform.moved = true;
       next = {
         ...transform.preview,
@@ -404,10 +408,12 @@ export function AnnotationOverlay({
       pointer.startY = pointer.y;
     }
 
-    const clamped = clampTextToPage(next, transform.element, bounds);
+    const clamped = next.kind === "text"
+      ? clampTextToPage(next, transform.element, bounds)
+      : { ...next, x: clampRange(next.x, 0, 1 - next.width), y: clampRange(next.y, 0, 1 - next.height) };
     transform.preview = clamped;
-    setTextTransformPreview({ id: transform.id, payload: clamped });
-    updateInteraction("transforming-text");
+    setObjectTransformPreview({ id: transform.id, payload: clamped });
+    updateInteraction("transforming-object");
     const centerX = entries.reduce((total, entry) => total + entry.x, 0) / entries.length;
     const centerY = entries.reduce((total, entry) => total + entry.y, 0) / entries.length;
     const deleteBounds = deleteTargetRef.current?.getBoundingClientRect();
@@ -421,8 +427,8 @@ export function AnnotationOverlay({
     setDeleteActive(inDeleteZone);
   };
 
-  const finishTextTransform = (event: ReactPointerEvent<Element>) => {
-    const transform = textTransform.current;
+  const finishObjectTransform = (event: ReactPointerEvent<Element>) => {
+    const transform = objectTransform.current;
     if (!transform?.pointers.has(event.pointerId)) return;
     transform.pointers.delete(event.pointerId);
     if (transform.pointers.size > 0) {
@@ -432,13 +438,14 @@ export function AnnotationOverlay({
       transform.pinch = null;
       return;
     }
-    textTransform.current = null;
-    setTextTransformPreview(null);
+    objectTransform.current = null;
+    setObjectTransformPreview(null);
     updateInteraction("idle");
     setDeleteActive(false);
     const shouldDelete = deleteActiveRef.current;
     deleteActiveRef.current = false;
     if (!transform.moved) {
+      if (transform.payload.kind !== "text") return;
       const bounds = overlayRef.current?.getBoundingClientRect();
       openTextEditor({
         id: transform.id,
@@ -461,9 +468,9 @@ export function AnnotationOverlay({
     });
   };
 
-  const cancelTextTransform = () => {
-    textTransform.current = null;
-    setTextTransformPreview(null);
+  const cancelObjectTransform = () => {
+    objectTransform.current = null;
+    setObjectTransformPreview(null);
     updateInteraction("idle");
     setDeleteActive(false);
     deleteActiveRef.current = false;
@@ -471,11 +478,11 @@ export function AnnotationOverlay({
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (!canStartEdit || !activeLayerId) return;
+    if (objectTransform.current) {
+      addTransformPointer(event, objectTransform.current);
+      return;
+    }
     if (tool === "text") {
-      if (textTransform.current) {
-        addTransformPointer(event, textTransform.current);
-        return;
-      }
       if (textEditor || pendingTextPlacement.current) return;
       const bounds = event.currentTarget.getBoundingClientRect();
       const position = point(event);
@@ -544,7 +551,7 @@ export function AnnotationOverlay({
         Math.hypot(
           event.clientX - pendingPlacement.startX,
           event.clientY - pendingPlacement.startY,
-        ) > TEXT_DRAG_THRESHOLD_PX
+        ) > OBJECT_DRAG_THRESHOLD_PX
       ) {
         pendingPlacement.moved = true;
         if (pendingPlacement.opened) {
@@ -554,8 +561,8 @@ export function AnnotationOverlay({
       }
       return;
     }
-    if (textTransform.current?.pointers.has(event.pointerId)) {
-      updateTextTransform(event);
+    if (objectTransform.current?.pointers.has(event.pointerId)) {
+      updateObjectTransform(event);
       return;
     }
     if (editing && tool === "eraser" && eraserPointerId.current === event.pointerId) {
@@ -596,8 +603,8 @@ export function AnnotationOverlay({
       }
       return;
     }
-    if (textTransform.current?.pointers.has(event.pointerId)) {
-      finishTextTransform(event);
+    if (objectTransform.current?.pointers.has(event.pointerId)) {
+      finishObjectTransform(event);
       return;
     }
     if (drawingPointer.current !== null && drawingPointer.current !== event.pointerId) return;
@@ -637,7 +644,7 @@ export function AnnotationOverlay({
           if (pendingTextPlacement.current?.pointerId === event.pointerId) {
             if (pendingTextPlacement.current.opened) closeTextEditor();
             pendingTextPlacement.current = null;
-          } else if (textTransform.current?.pointers.has(event.pointerId)) cancelTextTransform();
+          } else if (objectTransform.current?.pointers.has(event.pointerId)) cancelObjectTransform();
           else if (draftShape) { setDraftShape(null); shapeStart.current = null; currentStrokeId.current = null; drawingPointer.current = null; }
           else pointerUp(event);
         }}
@@ -645,7 +652,11 @@ export function AnnotationOverlay({
         {pageAnnotations.map((annotation) => {
           const payload = annotation.payload;
           const color = layerColors.get(annotation.layerId) ?? payload?.color ?? "#dc2626";
-          if (payload?.kind === "shape") return <ShapePreview key={annotation.id} payload={payload} color={color} />;
+          if (payload?.kind === "shape") {
+            const position = objectTransformPreview?.id === annotation.id && objectTransformPreview.payload.kind === "shape"
+              ? objectTransformPreview.payload : payload;
+            return <ShapePreview key={annotation.id} payload={position} color={color} />;
+          }
           if (payload?.kind !== "ink") return null;
           return (
             <g key={annotation.id}>
@@ -692,25 +703,28 @@ export function AnnotationOverlay({
 
       {pageAnnotations.map((annotation) => {
         const payload = annotation.payload;
-        if (payload?.kind !== "text") return null;
-        const position = textTransformPreview?.id === annotation.id
-          ? textTransformPreview.payload
+        if (payload?.kind !== "text" && payload?.kind !== "shape") return null;
+        const position = objectTransformPreview?.id === annotation.id
+          ? objectTransformPreview.payload
           : payload;
         return (
           <button
-            className="annotation-text"
+            className={payload.kind === "text" ? "annotation-text" : "annotation-shape"}
+            aria-label={payload.kind === "shape" ? payload.shape === "rectangle" ? "矩形笔记" : "椭圆笔记" : undefined}
             style={{
               left: `${position.x * 100}%`,
               top: `${position.y * 100}%`,
               color: layerColors.get(annotation.layerId) ?? payload.color ?? "#dc2626",
-              fontSize: `${position.fontScale * 100}cqw`,
+              ...(position.kind === "text" ? { fontSize: `${position.fontScale * 100}cqw` } : {
+                width: `${position.width * 100}%`, height: `${position.height * 100}%`,
+              }),
             }}
             key={annotation.id}
-            disabled={!canStartEdit || annotation.layerId !== activeLayerId}
-            onPointerDown={(event) => beginTextTransform(event, annotation, payload)}
-            onPointerMove={updateTextTransform}
-            onPointerUp={finishTextTransform}
-            onPointerCancel={cancelTextTransform}
+            disabled={!canMoveObjects || annotation.layerId !== activeLayerId}
+            onPointerDown={(event) => beginObjectTransform(event, annotation, payload)}
+            onPointerMove={updateObjectTransform}
+            onPointerUp={finishObjectTransform}
+            onPointerCancel={cancelObjectTransform}
             onKeyDown={(event) => {
               if (event.key === "Delete" || event.key === "Backspace") {
                 void editor?.persist({
@@ -722,7 +736,7 @@ export function AnnotationOverlay({
               }
             }}
           >
-            {payload.text}
+            {payload.kind === "text" ? payload.text : null}
           </button>
         );
       })}
@@ -740,11 +754,11 @@ export function AnnotationOverlay({
             <button type="button" onClick={() => void editor?.retry()}>重试本机保存</button>
           </aside>}
           <div
-            aria-hidden={transformingText ? undefined : "true"}
+            aria-hidden={transformingObject ? undefined : "true"}
             aria-label="拖到这里删除"
             className="annotation-delete-zone"
             data-active={deleteActive || undefined}
-            data-visible={transformingText || undefined}
+            data-visible={transformingObject || undefined}
             ref={deleteTargetRef}
             role="status"
           >
@@ -769,7 +783,7 @@ export function AnnotationOverlay({
         onPointerDown={(event) => {
           backdropReleased.current = false;
           const anchor = openingPoint.current;
-          const repeatedOpening = anchor && Math.hypot(event.clientX - anchor.x, event.clientY - anchor.y) <= TEXT_DRAG_THRESHOLD_PX;
+          const repeatedOpening = anchor && Math.hypot(event.clientX - anchor.x, event.clientY - anchor.y) <= OBJECT_DRAG_THRESHOLD_PX;
           backdropPointer.current = event.target === event.currentTarget && !repeatedOpening ? event.pointerId : null;
           if (event.target !== event.currentTarget) openingPoint.current = null;
         }}

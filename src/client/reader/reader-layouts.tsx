@@ -5,6 +5,7 @@ import {
   type RefObject,
   Suspense,
   type TransitionEvent as ReactTransitionEvent,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -241,12 +242,17 @@ export function ContinuousLayout({
   const alignedPage = useRef<number | null>(null);
   const size = useElementSize(scrollRef);
   const pageWidth = Math.max(1, size.width * zoom);
+  const ratios = usePageAspectRatios(document);
+  // PDF page geometry is known independently of canvas rendering. Key the
+  // virtual measurements by that geometry, so zoom never reuses old heights.
+  const getItemKey = useCallback((index: number) => `${index}:${pageWidth}:${ratios[index] ?? 0.707}`, [pageWidth, ratios]);
   // TanStack Virtual intentionally exposes mutable measurement functions.
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: document.numPages,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => pageWidth * 1.35 + 8,
+    estimateSize: (index) => pageWidth / (ratios[index] ?? 0.707) + 8,
+    getItemKey,
     overscan: 2,
   });
 
@@ -274,7 +280,19 @@ export function ContinuousLayout({
     zoom,
     onZoomChange,
     onTap: onToggleChrome,
-    panAtFit: true,
+    nativeTouchScroll: true,
+    captureAnchor: (center) => {
+      const bounds = contentRef.current!.getBoundingClientRect();
+      const point = { x: center.x - bounds.left, y: center.y - bounds.top };
+      const page = virtualizer.getVirtualItems().find(item => item.end > point.y);
+      // Page gaps remain 8px at every zoom; anchor within the actual page,
+      // rather than treating the whole virtual list as one scalable image.
+      const gaps = (page?.index ?? 0) * 8;
+      return nextZoom => ({
+        x: point.x * nextZoom / zoom,
+        y: (point.y - gaps) * nextZoom / zoom + gaps,
+      });
+    },
   });
 
   return (
@@ -310,17 +328,17 @@ export function ContinuousLayout({
         {virtualizer.getVirtualItems().map((item) => (
           <div
             className="continuous-reader__page"
-            key={item.key}
+            key={item.index}
             data-index={item.index}
             data-edit-hidden={annotationProps.editing && item.index + 1 !== currentPage || undefined}
             inert={annotationProps.editing && item.index + 1 !== currentPage}
-            ref={virtualizer.measureElement}
             style={{ transform: `translateY(${item.start}px)` }}
           >
             <AnnotatedPdfPage
               document={document}
               pageNumber={item.index + 1}
               width={pageWidth}
+              aspectRatio={ratios[item.index] ?? 0.707}
               annotationProps={item.index + 1 === currentPage ? annotationProps : { ...annotationProps, editing: false }}
             />
           </div>
@@ -491,4 +509,21 @@ function usePdfPageAspectRatio(
     };
   }, [document, knownRatio, pageNumber]);
   return knownRatio ?? ratio;
+}
+
+function usePageAspectRatios(document: ScoreDocument) {
+  const [geometry, setGeometry] = useState<{ document: ScoreDocument; ratios: number[] } | null>(null);
+  useEffect(() => {
+    let active = true;
+    // Metadata only: this does not render or retain canvases for offscreen pages.
+    void Promise.all(Array.from({ length: document.numPages }, async (_, index) => {
+      try {
+        const page = await document.getPage(index + 1);
+        const viewport = page.getViewport({ scale: 1 });
+        return viewport.width / viewport.height;
+      } catch { return 0.707; }
+    })).then(ratios => { if (active) setGeometry({ document, ratios }); });
+    return () => { active = false; };
+  }, [document]);
+  return geometry?.document === document ? geometry.ratios : [];
 }

@@ -2,6 +2,8 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
   useCallback,
+  useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useRef,
 } from "react";
@@ -11,6 +13,8 @@ import type { PageTurnGesture } from "./use-paged-reader";
 const MIN_PINCH_ZOOM = 0.75;
 const MIN_SETTLED_ZOOM = 1;
 const MAX_ZOOM = 3;
+
+type GesturePointer = Pick<ReactPointerEvent<HTMLElement>, "pointerId" | "pointerType" | "clientX" | "clientY" | "timeStamp" | "currentTarget">;
 
 interface Point {
   x: number;
@@ -22,6 +26,7 @@ interface PinchSession {
   zoom: number;
   contentBounds: DOMRect;
   contentPoint: Point;
+  resolveAnchor?: (zoom: number) => Point;
 }
 
 interface PinchPreview {
@@ -30,6 +35,7 @@ interface PinchPreview {
   offset: Point;
   center: Point;
   contentRatio: Point;
+  resolveAnchor?: (zoom: number) => Point;
 }
 
 export function useReaderGestures({
@@ -43,7 +49,8 @@ export function useReaderGestures({
   onEdgeTap,
   pageTurn,
   pageTurnExtent,
-  panAtFit = false,
+  nativeTouchScroll = false,
+  captureAnchor,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   contentRef: RefObject<HTMLElement | null>;
@@ -55,7 +62,8 @@ export function useReaderGestures({
   onEdgeTap?(direction: "previous" | "next"): void;
   pageTurn?: PageTurnGesture;
   pageTurnExtent?: number;
-  panAtFit?: boolean;
+  nativeTouchScroll?: boolean;
+  captureAnchor?(center: Point): (zoom: number) => Point;
 }) {
   const points = useRef(new Map<number, Point>());
   const primary = useRef<{
@@ -118,8 +126,9 @@ export function useReaderGestures({
 
     clearPreview();
     const bounds = content.getBoundingClientRect();
-    const targetX = bounds.left + bounds.width * commit.contentRatio.x;
-    const targetY = bounds.top + bounds.height * commit.contentRatio.y;
+    const anchor = commit.resolveAnchor?.(zoom);
+    const targetX = bounds.left + (anchor?.x ?? bounds.width * commit.contentRatio.x);
+    const targetY = bounds.top + (anchor?.y ?? bounds.height * commit.contentRatio.y);
     container.scrollLeft += targetX - commit.center.x;
     container.scrollTop += targetY - commit.center.y;
     pendingCommit.current = null;
@@ -134,9 +143,9 @@ export function useReaderGestures({
     [cancelPreviewFrame, clearPreview],
   );
 
-  const pointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+  const pointerDown = (event: GesturePointer) => {
     if (disabled) return;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    if (!(nativeTouchScroll && event.pointerType === "touch")) event.currentTarget.setPointerCapture?.(event.pointerId);
     points.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     const container = containerRef.current;
     if (points.current.size === 1) {
@@ -167,6 +176,7 @@ export function useReaderGestures({
     const center = midpoint(first, second);
     const contentBounds = content.getBoundingClientRect();
     pinch.current = {
+      resolveAnchor: captureAnchor?.(center),
       distance: distance(first, second),
       zoom,
       contentBounds,
@@ -180,7 +190,7 @@ export function useReaderGestures({
     previewBoundaryRef?.current?.setAttribute("data-gesture-preview", "");
   };
 
-  const pointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+  const pointerMove = (event: GesturePointer) => {
     if (disabled || !points.current.has(event.pointerId)) return;
     points.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (points.current.size >= 2 && pinch.current) {
@@ -193,6 +203,7 @@ export function useReaderGestures({
       );
       const scale = nextZoom / pinch.current.zoom;
       const next: PinchPreview = {
+        resolveAnchor: pinch.current.resolveAnchor,
         zoom: nextZoom,
         scale,
         offset: {
@@ -230,7 +241,7 @@ export function useReaderGestures({
     if (zoom <= 1 && pageTurn?.move(pageTurnSample(event, pageTurnExtent))) {
       return;
     }
-    if (zoom > 1 || panAtFit) {
+    if ((zoom > 1 || nativeTouchScroll) && !(nativeTouchScroll && event.pointerType === "touch")) {
       container.scrollLeft = start.scrollLeft - (event.clientX - start.x);
       container.scrollTop = start.scrollTop - (event.clientY - start.y);
     }
@@ -264,7 +275,7 @@ export function useReaderGestures({
     resetGesture();
   };
 
-  const finishPointer = (event: ReactPointerEvent<HTMLElement>) => {
+  const finishPointer = (event: GesturePointer) => {
     if (disabled) return;
     const start = primary.current;
     const wasPinched = pinched.current;
@@ -300,7 +311,7 @@ export function useReaderGestures({
     }
   };
 
-  const cancelPointer = (event: ReactPointerEvent<HTMLElement>) => {
+  const cancelPointer = (event: GesturePointer) => {
     points.current.delete(event.pointerId);
     pageTurn?.cancel(event.pointerId);
     if (pinched.current) {
@@ -315,16 +326,44 @@ export function useReaderGestures({
     }
   };
 
+  // Native scrolling owns single-touch movement and momentum. Only a pinch
+  // cancels the default touch action; both input paths share the zoom state.
+  const handleTouch = useEffectEvent((event: TouchEvent) => {
+    if (disabled) return;
+    if ((event.touches.length >= 2 || pinched.current) && event.cancelable) event.preventDefault();
+    const target = containerRef.current;
+    if (!target) return;
+    for (const touch of Array.from(event.changedTouches)) {
+      const sample: GesturePointer = {
+        pointerId: touch.identifier, pointerType: "touch",
+        clientX: touch.clientX, clientY: touch.clientY,
+        timeStamp: event.timeStamp, currentTarget: target,
+      };
+      if (event.type === "touchstart") pointerDown(sample);
+      else if (event.type === "touchmove") pointerMove(sample);
+      else if (event.type === "touchend") finishPointer(sample);
+      else cancelPointer(sample);
+    }
+  });
+  useEffect(() => {
+    const target = containerRef.current;
+    if (!nativeTouchScroll || !target) return;
+    const listener = (event: TouchEvent) => handleTouch(event);
+    const types = ["touchstart", "touchmove", "touchend", "touchcancel"] as const;
+    for (const type of types) target.addEventListener(type, listener, { passive: false });
+    return () => { for (const type of types) target.removeEventListener(type, listener); };
+  }, [containerRef, nativeTouchScroll]);
+
   return {
-    onPointerDown: pointerDown,
-    onPointerMove: pointerMove,
-    onPointerUp: finishPointer,
-    onPointerCancel: cancelPointer,
+    onPointerDown: (event: ReactPointerEvent<HTMLElement>) => { if (!(nativeTouchScroll && event.pointerType === "touch")) pointerDown(event); },
+    onPointerMove: (event: ReactPointerEvent<HTMLElement>) => { if (!(nativeTouchScroll && event.pointerType === "touch")) pointerMove(event); },
+    onPointerUp: (event: ReactPointerEvent<HTMLElement>) => { if (!(nativeTouchScroll && event.pointerType === "touch")) finishPointer(event); },
+    onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => { if (!(nativeTouchScroll && event.pointerType === "touch")) cancelPointer(event); },
   };
 }
 
 function pageTurnSample(
-  event: ReactPointerEvent<HTMLElement>,
+  event: GesturePointer,
   extent?: number,
 ) {
   return {

@@ -118,6 +118,117 @@ async function readView(page) {
 function assertView(actual, expected) {
  for (const key of Object.keys(expected)) assert.ok(Math.abs(actual[key]-expected[key]) < 1, `${key}: expected ${expected[key]}, got ${actual[key]}`);
 }
+for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
+ for (const scrollTop of [300, 1100]) {
+ test(`${engineName}: continuous pinch at scroll ${scrollTop} keeps the score point fixed after release`, async (context) => {
+  const browser = await engine.launch({ headless: true });
+  context.after(() => browser.close());
+  const page = await openMemberReader(browser, { width: 834, height: 700 });
+  await showReaderChrome(page);
+  await page.getByRole("button", { name: "更多", exact: true }).click();
+  await page.getByRole("button", { name: "连续滚动", exact: true }).click();
+  await page.getByRole("button", { name: "更多", exact: true }).click();
+  const reader = page.locator(".continuous-reader");
+  await page.locator('.continuous-reader [data-pdf-canvas-active]').first().waitFor();
+  await reader.evaluate((el, top) => { el.scrollTop = top; }, scrollTop);
+  const result = await reader.evaluate(async el => {
+    const sheet = [...el.querySelectorAll('.annotated-pdf-page')].find(element => {
+      const box = element.getBoundingClientRect(); return box.top <= 300 && box.bottom >= 300;
+    });
+    const before = sheet.getBoundingClientRect();
+    const x = 300, y = 300;
+    const ratio = { x: (x - before.left) / before.width, y: (y - before.top) / before.height };
+    const send = (type, id, px) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: id, clientX: px, clientY: y }));
+    // Synthetic pointers have no browser capture.
+    el.setPointerCapture = () => {};
+    send('pointerdown', 1, 200); send('pointerdown', 2, 400);
+    send('pointermove', 1, 100); send('pointermove', 2, 500);
+    await new Promise(requestAnimationFrame);
+    const preview = sheet.getBoundingClientRect();
+    send('pointerup', 2, 500); send('pointerup', 1, 100);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const after = sheet.getBoundingClientRect();
+    const point = rect => ({ x: rect.left + ratio.x * rect.width, y: rect.top + ratio.y * rect.height });
+    return { preview: point(preview), after: point(after) };
+  });
+  assert.ok(Math.abs(result.after.x - result.preview.x) < 2, JSON.stringify(result));
+  assert.ok(Math.abs(result.after.y - result.preview.y) < 2, JSON.stringify(result));
+ });
+ }
+}
+
+test("continuous native touch scroll continues after release and touch pinch preserves the anchor", async context => {
+  const browser = await chromium.launch({ headless: true });
+  context.after(() => browser.close());
+  const page = await openMemberReader(browser, { width: 834, height: 700 });
+  await showReaderChrome(page);
+  await page.getByRole("button", { name: "更多", exact: true }).click();
+  await page.getByRole("button", { name: "连续滚动", exact: true }).click();
+  await page.getByRole("button", { name: "更多", exact: true }).click();
+  const reader = page.locator('.continuous-reader');
+  await page.locator('.continuous-reader [data-pdf-canvas-active]').first().waitFor();
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+  const send = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x,y,id]) => ({ x,y,id })) });
+  await send('touchStart', [[400, 550, 1]]);
+  for(let y = 530; y >= 390; y -= 20) {
+    await send('touchMove', [[400, y, 1]]);
+    await page.waitForTimeout(16);
+  }
+  const beforeRelease = await reader.evaluate(el => el.scrollTop);
+  await send('touchEnd', []);
+  await page.waitForTimeout(200);
+  const afterRelease = await reader.evaluate(el => el.scrollTop);
+  assert.ok(beforeRelease > 50, `native scroll did not move: ${beforeRelease}`);
+  assert.ok(afterRelease > beforeRelease + 20, `no momentum: ${beforeRelease} -> ${afterRelease}`);
+  await page.waitForTimeout(1000);
+  await reader.evaluate(el => { el.scrollTop = 300; });
+  await send('touchStart', [[200,300,1], [400,300,2]]);
+  await send('touchMove', [[100,300,1], [500,300,2]]);
+  await page.waitForTimeout(30);
+  await send('touchEnd', []);
+  await expect(reader).toHaveAttribute('data-zoom', '2');
+});
+
+for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
+ test(`${engineName}: shape tools share button corners and text mode can drag a shape into trash`, async context => {
+  const browser = await engine.launch({ headless: true });
+  context.after(() => browser.close());
+  const page = await openMemberReader(browser, { width: 834, height: 1000 });
+  await showReaderChrome(page);
+  await page.getByRole('button', { name: '编辑', exact: true }).click();
+  await page.getByRole('button', { name: '矩形', exact: true }).click();
+  const corners = await page.locator('.annotation-tool-button').evaluateAll(elements => elements.map(el => getComputedStyle(el).borderRadius));
+  assert.equal(new Set(corners).size, 1);
+  const overlay = page.locator('.annotation-overlay[data-editing] > svg');
+  const box = await overlay.boundingBox();
+  await page.mouse.move(box.x + box.width * .3, box.y + box.height * .3);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * .5, box.y + box.height * .4, { steps: 6 });
+  await page.mouse.up();
+  const shape = page.getByRole('button', { name: '矩形笔记', exact: true });
+  await shape.waitFor();
+  await page.getByRole('button', { name: '文字', exact: true }).click();
+  const before = await shape.boundingBox();
+  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(before.x + before.width / 2 + 70, before.y + before.height / 2 + 50, { steps: 6 });
+  const moved = await shape.boundingBox();
+  assert.ok(Math.abs(moved.x - before.x - 70) < 2);
+  assert.ok(Math.abs(moved.y - before.y - 50) < 2);
+  const trash = page.getByRole('status', { name: '拖到这里删除' });
+  await expect(trash).toHaveAttribute('data-visible', 'true');
+  await mkdir('artifacts/verification/reader-interactions', { recursive: true });
+  await page.screenshot({ path: `artifacts/verification/reader-interactions/${engineName}-shape-drag.png` });
+  // Wait for the target's entrance transition before aiming at its final position.
+  await page.waitForTimeout(150);
+  const target = await trash.boundingBox();
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(shape).toHaveCount(0);
+ });
+}
+
 async function openMemberReader(browser, viewport) {
   const browserContext = await browser.newContext({
     viewport,
