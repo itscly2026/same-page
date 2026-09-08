@@ -507,10 +507,10 @@ describe("AnnotationOverlay", () => {
     });
   });
 
-  it("moves text with one pointer and records one undoable final change", async () => {
+  it.each(["text", "rectangle", "ellipse"] as const)("moves text with the %s tool and records one undoable final change", async tool => {
     const text = annotation("text-1", activeLayerId, textPayload("跟随拖动"));
     await localDatabase.annotations.put(text);
-    renderOverlay([text], "text");
+    renderOverlay([text], tool);
     const button = screen.getByRole("button", { name: "跟随拖动" });
     mockBounds(button.parentElement!);
     mockTextBounds(button);
@@ -531,6 +531,39 @@ describe("AnnotationOverlay", () => {
     });
     expect(await editor.undo(activeLayerId)).toBe(true);
     expect(await editor.undo(activeLayerId)).toBe(false);
+  });
+
+  it.each(["text", "rectangle", "ellipse"] as const)("moves and trash-deletes shapes with the %s tool", async tool => {
+    const shape = annotation("shape-1", activeLayerId, { kind: "shape", shape: "ellipse", pageNumber: 1, x: .2, y: .3, width: .2, height: .1, strokeWidth: .003 });
+    await localDatabase.annotations.put(shape);
+    const view = renderOverlay([shape], tool);
+    const button = screen.getByRole("button", { name: "椭圆笔记" });
+    mockBounds(button.parentElement!);
+    fireEvent.pointerDown(button, { pointerId: 3, clientX: 20, clientY: 30 });
+    fireEvent.pointerMove(button, { pointerId: 3, clientX: 50, clientY: 60 });
+    fireEvent.pointerUp(button, { pointerId: 3, clientX: 50, clientY: 60 });
+    await waitFor(async () => expect((await localDatabase.annotations.get(shape.key))?.payload).toMatchObject({ x: .5, y: .6, width: .2, height: .1 }));
+    expect(screen.queryByLabelText("笔记文本")).toBeNull();
+    await act(async () => { await editor.undo(activeLayerId); });
+    expect((await localDatabase.annotations.get(shape.key))?.payload).toEqual(shape.payload);
+    view.rerender(<AnnotationOverlay editor={editor} pageNumber={1} layers={layers} annotations={[shape]} editing tool={tool} activeLayerId={activeLayerId} />);
+    const trash = document.querySelector<HTMLElement>(".annotation-delete-zone")!;
+    vi.spyOn(trash, "getBoundingClientRect").mockReturnValue({ left: 0, top: 80, width: 100, height: 100 } as DOMRect);
+    fireEvent.pointerDown(button, { pointerId: 4, clientX: 20, clientY: 30 });
+    fireEvent.pointerMove(button, { pointerId: 4, clientX: 50, clientY: 130 });
+    fireEvent.pointerUp(button, { pointerId: 4, clientX: 50, clientY: 130 });
+    await waitFor(async () => expect(await localDatabase.annotations.get(shape.key)).toMatchObject({ deleted: true }));
+  });
+
+  it("the eraser leaves shapes intact", async () => {
+    const shape = annotation("shape-1", activeLayerId, { kind: "shape", shape: "rectangle", pageNumber: 1, x: .2, y: .3, width: .2, height: .1, strokeWidth: .003 });
+    await localDatabase.annotations.put(shape);
+    renderOverlay([shape], "eraser");
+    const overlay = screen.getByLabelText("第 1 页笔记层"); mockBounds(overlay);
+    fireEvent.pointerDown(overlay, { pointerId: 1, clientX: 20, clientY: 30 });
+    fireEvent.pointerUp(overlay, { pointerId: 1, clientX: 20, clientY: 30 });
+    await editor.finish();
+    expect((await localDatabase.annotations.get(shape.key))?.payload).toEqual(shape.payload);
   });
 
   it("adds a second pointer to scale and move text before one final save", async () => {
@@ -596,7 +629,7 @@ describe("AnnotationOverlay", () => {
 
     fireEvent.pointerDown(button, { pointerId: 1, clientX: 20, clientY: 30 });
     fireEvent.pointerMove(button, { pointerId: 1, clientX: 20, clientY: 716 });
-    expect(interactions).toEqual(["transforming-text"]);
+    expect(interactions).toEqual(["transforming-object"]);
     expect(screen.getByRole("status", { name: "拖到这里删除" })).not.toHaveAttribute(
       "data-active",
     );
@@ -612,7 +645,7 @@ describe("AnnotationOverlay", () => {
         payload: null,
       });
     });
-    expect(interactions).toEqual(["transforming-text", "idle"]);
+    expect(interactions).toEqual(["transforming-object", "idle"]);
   });
 
   it("restores text on pointer cancel", async () => {
