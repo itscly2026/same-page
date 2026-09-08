@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { DriveLibrary } from "../score-library/drive-library";
+import { driveCacheOwnerKey } from "../score-library/drive-library-cache";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Button } from "react-aria-components";
 import { Link, useParams } from "react-router-dom";
 import { LockKeyhole } from "lucide-react";
@@ -17,11 +19,11 @@ import { TrashDialog } from "../score-library/trash-dialog";
 type Overview = ReturnType<typeof driveManagementSchema.parse>;
 type Members = ReturnType<typeof managedMembershipsSchema.parse>;
 export default function DriveManagementPage() {
-  const { choirId = "" } = useParams();
+  const { choirId = "", section = "info" } = useParams();
   const session = authClient.useSession();
-  return <DriveManagement key={`${session.data?.user.id ?? "guest"}:${choirId}`} choirId={choirId} />;
+  return <DriveManagement key={`${session.data?.user.id ?? "guest"}:${choirId}`} choirId={choirId} section={section} />;
 }
-function DriveManagement({ choirId }: { choirId: string }) {
+function DriveManagement({ choirId, section }: { choirId: string; section: string }) {
   const [data, setData] = useState<{ overview: Overview; members: Members } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -39,7 +41,7 @@ function DriveManagement({ choirId }: { choirId: string }) {
       const members = await parseDiagnosticResponse(membersResponse, managedMembershipsSchema);
       if (!controller.signal.aborted) { setData({ overview, members }); setError(null); }
     }
-    void load().catch(error => { if (!controller.signal.aborted) { setData(null); setError(settingsError(error, "管理概览加载失败，请联网后重试。")); } });
+    void load().catch(error => { if (!controller.signal.aborted) { setData(null); setError(settingsError(error, "云盘设置加载失败，请联网后重试。")); } });
     return () => controller.abort();
   }, [choirId, attempt]);
   const refresh = () => { setData(null); setError(null); setDialog(null); setLocked(null); setAttempt(value => value + 1); };
@@ -53,20 +55,36 @@ function DriveManagement({ choirId }: { choirId: string }) {
     </section>;
   }
   return <div className="app-page"><AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回</BackButton>} /><main className="page-shell settings-page settings-ux">
-    <header className="settings-heading"><h1>云盘管理</h1><p>{data?.overview.name ?? "查看配置与权限分工"}</p></header>
-    {!data && <p role={error ? "alert" : "status"}>{error ?? "正在读取管理概览…"}</p>}
+    <header className="settings-heading"><h1>{{ info: "基本信息", admission: "加入方式", layers: "共享层", trash: "回收站" }[section] ?? "云盘设置"}</h1><p>{data?.overview.name ?? "查看配置与权限分工"}</p></header>
+    {!data && <p role={error ? "alert" : "status"}>{error ?? "正在读取云盘设置…"}</p>}
     {error && <Button className="secondary-button" onPress={refresh}>重新读取</Button>}
     {data && <>
       <div className="management-list">
-        {row("云盘名称", data.overview.name, "修改云盘名称", "editDriveInfo", () => setDialog("name"))}
-        {data.overview.guestAdmissionMode === "invite" ? row("访客进入方式", "需要邀请码", "查看与轮换邀请码", "manageInvites", () => setDialog("invite")) : <section className="management-row"><h2>访客进入方式</h2><p>开放进入</p></section>}
-        {row("共享层", data.overview.layers.map(layer => `${layer.name}${layer.active ? "" : "（停用）"}`).join(" · ") || "尚未设置", "管理共享层配置", "configureLayers", `/choirs/${choirId}/shared-layers`)}
-        <Link className="management-nav" aria-label="成员与权限" aria-describedby="membership-help" to={`/choirs/${choirId}/memberships`}><span><strong>成员与权限</strong><small id="membership-help">找负责人、查看或调整权限</small></span><span aria-hidden="true">›</span></Link>
-        {row("回收站", "删除的乐谱保留三十天", "打开回收站", "trashFiles", () => setDialog("trash"))}
+        {section === "info" && row("云盘名称", data.overview.name, "修改云盘名称", "editDriveInfo", () => setDialog("name"))}
+        {section === "admission" && (data.overview.guestAdmissionMode === "invite" ? row("访客进入方式", "需要邀请码", "查看与轮换邀请码", "manageInvites", () => setDialog("invite")) : <section className="management-row"><h2>访客进入方式</h2><p>开放进入</p></section>)}
+        {section === "layers" && <>
+          <ul className="shared-layer-summary">{data.overview.layers.map(layer => <li key={layer.slot}><strong>{layer.name}</strong><span>{layer.active ? "启用" : "停用"}</span></li>)}</ul>
+          {row("共享层配置", "供成员共同查看和使用的批注层", "管理共享层配置", "configureLayers", `/choirs/${choirId}/shared-layers`)}
+        </>}
+        {section === "trash" && row("回收站", "删除的乐谱保留三十天", "打开回收站", "trashFiles", () => setDialog("trash"))}
       </div>
-      {dialog === "name" && can("editDriveInfo") && <DriveSettingsDialog choirId={choirId} field="name" onClose={() => setDialog(null)} onSaved={async () => refresh()} />}
+      {dialog === "name" && can("editDriveInfo") && <NameSettings choirId={choirId} onClose={() => setDialog(null)} onSaved={refresh} />}
       {dialog === "invite" && can("manageInvites") && <InviteCodeDialog choirId={choirId} choirName={data.overview.name} onClose={() => setDialog(null)} />}
       {dialog === "trash" && can("trashFiles") && <TrashDialog choirId={choirId} onClose={() => setDialog(null)} onRestored={refresh} />}
     </>}
   </main></div>;
+}
+
+function NameSettings({ choirId, onClose, onSaved }: { choirId: string; onClose: () => void; onSaved: () => void }) {
+  const session = authClient.useSession();
+  const userId = session.data?.user.id;
+  const library = useMemo(() => new DriveLibrary(driveCacheOwnerKey(userId ?? null, choirId), choirId), [userId, choirId]);
+  const snapshot = useSyncExternalStore(library.subscribe, library.getSnapshot);
+  useEffect(() => {
+    library.setAuthenticated(Boolean(userId));
+    library.start();
+    return () => library.stop();
+  }, [library, userId]);
+  if (snapshot.access.kind !== "opened") return <div><p role="status">正在准备云盘信息，请稍候；若无法加载，请重试。</p><Button onPress={() => void library.refresh()}>重试</Button><Button onPress={onClose}>取消</Button></div>;
+  return <DriveSettingsDialog choirId={choirId} field="name" onClose={onClose} onSaved={async name => { await library.confirmName(name); onSaved(); }} />;
 }

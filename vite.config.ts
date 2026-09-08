@@ -14,6 +14,8 @@ const buildId = process.env.SAME_PAGE_BUILD_ID
   ?? process.env.GITHUB_SHA
   ?? execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 
+const buildRunId = process.env.GITHUB_RUN_ID ?? "";
+
 const testState = process.env.SAME_PAGE_TEST_STATE;
 const testHeaders = testState ? { "x-same-page-test-server": process.env.SAME_PAGE_TEST_RUN! } : undefined;
 
@@ -24,6 +26,7 @@ export default defineConfig(({ isPreview }) => ({
   preview: { headers: testHeaders },
   define: {
     __SAME_PAGE_BUILD_ID__: JSON.stringify(buildId),
+    __SAME_PAGE_BUILD_RUN_ID__: JSON.stringify(buildRunId),
   },
   build: {
     // The lazy reader contains the PDF.js display API (about 170 KiB gzip).
@@ -51,7 +54,7 @@ export default defineConfig(({ isPreview }) => ({
           .filter((entry) => /\.(?:m?js)$/.test(entry.fileName))
           .map(async (entry) => [`/${entry.fileName}`, createHash("sha256")
             .update(await readFile(path.join(output, entry.fileName))).digest("hex")])));
-        await writeFile(path.join(output, "build.json"), `${JSON.stringify({ buildId, scripts })}\n`);
+        await writeFile(path.join(output, "build.json"), `${JSON.stringify({ buildId, runId: buildRunId, scripts })}\n`);
       },
     },
     react(),

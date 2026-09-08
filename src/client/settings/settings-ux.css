@@ -156,3 +156,7 @@
 .primary-button.destructive-button[data-hovered] { background: #92232a; border-color: #92232a; }
 .primary-button.destructive-button:focus-visible { outline: 3px solid #e09fa4; outline-offset: 3px; }
 .primary-button.destructive-button[data-disabled] { opacity: .55; }
+
+.shared-layer-summary { list-style: none; padding: 0; margin: 0; }
+.shared-layer-summary li { display: flex; justify-content: space-between; padding: 1rem 0; border-bottom: 1px solid var(--line); }
+.shared-layer-summary span { color: var(--muted); font-size: .85rem; }

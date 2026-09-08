@@ -18,6 +18,8 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.route("**/api/**", async route => {
       const request = route.request();
       const pathname = new URL(request.url()).pathname;
+      if (pathname.endsWith("/management")) return route.fulfill({ json: { name: driveName, guestAdmissionMode: "invite", capabilities: { isOwner: true, operations: { operations: ["editDriveInfo"], sharedLayers: [] }, management: { operations: [], sharedLayers: [] } }, layers: [] } });
+      if (pathname.endsWith("/memberships")) return route.fulfill({ json: { actorId: "owner", capabilities: { isOwner: true, operations: { operations: [], sharedLayers: [] }, management: { operations: [], sharedLayers: [] } }, memberships: [] } });
       if (failRefresh && pathname.endsWith("/bootstrap")) return route.fulfill({ status: 503, body: "injected refresh failure" });
       if (pathname.endsWith("/settings")) return route.fulfill({ json: { name: driveName, nameRevision: 0, displayName, membershipRevision: 0, canEditDriveInfo: true } });
       if (request.method() === "PATCH") {
@@ -47,11 +49,13 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.getByRole("dialog").waitFor({ state: "hidden" });
     await expect(page.getByRole("button", { name: "此云盘设置", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "打开云盘菜单" }).click();
-    await page.getByRole("menuitem", { name: "云盘名称", exact: true }).click();
+    await page.getByRole("menuitem", { name: "基本信息", exact: true }).click();
+    await page.getByRole("button", { name: "修改云盘名称", exact: true }).click();
     await page.getByRole("textbox", { name: "云盘名称", exact: true }).fill("周末排练云盘");
     await page.getByRole("button", { name: "保存", exact: true }).click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });
-    await page.getByRole("heading", { name: "周末排练云盘", exact: true }).waitFor({ state: "attached" });
+    await page.getByRole("button", { name: "修改云盘名称", exact: true }).waitFor();
+    await page.getByRole("button", { name: "返回", exact: true }).click();
     await page.reload();
     await page.getByRole("button", { name: "上传 PDF（需联网）", exact: true }).waitFor();
     await page.getByRole("button", { name: "打开云盘菜单" }).click();
@@ -82,14 +86,14 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
       const result = fixture.resolve({ pathname, method: request.method(), identity: "admin", cookie: "" });
       return route.fulfill({ status: result.status, contentType: result.contentType, body: result.body });
     });
-    await page.goto(`${app.origin}/choirs/choir-1/management`);
-    await expect(page.getByText("Soprano", { exact: true })).toBeVisible();
+    await page.goto(`${app.origin}/choirs/choir-1/settings/admission`);
+    await expect(page.getByText("需要邀请码", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: /查看与轮换邀请码/ }).click();
     await expect(page.getByText("处理此项可联系 小林。")).toBeVisible();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await mkdir("artifacts/visual-report", { recursive: true });
     await page.screenshot({ path: `artifacts/visual-report/management-member-${name}.png`, fullPage: true });
-    await page.getByRole("link", { name: "成员与权限", exact: true }).click();
+    await page.getByRole("link", { name: "查看权限分工", exact: true }).click();
     await page.getByRole("button", { name: "按权限", exact: true }).click();
     await page.getByLabel("选择权限").selectOption("layer:S");
     await expect(page.getByRole("region", { name: "可以操作", exact: true }).getByText("小花", { exact: true })).toBeVisible();

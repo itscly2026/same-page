@@ -51,7 +51,7 @@ export function AppRoutes() {
             <Route path="/choirs/:choirId/storage" element={<RouteContent><LocalStoragePage /></RouteContent>} />
             <Route path="/choirs/:choirId/me" element={<RouteContent><LeaveDrivePage /></RouteContent>} />
             <Route path="/help" element={<RouteContent><HelpPage /></RouteContent>} />
-            <Route path="/choirs/:choirId/management" element={<RouteContent><DriveManagementPage /></RouteContent>} />
+            <Route path="/choirs/:choirId/settings/:section" element={<RouteContent><DriveManagementPage /></RouteContent>} />
             <Route path="/about" element={<RouteContent><AboutPage /></RouteContent>} />
             <Route path="/user" element={<RouteContent><PersonalSettingsPage /></RouteContent>} />
             <Route path="/user/lifecycle" element={<RouteContent><UserLifecyclePage /></RouteContent>} />

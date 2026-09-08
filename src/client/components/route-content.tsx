@@ -22,7 +22,7 @@ function RouteFeedback({ failed = false }: { failed?: boolean }) {
     : pathname === "/user/lifecycle" ? "用户删除与恢复"
     : pathname.endsWith("/me") ? "云盘个人设置"
     : pathname === "/user" ? "个人设置"
-    : pathname.endsWith("/management") ? "云盘管理"
+    : pathname.includes("/settings/") ? "云盘设置"
     : pathname === "/help" ? "帮助"
     : pathname === "/about" ? "关于合谱"
     : pathname === "/diagnostics" ? "故障诊断"
