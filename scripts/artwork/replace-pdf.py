@@ -120,15 +120,18 @@ def frame(t):
     return im.convert("RGB")
 
 
-frames = [frame(n / 10) for n in range(64)]
+frame(6.3).save(OUT / "replace-pdf.webp", quality=90, method=6)
+
+# Trim the opening/closing holds; preserve the full transfer motion.
+frames = [frame(.9 + n / 20 * (4.8 / 4.7)) for n in range(94)]
+frames.append(Image.open(OUT / "replace-pdf.webp").convert("RGB"))
 frames[0].save(
     OUT / "replace-pdf-animation.webp",
     save_all=True,
     append_images=frames[1:],
-    duration=100,
-    loop=0,
+    duration=[50]*94+[100],
+    loop=1,
     quality=84,
     method=6,
 )
-frames[-1].save(OUT / "replace-pdf.webp", quality=90, method=6)
 print(OUT / "replace-pdf-animation.webp")

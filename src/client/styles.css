@@ -491,13 +491,35 @@ h1 {
   min-width: 0;
 }
 
-.marketing-animation-control {
+.marketing-animation {
+  position: relative;
   display: block;
-  margin: 0.5rem auto 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .marketing-animation-control { display: none; }
+.marketing-animation img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.marketing-animation__replay {
+  position: absolute;
+  bottom: .75rem;
+  right: .75rem;
+  padding: .25rem .6rem;
+  border-radius: 1rem;
+  background: #ffffffed;
+  color: #014653;
+  font-size: .8rem;
+}
+
+.marketing-animation:focus-visible {
+  outline: 2px solid #014653;
+  outline-offset: 4px;
 }
 
 .marketing-feature__copy {

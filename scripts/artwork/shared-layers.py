@@ -55,19 +55,19 @@ def frame(spread, reveal):
 # Keep the accessible static alternative consistent with the animation.
 frame(1,5).save(OUT/'shared-layers.webp', quality=90)
 
+# 4.8 seconds: shorten holds, retain drawing/merge/reopen, finish on static.
 frames=[]
-# Blank score; spread layers appear one at a time; merge, hold, then reopen.
-for n in range(110):
-    t=n/10
-    if t<1: spread,reveal=1,0
-    elif t<4: spread,reveal=1,(t-1)/3*5
-    elif t<5: spread,reveal=1,5
-    elif t<6.5:
-        p=(t-5)/1.5; spread,reveal=1-(p*p*(3-2*p)),5
-    elif t<9: spread,reveal=0,5
-    elif t<10.5:
-        p=(t-9)/1.5; spread,reveal=p*p*(3-2*p),5
-    else: spread,reveal=1,5*(11-t)/.5
+for n in range(94):
+    t=n/20
+    if t<.2: spread,reveal=1,0
+    elif t<2: spread,reveal=1,(t-.2)/1.8*5
+    elif t<2.2: spread,reveal=1,5
+    elif t<3:
+        p=(t-2.2)/.8; spread,reveal=1-p*p*(3-2*p),5
+    elif t<3.4: spread,reveal=0,5
+    elif t<4.4:
+        p=(t-3.4); spread,reveal=p*p*(3-2*p),5
+    else: spread,reveal=1,5
     frames.append(frame(spread,reveal))
-frames[0].save(OUT/'shared-layers-animation.webp',save_all=True,append_images=frames[1:],duration=100,loop=0,lossless=True,method=6)
-print(OUT/'shared-layers-animation.webp')
+frames.append(Image.open(OUT/'shared-layers.webp').convert('RGB'))
+frames[0].save(OUT/'shared-layers-animation.webp',save_all=True,append_images=frames[1:],duration=[50]*94+[100],loop=1,lossless=True,method=6)

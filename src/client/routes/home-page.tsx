@@ -1,4 +1,5 @@
 import { activateGuestLocalOwner } from "../platform/local-workspace";
+import { FeatureAnimation } from "../components/feature-animation";
 import { enterDrive, joinDrive, cancelDriveEntry, type DriveEntryResult } from "../auth/drive-entry";
 import { invalidateSettingsLifetime, useSettingsLifetime } from "../settings/use-settings-lifetime";
 import { InstallButton } from "../install/install-entry";
@@ -105,7 +106,6 @@ export function HomePage({ startup = false }: { startup?: boolean }) {
 }
 
 function HomeContent({ session, startup, linkInvite, finishInvitation }: { session: ReturnType<typeof authClient.useSession>; startup: boolean; linkInvite: ReturnType<typeof readInviteLink>; finishInvitation: () => void }) {
-  const [pausedIllustrations, setPausedIllustrations] = useState<number[]>([]);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const location = useLocation();
@@ -328,23 +328,11 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
                 </p>
               </div>
               {index < 3 ? (
-                <div className="marketing-feature__illustration">
-                  <picture>
-                    <source media="(prefers-reduced-motion: reduce)" srcSet={feature.illustration} />
-                    <img
-                      src={pausedIllustrations.includes(index) ? feature.illustration : index === 0 ? sharedLayersAnimation : index === 1 ? personalLayerAnimation : replacePdfAnimation}
-                      alt={index === 0 ? "从右到左 B、T、A、S、E 共享层各画两笔批注，再叠加到同一份乐谱上。" : index === 1 ? "选择显示 E 和 T 共享批注，隐藏其他共享层；在默认私密的 Me 个人层画一个小笑脸，再叠加到原谱上。" : "Notes 批注从 final.pdf 平移到 final_v2.pdf；修订版中一个橙色自然音改为带升号的蓝色音符，批注位置保持不变。"}
-                      width={768}
-                      height={512}
-                      loading="lazy"
-                      decoding="async"
-                      style={{ display: "block", width: "100%", height: "auto" }}
-                    />
-                  </picture>
-                  <button className="text-button marketing-animation-control" type="button" onClick={() => setPausedIllustrations(values => values.includes(index) ? values.filter(value => value !== index) : [...values, index])}>
-                    {pausedIllustrations.includes(index) ? "播放分层示意" : "显示静态图"}
-                  </button>
-                </div>
+                <FeatureAnimation
+                  illustration={feature.illustration}
+                  animation={index === 0 ? sharedLayersAnimation : index === 1 ? personalLayerAnimation : replacePdfAnimation}
+                  label={feature.title}
+                />
               ) : <img
                 className="marketing-feature__illustration"
                 src={feature.illustration}

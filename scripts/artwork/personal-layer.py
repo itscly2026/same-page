@@ -77,21 +77,22 @@ def frame(spread, selection, personal):
 
 
 # All shared marks -> choose E/T -> draw a private smiley -> overlay.
+# 4.8 seconds, with shorter holds and the complete selected static as final frame.
 frames=[]
-for n in range(130):
-    t=n/10
-    if t<2: spread,selection,personal=1,0,0
-    elif t<3: spread,selection,personal=1,t-2,0
-    elif t<4: spread,selection,personal=1,1,0
-    elif t<6: spread,selection,personal=1,1,(t-4)/2
-    elif t<7: spread,selection,personal=1,1,1
-    elif t<8.5:
-        p=(t-7)/1.5; spread,selection,personal=1-p*p*(3-2*p),1,1
-    elif t<10.5: spread,selection,personal=0,1,1
-    elif t<12:
-        p=(t-10.5)/1.5; spread,selection,personal=p*p*(3-2*p),1,1
-    else: spread,selection,personal=1,13-t,13-t
+for n in range(94):
+    t=n/20
+    if t<.2: spread,selection,personal=1,0,0
+    elif t<.7: spread,selection,personal=1,(t-.2)/.5,0
+    elif t<.9: spread,selection,personal=1,1,0
+    elif t<2.2: spread,selection,personal=1,1,(t-.9)/1.3
+    elif t<2.4: spread,selection,personal=1,1,1
+    elif t<3.2:
+        p=(t-2.4)/.8; spread,selection,personal=1-p*p*(3-2*p),1,1
+    elif t<3.6: spread,selection,personal=0,1,1
+    elif t<4.5:
+        p=(t-3.6)/.9; spread,selection,personal=p*p*(3-2*p),1,1
+    else: spread,selection,personal=1,1,1
     frames.append(frame(spread,selection,personal))
 frame(1,1,1).save(OUT/'personal-layer.webp',quality=90)
-frames[0].save(OUT/'personal-layer-animation.webp',save_all=True,append_images=frames[1:],duration=100,loop=0,lossless=True,method=6)
-print(OUT/'personal-layer-animation.webp')
+frames.append(Image.open(OUT/'personal-layer.webp').convert('RGB'))
+frames[0].save(OUT/'personal-layer-animation.webp',save_all=True,append_images=frames[1:],duration=[50]*94+[100],loop=1,lossless=True,method=6)
