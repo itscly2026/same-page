@@ -1,0 +1,56 @@
+name: Generate replace PDF artwork
+
+on:
+  push:
+    branches:
+      - feat/home-shared-layers-gif
+    paths:
+      - .github/workflows/generate-replace-pdf.yml
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/home-shared-layers-gif
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pillow
+      - name: Generate artwork
+        run: python scripts/artwork/replace-pdf.py
+      - name: Wire the third homepage illustration to the GIF
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("src/client/routes/home-page.tsx")
+          text = path.read_text()
+          text = text.replace(
+              'import replacePdfIllustration from "../assets/home/replace-pdf.webp";',
+              'import replacePdfAnimation from "../assets/home/replace-pdf.gif";\nimport replacePdfIllustration from "../assets/home/replace-pdf.webp";',
+              1,
+          )
+          text = text.replace('{index < 2 ? (', '{index < 3 ? (', 1)
+          text = text.replace(
+              'src={pausedIllustrations.includes(index) ? feature.illustration : index === 0 ? sharedLayersAnimation : personalLayerAnimation}',
+              'src={pausedIllustrations.includes(index) ? feature.illustration : index === 0 ? sharedLayersAnimation : index === 1 ? personalLayerAnimation : replacePdfAnimation}',
+              1,
+          )
+          text = text.replace(
+              'alt={index === 0 ? "从右到左 B、T、A、S、E 共享层各画两笔批注，再叠加到同一份乐谱上。" : "选择显示 E 和 T 共享批注，隐藏其他共享层；在默认私密的 Me 个人层画一个小笑脸，再叠加到原谱上。"}',
+              'alt={index === 0 ? "从右到左 B、T、A、S、E 共享层各画两笔批注，再叠加到同一份乐谱上。" : index === 1 ? "选择显示 E 和 T 共享批注，隐藏其他共享层；在默认私密的 Me 个人层画一个小笑脸，再叠加到原谱上。" : "抬起原有批注层，将 PDF 1 替换为局部修订的 PDF 2，再把同一批注层落回原页码和位置。"}',
+              1,
+          )
+          path.write_text(text)
+      - name: Remove one-shot workflow and commit generated files
+        run: |
+          rm .github/workflows/generate-replace-pdf.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/artwork/replace-pdf.py src/client/assets/home/replace-pdf.gif src/client/assets/home/replace-pdf.webp src/client/routes/home-page.tsx .github/workflows/generate-replace-pdf.yml
+          git commit -m "feat: animate replace PDF illustration"
+          git push origin HEAD:feat/home-shared-layers-gif
