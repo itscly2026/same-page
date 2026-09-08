@@ -71,17 +71,18 @@ it.each(["iPhone MicroMessenger", "Android MicroMessenger"])("only shows WeChat 
   window.localStorage.setItem("install-seen-score", "yes");
   mount();
   expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
-  expect(screen.queryByText(/微信内无法完成/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/请先.*打开/)).not.toBeInTheDocument();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   const prompt = vi.fn();
   const event = new Event("beforeinstallprompt", { cancelable: true });
   Object.defineProperty(event, "prompt", { value: prompt });
   act(() => { window.dispatchEvent(event); });
   fireEvent.click(screen.getByRole("button", { name: "安装合谱" }));
-  expect(screen.getByText(/微信内无法完成/)).toBeInTheDocument();
+  expect(screen.getByText(/请先.*打开/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "复制合谱网址" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "已了解，打开安装提示" })).not.toBeInTheDocument();
   expect(prompt).not.toHaveBeenCalled();
+  if (userAgent.startsWith("Android")) expect(screen.getByText(/推荐 Chrome 或 Edge，其他浏览器也可尝试/)).toBeInTheDocument();
 });
 
 it("opens the native prompt directly and keeps actionable Android guidance after cancellation", async () => {

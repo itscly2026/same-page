@@ -31,7 +31,6 @@ export function InstallProvider({ children }: { children: ReactNode }) {
   const wechat = isWeChat(navigator.userAgent);
   const deviceGuide = detectInstallGuide(navigator.userAgent, navigator.maxTouchPoints);
   const ios = deviceGuide === "safari" || deviceGuide.startsWith("ios");
-  const preferredBrowser = ios ? "Safari" : "Chrome 或 Edge";
   const [installed, setInstalled] = useState(inAppMode);
   const [prompt, setPrompt] = useState<InstallPromptEvent | null>(null);
   const promptRef = useRef<InstallPromptEvent | null>(null);
@@ -83,7 +82,7 @@ export function InstallProvider({ children }: { children: ReactNode }) {
       <Modal className="app-modal install-modal"><Dialog className="app-dialog install-dialog">
         <div className="dialog-heading"><Heading slot="title">安装合谱</Heading><Button className="icon-button" aria-label="关闭安装引导" onPress={() => setOpen(false)}><X size={22} /></Button></div>
         <div className="install-intro"><img src="/icon-192.png" width="56" height="56" alt="" /><div><strong>下次排练，一点就能打开</strong><p>添加到主屏幕，随时开始排练。</p></div></div>
-        {wechat && <section className="install-advice"><strong>当前在微信中，请先用 {preferredBrowser} 打开</strong><p>微信内无法完成安装。{deviceGuide === "desktop" ? "打开微信菜单" : "点击右上角“···”"}，选择“{ios ? "在 Safari 中打开（或在浏览器中打开）" : "在浏览器中打开"}”。也可复制网址，在浏览器打开后再点“安装合谱”。</p><CopyInstallLink /></section>}
+        {wechat && <section className="install-advice"><strong>{ios ? "请先用 Safari 打开" : "请先在外部浏览器中打开"}</strong><p>{!ios && "推荐 Chrome 或 Edge，其他浏览器也可尝试。"}{deviceGuide === "desktop" ? "打开微信菜单" : "点击右上角“···”"}，选择“{ios ? "在 Safari 中打开（或在浏览器中打开）" : "在浏览器中打开"}”。也可复制网址，在浏览器打开后再点“安装合谱”。</p><CopyInstallLink /></section>}
         {ios && !wechat && <p className="install-platform-note">推荐用 <strong>Safari</strong> 添加到主屏幕。</p>}
         {!wechat && <>
         <label className="install-selector">查看安装方法<select value={guide} onChange={event => setGuide(event.target.value as InstallGuide)}>{Object.entries(guides).map(([key, value]) => <option key={key} value={key}>{value.title}</option>)}</select></label>
