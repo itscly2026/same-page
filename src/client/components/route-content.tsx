@@ -31,7 +31,7 @@ function RouteFeedback({ failed = false }: { failed?: boolean }) {
     <AppHeader />
     <h1>{title}</h1>
     <p role={failed ? "alert" : "status"}>{failed ? `${title}加载失败，请重试。` : `正在加载${title}…`}</p>
-    <Link className="text-button" to={drive && pathname !== `/choirs/${drive}` ? `/choirs/${drive}` : "/"}>{drive && pathname !== `/choirs/${drive}` ? "返回云盘" : "返回首页"}</Link>
+    <Link className="text-button" state={{ home: true }} to={drive && pathname !== `/choirs/${drive}` ? `/choirs/${drive}` : "/"}>{drive && pathname !== `/choirs/${drive}` ? "返回云盘" : "返回首页"}</Link>
     {failed && <Link className="secondary-link" to="/diagnostics">故障诊断</Link>}
     {failed && <button className="secondary-button" onClick={() => window.location.reload()}>重新加载页面</button>}
   </main>;

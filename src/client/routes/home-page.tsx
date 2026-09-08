@@ -3,6 +3,8 @@ import { enterDrive, joinDrive, cancelDriveEntry, type DriveEntryResult } from "
 import { invalidateSettingsLifetime, useSettingsLifetime } from "../settings/use-settings-lifetime";
 import { InstallButton } from "../install/install-entry";
 import { useApplicationIdentity } from "../auth/application-identity";
+import { StartupEntry } from "../auth/startup-entry";
+import type { ApplicationIdentity } from "../auth/application-identity";
 import { LocalEntry } from "../auth/local-entry";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { type FormEvent, useEffect, useEffectEvent, useRef, useState } from "react";
@@ -25,7 +27,6 @@ import {
   previewChoirResponseSchema,
   type ChoirSummary,
 } from "../../shared/choirs";
-import { authClient } from "../auth/auth-client";
 import sharedLayersIllustration from "../assets/home/shared-layers.webp";
 import personalLayerIllustration from "../assets/home/personal-layer.webp";
 import replacePdfIllustration from "../assets/home/replace-pdf.webp";
@@ -97,16 +98,18 @@ export function HomePage({ startup = false }: { startup?: boolean }) {
   }
   const finishInvitation = () => setInvitation(current => ({ ...current, link: null }));
   const linkedGuest = invitation.link !== null && identity.onlineState === "signed-out";
-  if (identity.showLocalEntry && !linkedGuest) return <LocalEntry identity={identity} startup={startup} />;
-  return <HomeContent key={`${session.isPending ? "pending" : session.data?.user.id ?? "guest"}:${invitation.version}`} session={session} startup={startup} linkInvite={invitation.link} finishInvitation={finishInvitation} />;
+  if (location.pathname === "/drives" && identity.showLocalEntry && !linkedGuest) return <LocalEntry identity={identity} />;
+  return <HomeContent key={`${session.data?.user.id ?? "guest"}:${invitation.version}`} identity={identity} startup={startup} linkInvite={invitation.link} finishInvitation={finishInvitation} />;
 }
 
-function HomeContent({ session, startup, linkInvite, finishInvitation }: { session: ReturnType<typeof authClient.useSession>; startup: boolean; linkInvite: ReturnType<typeof readInviteLink>; finishInvitation: () => void }) {
+function HomeContent({ identity, startup, linkInvite, finishInvitation }: { identity: ApplicationIdentity; startup: boolean; linkInvite: ReturnType<typeof readInviteLink>; finishInvitation: () => void }) {
+  const { session } = identity;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const linkHandled = useRef(false);
-  const [startupIntent, setStartupIntent] = useState(startup && location.pathname === "/" && !location.search && !location.hash);
+  const [startupDismissed, setStartupDismissed] = useState(false);
+  const startupIntent = startup && !startupDismissed && location.pathname === "/" && !location.search && !location.hash && !linkInvite;
   const [joinOpen, setJoinOpen] = useState(searchParams.get("join") === "1" || linkInvite !== null);
   const [joinStep, setJoinStep] = useState<JoinStep>({ kind: "invite" });
   const [joinCode, setJoinCode] = useState(linkInvite?.code ?? "");
@@ -122,7 +125,6 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
   }, [entryDestination, navigate]);
   const userId = session.data?.user.id;
   useEffect(() => {
-    if (session.isPending || userId) return;
     let active = true;
     void loadPreviewChoir().then((choir) => {
       if (!active) return;
@@ -153,7 +155,7 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
 
   const finishJoinDialog = () => {
     finishInvitation();
-    setStartupIntent(false);
+    setStartupDismissed(true);
     setJoinOpen(false);
     resetJoinFlow();
   };
@@ -254,7 +256,7 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
       <AppHeader
         actions={
           session.data?.user ? (
-            <><InstallButton className="header-action" /><PersonalMenu email={session.data.user.email} /></>
+            <>{location.pathname === "/drives" && <InstallButton className="header-action" />}<PersonalMenu email={session.data.user.email} /></>
           ) : session.isPending ? null : (
             <Link className="header-action header-action--primary" to="/login">
               登录
@@ -263,12 +265,14 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
         }
       />
 
-      {!session.isPending && userId ? (
+      {startupIntent && !joinOpen && <StartupEntry key={`${identity.onlineState}:${identity.authenticatedUserId ?? identity.localUserId}:${identity.authenticatedSessionId}`} identity={identity} />}
+      {location.pathname === "/drives" && !session.isPending && userId ? (
         <main className="page-shell my-drives-page">
           <div className="my-drives-heading"><div><h1>我已加入的云盘</h1><p>选择云盘，继续排练。</p></div><Button className="secondary-button" onPress={() => setJoinOpen(true)}>加入新云盘</Button></div>
-          <MembershipList userId={userId} autoEnter={startupIntent && location.pathname === "/" && !joinOpen && searchParams.size === 0} />
+          {location.state?.missingLastDrive === true && <p role="status">上次使用的云盘已不在可访问列表中，请选择其他云盘。</p>}
+          <MembershipList userId={userId} />
             </main>
-      ) : session.isPending ? <main className="page-shell"><p role="status">正在加载…</p></main> : <main className="marketing-content">
+      ) : <main className="marketing-content">
         <section className="marketing-hero" aria-labelledby="page-title">
           <div className="marketing-hero__content">
             <p className="hero-mark">合谱 · Same Page</p>
@@ -286,12 +290,12 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
               <p lang="zh-CN">为合唱排练与共享笔记打造的乐谱云盘。</p>
             </div>
             <div className="hero-actions">
-              <Button
+              {identity.authenticatedUserId || identity.localUserId ? <Link className="primary-button hero-cta" to="/drives">我的云盘</Link> : <Button
                 className="primary-button hero-cta"
-                onPress={() => setJoinOpen(true)}
+                onPress={() => { setStartupDismissed(true); setJoinOpen(true); }}
               >
                 进入云盘
-              </Button>
+              </Button>}
               <InstallButton />
               {previewChoir ? (
                 <Link

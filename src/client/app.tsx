@@ -3,7 +3,7 @@ import { LogoutProvider } from "./auth/logout";
 import { NavigationProvider } from "./navigation/navigation";
 import { RouteContent } from "./components/route-content";
 import { lazy, useLayoutEffect, useState } from "react";
-import { createBrowserRouter, RouterProvider, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, Outlet, Route, Routes, useLocation, useNavigationType } from "react-router-dom";
 
 import { AppFooter } from "./components/app-footer";
 import { ReloadPrompt } from "./components/reload-prompt";
@@ -36,9 +36,10 @@ const DiagnosticsPage = lazy(() => import("./diagnostics/diagnostics-page"));
 
 export function AppRoutes() {
   const location = useLocation();
+  const navigationType = useNavigationType();
   const [startupKey, setStartupKey] = useState<string | null>(() => location.pathname === "/" ? location.key : null);
   if (startupKey !== null && location.pathname !== "/") setStartupKey(null);
-  const startup = startupKey === location.key || location.state?.startup === true;
+  const startup = location.state?.home !== true && (startupKey === location.key || (location.state?.startup === true && navigationType !== "POP"));
   return (
     <>
       <NavigationProvider><LogoutProvider><InstallProvider>

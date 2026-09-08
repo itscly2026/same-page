@@ -372,7 +372,7 @@ describe("AppRoutes", () => {
       ),
     );
     render(
-      <MemoryRouter initialEntries={["/"]}>
+      <MemoryRouter initialEntries={["/drives"]}>
         <AppRoutes />
       </MemoryRouter>,
     );
@@ -627,7 +627,7 @@ describe("AppRoutes", () => {
       }),
     );
     render(
-      <MemoryRouter initialEntries={["/"]}>
+      <MemoryRouter initialEntries={["/drives"]}>
         <AppRoutes />
       </MemoryRouter>,
     );
@@ -710,7 +710,7 @@ describe("AppRoutes", () => {
 
 
     await screen.findByRole("searchbox", { name: /搜索.*中的乐谱/ });
-    expect(screen.getByRole("heading", { name: "小红花云盘" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "小红花云盘" })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", {
       method: "DELETE",
     });
