@@ -44,7 +44,6 @@ export function ReaderEditingControls({
 
   return (
     <section className="annotation-controls" aria-label="笔记工具">
-      {tool === "text" && !showHint && !choosingLayer && <p className="annotation-text-hint" role="status">轻点任意位置添加文字</p>}
       {showHint && <div className="reader-edit-first-hint" role="status">
         <span>编辑时仅显示当前层，并锁定本页。点勾号完成后恢复。</span>
         <Button aria-label="关闭编辑提示" onPress={() => { setShowHint(false); try { localStorage.setItem("reader-edit-hint-seen", "true"); } catch { /* Optional hint preference. */ } }}><X aria-hidden="true" size={18} /></Button>
@@ -81,14 +80,14 @@ export function ReaderEditingControls({
           </Dialog>
         </Popover>
       </DialogTrigger>
-      <div className="annotation-control-group" aria-label="工具">
+      <div className="annotation-control-group annotation-drawing-tools" aria-label="工具">
         <div className="segmented-control" aria-label="笔记工具">
-          {(["text", "ink", "highlighter", "rectangle", "ellipse", "eraser"] as const).map((entry) => (
+          {(["ink", "highlighter", "eraser", "text", "rectangle", "ellipse"] as const).map((entry) => (
             <Button
               isDisabled={isDisabled || !selectedLayer?.canEdit}
               aria-label={{ text: "文字", ink: "画笔", highlighter: "荧光笔", rectangle: "矩形", ellipse: "椭圆", eraser: "整条橡皮" }[entry]}
               aria-pressed={tool === entry}
-              className="annotation-tool-button"
+              className={`annotation-tool-button${entry === "text" || entry === "rectangle" ? " annotation-tool-divider" : ""}`}
               key={entry}
               onPress={() => onToolChange(entry)}
             >

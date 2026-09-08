@@ -11,6 +11,7 @@ export function PersonalLayerCard({ layer, workspace, pending, onChange, onSubsc
   onChange(change: { name?: string; sharing?: boolean; action?: "delete" | "restore" }): Promise<boolean | undefined>;
   onSubscribe(subscribed: boolean): void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [name, setName] = useState(layer.name);
   const [renaming, setRenaming] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -27,11 +28,16 @@ export function PersonalLayerCard({ layer, workspace, pending, onChange, onSubsc
     <div className="layer-card__main">
       <label className="reader-layer-toggle"><input type="checkbox" aria-label={`显示 ${layer.name}`} checked={layer.subscribed} disabled={pending}
         onChange={event => onSubscribe(event.target.checked)} /><strong>{layer.name}</strong></label>
-      {layer.canShare && <Button className="personal-sharing-toggle" aria-label={`分享 ${layer.name}`} aria-pressed={!!layer.sharing} isDisabled={pending}
-        onPress={() => void onChange({ sharing: !layer.sharing })}>{layer.sharing ? "云盘成员可见" : "仅自己可见"}</Button>}
-      <Button isDisabled={pending} onPress={() => { setName(layer.name); setRenaming(!renaming); }}>命名</Button>
-      <Button isDisabled={pending} onPress={() => setConfirming(true)}>删除</Button>
+      <Button className="personal-layer-more" aria-label={`管理 ${layer.name}`} aria-expanded={expanded} isDisabled={pending}
+        onPress={() => setExpanded(!expanded)}>⋯</Button>
     </div>
+    {layer.sharing && <p className="personal-layer-audience">云盘成员可见</p>}
+    {expanded && <div className="personal-layer-actions" role="group" aria-label={`${layer.name}的操作`}>
+      {layer.canShare && <Button aria-label={`分享 ${layer.name}`} aria-pressed={!!layer.sharing} isDisabled={pending}
+        onPress={() => void onChange({ sharing: !layer.sharing })}>{layer.sharing ? "停止分享" : "分享给云盘成员"}</Button>}
+      <Button isDisabled={pending} onPress={() => { setName(layer.name); setRenaming(!renaming); setConfirming(false); }}>重命名</Button>
+      <Button className="personal-layer-delete" isDisabled={pending} onPress={() => { setConfirming(true); setRenaming(false); }}>删除</Button>
+    </div>}
     {renaming && <form onSubmit={event => { event.preventDefault(); void onChange({ name: name.trim() }).then(saved => { if (saved) setRenaming(false); }); }}>
       <input aria-label={`${layer.name}的名称`} maxLength={60} required value={name} onChange={event => setName(event.target.value)} />
       <button disabled={pending || !name.trim()}>保存名称</button>

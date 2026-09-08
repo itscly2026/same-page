@@ -18,6 +18,8 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
   layers: AnnotationLayerSummary[];
   signedIn: boolean;
 }) {
+  const [creating, setCreating] = useState(false);
+  const [managing, setManaging] = useState(false);
   const [newName, setNewName] = useState("");
   const [deleted, setDeleted] = useState<AnnotationLayerSummary[]>([]);
   const [personalRetry, setPersonalRetry] = useState<(() => Promise<void>) | null>(null);
@@ -116,7 +118,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
 
   return (
     <section className="reader-layer-panel" aria-label="看哪些笔记" aria-busy={pending}>
-      <p className="reader-layer-help">共享层的默认颜色与显示，可在<Link to={`/choirs/${workspace.choirId}/preferences`}>云盘个人设置</Link>中统一配置；此处修改仅作用于本谱。</p>
+      <p className="reader-layer-help">此处设置仅影响本谱，默认值可在<Link to={`/choirs/${workspace.choirId}/preferences`}>云盘个人设置</Link>中调整。</p>
       <div className="layer-section">
         <div className="layer-section__heading">
           <div><h3>共享层</h3></div>
@@ -156,17 +158,19 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
           ))}
         </div>
       </div>
-      {personalLayers.length > 0 && <div className="layer-section layer-section--personal"><h3>个人层</h3>
+      {personalLayers.length > 0 && <div className="layer-section layer-section--personal">
+        <div className="layer-section__heading"><h3>个人层</h3>{signedIn && <Button aria-label="个人层更多操作" aria-expanded={managing} onPress={() => setManaging(!managing)}>⋯</Button>}</div>
+        {managing && <Button isDisabled={pending} onPress={() => void personalRequest("layers?state=deleted", "GET")}>已删除个人层</Button>}
         {personalLayers.map(layer => <PersonalLayerCard key={layer.id} layer={layer} workspace={workspace} pending={pending || !signedIn}
           onChange={change => personalRequest(`personal-layers/${layer.id}`, "PUT", { ...change, expectedRevision: layer.revision ?? 0 })}
           onSubscribe={subscribed => void personalRequest(`personal-layers/${layer.id}/subscription`, "PUT", { subscribed })} />)}
         {signedIn && <>
-          <form onSubmit={event => { event.preventDefault(); void personalRequest("personal-layers", "POST", { id: crypto.randomUUID(), name: newName.trim() }); }}>
+          {!creating ? <Button className="personal-layer-create" isDisabled={pending} onPress={() => setCreating(true)}>＋ 新建个人层</Button> : <form onSubmit={event => { event.preventDefault(); void personalRequest("personal-layers", "POST", { id: crypto.randomUUID(), name: newName.trim() }).then(saved => { if (saved) setCreating(false); }); }}>
             <input aria-label="新个人层名称" placeholder="例如：排练记录" required maxLength={60} value={newName} onChange={event => setNewName(event.target.value)} />
             <button disabled={pending || !newName.trim()}>新建个人层</button>
-          </form>
-          <Button isDisabled={pending} onPress={() => void personalRequest("layers?state=deleted", "GET")}>已删除个人层</Button>
-          {deleted.map(layer => <div key={layer.id}>{layer.name}<Button isDisabled={pending}
+          <Button isDisabled={pending} onPress={() => setCreating(false)}>取消</Button>
+          </form>}
+          {managing && deleted.map(layer => <div key={layer.id}>{layer.name}<Button isDisabled={pending}
             onPress={() => void personalRequest(`personal-layers/${layer.id}`, "PUT", { action: "restore", expectedRevision: layer.revision })}>恢复 {layer.name}</Button></div>)}
         </>}
       </div>}

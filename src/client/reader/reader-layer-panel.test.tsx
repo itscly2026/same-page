@@ -60,11 +60,12 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 it("shares just the current score with a clear audience and supports cancellation", async () => {
   render(<Reader />);
+  fireEvent.click(await screen.findByRole("button", { name: "管理 我的笔记" }));
   const share = await screen.findByRole("button", { name: "分享 我的笔记" });
-  expect(share).toHaveTextContent("仅自己可见");
+  expect(share).toHaveTextContent("分享给云盘成员");
   fireEvent.click(share);
   const stop = await screen.findByRole("button", { name: "分享 我的笔记" });
-  await waitFor(() => expect(stop).toHaveTextContent("云盘成员可见"));
+  await waitFor(() => expect(stop).toHaveTextContent("停止分享"));
   await waitFor(() => expect(stop).not.toBeDisabled());
   expect(requests).toEqual([{ url: `/api/choirs/drive/scores/score/personal-layers/${own.id}`, body: { sharing: true, expectedRevision: 0 } }]);
   fireEvent.click(stop);
@@ -86,17 +87,20 @@ it("subscribes to a member's notes without offering their layer as an editing ta
 
 it("creates another private layer, caches both editing targets, and protects unsynced deletion", async () => {
   render(<Reader />);
+  expect(screen.queryByRole("textbox", { name: "新个人层名称" })).not.toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: /新建个人层/ }));
   const name = await screen.findByRole("textbox", { name: "新个人层名称" });
   fireEvent.change(name, { target: { value: "演出提示" } });
   fireEvent.click(screen.getByRole("button", { name: "新建个人层" }));
-  const toggle = await screen.findByRole("button", { name: "分享 演出提示" });
+  const toggle = await screen.findByRole("button", { name: "管理 演出提示" });
   await waitFor(() => expect(toggle).toBeEnabled());
-  expect(toggle).toHaveTextContent("仅自己可见");
+  expect(screen.queryByRole("button", { name: "分享 演出提示" })).not.toBeInTheDocument();
   const newLayer = (await readAnnotationLayers(workspace)).find(layer => layer.name === "演出提示")!;
   fireEvent.click(screen.getByRole("button", { name: /当前编辑层/ }));
   expect(screen.getByRole("button", { name: "演出提示" })).toBeEnabled();
   fireEvent.click(screen.getByRole("button", { name: "关闭写入目标" }));
   await saveAnnotationDraft(workspace, { id: crypto.randomUUID(), layerId: newLayer.id, payload: { kind: "text", pageNumber: 1, x: .2, y: .3, fontScale: .024, text: "尚未同步" } });
+  fireEvent.click(toggle);
   const card = toggle.closest("article")!;
   fireEvent.click(within(card).getByRole("button", { name: "删除" }));
   fireEvent.click(within(card).getByRole("button", { name: "确认删除" }));
