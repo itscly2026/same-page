@@ -217,7 +217,7 @@ describe("AppRoutes", () => {
     await waitFor(() => expect(color).toHaveValue("#a12652"));
     expect(screen.getByText("云盘默认")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /恢复默认颜色/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "返回阅读偏好" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
     expect(screen.getByRole("checkbox", { name: "Ensemble 默认显示" })).not.toBeChecked();
   });
 

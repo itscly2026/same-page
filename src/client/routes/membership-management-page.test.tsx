@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { effectiveCapabilities, emptyPermissions } from "../../shared/drive-permissions";
@@ -88,7 +88,8 @@ it("lets ordinary members inspect owner, delegated scopes and layer grants from 
   expect(screen.queryByRole("button", { name: "保存 小花 的权限" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "按权限" }));
   fireEvent.change(screen.getByLabelText("选择权限"), { target: { value: "layer:S" } });
-  expect(screen.getByRole("heading", { name: "小花" })).toBeVisible();
+  expect(within(screen.getByRole("region", { name: "可以操作" })).getByText("小花")).toBeVisible();
+  expect(screen.queryByText(/操作权限：上传文件/)).not.toBeInTheDocument();
 });
 
 it("shares drafts and revision checks across member and permission views", async () => {
@@ -102,6 +103,8 @@ it("shares drafts and revision checks across member and permission views", async
   fireEvent.click(screen.getByRole("checkbox", { name: "上传文件：可以操作" }));
   fireEvent.click(screen.getByRole("button", { name: "按权限" }));
   fireEvent.change(screen.getByLabelText("选择权限"), { target: { value: "layer:S" } });
+  fireEvent.click(screen.getByText("调整此项权限"));
+  fireEvent.change(screen.getByLabelText("选择成员"), { target: { value: "member" } });
   fireEvent.click(screen.getByRole("checkbox", { name: "编辑 Soprano：可以操作" }));
   fireEvent.click(screen.getByRole("button", { name: "保存 小花 的权限" }));
   await waitFor(() => expect(writes).toEqual([{ expectedRevision: 1, operations: { operations: ["uploadFiles"], sharedLayers: ["S"] }, management: emptyPermissions() }]));

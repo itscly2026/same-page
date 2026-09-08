@@ -39,7 +39,7 @@ async function reauthenticate(user: Awaited<ReturnType<typeof person>>) {
 }
 const state = async (cookie: string) => (await callWorker("/api/user/lifecycle", { headers: { cookie } })).json() as Promise<{
   deletion: { deletionId: string; expiresAt: number; authMethod: string } | null;
-  memberships: { id: string; revision: number; status: string; isOwner: number }[];
+  memberships: { id: string; revision: number; status: string; isOwner: number; isPreviewEntry: number }[];
   reauthenticated: boolean;
 }>;
 async function drive(admin: Awaited<ReturnType<typeof person>>, member?: Awaited<ReturnType<typeof person>>) {
@@ -299,6 +299,7 @@ it("lets active members read minimal permission facts and management configurati
   const owner = await person("overview-owner@example.test"), member = await person("overview-member@example.test"), outsider = await person("overview-outsider@example.test");
   const choirId = await drive(owner, member);
   const get = (path: string, cookie = member.cookie) => callWorker(`/api/choirs/${choirId}/${path}`, { headers: { cookie } });
+  expect((await state(member.cookie)).memberships[0].isPreviewEntry).toBe(0);
   const listing = await get("memberships");
   expect(listing.status).toBe(200);
   const data = await listing.json() as { memberships: Array<{ id: string; displayName: string; isOwner: number }> };
@@ -316,6 +317,7 @@ it("lets active members read minimal permission facts and management configurati
   expect((await get("join-code")).status).toBe(403);
   expect(data.memberships.every(row => !Object.hasOwn(row, "userDeleted"))).toBe(true);
   await env.DB.prepare("UPDATE choirs SET guest_admission_mode = 'open', join_code_hash = NULL, is_preview_entry = 1 WHERE id = ?").bind(choirId).run();
+  expect((await state(member.cookie)).memberships[0].isPreviewEntry).toBe(1);
   const guest = await post("/api/guest/session", "", { admission: "open", choirId });
   expect(guest.status).toBe(200);
   // Preview access remains independent of membership, including after removal.

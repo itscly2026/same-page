@@ -2,7 +2,7 @@ import { driveCapabilitiesSchema, permissionSetSchema } from "./drive-permission
 import { z } from "zod";
 export const lifecycleMembershipSchema = z.object({
   id: z.string(), choirId: z.string(), name: z.string(), displayName: z.string(),
-  isOwner: z.number(), status: z.enum(["active", "removed"]),
+  isPreviewEntry: z.number(), isOwner: z.number(), status: z.enum(["active", "removed"]),
   revision: z.number(), removedAt: z.number().nullable(),
 });
 export const userLifecycleSchema = z.object({

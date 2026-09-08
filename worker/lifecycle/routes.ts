@@ -20,7 +20,7 @@ lifecycleRoutes.get("/user/lifecycle", async (context) => {
     WHERE user_id = ? AND previous_session_id <> ? AND expires_at > ? AND created_at <= ?`).bind(session.user.id, session.session.id, Date.now(), session.session.createdAt.getTime()).first();
   const methods = await context.env.DB.prepare("SELECT provider_id AS method FROM account WHERE user_id = ?").bind(session.user.id).all<{ method: string }>();
   const drives = await context.env.DB.prepare(`SELECT memberships.id, memberships.choir_id AS choirId,
-    choirs.name, memberships.display_name AS displayName, memberships.status,
+    choirs.name, choirs.is_preview_entry AS isPreviewEntry, memberships.display_name AS displayName, memberships.status,
     memberships.lifecycle_revision AS revision, memberships.removed_at AS removedAt,
     choirs.owner_membership_id = memberships.id AS isOwner
     FROM memberships JOIN choirs ON choirs.id = memberships.choir_id WHERE memberships.user_id = ?`).bind(session.user.id).all();

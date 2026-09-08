@@ -26,7 +26,7 @@ function MembershipManagement({ choirId }: { choirId: string }) {
   const lifetime = useSettingsLifetime();
   const [view, setView] = useState<"member" | "permission">("member");
   const [permission, setPermission] = useState("uploadFiles");
-  const [holdersOnly, setHoldersOnly] = useState(false);
+  const [editingMember, setEditingMember] = useState("");
   const [needsRefresh, setNeedsRefresh] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, { operations: PermissionSet; management: PermissionSet }>>({});
   const [state, setState] = useState<State | null>(null);
@@ -82,12 +82,17 @@ function MembershipManagement({ choirId }: { choirId: string }) {
     setBusy(false);
   };
   return <div className="app-page"><AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回</BackButton>} /><main className="page-shell settings-page settings-ux lifecycle-page">
-    <header className="settings-heading"><h1>成员与权限</h1><p>查看成员可以做什么，以及可以向他人授予哪些权限。修改仅在你的授权管理范围内生效。</p></header>
+    <header className="settings-heading"><h1>成员与权限</h1><p>找有权处理问题的人，或查看成员的权限。</p></header>
     {state && <>
       <div className="settings-actions" aria-label="权限查看方式"><Button className="secondary-button" aria-pressed={view === "member"} onPress={() => setView("member")}>按成员</Button><Button className="secondary-button" aria-pressed={view === "permission"} onPress={() => setView("permission")}>按权限</Button></div>
-      {view === "permission" && <div className="permission-filter"><label>选择权限<select value={permission} onChange={event => setPermission(event.target.value)}>{operationKeys.map(key => <option key={key} value={key}>{operationLabels[key]}</option>)}<option value="all-layers">编辑全部共享层（包括未来新增层）</option>{layers.map(layer => <option key={layer.slot} value={`layer:${layer.slot}`}>编辑 {layer.name}</option>)}</select></label><label><input type="checkbox" checked={holdersOnly} onChange={event => setHoldersOnly(event.target.checked)} />仅显示可以操作或授权的成员</label></div>}
+      {view === "permission" && <div className="permission-filter"><label>选择权限<select value={permission} onChange={event => { setPermission(event.target.value); setEditingMember(""); }}>{operationKeys.map(key => <option key={key} value={key}>{operationLabels[key]}</option>)}<option value="all-layers">编辑全部共享层（包括未来新增层）</option>{layers.map(layer => <option key={layer.slot} value={`layer:${layer.slot}`}>编辑 {layer.name}</option>)}</select></label></div>}
     </>}
-    {state?.memberships.filter(member => view !== "permission" || !holdersOnly || member.status === "active" && (member.isOwner || hasPermission(member.operations, permission) || hasPermission(member.management, permission))).map(member => <MemberEditor focus={view === "permission" ? permission : undefined} key={`${member.id}:${member.revision}:${state.capabilities.isOwner}`} member={member} state={state} layers={layers} busy={busy || loading || needsRefresh} draft={drafts[member.id]} onDraft={draft => setDrafts(current => ({ ...current, [member.id]: draft }))}
+    {state && view === "permission" && <>
+      <PermissionPeople title="可以操作" members={state.memberships.filter(member => member.status === "active" && (member.isOwner || hasPermission(member.operations, permission)))} />
+      <PermissionPeople title="可以授权" members={state.memberships.filter(member => member.status === "active" && (member.isOwner || hasPermission(member.management, permission)))} />
+      {state.capabilities.isOwner || hasPermission(state.capabilities.management, permission) ? <details className="permission-edit-entry"><summary>调整此项权限</summary><label>选择成员<select value={editingMember} onChange={event => setEditingMember(event.target.value)}><option value="">选择要调整的成员</option>{state.memberships.filter(member => member.status === "active" && (state.capabilities.isOwner || !member.isOwner && !isDelegated(member.management) && member.id !== state.actorId)).map(member => <option key={member.id} value={member.id}>{member.displayName}</option>)}</select></label><p className="settings-copy">受托人只能调整普通成员，不能为自己或其他受托人授权。</p></details> : <p className="settings-copy permission-note">这项权限不在你的授权管理范围内。需要调整时，请联系上方可以授权的成员。</p>}
+    </>}
+    {state?.memberships.filter(member => view === "member" || member.id === editingMember).map(member => <MemberEditor focus={view === "permission" ? permission : undefined} key={`${member.id}:${member.revision}:${state.capabilities.isOwner}`} member={member} state={state} layers={layers} busy={busy || loading || needsRefresh} draft={drafts[member.id]} onDraft={draft => setDrafts(current => ({ ...current, [member.id]: draft }))}
       save={(operations, management) => void mutate(`memberships/${member.id}/permissions`, { expectedRevision: member.revision, operations, management }, "PUT", member.id)}
       change={action => setConfirmation({ title: action === "restore" ? "恢复成员关系" : "移除成员", action: action === "restore" ? "确认恢复" : "确认移除", message: action === "restore" ? "恢复成员关系和保留期内的个人层，不恢复旧权限、管理范围或分享。" : "立即撤销成员权限；断网设备已下载的内容无法即时撤回。", onConfirm: () => mutate(`memberships/${member.id}`, { action, expectedRevision: member.revision }) })}
       transfer={() => {
@@ -100,6 +105,9 @@ function MembershipManagement({ choirId }: { choirId: string }) {
     <ConfirmDialog confirmation={confirmation} busy={busy} onClose={() => setConfirmation(null)} />
   </main></div>;
 }
+function PermissionPeople({ title, members }: { title: string; members: Member[] }) {
+  return <section className="permission-people" aria-label={title}><h2>{title}<span>{members.length} 人</span></h2>{members.length ? <ul>{members.map(member => <li key={member.id}><span>{member.displayName}</span><small>{member.isOwner ? "拥有者" : isDelegated(member.management) ? "受托人" : "成员"}</small></li>)}</ul> : <p className="settings-copy">暂无成员</p>}</section>;
+}
 function describe(set: PermissionSet, layers: Layer[]): string {
   return [...set.operations.map(key => operationLabels[key]), ...(set.sharedLayers === "all" ? ["全部共享层（包括未来新增层）"] : set.sharedLayers.map(slot => layers.find(layer => layer.slot === slot)?.name ?? slot))].join("、") || "无";
 }
@@ -111,8 +119,8 @@ function MemberEditor({ focus, member, state, layers, busy, save, change, transf
   const protectedMember = Boolean(member.isOwner) || isDelegated(member.management);
   return <details className="lifecycle-member" open={focus ? true : undefined}><summary><h2>{member.displayName}</h2></summary>
     <p>{member.status === "removed" ? "已移除" : member.isOwner ? "拥有者" : isDelegated(member.management) ? "受托权限管理者" : "普通成员"}</p>
-    <p>操作权限：{describe(member.isOwner ? allPermissions() : member.operations, layers)}</p>
-    <p>授权管理范围：{describe(member.isOwner ? allPermissions() : member.management, layers)}</p>
+    {!focus && <><p>操作权限：{describe(member.isOwner ? allPermissions() : member.operations, layers)}</p>
+    <p>授权管理范围：{describe(member.isOwner ? allPermissions() : member.management, layers)}</p></>}
     {focus && <p>此项权限：{member.isOwner || hasPermission(member.operations, focus) ? "可以操作" : "不能操作"}；{member.isOwner || hasPermission(member.management, focus) ? "可以授权他人" : "不能授权他人"}</p>}
     {!canAuthorize && <p>🔒 {outsideScope ? "这项权限不在你的授权管理范围内，请联系云盘拥有者或具有此项授权管理范围的受托人。" : member.isOwner || isDelegated(member.management) ? "只有云盘拥有者可以调整拥有者或受托人的权限。" : member.id === state.actorId ? "不能自行授权，请联系云盘拥有者或相应受托权限管理者。" : "你没有授权管理范围，请联系云盘拥有者或相应受托权限管理者。"} 拥有者：{state.memberships.find(row => row.isOwner)?.displayName ?? "请在成员列表中查看"}。</p>}
     {member.userDeleted ? <p>用户处于删除恢复期，须本人验证并恢复。</p> : member.status === "active" ? <>

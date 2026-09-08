@@ -44,18 +44,27 @@ function DriveManagement({ choirId }: { choirId: string }) {
   }, [choirId, attempt]);
   const refresh = () => { setData(null); setError(null); setDialog(null); setLocked(null); setAttempt(value => value + 1); };
   const can = (operation: Operation) => data?.overview.capabilities.operations.operations.includes(operation);
-  function action(label: string, operation: Operation, open: () => void, href?: string) {
-    return can(operation) && href ? <Link className="settings-secondary-link" to={href}>{label}</Link> : <Button className="settings-secondary-link" onPress={() => { if (can(operation)) open(); else setLocked(operation); }}>{!can(operation) && <LockKeyhole size={16} aria-label="无操作权限" />}{label}</Button>;
+  const contacts = (operation: Operation, scope: "operations" | "management" = "operations") => data?.members.memberships.filter(member => member.status === "active" && (member.isOwner || member[scope].operations.includes(operation))).map(member => member.displayName).join("、") || "云盘拥有者";
+  function row(title: string, value: string, label: string, operation: Operation, destination: (() => void) | string) {
+    const allowed = can(operation);
+    return <section className="management-row">
+      <div className="management-row-main"><div><h2>{title}</h2><p>{value}</p></div>{allowed && typeof destination === "string" ? <Link className="secondary-button" to={destination}>{label}</Link> : <Button className="secondary-button" aria-label={`${label}${allowed ? "" : "（权限说明）"}`} onPress={() => { if (allowed && typeof destination === "function") destination(); else setLocked(current => current === operation ? null : operation); }}>{!allowed && <LockKeyhole size={15} aria-hidden="true" />}{label}</Button>}</div>
+      {!allowed && <p className="management-contact">可以找 {contacts(operation)}</p>}
+      {locked === operation && <div className="permission-lock-explanation" role="status"><p>需要“{operationLabels[operation]}”权限。</p><p>申请授权可联系 {contacts(operation, "management")}。</p><Link to={`/choirs/${choirId}/memberships`}>查看权限分工</Link></div>}
+    </section>;
   }
   return <div className="app-page"><AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回</BackButton>} /><main className="page-shell settings-page settings-ux">
-    <header className="settings-heading"><h1>云盘管理</h1><p>成员可以了解云盘配置；修改按各项权限分别控制。</p></header>
+    <header className="settings-heading"><h1>云盘管理</h1><p>{data?.overview.name ?? "查看配置与权限分工"}</p></header>
     {!data && <p role={error ? "alert" : "status"}>{error ?? "正在读取管理概览…"}</p>}
     {error && <Button className="secondary-button" onPress={refresh}>重新读取</Button>}
     {data && <>
-      <section><h2>{data.overview.name}</h2>{action("修改云盘名称", "editDriveInfo", () => setDialog("name"))}<p>访客准入：{data.overview.guestAdmissionMode === "open" ? "开放进入" : "需要邀请码"}</p>{data.overview.guestAdmissionMode === "invite" && action("查看与轮换邀请码", "manageInvites", () => setDialog("invite"))}</section>
-      <section><h2>共享层</h2><ul>{data.overview.layers.map(layer => <li key={layer.slot}>{layer.name} · {layer.active ? "启用" : "停用"}</li>)}</ul>{action("管理共享层配置", "configureLayers", () => undefined, `/choirs/${choirId}/shared-layers`)}</section>
-      <section className="personal-settings-links"><Link className="settings-secondary-link" to={`/choirs/${choirId}/memberships`}>成员与权限</Link>{action("回收站", "trashFiles", () => setDialog("trash"))}</section>
-      {locked && <section className="permission-lock-explanation" role="status"><h2>需要“{operationLabels[locked]}”权限</h2><p>可以联系：{data.members.memberships.filter(member => member.status === "active" && (member.isOwner || member.operations.operations.includes(locked))).map(member => member.displayName).join("、") || "云盘拥有者"}。</p><p>申请授权可联系：{data.members.memberships.filter(member => member.status === "active" && (member.isOwner || member.management.operations.includes(locked))).map(member => member.displayName).join("、") || "云盘拥有者"}。受托人只能在范围内为普通成员授权。</p><Link to={`/choirs/${choirId}/memberships`}>查看成员与权限</Link></section>}
+      <div className="management-list">
+        {row("云盘名称", data.overview.name, "修改云盘名称", "editDriveInfo", () => setDialog("name"))}
+        {data.overview.guestAdmissionMode === "invite" ? row("访客进入方式", "需要邀请码", "查看与轮换邀请码", "manageInvites", () => setDialog("invite")) : <section className="management-row"><h2>访客进入方式</h2><p>开放进入</p></section>}
+        {row("共享层", data.overview.layers.map(layer => `${layer.name}${layer.active ? "" : "（停用）"}`).join(" · ") || "尚未设置", "管理共享层配置", "configureLayers", `/choirs/${choirId}/shared-layers`)}
+        <Link className="management-nav" to={`/choirs/${choirId}/memberships`}><span><strong>成员与权限</strong><small>找负责人、查看或调整权限</small></span><span aria-hidden="true">›</span></Link>
+        {row("回收站", "删除的乐谱保留三十天", "打开回收站", "trashFiles", () => setDialog("trash"))}
+      </div>
       {dialog === "name" && can("editDriveInfo") && <DriveSettingsDialog choirId={choirId} field="name" onClose={() => setDialog(null)} onSaved={async () => refresh()} />}
       {dialog === "invite" && can("manageInvites") && <InviteCodeDialog choirId={choirId} choirName={data.overview.name} onClose={() => setDialog(null)} />}
       {dialog === "trash" && can("trashFiles") && <TrashDialog choirId={choirId} onClose={() => setDialog(null)} onRestored={refresh} />}
