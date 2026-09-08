@@ -1,3 +1,4 @@
+import { SettingsFeedback } from "../settings/settings-feedback";
 import { authenticatedLocalOwnerKey, currentLocalOwnerKey } from "../platform/local-workspace";
 import { BackButton } from "../navigation/back-button";
 import { useUserLifecycle } from "../settings/use-user-lifecycle";
@@ -16,7 +17,7 @@ export default function UserLifecyclePage() {
 function UserLifecycle() {
   const session = authClient.useSession();
   const navigate = useNavigate();
-  const { state, setState, message, setMessage, busy, blocked, reload, perform } = useUserLifecycle();
+  const { state, setState, message, setMessage, busy, loading, blocked, reload, perform } = useUserLifecycle();
   const [acceptedUser, setAcceptedUser] = useState<string | null>(null);
   const finishDeletion = async (isCurrent: () => boolean) => {
     // Disconnect identity pointers only; drafts remain keyed to their original user.
@@ -39,7 +40,7 @@ function UserLifecycle() {
       <p>用户已停用，云盘访问与同步已撤销。恢复截止：{new Date(state.deletion.expiresAt).toLocaleString()}。</p>
       <p>请使用删除时的{methodName(state.deletion.authMethod)}重新登录；验证后仍需明确确认恢复。恢复后原成员关系恢复为普通成员，拥有者角色与共享层编辑权由现任拥有者重新授予。</p>
       <Link className="secondary-link" to="/login">重新验证原登录方式</Link>
-      <Button className="secondary-button" isDisabled={blocked} onPress={() => void perform("/api/user/lifecycle/restore", { confirm: true, deletionId: state.deletion!.deletionId }, async () => { await authClient.getSession(); await navigate("/login"); })}>确认恢复用户</Button>
+      <Button className="secondary-button" isDisabled={blocked} onPress={() => void perform("/api/user/lifecycle/restore", { confirm: true, deletionId: state.deletion!.deletionId }, async isCurrent => { await authClient.getSession(); if (isCurrent()) await navigate("/login"); })}>确认恢复用户</Button>
     </section> : <>
       <section>
         <p>删除会立即撤销所有会话、云盘访问与同步。身份和个人层保留三十天，期间可重新验证并确认恢复；到期后永久清理。共享批注保留你最后使用的云盘内显示名，不保留登录邮箱或全局资料名作为署名。</p>
@@ -50,9 +51,9 @@ function UserLifecycle() {
           <Button className="primary-button" isDisabled={blocked || acceptedUser !== state.userId || ownedDrives.length > 0} onPress={() => void perform("/api/user/lifecycle/delete", { confirm: true, expectedUserId: state.userId }, finishDeletion)}>确认删除用户</Button>
         </>}
       </section>
-    </> : <Link className="secondary-link" to="/login">登录或恢复用户</Link>}
-    {message ? <p role="status">{message}</p> : null}
-    {message && <Button className="secondary-button" isDisabled={busy} onPress={() => void reload().catch(() => undefined)}>重新读取状态</Button>}
+    </> : !loading && <Link className="secondary-link" to="/login">登录或恢复用户</Link>}
+    <SettingsFeedback loading={loading} loadError={null} message={message} retry={() => void reload().catch(() => undefined)} />
+    {message && <Button className="secondary-button" isDisabled={busy || loading} onPress={() => void reload().catch(() => undefined)}>重新读取状态</Button>}
   </main></div>;
 }
 function methodName(method: string) { return method === "credential" ? "邮箱与密码" : method === "google" ? "Google" : "微信"; }

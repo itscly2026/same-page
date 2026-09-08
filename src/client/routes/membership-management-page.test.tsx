@@ -27,6 +27,7 @@ it("keeps confirmed saves and the member list when refreshing fails, and only re
   fireEvent.click(screen.getByRole("button", { name: "重新读取成员列表" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "重新读取成员列表" })).not.toBeInTheDocument());
   expect(writes).toBe(1);
+  expect(screen.queryByText(/但刷新失败/)).not.toBeInTheDocument();
 });
 
 it("distinguishes an unreadable permission log from no changes and allows a read retry", async () => {
@@ -41,4 +42,39 @@ it("distinguishes an unreadable permission log from no changes and allows a read
   unavailable = false;
   fireEvent.click(screen.getByRole("button", { name: "重新读取记录" }));
   expect(await screen.findByText("暂无权限变更记录。")).toBeVisible();
+});
+
+it("recovers a revision conflict without discarding the failed permission edits", async () => {
+  let conflict = false;
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === "PUT") { conflict = true; return Response.json({ error: "membership_conflict" }, { status: 409 }); }
+    if (url.endsWith("/permission-layers")) return Response.json({ layers: [] });
+    if (url.endsWith("/permission-changes")) return Response.json({ changes: [] });
+    return Response.json({ ...state, memberships: [{ ...member, revision: conflict ? 2 : 1 }] });
+  }));
+  render(page());
+  fireEvent.click(await screen.findByRole("heading", { name: "小花" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "上传文件：可以操作" }));
+  fireEvent.click(screen.getByRole("button", { name: "保存 小花 的权限" }));
+  fireEvent.click(await screen.findByRole("button", { name: "重新读取成员列表" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "重新读取成员列表" })).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole("heading", { name: "小花" }));
+  expect(screen.getByRole("checkbox", { name: "上传文件：可以操作" })).toBeChecked();
+});
+
+it("clears a failed audit read when a permission save automatically refreshes the log", async () => {
+  let saved = false;
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === "PUT") { saved = true; return Response.json({ ok: true }); }
+    if (url.endsWith("/permission-layers")) return Response.json({ layers: [] });
+    if (url.endsWith("/permission-changes")) return saved ? Response.json({ changes: [] }) : new Response(null, { status: 503 });
+    return Response.json({ ...state, memberships: [{ ...member, revision: saved ? 2 : 1 }] });
+  }));
+  render(page());
+  fireEvent.click(await screen.findByText("最近权限变更记录"));
+  await screen.findByText(/权限记录读取失败/);
+  fireEvent.click(screen.getByRole("heading", { name: "小花" }));
+  fireEvent.click(screen.getByRole("button", { name: "保存 小花 的权限" }));
+  expect(await screen.findByText("暂无权限变更记录。")).toBeVisible();
+  expect(screen.queryByText(/权限记录读取失败/)).not.toBeInTheDocument();
 });

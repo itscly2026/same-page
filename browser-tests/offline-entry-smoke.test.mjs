@@ -109,7 +109,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     const memberships = await (await admin.get(`/api/choirs/${fixture.choirId}/memberships`)).json();
     const target = memberships.memberships.find(member => member.id !== memberships.actorId);
     assert.ok(target);
-    assert.equal((await admin.post(`/api/choirs/${fixture.choirId}/memberships/${target.id}`, { data: { action: "remove", expectedRevision: target.revision } })).status(), 200);
+    assert.equal((await admin.post(`/api/choirs/${fixture.choirId}/memberships/${target.id}`, { data: { action: "remove", expectedRevision: target.revision } })).status(), 204);
     await offline.reload();
     await offline.getByRole("heading", { name: "本机保留的乐谱", exact: true }).waitFor();
     await offline.getByText("已无法访问此云盘，以下为本机保留内容", { exact: true }).waitFor();

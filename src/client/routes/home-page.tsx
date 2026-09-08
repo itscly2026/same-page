@@ -1,5 +1,5 @@
-import { enterDrive, joinDrive } from "../auth/drive-entry";
-import { useSettingsLifetime } from "../settings/use-settings-lifetime";
+import { enterDrive, joinDrive, cancelDriveEntry, type DriveEntryResult } from "../auth/drive-entry";
+import { invalidateSettingsLifetime, useSettingsLifetime } from "../settings/use-settings-lifetime";
 import { InstallButton } from "../install/install-entry";
 import { useApplicationIdentity } from "../auth/application-identity";
 import { LocalEntry } from "../auth/local-entry";
@@ -148,21 +148,25 @@ function HomeContent({ session, startup }: { session: ReturnType<typeof authClie
     setClearingGuestSession(false);
   };
 
+  const pendingEntryRef = useRef<Promise<DriveEntryResult> | null>(null);
   const dismissJoinDialog = () => {
-    if (userId && joinStep.kind === "display-name") {
-      void clearActiveGuestSession();
-    }
+    invalidateSettingsLifetime(entryLifetimeRef);
+    setSubmitting(false);
+    setClearingGuestSession(true);
+    void cancelDriveEntry(pendingEntryRef.current).finally(() => setClearingGuestSession(false));
     finishJoinDialog();
   };
 
-  const entryLifetime = useSettingsLifetime();
+  const entryLifetimeRef = useSettingsLifetime();
   const enterInviteDrive = async (event?: FormEvent) => {
     event?.preventDefault();
     if (clearingGuestSession || submitting) return;
-    const generation = entryLifetime.current;
+    const generation = entryLifetimeRef.current;
     setSubmitting(true); setJoinMessage(null);
-    const result = await enterDrive({ admission: "invite", joinCode }, Boolean(userId));
-    if (generation !== entryLifetime.current) return;
+    const pending = enterDrive({ admission: "invite", joinCode }, Boolean(userId));
+    pendingEntryRef.current = pending;
+    const result = await pending;
+    if (generation !== entryLifetimeRef.current) return;
     setSubmitting(false);
     if (result.kind === "enter") {
       finishJoinDialog();
@@ -179,20 +183,28 @@ function HomeContent({ session, startup }: { session: ReturnType<typeof authClie
   });
 
   useEffect(() => {
-    if (session.isPending || !linkInvite || linkHandled.current) return;
-    linkHandled.current = true;
-    // Remove the shared credential before making admission requests.
-    void navigate({ pathname: location.pathname, search: location.search, hash: "" }, { replace: true });
-    enterLinkedDrive();
+    let active = true;
+    // StrictMode disconnects and reconnects effects before this microtask.
+    // Start only the committed lifetime, keeping automatic admission single-shot.
+    void Promise.resolve().then(() => {
+      if (!active || session.isPending || !linkInvite || linkHandled.current) return;
+      linkHandled.current = true;
+      // Remove the shared credential before making admission requests.
+      void navigate({ pathname: location.pathname, search: location.search, hash: "" }, { replace: true });
+      enterLinkedDrive();
+    });
+    return () => { active = false; };
   }, [session.isPending, linkInvite, navigate, location.pathname, location.search]);
 
   const joinValidatedDrive = async (event: FormEvent) => {
     event.preventDefault();
     if (joinStep.kind !== "display-name" || submitting) return;
-    const generation = entryLifetime.current;
+    const generation = entryLifetimeRef.current;
     setSubmitting(true); setJoinMessage(null);
-    const result = await joinDrive({ kind: "guest", choirId: joinStep.choir.id }, displayName);
-    if (generation !== entryLifetime.current) return;
+    const pending = joinDrive({ kind: "guest", choirId: joinStep.choir.id }, displayName);
+    pendingEntryRef.current = pending;
+    const result = await pending;
+    if (generation !== entryLifetimeRef.current) return;
     setSubmitting(false);
     if (result.kind === "enter") {
       finishJoinDialog(); await navigate(`/choirs/${result.choir.id}`);
@@ -371,7 +383,7 @@ function HomeContent({ session, startup }: { session: ReturnType<typeof authClie
                       <Button
                         type="button"
                         className="text-button"
-                        isDisabled={clearingGuestSession}
+                        isDisabled={submitting || clearingGuestSession}
                         onPress={async () => {
                           await clearActiveGuestSession();
                           setJoinStep({ kind: "invite" });

@@ -16,12 +16,14 @@ export function useUserLifecycle() {
   const [state, setState] = useState<ReturnType<typeof userLifecycleSchema.parse> | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [needsRefresh, setNeedsRefresh] = useState(false);
   const reload = useCallback(async () => {
     const isCurrent = captureSettingsLifetime(lifetime);
+    setLoading(true);
     try {
       const next = await loadUserLifecycle();
-      if (isCurrent()) { setState(next); setNeedsRefresh(false); }
+      if (isCurrent()) { setState(next); setNeedsRefresh(false); setMessage(null); }
     } catch (error) {
       if (isCurrent()) {
         setNeedsRefresh(true);
@@ -29,18 +31,18 @@ export function useUserLifecycle() {
         setMessage(settingsError(error, "暂时无法读取用户状态，请重试。"));
       }
       throw error;
-    }
+    } finally { if (isCurrent()) setLoading(false); }
   }, [lifetime]);
   useEffect(() => {
     const isCurrent = captureSettingsLifetime(lifetime);
     void loadUserLifecycle().then(next => {
-      if (isCurrent()) setState(next);
+      if (isCurrent()) { setState(next); setLoading(false); }
     }).catch(error => {
-      if (isCurrent()) { setNeedsRefresh(true); setMessage(settingsError(error, "暂时无法读取用户状态，请重试。")); }
+      if (isCurrent()) { setLoading(false); setNeedsRefresh(true); setMessage(settingsError(error, "暂时无法读取用户状态，请重试。")); }
     });
   }, [lifetime]);
   const perform = async (path: string, body: unknown, complete?: (isCurrent: () => boolean) => Promise<void>) => {
-    if (busy || needsRefresh) return;
+    if (busy || loading || needsRefresh) return;
     const isCurrent = captureSettingsLifetime(lifetime);
     setBusy(true); setMessage(null);
     const result = await runSettingsMutation(
@@ -53,5 +55,5 @@ export function useUserLifecycle() {
     if (["unconfirmed", "revoked", "saved-refresh-failed"].includes(result.kind)) setNeedsRefresh(true);
     setBusy(false);
   };
-  return { state, setState, message, setMessage, busy, blocked: busy || needsRefresh, reload, perform };
+  return { state, setState, message, setMessage, busy, loading, blocked: busy || loading || needsRefresh, reload, perform };
 }

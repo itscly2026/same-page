@@ -1,5 +1,5 @@
-import { joinDrive, resumeDriveEntry } from "../auth/drive-entry";
-import { useSettingsLifetime, captureSettingsLifetime } from "../settings/use-settings-lifetime";
+import { joinDrive, resumeDriveEntry, cancelDriveEntry, type DriveEntryResult } from "../auth/drive-entry";
+import { invalidateSettingsLifetime, useSettingsLifetime, captureSettingsLifetime } from "../settings/use-settings-lifetime";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import {
   type FormEvent,
@@ -30,7 +30,6 @@ import {
   type ChoirSummary,
 } from "../../shared/choirs";
 import { authClient } from "../auth/auth-client";
-import { clearGuestSession } from "../auth/preview-guest-session";
 import { AppHeader } from "../components/app-header";
 
 type AuthView =
@@ -396,6 +395,7 @@ export default function AuthPage() {
   };
 
   const entryLifetimeRef = useSettingsLifetime();
+  const pendingEntryRef = useRef<Promise<DriveEntryResult> | null>(null);
   const finishAuthentication = useCallback(async () => {
     const isCurrent = captureSettingsLifetime(entryLifetimeRef);
     const lifecycle = await diagnosticFetch("/api/user/lifecycle").then(async (response) => response.ok ? response.json() : null).catch(() => null);
@@ -404,7 +404,9 @@ export default function AuthPage() {
       await navigate("/user/lifecycle");
       return;
     }
-    const result = await resumeDriveEntry();
+    const pending = resumeDriveEntry();
+    pendingEntryRef.current = pending;
+    const result = await pending;
     if (!isCurrent()) return;
     if (result.kind === "none") {
       await navigate("/", { replace: true, state: { startup: true } });
@@ -455,13 +457,23 @@ export default function AuthPage() {
     }
   };
 
+  const cancelEntry = async () => {
+    invalidateSettingsLifetime(entryLifetimeRef);
+    const isCurrent = captureSettingsLifetime(entryLifetimeRef);
+    setSubmitting(true);
+    await cancelDriveEntry(pendingEntryRef.current);
+    if (isCurrent()) await navigate("/drives");
+  };
+
   const joinCurrentGuestChoir = async (event: FormEvent) => {
     event.preventDefault();
     if (!joinChoir) return;
     setSubmitting(true);
     setMessage(null);
     const isCurrent = captureSettingsLifetime(entryLifetimeRef);
-    const result = await joinDrive({ kind: "guest", choirId: joinChoir.id }, displayName);
+    const pending = joinDrive({ kind: "guest", choirId: joinChoir.id }, displayName);
+    pendingEntryRef.current = pending;
+    const result = await pending;
     if (!isCurrent()) return;
     setSubmitting(false);
     if (result.kind === "enter") await navigate(`/choirs/${result.choir.id}`);
@@ -743,7 +755,7 @@ export default function AuthPage() {
           description: "你已经登录，但本次加入云盘没有完成。",
           form: (
             <><Button isDisabled={submitting} onPress={() => void finishAuthentication()}>重试继续加入</Button>
-            <Button className="secondary-button" onPress={async () => { await clearGuestSession(); await navigate("/drives"); }}>取消并返回所有云盘</Button></>
+            <Button className="secondary-button" onPress={() => void cancelEntry()}>取消并返回所有云盘</Button></>
           ),
         };
     }
@@ -753,10 +765,7 @@ export default function AuthPage() {
     <div className="app-page auth-page">
       <AppHeader
         actions={
-          <Button className="header-action" onPress={async () => {
-            entryLifetimeRef.current += 1;
-            await clearGuestSession(); await navigate("/drives");
-          }}>返回首页</Button>
+          <Button className="header-action" onPress={() => void cancelEntry()}>返回首页</Button>
         }
       />
       <main className="auth-layout">

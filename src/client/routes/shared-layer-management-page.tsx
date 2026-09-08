@@ -35,7 +35,7 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [pending, setPending] = useState(false);
   const busy = useRef(false);
-  const [feedback, setFeedback] = useState<{ message: string; failed?: boolean } | null>(null);
+  const [feedback, setFeedback] = useState<{ message: string; failed?: boolean; refreshFailed?: boolean } | null>(null);
   const generation = useSettingsLifetime();
   const retryLoad = () => { setLoading(true); setLoadError(null); setLoadAttempt(value => value + 1); };
 
@@ -52,8 +52,9 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
       if (!await applySharedLayerAvailability(workspace, body)) throw new Error("shared_layer_state_changed");
       if (controller.signal.aborted) return;
       setDriveName(body.drive.name); setLayers(body.layers); setLoading(false);
+      setFeedback(current => current?.refreshFailed ? { message: "已保存，已读取最新状态。" } : current);
     })().catch(error => {
-      if (!controller.signal.aborted) { setFeedback(current => current && !current.failed ? { message: `${current.message}但刷新失败，请重新加载，不必再次提交。`, failed: true } : current); setLoadError(settingsError(error, "暂时无法读取共享层管理设置。")); setLoading(false); }
+      if (!controller.signal.aborted) { setFeedback(current => current && !current.failed ? { message: `${current.message}但刷新失败，请重新加载，不必再次提交。`, failed: true, refreshFailed: true } : current); setLoadError(settingsError(error, "暂时无法读取共享层管理设置。")); setLoading(false); }
     });
     return () => controller.abort();
   }, [choirId, loadAttempt, view, userId]);
@@ -76,7 +77,7 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
       },
     );
     if (lifetime !== generation.current) return;
-    setFeedback({ message: settingsMutationMessage(result, message), failed: result.kind !== "saved" });
+    setFeedback({ message: settingsMutationMessage(result, message), failed: result.kind !== "saved", refreshFailed: result.kind === "saved-refresh-failed" });
     if ((result.kind === "saved" || result.kind === "saved-refresh-failed") && method === "POST") setNewName("");
     setDeleting(null);
     retryLoad();

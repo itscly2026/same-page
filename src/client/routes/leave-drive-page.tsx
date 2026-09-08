@@ -1,3 +1,4 @@
+import { SettingsFeedback } from "../settings/settings-feedback";
 import { useState } from "react";
 import { Button } from "react-aria-components";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -14,7 +15,7 @@ export default function LeaveDrivePage() {
 }
 function LeaveDrive({ choirId }: { choirId: string }) {
   const navigate = useNavigate();
-  const { state, message, busy, blocked, reload, perform } = useUserLifecycle();
+  const { state, message, busy, loading, blocked, reload, perform } = useUserLifecycle();
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   return <div className="app-page">
     <AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回云盘</BackButton>} />
@@ -29,8 +30,8 @@ function LeaveDrive({ choirId }: { choirId: string }) {
       </section>}
 
       {state && !state.memberships.some(member => member.choirId === choirId) && <p>你在此云盘没有成员关系。</p>}
-      {message && <p role="status">{message}</p>}
-      {message && <Button isDisabled={busy} onPress={() => void reload().catch(() => undefined)}>重新读取状态</Button>}
+      <SettingsFeedback loading={loading} loadError={null} message={message} retry={() => void reload().catch(() => undefined)} />
+      {message && <Button isDisabled={busy || loading} onPress={() => void reload().catch(() => undefined)}>重新读取状态</Button>}
       <ConfirmDialog confirmation={confirmation} busy={busy} onClose={() => setConfirmation(null)} />
     </main>
   </div>;

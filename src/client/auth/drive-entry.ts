@@ -85,3 +85,10 @@ export async function openDriveAdmission(choirId: string, authenticated: boolean
     return enterDrive({ admission: "open", choirId }, authenticated, signal);
   } catch { return { kind: "failed", message: unavailable, restart: false }; }
 }
+
+// Wait for a session-creating request to settle before deleting its credential.
+// Aborting fetch alone cannot guarantee that the server did not set a cookie.
+export async function cancelDriveEntry(pending: Promise<unknown> | null) {
+  await pending?.catch(() => undefined);
+  await clearGuestSession();
+}

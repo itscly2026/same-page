@@ -198,7 +198,7 @@ export class DriveLibrary {
     this.request = pending;
     pending.done = Promise.resolve().then(() => {
       signal.throwIfAborted();
-      if (!authenticated && this.snapshot.access.kind === "opened" && this.snapshot.access.retained) return this.snapshot.access;
+      if (!authenticated && this.ownerKey.startsWith("user:") && this.snapshot.access.kind === "opened" && this.snapshot.access.retained) return this.snapshot.access;
       if (!authenticated && this.ownerKey.startsWith("user:")) return this.readLocal(signal);
       return this.transport.load(signal, allowAdmission, authenticated);
     })
@@ -219,7 +219,8 @@ export class DriveLibrary {
           invalidateDriveLibrary(this.ownerKey, this.choirId);
         }
         this.localController?.abort();
-        if ((access.kind === "denied" || access.kind === "not-found") ) {
+        if (access.kind === "denied" || access.kind === "not-found") {
+          this.publish({ access: this.retainedAccess([]), refreshMessage: null });
           const captured = await workspace;
           if (captured) await rememberDriveAccessRevoked(captured, signal).catch(() => undefined);
           const scores = captured ? await readRetainedScores(captured).catch(() => []) : [];
@@ -249,17 +250,17 @@ export class DriveLibrary {
   }
 
   private watchRetained(captured: LocalWorkspace | null, ownerSignal: AbortSignal) {
-          this.retainedSubscription?.unsubscribe();
-          if (captured) this.retainedSubscription = liveQuery(() => readRetainedScores(captured)).subscribe({
-            next: scores => {
-              const current = this.snapshot.access;
-              if (!ownerSignal.aborted && current.kind === "opened" && current.retained) this.publish({ access: { ...current, result: { ...current.result, scores } } });
-            },
-            error: () => {
-              const current = this.snapshot.access;
-              if (!ownerSignal.aborted && current.kind === "opened" && current.retained) this.publish({ access: { ...current, result: { ...current.result, scores: [] } }, refreshMessage: "无法读取本机副本，请重试。" });
-            },
-          });
+    this.retainedSubscription?.unsubscribe();
+    if (captured) this.retainedSubscription = liveQuery(() => readRetainedScores(captured)).subscribe({
+      next: scores => {
+        const current = this.snapshot.access;
+        if (!ownerSignal.aborted && current.kind === "opened" && current.retained) this.publish({ access: { ...current, result: { ...current.result, scores } } });
+      },
+      error: () => {
+        const current = this.snapshot.access;
+        if (!ownerSignal.aborted && current.kind === "opened" && current.retained) this.publish({ access: { ...current, result: { ...current.result, scores: [] } }, refreshMessage: "无法读取本机副本，请重试。" });
+      },
+    });
   }
 
   private async readLocal(signal: AbortSignal): Promise<OpenedAccess | null> {

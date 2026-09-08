@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { saveAnnotationDraft, visibleLocalAnnotations } from "../annotations/annotation-state";
@@ -73,4 +73,24 @@ it("explains expired deletion verification without losing the user's confirmatio
   fireEvent.click(screen.getByRole("button", { name: "确认删除用户" }));
   expect(await screen.findByText("请重新验证原登录方式，并在十分钟内确认删除。")).toBeVisible();
   expect(screen.getByRole("checkbox")).toBeChecked();
+});
+
+it("does not navigate from an old restore after leaving the lifecycle page", async () => {
+  const { authClient } = await import("../auth/auth-client");
+  let release!: () => void;
+  vi.mocked(authClient.getSession).mockImplementationOnce(() => new Promise(resolve => { release = () => resolve({ data: null, error: null }); }));
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST"
+    ? new Response(null, { status: 204 })
+    : Response.json({ userId: "user-a", deletion: { deletionId: "deletion", expiresAt: Date.now() + 1000, authMethod: "credential" }, reauthenticated: true, methods: ["credential"], memberships: [] })));
+  render(<MemoryRouter initialEntries={["/user/lifecycle"]}><Routes>
+    <Route path="/user/lifecycle" element={<UserLifecyclePage />} />
+    <Route path="/user" element={<PersonalSettingsPage />} />
+    <Route path="/login" element={<h1>登录</h1>} />
+  </Routes></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: "确认恢复用户" }));
+  await waitFor(() => expect(release).toBeTypeOf("function"));
+  fireEvent.click(screen.getByRole("button", { name: "返回个人设置" }));
+  await screen.findByRole("heading", { name: "个人设置" });
+  await act(async () => release());
+  expect(screen.getByRole("heading", { name: "个人设置" })).toBeVisible();
 });

@@ -12,3 +12,7 @@ export function captureSettingsLifetime(lifetime: { current: number }) {
   const generation = lifetime.current;
   return () => generation === lifetime.current;
 }
+
+export function invalidateSettingsLifetime(lifetime: { current: number }) {
+  lifetime.current += 1;
+}
