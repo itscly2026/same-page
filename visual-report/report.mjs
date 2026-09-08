@@ -2,7 +2,7 @@ export function createVisualReportManifest({ commit, generatedAt, captures, work
   return {
     schemaVersion: 2,
     workingTreeDirty,
-    sampleProvenance: "本仓库自行生成的虚构排版与批注，未复制私人或外部乐谱。",
+    sampleProvenance: "本仓库自行生成的虚构排版与笔记，未复制私人或外部乐谱。",
     deviceGates: ["真实 iPad Safari 与旋转", "Pencil 笔迹", "真实软键盘与触控", "安装后的离线与生产更新"],
     app: "Same Page",
     commit,

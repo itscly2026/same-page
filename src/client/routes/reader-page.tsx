@@ -1,5 +1,5 @@
 import { useReaderAnnotationActions } from "../reader/use-reader-annotation-actions";
-import { ReaderNoteSharing } from "../reader/reader-note-sharing";
+import { useToolColor } from "../reader/use-tool-color";
 import { offlinePreparationDescription } from "../offline/offline-score-status";
 import { ExportDialog } from "../reader/export-dialog";
 import { scoreDisplayName } from "../../shared/score-display-name";
@@ -29,7 +29,6 @@ import {
 import { Dialog } from "../navigation/overlays";
 import { Link, useParams } from "react-router-dom";
 
-import { sharedLayerDisplayName } from "../../shared/annotations";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import type {
   AnnotationOverlayInteraction,
@@ -77,7 +76,7 @@ import {
 import type { DiagnosticReader } from "../../shared/diagnostic-report";
 import { DiagnosticReportDialog, DiagnosticReportModal } from "../diagnostics/diagnostic-report-dialog";
 
-type ReaderPanel = "layers" | "pages" | "sharing";
+type ReaderPanel = "layers" | "pages";
 
 const ReaderEditingControls = lazy(() =>
   import("../reader/reader-editing-controls").then((module) => ({
@@ -116,6 +115,7 @@ function ReaderPageContent() {
   const [annotationInteraction, setAnnotationInteraction] =
     useState<AnnotationOverlayInteraction>("idle");
   const [tool, setTool] = useState<AnnotationTool>("text");
+  const { color: toolColor, setColor: setToolColor } = useToolColor(resolvedWorkspace?.ownerKey ?? `user:${identity.localUserId ?? "guest"}`, tool);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const [syncOutcome, setSyncOutcome] = useState<ReaderSyncOutcome>("none");
   const [syncing, setSyncing] = useState(false);
@@ -411,6 +411,7 @@ function ReaderPageContent() {
     annotations,
     editing,
     tool,
+    toolColor,
     activeLayerId,
     onInteractionChange: setAnnotationInteraction,
     editor,
@@ -452,7 +453,7 @@ function ReaderPageContent() {
       <h1 className="visually-hidden">{scoreDisplayName(score.fileName)}</h1>
       {cloudState === "trashed" ? (
         <aside className="reader-alert reader-alert--trash" role="alert">
-          乐谱已移入回收站。本机离线副本和未同步批注仍保留，恢复后可继续同步。
+          乐谱已移入回收站。本机离线副本和未同步笔记仍保留，恢复后可继续同步。
         </aside>
       ) : null}
       {visibleDisplay !== document && failedDisplay !== document ? <ReaderLoading choirId={choirId} fileName={score.fileName} /> : null}
@@ -462,9 +463,9 @@ function ReaderPageContent() {
       {reader.snapshot.modeMessage ? <p className="reader-display-notice" role="status">{reader.snapshot.modeMessage}{reader.snapshot.mode === "images" && <Button className="text-button" onPress={() => navigation.afterEditing(reader.retry)}>重试 PDF 阅读</Button>}</p> : null}
       {chromeVisible ? (
       <header className="reader-chrome" aria-label="阅读器控制">
-          <Button aria-label="返回云盘" className="reader-chrome__back reader-icon-button" onPress={() => { startLoadingJourney("exit-score", "warm"); navigation.back(`/choirs/${choirId}`); }}>
+          {!editing && <Button aria-label="返回云盘" className="reader-chrome__back reader-icon-button" onPress={() => { startLoadingJourney("exit-score", "warm"); navigation.back(`/choirs/${choirId}`); }}>
             <ArrowLeft aria-hidden="true" size={21} />
-          </Button>
+          </Button>}
           <strong className="reader-chrome__title">{readerTitle}</strong>
           <div className="reader-chrome__actions-stack">
             <div className="reader-chrome__actions">
@@ -484,8 +485,8 @@ function ReaderPageContent() {
               >
                 {editing ? <Check aria-hidden="true" size={21} /> : <Pencil aria-hidden="true" size={21} />}
               </Button>
-              <Button
-                aria-label="看哪些批注"
+              {!editing && <><Button
+                aria-label="看哪些笔记"
                 aria-expanded={readerPanel === "layers"}
                 className="reader-icon-button"
                 onPress={() => { if (editing) navigation.afterEditing(() => openReaderPanel("layers")); else openReaderPanel("layers"); }}
@@ -500,9 +501,9 @@ function ReaderPageContent() {
                 onPress={() => setMoreOpen((open) => !open)}
               >
                 <Ellipsis aria-hidden="true" size={21} />
-              </Button>
+              </Button></>}
             </div>
-            <Button
+            {!editing && <Button
               aria-label="页面位置"
               aria-expanded={readerPanel === "pages"}
               className="reader-page-indicator"
@@ -510,7 +511,7 @@ function ReaderPageContent() {
               onPress={() => openReaderPanel("pages")}
             >
               <span>{currentPage} / {document.numPages}</span>
-            </Button>
+            </Button>}
             {editing && annotationInteraction !== "composing-text" && <span className="reader-save-feedback" role="status">
               {persistence === "saving" ? "正在保存到本机…" : persistence === "failed" ? "本机保存失败" : annotations.some(annotation => annotation.state === "draft") ? "已保存在本机" : "正在编辑当前页"}
             </span>}
@@ -531,7 +532,7 @@ function ReaderPageContent() {
               </p>
             ) : null}
           </div>
-          {moreOpen ? (
+          {!editing && moreOpen ? (
             <Popover triggerRef={moreTrigger} isOpen={moreOpen} onOpenChange={setMoreOpen} isNonModal placement="bottom end" className="reader-more-popover">
             <Dialog className="reader-more-menu" aria-label="更多阅读选项">
               <IdentityNotice identity={identity} />
@@ -589,7 +590,7 @@ function ReaderPageContent() {
               )}
               {downloadMessage && preparation.phase === "idle" && <p className="reader-more-menu__status" role="status">{downloadMessage}</p>}
               </section>
-              <section aria-label="批注保存与同步"><h2>批注保存与同步</h2>
+              <section aria-label="笔记保存与同步"><h2>笔记保存与同步</h2>
                 <p className="reader-more-menu__status" data-kind={syncStatus.kind} role="status">{syncStatus.message}</p>
                 {(syncStatus.kind === "failed" || syncStatus.kind === "pending") && (
                 <Button className="reader-sync-action" isDisabled={syncing || syncActivity === "running" || cloudState === "trashed"} onPress={() => void manualSync()}>
@@ -599,14 +600,11 @@ function ReaderPageContent() {
                 )}
               </section>
               </>}
-              {layers.some(layer => layer.kind === "personal" && layer.canEdit && layer.canShare) && <section aria-label="我的笔记"><h2>我的笔记</h2>
-                <Button onPress={() => navigation.afterEditing(() => { setMoreOpen(false); setReaderPanel("sharing"); })}>分享我的笔记</Button>
-              </section>}
               <section aria-label="导出"><h2>导出</h2>
               <Button onPress={() => navigation.afterEditing(() => { setMoreOpen(false); setExportOpen(true); })}>导出 PDF</Button>
               </section>
               <details className="reader-help"><summary>阅读帮助</summary>
-                <p className="reader-more-menu__status">轻点中央显示工具；点按两侧或左右滑动翻页。编辑时锁定当前页，点勾号完成后继续翻页。批注同步与离线副本分别准备。</p>
+                <p className="reader-more-menu__status">轻点中央显示工具；点按两侧或左右滑动翻页。编辑时锁定当前页，点勾号完成后继续翻页。笔记同步与离线副本分别准备。</p>
                 <Button onPress={() => { setMoreOpen(false); setDiagnosticOpen(true); }}>故障诊断</Button>
               </details>
             </Dialog>
@@ -627,12 +625,14 @@ function ReaderPageContent() {
       ) : null}
 
       {editing && editor && annotationInteraction === "idle" ? (
-        <Suspense fallback={<p role="status">正在准备批注工具…</p>}>
+        <Suspense fallback={<p role="status">正在准备笔记工具…</p>}>
           <ReaderEditingControls
             isDisabled={persistence !== "idle"}
             editor={editor}
             layers={layers}
             tool={tool}
+            toolColor={toolColor}
+            onColorChange={setToolColor}
             activeLayerId={activeLayerId}
             onToolChange={setTool}
             onLayerChange={selectEditingLayer}
@@ -654,37 +654,37 @@ function ReaderPageContent() {
         </aside>
       ) : null}
       {exportOpen && workspace && <ExportDialog layers={layers} workspace={workspace} source={document} versionId={score.currentVersion.id} fileName={score.fileName} authenticatedUserId={identity.authenticatedUserId} onClose={() => setExportOpen(false)} />}
-      {readerPanel === "layers" || readerPanel === "sharing" ? (
+      {!editing && readerPanel === "layers" ? (
         <ModalOverlay className="reader-panel-backdrop" isOpen isDismissable
           onOpenChange={(open) => { if (!open) setReaderPanel(null); }}>
           <Modal className="reader-panel reader-layers-dialog">
-            <Dialog aria-label={readerPanel === "sharing" ? "分享我的笔记" : "看哪些批注"} className="reader-layers-content">
+            <Dialog aria-label={"看哪些笔记"} className="reader-layers-content">
               <header className="reader-panel__header">
-                <strong>{readerPanel === "sharing" ? "分享我的笔记" : "看哪些批注"}</strong>
-                <Button aria-label="关闭批注显示" onPress={() => setReaderPanel(null)}>
+                <strong>{"看哪些笔记"}</strong>
+                <Button aria-label="关闭笔记显示" onPress={() => setReaderPanel(null)}>
                   关闭
                 </Button>
               </header>
               <Suspense fallback={<p role="status">正在准备图层…</p>}>
-                {readerPanel === "sharing" ? <ReaderNoteSharing key={workspace.scopeKey} workspace={workspace} layer={layers.find(layer => layer.kind === "personal" && layer.canEdit)} /> : <ReaderLayerPanel
+                <ReaderLayerPanel
                   key={workspace.scopeKey}
                   workspace={workspace}
                   layers={layers}
                   signedIn={Boolean(identity.authenticatedUserId)}
-                />}
+                />
               </Suspense>
             </Dialog>
           </Modal>
         </ModalOverlay>
       ) : null}
 
-      {conflicts.length > 0 ? (
-        <aside className="annotation-conflicts" aria-label="本地批注冲突">
+      {!editing && conflicts.length > 0 ? (
+        <aside className="annotation-conflicts" aria-label="本地笔记冲突">
           <strong>仍有 {conflicts.length} 项本机冲突待处理</strong>
-          <p>同一批注的云端版本已经变化；以下是保留在这台设备上的版本。</p>
+          <p>同一笔记的云端版本已经变化；以下是保留在这台设备上的版本。</p>
           {conflicts.map((conflict) => {
             const layer = layers.find(layer => layer.id === conflict.layerId);
-            const layerName = layer ? (layer.kind === "personal" && layer.canEdit ? "我的笔记" : sharedLayerDisplayName(layer.sharedSlot, layer.name)) : "未知图层";
+            const layerName = layer ? (layer.name) : "未知图层";
             const detail = describeAnnotationConflict(
               conflict,
               layerName,
@@ -717,11 +717,11 @@ function ReaderPageContent() {
           })}
         </aside>
       ) : null}
-      {syncStatus.kind === "failed" || syncStatus.kind === "risk" ? (
-        <aside className="annotation-conflicts" aria-label="批注同步异常">
+      {!editing && (syncStatus.kind === "failed" || syncStatus.kind === "risk") ? (
+        <aside className="annotation-conflicts" aria-label="笔记同步异常">
           <strong>{syncStatus.message}</strong>
           <div>
-            <Link className="text-button" aria-disabled={editing || undefined} to="/diagnostics">查看原因</Link>
+            <Link className="text-button" to="/diagnostics">查看原因</Link>
             <Button isDisabled={syncing} onPress={() => void manualSync()}>
               重试同步
             </Button>

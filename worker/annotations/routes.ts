@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { memberCapabilities, requireOperation, type PermissionMember } from "../permissions/access";
 import { readSharedLayerAvailability, readSharedLayerSnapshot } from "./shared-layer-state";
 import { RECOVERY_PERIOD_MS } from "../lifecycle/cleanup";
@@ -43,19 +44,21 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
       `INSERT OR IGNORE INTO annotation_layers
          (id, choir_id, score_id, kind, owner_user_id, name, sort_order,
           default_color, created_by_membership_id, created_at, updated_at)
-       VALUES (?, ?, ?, 'personal', ?, 'Personal', 10000, '#b4235a', ?, ?, ?)`,
-    ).bind(crypto.randomUUID(), choirId, scoreId, userId, access.membership?.id ?? null, now, now).run();
+       SELECT ?, ?, ?, 'personal', ?, '我的笔记', 10000, '#dc2626', ?, ?, ?
+       WHERE NOT EXISTS (SELECT 1 FROM annotation_layers WHERE score_id = ? AND owner_user_id = ? AND kind = 'personal' AND deleted_at IS NULL)`,
+    ).bind(crypto.randomUUID(), choirId, scoreId, userId, access.membership?.id ?? null, now, now, scoreId, userId).run();
   }
 
   const query = context.env.DB.prepare(
     `SELECT layers.id, layers.kind, layers.default_slot, COALESCE(settings.name, layers.name) AS name, COALESCE(settings.sort_order, layers.sort_order) AS sort_order,
-            layers.sharing, owner.display_name AS owner_name,
-            CASE WHEN subscriptions.user_id IS NULL THEN 0 ELSE 1 END AS personal_subscribed,
+            layers.sharing, layers.revision, layers.deleted_at, owner.display_name AS owner_name,
+            CASE WHEN subscriptions.subscribed = 0 THEN -1 WHEN subscriptions.user_id IS NULL THEN 0 ELSE 1 END AS personal_subscribed,
             layers.default_color AS product_default_color,
             settings.default_color AS admin_default_color,
             drive_preferences.subscribed AS drive_subscribed,
             drive_preferences.color_override AS drive_color_override,
             score_preferences.subscribed_override AS score_subscribed_override,
+            score_preferences.color_override AS score_color_override,
             CASE
               WHEN layers.kind = 'personal' AND layers.owner_user_id = ? THEN 1
               WHEN layers.kind = 'shared' AND grants.id IS NOT NULL THEN 1
@@ -76,14 +79,14 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
       AND grants.choir_id = layers.choir_id
      LEFT JOIN memberships owner ON owner.user_id = layers.owner_user_id AND owner.choir_id = layers.choir_id AND owner.status = 'active'
      LEFT JOIN personal_layer_subscriptions subscriptions ON subscriptions.layer_id = layers.id AND subscriptions.user_id = ?
-     WHERE layers.choir_id = ? AND layers.score_id = ?
+     WHERE layers.choir_id = ? AND layers.score_id = ? AND (layers.deleted_at IS NULL OR (layers.owner_user_id = ? AND ? = 'deleted'))
        AND ((layers.kind = 'shared' AND settings.active = 1 AND settings.deleted_at IS NULL) OR layers.owner_user_id = ?
          OR (layers.sharing = 1 AND owner.id IS NOT NULL AND EXISTS (SELECT 1 FROM memberships reader WHERE reader.id = ? AND reader.status = 'active')
              AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = layers.owner_user_id)))
      ORDER BY CASE layers.kind WHEN 'shared' THEN 0 ELSE 1 END,
               sort_order, layers.created_at`,
   ).bind(userId, userId, userId,
-    access.membership?.id ?? null, userId, choirId, scoreId, userId, access.membership?.id ?? null);
+    access.membership?.id ?? null, userId, choirId, scoreId, userId, context.req.query("state") ?? "current", userId, access.membership?.id ?? null);
   const snapshot = await readSharedLayerSnapshot<LayerRow>(context.env.DB, choirId, query);
 
   return context.json({
@@ -289,63 +292,107 @@ annotationRoutes.put("/choirs/:choirId/scores/:scoreId/shared-layers/:slot/prefe
   }
   if (!await hasSharedLayer(context, access.choirId, slot.data)) return context.json({ error: "layer_not_found" }, 404);
   const existing = await context.env.DB.prepare(
-    "SELECT subscribed_override FROM user_score_layer_preferences WHERE user_id = ? AND score_id = ? AND slot = ?",
+    "SELECT subscribed_override, color_override FROM user_score_layer_preferences WHERE user_id = ? AND score_id = ? AND slot = ?",
   ).bind(access.principal.userId, access.scoreId, slot.data).first<{
     subscribed_override: number | null;
+    color_override: string | null;
   }>();
   const subscribed = parsed.data.subscribed === undefined
     ? existing?.subscribed_override == null ? null : existing.subscribed_override === 1
     : parsed.data.subscribed;
+  const colorOverride = parsed.data.colorOverride === undefined ? existing?.color_override ?? null : parsed.data.colorOverride?.toLowerCase() ?? null;
   const result = await context.env.DB.prepare(
     `INSERT INTO user_score_layer_preferences
-       (user_id, choir_id, score_id, slot, subscribed_override, updated_at)
-     SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM choir_shared_layer_settings WHERE choir_id = ? AND slot = ? AND deleted_at IS NULL)
+       (user_id, choir_id, score_id, slot, subscribed_override, color_override, updated_at)
+     SELECT ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM choir_shared_layer_settings WHERE choir_id = ? AND slot = ? AND deleted_at IS NULL)
      ON CONFLICT(user_id, score_id, slot) DO UPDATE SET
        subscribed_override = excluded.subscribed_override,
+       color_override = excluded.color_override,
        updated_at = excluded.updated_at`,
   ).bind(access.principal.userId, access.choirId, access.scoreId, slot.data,
-    subscribed === null ? null : subscribed ? 1 : 0, Date.now(), access.choirId, slot.data).run();
+    subscribed === null ? null : subscribed ? 1 : 0, colorOverride, Date.now(), access.choirId, slot.data).run();
   if (!result.meta.changes) return context.json({ error: "layer_not_found" }, 404);
-  return context.json({ preference: { subscribed } });
+  return context.json({ preference: { subscribed, colorOverride } });
 });
 
-annotationRoutes.put("/choirs/:choirId/scores/:scoreId/personal-layer/sharing", async context => {
+const personalLayerNameSchema = z.object({ id: z.uuid(), name: z.string().trim().min(1).max(60) }).strict();
+const personalLayerUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(60).optional(),
+  sharing: z.boolean().optional(),
+  action: z.enum(["delete", "restore"]).optional(),
+  expectedRevision: z.number().int().nonnegative(),
+}).strict().refine(value => [value.name, value.sharing, value.action].filter(value => value !== undefined).length === 1);
+
+annotationRoutes.post("/choirs/:choirId/scores/:scoreId/personal-layers", async context => {
   const access = await resolveScoreAccess(context);
   if (access instanceof Response) return access;
-  if (access.principal.kind !== "user" || !access.membership) return context.json({ error: "membership_required" }, 403);
-  const body = await context.req.json<{ sharing?: unknown }>().catch(() => null);
-  if (typeof body?.sharing !== "boolean") return context.json({ error: "invalid_sharing" }, 400);
-  const result = await context.env.DB.prepare(`UPDATE annotation_layers SET sharing = ?, updated_at = ?
-    WHERE choir_id = ? AND score_id = ? AND kind = 'personal' AND owner_user_id = ?
-      AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND lifecycle_revision = ?)
-      AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = owner_user_id)`)
-    .bind(Number(body.sharing), Date.now(), access.choirId, access.scoreId, access.principal.userId, access.membership.id, access.membership.lifecycleRevision).run();
-  if (!result.meta.changes) return context.json({ error: "personal_layer_unavailable" }, 404);
-  return context.json({ sharing: body.sharing });
+  if (access.principal.kind !== "user") return context.json({ error: "authentication_required" }, 401);
+  const body = personalLayerNameSchema.safeParse(await context.req.json().catch(() => null));
+  if (!body.success) return context.json({ error: "invalid_personal_layer" }, 400);
+  const id = body.data.id;
+  const now = Date.now();
+  const result = await context.env.DB.prepare(`INSERT OR IGNORE INTO annotation_layers
+    (id, choir_id, score_id, kind, owner_user_id, name, sort_order, default_color, created_at, updated_at)
+    SELECT ?, ?, ?, 'personal', ?, ?, 10000, '#dc2626', ?, ?
+    WHERE NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = ?)
+      AND EXISTS (SELECT 1 FROM scores JOIN choirs ON choirs.id = scores.choir_id
+        WHERE scores.id = ? AND scores.trashed_at IS NULL AND
+          ((? IS NULL AND choirs.is_preview_entry = 1 AND choirs.guest_admission_mode = 'open') OR
+           EXISTS (SELECT 1 FROM memberships WHERE id = ? AND lifecycle_revision = ? AND choir_id = choirs.id AND user_id = ? AND status = 'active')))`)
+    .bind(id, access.choirId, access.scoreId, access.principal.userId, body.data.name, now, now,
+      access.principal.userId, access.scoreId, access.membership?.id ?? null, access.membership?.id ?? null, access.membership?.lifecycleRevision ?? null, access.principal.userId).run();
+  if (!result.meta.changes) {
+    const existing = await context.env.DB.prepare("SELECT id FROM annotation_layers WHERE id = ? AND choir_id = ? AND score_id = ? AND owner_user_id = ? AND kind = 'personal' AND deleted_at IS NULL")
+      .bind(id, access.choirId, access.scoreId, access.principal.userId).first();
+    if (!existing) return context.json({ error: "personal_layer_unavailable" }, 409);
+  }
+  return context.json({ id }, 201);
+});
+
+annotationRoutes.put("/choirs/:choirId/scores/:scoreId/personal-layers/:layerId", async context => {
+  const access = await resolveScoreAccess(context);
+  if (access instanceof Response) return access;
+  if (access.principal.kind !== "user") return context.json({ error: "authentication_required" }, 401);
+  const parsed = personalLayerUpdateSchema.safeParse(await context.req.json().catch(() => null));
+  if (!parsed.success) return context.json({ error: "invalid_personal_layer" }, 400);
+  const data = parsed.data;
+  if (data.sharing !== undefined && !access.membership) return context.json({ error: "membership_required" }, 403);
+  const now = Date.now();
+  const result = await context.env.DB.prepare(`UPDATE annotation_layers SET
+    name = COALESCE(?, name), sharing = COALESCE(?, sharing),
+    deleted_at = CASE WHEN ? = 'delete' THEN ? WHEN ? = 'restore' THEN NULL ELSE deleted_at END,
+    revision = revision + 1, updated_at = ?
+    WHERE id = ? AND choir_id = ? AND score_id = ? AND kind = 'personal' AND owner_user_id = ? AND revision = ?
+      AND ((? = 'restore' AND deleted_at > ?) OR (? <> 'restore' AND deleted_at IS NULL))
+      AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = owner_user_id)
+      AND EXISTS (SELECT 1 FROM scores JOIN choirs ON choirs.id = scores.choir_id WHERE scores.id = annotation_layers.score_id
+        AND scores.trashed_at IS NULL AND ((? IS NULL AND choirs.is_preview_entry = 1 AND choirs.guest_admission_mode = 'open') OR
+        EXISTS (SELECT 1 FROM memberships WHERE id = ? AND lifecycle_revision = ? AND choir_id = choirs.id AND user_id = annotation_layers.owner_user_id AND status = 'active')))`)
+    .bind(data.name ?? null, data.sharing === undefined ? null : Number(data.sharing), data.action ?? '', now, data.action ?? '', now,
+      context.req.param("layerId"), access.choirId, access.scoreId, access.principal.userId, data.expectedRevision,
+      data.action ?? '', now - RECOVERY_PERIOD_MS, data.action ?? '', access.membership?.id ?? null, access.membership?.id ?? null, access.membership?.lifecycleRevision ?? null).run();
+  if (!result.meta.changes) return context.json({ error: "personal_layer_changed" }, 409);
+  return context.json({ revision: data.expectedRevision + 1 });
 });
 
 annotationRoutes.put("/choirs/:choirId/scores/:scoreId/personal-layers/:layerId/subscription", async context => {
   const access = await resolveScoreAccess(context);
   if (access instanceof Response) return access;
-  if (access.principal.kind !== "user" || !access.membership) return context.json({ error: "membership_required" }, 403);
+  if (access.principal.kind !== "user") return context.json({ error: "authentication_required" }, 401);
   const body = await context.req.json<{ subscribed?: unknown }>().catch(() => null);
   if (typeof body?.subscribed !== "boolean") return context.json({ error: "invalid_subscription" }, 400);
-  const layerId = context.req.param("layerId");
-  if (!body.subscribed) {
-    await context.env.DB.prepare("DELETE FROM personal_layer_subscriptions WHERE user_id = ? AND layer_id = ?")
-      .bind(access.principal.userId, layerId).run();
-  } else {
-    const result = await context.env.DB.prepare(`INSERT INTO personal_layer_subscriptions(user_id, layer_id)
-      SELECT ?, layers.id FROM annotation_layers layers JOIN memberships owner
-        ON owner.user_id = layers.owner_user_id AND owner.choir_id = layers.choir_id AND owner.status = 'active'
-      WHERE layers.id = ? AND layers.choir_id = ? AND layers.score_id = ? AND layers.kind = 'personal'
-        AND layers.sharing = 1 AND layers.owner_user_id <> ?
-        AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = layers.owner_user_id)
-        AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND lifecycle_revision = ?)
-      ON CONFLICT(user_id, layer_id) DO UPDATE SET layer_id = excluded.layer_id`)
-      .bind(access.principal.userId, layerId, access.choirId, access.scoreId, access.principal.userId, access.membership.id, access.membership.lifecycleRevision).run();
-    if (!result.meta.changes) return context.json({ error: "personal_layer_unavailable" }, 404);
-  }
+  const result = await context.env.DB.prepare(`INSERT INTO personal_layer_subscriptions(user_id, layer_id, subscribed)
+    SELECT ?, layers.id, ? FROM annotation_layers layers
+    WHERE layers.id = ? AND layers.choir_id = ? AND layers.score_id = ? AND layers.kind = 'personal' AND layers.deleted_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = layers.owner_user_id)
+      AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = ?)
+      AND (layers.owner_user_id = ? OR (layers.sharing = 1
+        AND EXISTS (SELECT 1 FROM memberships WHERE choir_id = layers.choir_id AND user_id = layers.owner_user_id AND status = 'active')
+        AND EXISTS (SELECT 1 FROM memberships WHERE id = ? AND status = 'active' AND lifecycle_revision = ?)))
+    ON CONFLICT(user_id, layer_id) DO UPDATE SET subscribed = excluded.subscribed`)
+    .bind(access.principal.userId, Number(body.subscribed), context.req.param("layerId"), access.choirId, access.scoreId,
+      access.principal.userId, access.principal.userId, access.membership?.id ?? null, access.membership?.lifecycleRevision ?? null).run();
+  if (!result.meta.changes) return context.json({ error: "personal_layer_unavailable" }, 404);
   return context.json({ subscribed: body.subscribed });
 });
 
@@ -401,7 +448,7 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/annotations", async (cont
        ON grants.slot = layers.default_slot
       AND grants.membership_id = ?
       AND grants.choir_id = layers.choir_id
-     WHERE operations.score_id = ? AND operations.choir_id = ?
+     WHERE layers.deleted_at IS NULL AND operations.score_id = ? AND operations.choir_id = ?
        AND operations.status = 'accepted' AND operations.sequence > ?
        AND ((layers.kind = 'shared' AND EXISTS (SELECT 1 FROM choir_shared_layer_settings WHERE choir_id = layers.choir_id AND slot = layers.default_slot AND active = 1 AND deleted_at IS NULL))
          OR layers.owner_user_id = ? OR (layers.kind = 'personal' AND layers.sharing = 1 AND EXISTS (SELECT 1 FROM memberships reader WHERE reader.id = ? AND reader.status = 'active')
@@ -473,10 +520,12 @@ function serializeLayer(row: LayerRow) {
       id: row.id,
       kind: row.kind,
       sharedSlot: null,
-      name: row.can_edit === 1 ? row.name : `${row.owner_name}的笔记`,
+      name: row.can_edit === 1 ? row.name : `${row.owner_name} · ${row.name}`,
+      revision: row.revision,
+      deletedAt: row.deleted_at,
       sortOrder: row.sort_order,
       sharing: row.sharing === 1,
-      subscribed: row.can_edit === 1 || row.personal_subscribed === 1,
+      subscribed: row.personal_subscribed !== -1 && (row.can_edit === 1 || row.personal_subscribed === 1),
       subscriptionSource: "personal" as const,
       displayColor: row.product_default_color,
       colorSource: "personal" as const,
@@ -495,6 +544,7 @@ function serializeLayer(row: LayerRow) {
     adminDefaultColor: row.admin_default_color,
     driveSubscribed: row.drive_subscribed === null ? null : row.drive_subscribed === 1,
     driveColorOverride: row.drive_color_override,
+    scoreColorOverride: row.score_color_override,
     scoreSubscriptionOverride:
       row.score_subscribed_override === null ? null : row.score_subscribed_override === 1,
   });
@@ -508,6 +558,7 @@ function serializeLayer(row: LayerRow) {
     adminDefaultColor: row.admin_default_color,
     driveSubscribed: row.drive_subscribed === null ? null : row.drive_subscribed === 1,
     driveColorOverride: row.drive_color_override,
+    scoreColorOverride: row.score_color_override,
     scoreSubscriptionOverride:
       row.score_subscribed_override === null ? null : row.score_subscribed_override === 1,
     canEdit: row.can_edit === 1,
@@ -541,6 +592,8 @@ interface LayerRow {
   kind: "shared" | "personal";
   default_slot: string | null;
   sharing: number;
+  revision: number;
+  deleted_at: number | null;
   owner_name: string | null;
   personal_subscribed: number;
   name: string;
@@ -550,6 +603,7 @@ interface LayerRow {
   drive_subscribed: number | null;
   drive_color_override: string | null;
   score_subscribed_override: number | null;
+  score_color_override: string | null;
   can_edit: number;
 }
 

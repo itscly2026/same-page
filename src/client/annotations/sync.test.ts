@@ -17,7 +17,7 @@ import {
 import { pushPendingAnnotations, syncAnnotations } from "./sync";
 
 const layerId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
-const layerResponse = (id: string) => Response.json({ layers: [{ id, kind: "personal", sharedSlot: null, name: "Personal", sortOrder: 10000, subscribed: true, subscriptionSource: "personal", displayColor: "#b4235a", colorSource: "personal", adminDefaultColor: null, driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }], sharedLayerRevision: 0, permissions: { canManageLayers: false } });
+const layerResponse = (id: string) => Response.json({ layers: [{ id, kind: "personal", sharedSlot: null, name: "我的笔记", sortOrder: 10000, subscribed: true, subscriptionSource: "personal", displayColor: "#b4235a", colorSource: "personal", adminDefaultColor: null, driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }], sharedLayerRevision: 0, permissions: { canManageLayers: false } });
 const workspace = createLocalWorkspace(
   authenticatedLocalOwnerKey("user-1"),
   "choir-1",
@@ -60,7 +60,7 @@ describe("bounded annotation push", () => {
     await saveAnnotationDraft(workspace, { id, layerId, payload: { kind: "text", pageNumber: 1, x: .1, y: .2, fontScale: .024, text: "local" } });
     await queueScoreDrafts(workspace);
     const cloudId = crypto.randomUUID();
-    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (_url, init) => String(_url).endsWith("/layers") ? Response.json({ layers: [{ id: layerId, kind: "personal", sharedSlot: null, name: "Personal", sortOrder: 10000, subscribed: true, subscriptionSource: "personal", displayColor: "#b4235a", colorSource: "personal", adminDefaultColor: null, driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }], sharedLayerRevision: 0, permissions: { canManageLayers: false } }) : init?.method === "POST"
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (_url, init) => String(_url).endsWith("/layers") ? Response.json({ layers: [{ id: layerId, kind: "personal", sharedSlot: null, name: "我的笔记", sortOrder: 10000, subscribed: true, subscriptionSource: "personal", displayColor: "#b4235a", colorSource: "personal", adminDefaultColor: null, driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }], sharedLayerRevision: 0, permissions: { canManageLayers: false } }) : init?.method === "POST"
       ? Response.json({}, { status: 403 })
       : Response.json({ cursor: 7, objects: [{ id: cloudId, layerId, version: 1, deleted: false, payload: { kind: "text", pageNumber: 1, x: .1, y: .2, fontScale: .024, text: "cloud" }, createdByDisplayName: "", updatedByDisplayName: "", updatedAt: 1 }] })));
     await expect(syncAnnotations(workspace, { pull: true })).rejects.toThrow();

@@ -290,7 +290,7 @@ export class ReaderSession {
     if (this.lookup && this.lookup.state !== "active" && !this.localMatches() && !this.confirmedVersion) {
       this.publish({ status: "error", error: failureMessage(this.lookup.state) });
     } else if (this.pdfFailed) {
-      this.publish({ status: "error", error: this.source?.kind === "offline" ? "本机离线副本无法解析，现有批注仍然保留。" : "PDF 无法解析或文件暂时不可用。" });
+      this.publish({ status: "error", error: this.source?.kind === "offline" ? "本机离线副本无法解析，现有笔记仍然保留。" : "PDF 无法解析或文件暂时不可用。" });
     }
   }
   retryLayers = () => {

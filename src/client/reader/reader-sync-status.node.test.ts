@@ -22,7 +22,7 @@ const quiet = {
 describe("reader sync status", () => {
   it("requires loaded, accepted records before claiming synced", () => {
     expect(deriveReaderSyncStatus({ ...quiet, loaded: false }).message).toContain("尚未确认");
-    expect(deriveReaderSyncStatus({ ...quiet, outcome: "synced" }).message).toBe("尚无批注修改");
+    expect(deriveReaderSyncStatus({ ...quiet, outcome: "synced" }).message).toBe("尚无笔记修改");
     expect(deriveReaderSyncStatus({ ...quiet, acceptedCount: 2 }).message).toBe("已同步");
   });
 
@@ -56,7 +56,7 @@ describe("reader sync status", () => {
         x: 0.1,
         y: 0.2,
         fontScale: 0.024,
-        text: "这是一条很长的批注文字，用来确认摘要不会无限暴露完整内容。",
+        text: "这是一条很长的笔记文字，用来确认摘要不会无限暴露完整内容。",
       },
       localDeleted: false,
       canonical: null,
@@ -66,7 +66,7 @@ describe("reader sync status", () => {
     expect(describeAnnotationConflict(conflict, "G")).toEqual({
       pageNumber: 7,
       layerName: "G",
-      summary: "这是一条很长的批注文字，用来确认摘要不会无限暴露完整内容…",
+      summary: "这是一条很长的笔记文字，用来确认摘要不会无限暴露完整内容…",
     });
   });
 });

@@ -1,6 +1,5 @@
 import { runSettingsMutation, settingsMutationMessage } from "../settings/settings-mutation";
 import { BackButton } from "../navigation/back-button";
-import { sharedLayerLabel } from "../../shared/annotations";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
@@ -104,17 +103,17 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
       </BackButton>} />
       <main className="page-shell settings-page settings-ux reading-preferences">
         <header className="settings-heading">
-          <h1>{colors ? "批注颜色" : "阅读偏好"}</h1>
+          <h1>{colors ? "笔记颜色" : "阅读偏好"}</h1>
           {driveName ? <p>{driveName}</p> : null}
           <p className="settings-copy">{colors
-            ? "仅改变你在此云盘看到的共享批注颜色。"
+            ? "仅改变你在此云盘看到的共享笔记颜色。"
             : "适用于此云盘。单独设置过的乐谱保留自己的显示选择。"}</p>
         </header>
         <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} />
-        <section className="settings-card" aria-label={colors ? "批注颜色" : "默认显示的批注"} aria-busy={loading}>
-          {!colors ? <h2 className="settings-group-title">默认显示的批注</h2> : null}
+        <section className="settings-card" aria-label={colors ? "笔记颜色" : "默认显示的笔记"} aria-busy={loading}>
+          {!colors ? <h2 className="settings-group-title">默认显示的笔记</h2> : null}
           {layers.map((layer) => {
-            const name = sharedLayerLabel(layer.slot, layer.name);
+            const name = layer.name;
             const result = results[`${layer.slot}:${colors ? "colors" : "display"}`];
             return <article className="preference-row" key={layer.slot}>
               {colors ? <>
@@ -122,12 +121,12 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
                   <strong>{name}</strong>
                   <label className="settings-color-control">
                     <span>{layer.colorOverride ? "自定义" : "云盘默认"}</span>
-                    <input aria-label={`${name} 批注颜色`} type="color" value={layer.displayColor}
+                    <input aria-label={`${name} 笔记颜色`} type="color" value={layer.displayColor}
                       disabled={Boolean(loadError) || loading || pendingSlots.has(layer.slot)}
                       onChange={(event) => void updatePreference(layer, { colorOverride: event.target.value })} />
                   </label>
                 </div>
-                <div className="preference-color-preview" style={{ color: layer.displayColor }} aria-label={`${name} 批注预览`}>
+                <div className="preference-color-preview" style={{ color: layer.displayColor }} aria-label={`${name} 笔记预览`}>
                   <svg aria-hidden="true" viewBox="0 0 120 24"><path d="M4 16 Q30 2 58 14 T116 8" /></svg>
                   <span>渐弱 · 留意呼吸</span>
                 </div>
@@ -150,7 +149,7 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
           })}
         </section>
         {!colors && !loading && !loadError ? <Link className="settings-secondary-link" to="?view=colors">
-          <span>批注颜色</span><span aria-hidden="true">›</span>
+          <span>笔记颜色</span><span aria-hidden="true">›</span>
         </Link> : null}
       </main>
     </div>

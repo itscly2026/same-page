@@ -15,7 +15,7 @@ describe("local annotation payload migration", () => {
       pageNumber: 1,
       x: 0.2,
       y: 0.3,
-      text: "旧批注",
+      text: "旧笔记",
     } as unknown as AnnotationPayload;
     const migrated = migrateStoredTextPayload(legacy);
     expect(migrated).toMatchObject({ kind: "text", fontScale: 0.024 });
@@ -32,7 +32,7 @@ describe("local annotation payload migration", () => {
       pageNumber: 1,
       x: 0.2,
       y: 0.3,
-      text: "旧批注",
+      text: "旧笔记",
     };
     const scope = {
       ownerKey: "user:user-1",

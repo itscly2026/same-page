@@ -2611,21 +2611,6 @@ h1 {
   cursor: move;
 }
 
-.annotation-text-hint {
-  position: fixed;
-  z-index: 24;
-  bottom: max(5.4rem, calc(env(safe-area-inset-bottom) + 4.7rem));
-  left: 50%;
-  margin: 0;
-  border-radius: 999px;
-  padding: 0.5rem 0.85rem;
-  color: #fff;
-  background: rgb(31 28 30 / 76%);
-  box-shadow: 0 0.65rem 1.4rem rgb(0 0 0 / 22%);
-  font-size: 0.82rem;
-  pointer-events: none;
-  transform: translateX(-50%);
-}
 
 .annotation-text-composer:not([data-active]) {
   position: fixed;

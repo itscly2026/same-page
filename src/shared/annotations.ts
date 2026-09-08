@@ -9,27 +9,12 @@ export const defaultSharedLayers: ReadonlyArray<{
   defaultColor: string;
   sortOrder: number;
 }> = [
-  { slot: "E", name: "Ensemble", defaultColor: "#a12652", sortOrder: 0 },
-  { slot: "S", name: "Soprano", defaultColor: "#7c3aed", sortOrder: 1 },
-  { slot: "A", name: "Alto", defaultColor: "#8a5a00", sortOrder: 2 },
-  { slot: "T", name: "Tenor", defaultColor: "#0f766e", sortOrder: 3 },
-  { slot: "B", name: "Bass", defaultColor: "#3157a4", sortOrder: 4 },
+  { slot: "E", name: "Ensemble", defaultColor: "#dc2626", sortOrder: 0 },
+  { slot: "S", name: "Soprano", defaultColor: "#dc2626", sortOrder: 1 },
+  { slot: "A", name: "Alto", defaultColor: "#dc2626", sortOrder: 2 },
+  { slot: "T", name: "Tenor", defaultColor: "#dc2626", sortOrder: 3 },
+  { slot: "B", name: "Bass", defaultColor: "#dc2626", sortOrder: 4 },
 ];
-
-export function sharedLayerPrefix(slot: string | null | undefined) {
-  return defaultSharedLayers.some(layer => layer.slot === slot) ? slot! : "";
-}
-
-export function sharedLayerDisplayName(slot: string | null | undefined, name: string) {
-  void slot;
-  return name;
-}
-
-export function sharedLayerLabel(slot: string | null | undefined, name: string, separator = " · ") {
-  const prefix = sharedLayerPrefix(slot);
-  const displayName = sharedLayerDisplayName(slot, name);
-  return prefix ? `${prefix}${separator}${displayName}` : displayName;
-}
 
 export const normalizedCoordinateSchema = z.number().finite().min(0).max(1);
 
@@ -44,6 +29,7 @@ export const textFontScaleSchema = z
 
 const annotationBaseSchema = z.object({
   pageNumber: z.number().int().positive().max(10_000),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
 });
 
 export const textAnnotationPayloadSchema = annotationBaseSchema.extend({
@@ -63,12 +49,22 @@ export const inkPointSchema = z.object({
 export const inkAnnotationPayloadSchema = annotationBaseSchema.extend({
   kind: z.literal("ink"),
   points: z.array(inkPointSchema).min(2).max(5_000),
+  strokeWidth: z.union([z.literal(0.003), z.literal(0.018)]),
+  opacity: z.union([z.literal(1), z.literal(0.3)]).optional(),
+});
+
+export const shapeAnnotationPayloadSchema = annotationBaseSchema.extend({
+  kind: z.literal("shape"),
+  shape: z.enum(["rectangle", "ellipse"]),
+  x: normalizedCoordinateSchema, y: normalizedCoordinateSchema,
+  width: normalizedCoordinateSchema, height: normalizedCoordinateSchema,
   strokeWidth: z.literal(0.003),
 });
 
 export const annotationPayloadSchema = z.discriminatedUnion("kind", [
   textAnnotationPayloadSchema,
   inkAnnotationPayloadSchema,
+  shapeAnnotationPayloadSchema,
 ]);
 
 export type AnnotationPayload = z.infer<typeof annotationPayloadSchema>;
@@ -112,6 +108,7 @@ export const driveLayerPreferenceUpdateSchema = z.object({
 export const scoreLayerPreferenceUpdateSchema = z
   .object({
     subscribed: z.boolean().nullable().optional(),
+    colorOverride: colorOverrideSchema.optional(),
   })
   .strict();
 
@@ -131,7 +128,7 @@ export interface ResolvedSharedLayerPreference {
   subscribed: boolean;
   subscriptionSource: "score" | "drive" | "product";
   displayColor: string;
-  colorSource: "drive" | "admin" | "product";
+  colorSource: "score" | "drive" | "admin" | "product";
 }
 
 export function resolveSharedLayerPreference(input: {
@@ -140,6 +137,7 @@ export function resolveSharedLayerPreference(input: {
   driveSubscribed: boolean | null;
   driveColorOverride: string | null;
   scoreSubscriptionOverride: boolean | null;
+  scoreColorOverride?: string | null;
 }): ResolvedSharedLayerPreference {
   const subscribed =
     input.scoreSubscriptionOverride ?? input.driveSubscribed ?? true;
@@ -150,10 +148,11 @@ export function resolveSharedLayerPreference(input: {
         ? "drive"
         : "product";
   const displayColor =
+    input.scoreColorOverride ??
     input.driveColorOverride ??
     input.adminDefaultColor ??
     input.productDefaultColor;
-  const colorSource = input.driveColorOverride
+  const colorSource = input.scoreColorOverride ? "score" : input.driveColorOverride
     ? "drive"
     : input.adminDefaultColor
       ? "admin"
@@ -170,14 +169,17 @@ export interface AnnotationLayerSummary {
   subscribed: boolean;
   subscriptionSource: "score" | "drive" | "product" | "personal";
   displayColor: string;
-  colorSource: "drive" | "admin" | "product" | "personal";
+  colorSource: "score" | "drive" | "admin" | "product" | "personal";
   adminDefaultColor: string | null;
   driveSubscribed: boolean | null;
   driveColorOverride: string | null;
   scoreSubscriptionOverride: boolean | null;
+  scoreColorOverride?: string | null;
   canEdit: boolean;
   sharing?: boolean;
   canShare?: boolean;
+  revision?: number;
+  deletedAt?: number | null;
 }
 
 export interface AnnotationObjectRecord {
@@ -200,14 +202,17 @@ export const annotationLayerSummarySchema = z.object({
   subscribed: z.boolean(),
   subscriptionSource: z.enum(["score", "drive", "product", "personal"]),
   displayColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  colorSource: z.enum(["drive", "admin", "product", "personal"]),
+  colorSource: z.enum(["score", "drive", "admin", "product", "personal"]),
   adminDefaultColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
   driveSubscribed: z.boolean().nullable(),
   driveColorOverride: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
   scoreSubscriptionOverride: z.boolean().nullable(),
+  scoreColorOverride: colorOverrideSchema.optional(),
   canEdit: z.boolean(),
   sharing: z.boolean().optional(),
   canShare: z.boolean().optional(),
+  revision: z.number().int().nonnegative().optional(),
+  deletedAt: z.number().nullable().optional(),
 });
 
 export const annotationObjectRecordSchema = z.object({

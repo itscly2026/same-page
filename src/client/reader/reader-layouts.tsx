@@ -39,6 +39,7 @@ export interface AnnotationPageProps {
   annotations: LocalAnnotationRecord[];
   editing: boolean;
   tool: AnnotationTool;
+  toolColor?: string;
   activeLayerId: string | null;
   onInteractionChange(interaction: AnnotationOverlayInteraction): void;
   editor: AnnotationEditor | null;

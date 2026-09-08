@@ -20,7 +20,7 @@ import type { AnnotationEditor } from "./annotation-editor";
 import { useEditorPersistence } from "./use-annotation-editor";
 import { calculateTextEditorLayout } from "./text-editor-layout";
 
-export type AnnotationTool = "text" | "ink" | "eraser";
+export type AnnotationTool = "text" | "ink" | "highlighter" | "rectangle" | "ellipse" | "eraser";
 export type AnnotationOverlayInteraction =
   | "idle"
   | "composing-text"
@@ -38,6 +38,8 @@ interface TextEditorBase {
   initial: string;
   fontScale: number;
   pageWidth: number;
+  color?: string;
+  openingPoint?: { x: number; y: number };
 }
 
 type TextEditorState = TextEditorBase &
@@ -81,6 +83,7 @@ export function AnnotationOverlay({
   annotations,
   editing,
   tool,
+  toolColor = tool === "highlighter" ? "#facc15" : "#dc2626",
   activeLayerId,
   onInteractionChange,
 }: {
@@ -90,11 +93,14 @@ export function AnnotationOverlay({
   annotations: LocalAnnotationRecord[];
   editing: boolean;
   tool: AnnotationTool;
+  toolColor?: string;
   activeLayerId: string | null;
   onInteractionChange?(interaction: AnnotationOverlayInteraction): void;
 }) {
   const persistence = useEditorPersistence(editor);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const [draftShape, setDraftShape] = useState<Extract<AnnotationPayload, { kind: "shape" }> | null>(null);
+  const shapeStart = useRef<{ x: number; y: number } | null>(null);
   const [draftStroke, setDraftStroke] = useState<Extract<AnnotationPayload, { kind: "ink" }> | null>(null);
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
   const [editorText, setEditorText] = useState("");
@@ -103,6 +109,10 @@ export function AnnotationOverlay({
   const textInputRef = useRef<HTMLTextAreaElement>(null);
   const textComposerHeaderRef = useRef<HTMLElement>(null);
   const pendingTextPlacement = useRef<PendingTextPlacement | null>(null);
+  const openingPoint = useRef<{ x: number; y: number } | null>(null);
+  const drawingPointer = useRef<number | null>(null);
+  const backdropPointer = useRef<number | null>(null);
+  const backdropReleased = useRef(false);
   const textSelection = useRef<TextSelection | null>(null);
   const currentStrokeId = useRef<string | null>(null);
   const strokeHistoryStarted = useRef(false);
@@ -126,9 +136,9 @@ export function AnnotationOverlay({
       .map((layer) => layer.id),
   );
   const layerColors = new Map(
-    layers.map((layer) => [layer.id, layer.displayColor]),
+    layers.filter(layer => layer.kind === "shared").map((layer) => [layer.id, layer.displayColor]),
   );
-  const activeLayerColor = layerColors.get(activeLayerId ?? "") ?? "#a12652";
+  const activeLayerColor = layerColors.get(activeLayerId ?? "") ?? toolColor;
   const editorFontSize = textEditor
     ? clampRange(textEditor.pageWidth * editorFontScale, 12, 96)
     : 12;
@@ -200,12 +210,15 @@ export function AnnotationOverlay({
       const payload = annotation.payload;
       if (
         annotation.layerId !== activeLayerId ||
-        payload?.kind !== "ink" ||
+        !payload || payload.kind === "text" ||
         erasedStrokeIds.current.has(annotation.id)
       ) {
         continue;
       }
-      const points = payload.points.map((entry) => ({
+      const outline = payload.kind === "ink" ? payload.points : payload.shape === "rectangle"
+        ? [{ x: payload.x, y: payload.y }, { x: payload.x + payload.width, y: payload.y }, { x: payload.x + payload.width, y: payload.y + payload.height }, { x: payload.x, y: payload.y + payload.height }, { x: payload.x, y: payload.y }]
+        : Array.from({ length: 65 }, (_, index) => ({ x: payload.x + payload.width / 2 * (1 + Math.cos(index * Math.PI / 32)), y: payload.y + payload.height / 2 * (1 + Math.sin(index * Math.PI / 32)) }));
+      const points = outline.map((entry) => ({
         x: entry.x * bounds.width,
         y: entry.y * bounds.height,
       }));
@@ -234,6 +247,9 @@ export function AnnotationOverlay({
   };
 
   const openTextEditor = (editor: TextEditorState) => {
+    openingPoint.current = editor.openingPoint ?? null;
+    backdropPointer.current = null;
+    backdropReleased.current = false;
     flushSync(() => {
       setEditorText(editor.initial);
       setEditorFontScale(editor.fontScale);
@@ -289,6 +305,7 @@ export function AnnotationOverlay({
         x: textDraft.x,
         y: textDraft.y,
         fontScale: editorFontScale,
+        color: textDraft.color ?? toolColor,
         text,
       },
     });
@@ -431,6 +448,8 @@ export function AnnotationOverlay({
         fontScale: transform.payload.fontScale,
         pageWidth: bounds?.width ?? 640,
         source: "existing",
+        openingPoint: { x: event.clientX, y: event.clientY },
+        color: transform.payload.color ?? "#dc2626",
       });
       return;
     }
@@ -469,6 +488,8 @@ export function AnnotationOverlay({
         fontScale: DEFAULT_TEXT_FONT_SCALE,
         pageWidth: bounds.width,
         source: "new",
+        openingPoint: { x: event.clientX, y: event.clientY },
+        color: toolColor,
       };
       const openOnPointerDown = event.pointerType === "pen";
       pendingTextPlacement.current = {
@@ -492,7 +513,16 @@ export function AnnotationOverlay({
       eraseAt(event);
       return;
     }
-    if (tool !== "ink") return;
+    if (drawingPointer.current !== null) return;
+    drawingPointer.current = event.pointerId;
+    if (tool === "rectangle" || tool === "ellipse") {
+      capturePointer(event.currentTarget, event.pointerId);
+      shapeStart.current = point(event);
+      currentStrokeId.current = crypto.randomUUID();
+      setDraftShape({ kind: "shape", shape: tool, pageNumber, ...shapeStart.current, width: 0, height: 0, strokeWidth: 0.003, color: toolColor });
+      return;
+    }
+    if (tool !== "ink" && tool !== "highlighter") return;
     capturePointer(event.currentTarget, event.pointerId);
     const position = point(event);
     currentStrokeId.current = crypto.randomUUID();
@@ -501,7 +531,9 @@ export function AnnotationOverlay({
       kind: "ink",
       pageNumber,
       points: [position, position],
-      strokeWidth: 0.003,
+      strokeWidth: tool === "highlighter" ? 0.018 : 0.003,
+      opacity: tool === "highlighter" ? 0.3 : 1,
+      color: toolColor,
     });
   };
 
@@ -530,7 +562,13 @@ export function AnnotationOverlay({
       eraseAt(event);
       return;
     }
-    if (!editing || tool !== "ink" || !currentStrokeId.current || !activeLayerId) return;
+    if (drawingPointer.current !== null && drawingPointer.current !== event.pointerId) return;
+    if (draftShape && shapeStart.current) {
+      const position = point(event), start = shapeStart.current;
+      setDraftShape({ ...draftShape, x: Math.min(start.x, position.x), y: Math.min(start.y, position.y), width: Math.abs(position.x - start.x), height: Math.abs(position.y - start.y) });
+      return;
+    }
+    if (!editing || (tool !== "ink" && tool !== "highlighter") || !currentStrokeId.current || !activeLayerId) return;
     const position = point(event);
     setDraftStroke((current) => {
       if (!current) return current;
@@ -562,11 +600,17 @@ export function AnnotationOverlay({
       finishTextTransform(event);
       return;
     }
+    if (drawingPointer.current !== null && drawingPointer.current !== event.pointerId) return;
+    drawingPointer.current = null;
     if (eraserPointerId.current === event.pointerId || currentStrokeId.current !== null) {
       if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
     }
+    if (draftShape && activeLayerId && currentStrokeId.current && draftShape.width > 0 && draftShape.height > 0) {
+      void editor?.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: draftShape });
+    }
+    setDraftShape(null); shapeStart.current = null;
     setDraftStroke(null);
     currentStrokeId.current = null;
     strokeHistoryStarted.current = false;
@@ -583,7 +627,7 @@ export function AnnotationOverlay({
         ref={overlayRef}
       >
       <svg
-        aria-label={`第 ${pageNumber} 页批注层`}
+        aria-label={`第 ${pageNumber} 页笔记层`}
         viewBox="0 0 1000 1000"
         preserveAspectRatio="none"
         onPointerDown={pointerDown}
@@ -594,12 +638,14 @@ export function AnnotationOverlay({
             if (pendingTextPlacement.current.opened) closeTextEditor();
             pendingTextPlacement.current = null;
           } else if (textTransform.current?.pointers.has(event.pointerId)) cancelTextTransform();
+          else if (draftShape) { setDraftShape(null); shapeStart.current = null; currentStrokeId.current = null; drawingPointer.current = null; }
           else pointerUp(event);
         }}
       >
         {pageAnnotations.map((annotation) => {
           const payload = annotation.payload;
-          const color = layerColors.get(annotation.layerId) ?? "#a12652";
+          const color = layerColors.get(annotation.layerId) ?? payload?.color ?? "#dc2626";
+          if (payload?.kind === "shape") return <ShapePreview key={annotation.id} payload={payload} color={color} />;
           if (payload?.kind !== "ink") return null;
           return (
             <g key={annotation.id}>
@@ -620,23 +666,26 @@ export function AnnotationOverlay({
                 points={payload.points.map((entry) => `${entry.x * 1000},${entry.y * 1000}`).join(" ")}
                 fill="none"
                 stroke={color}
-                strokeWidth={payload.strokeWidth * 1000}
+                opacity={payload.opacity ?? 1}
+                strokeWidth={`${payload.strokeWidth * 100}cqw`}
+                vectorEffect="non-scaling-stroke"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                vectorEffect="non-scaling-stroke"
               />
             </g>
           );
         })}
+        {editing && draftShape ? <ShapePreview payload={draftShape} color={activeLayerColor} /> : null}
         {editing && draftStroke ? (
           <polyline
             points={draftStroke.points.map((entry) => `${entry.x * 1000},${entry.y * 1000}`).join(" ")}
             fill="none"
             stroke={activeLayerColor}
-            strokeWidth={draftStroke.strokeWidth * 1000}
+            opacity={draftStroke.opacity ?? 1}
+            strokeWidth={`${draftStroke.strokeWidth * 100}cqw`}
+            vectorEffect="non-scaling-stroke"
             strokeLinecap="round"
             strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
           />
         ) : null}
       </svg>
@@ -653,7 +702,7 @@ export function AnnotationOverlay({
             style={{
               left: `${position.x * 100}%`,
               top: `${position.y * 100}%`,
-              color: layerColors.get(annotation.layerId) ?? "#a12652",
+              color: layerColors.get(annotation.layerId) ?? payload.color ?? "#dc2626",
               fontSize: `${position.fontScale * 100}cqw`,
             }}
             key={annotation.id}
@@ -690,10 +739,6 @@ export function AnnotationOverlay({
             <p>修改仍留在当前编辑器，尚未可靠保存。请保留此页面，释放设备空间后重试。</p>
             <button type="button" onClick={() => void editor?.retry()}>重试本机保存</button>
           </aside>}
-          {canStartEdit && tool === "text" && !textEditor && !transformingText ? (
-            <p className="annotation-text-hint" role="status">轻点任意位置添加文字</p>
-          ) : null}
-
           <div
             aria-hidden={transformingText ? undefined : "true"}
             aria-label="拖到这里删除"
@@ -721,8 +766,22 @@ export function AnnotationOverlay({
           event.preventDefault();
           void finishTextEditor();
         }}
+        onPointerDown={(event) => {
+          backdropReleased.current = false;
+          const anchor = openingPoint.current;
+          const repeatedOpening = anchor && Math.hypot(event.clientX - anchor.x, event.clientY - anchor.y) <= TEXT_DRAG_THRESHOLD_PX;
+          backdropPointer.current = event.target === event.currentTarget && !repeatedOpening ? event.pointerId : null;
+          if (event.target !== event.currentTarget) openingPoint.current = null;
+        }}
+        onPointerUp={(event) => {
+          backdropReleased.current = event.target === event.currentTarget && backdropPointer.current === event.pointerId;
+          backdropPointer.current = null;
+        }}
+        onPointerCancel={() => { backdropPointer.current = null; backdropReleased.current = false; }}
         onClick={(event) => {
-          if (event.target === event.currentTarget) void finishTextEditor();
+          const intentional = backdropReleased.current && event.detail <= 1;
+          backdropReleased.current = false;
+          if (event.target === event.currentTarget && intentional) void finishTextEditor();
         }}
       >
         <header ref={textComposerHeaderRef}>
@@ -738,7 +797,7 @@ export function AnnotationOverlay({
         </header>
         {textEditor ? (
           <textarea
-            aria-label="批注文本"
+            aria-label="笔记文本"
             autoFocus
             name="text"
             disabled={persistence === "saving"}
@@ -747,11 +806,11 @@ export function AnnotationOverlay({
             maxLength={1000}
             rows={2}
             style={{
-              color: activeLayerColor,
+              color: layerColors.get(activeLayerId ?? "") ?? textEditor.color ?? toolColor,
               fontSize: editorFontSize,
             }}
             value={editorText}
-            onChange={(event) => setEditorText(event.target.value)}
+            onChange={(event) => { openingPoint.current = null; setEditorText(event.target.value); }}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();
@@ -901,4 +960,11 @@ function distanceToSegment(
     point.x - (start.x + ratio * dx),
     point.y - (start.y + ratio * dy),
   );
+}
+
+function ShapePreview({ payload, color }: { payload: Extract<AnnotationPayload, { kind: "shape" }>; color: string }) {
+  const props = { fill: "none", stroke: color, strokeWidth: `${payload.strokeWidth * 100}cqw`, vectorEffect: "non-scaling-stroke" };
+  return payload.shape === "rectangle"
+    ? <rect {...props} x={payload.x * 1000} y={payload.y * 1000} width={payload.width * 1000} height={payload.height * 1000} />
+    : <ellipse {...props} cx={(payload.x + payload.width / 2) * 1000} cy={(payload.y + payload.height / 2) * 1000} rx={payload.width * 500} ry={payload.height * 500} />;
 }

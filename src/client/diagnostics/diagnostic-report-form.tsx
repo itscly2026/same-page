@@ -24,7 +24,7 @@ export function DiagnosticReportForm({ reader = null }: { reader?: DiagnosticRea
     catch { setMessage("无法自动复制，请选中诊断内容或反馈编号手动复制。"); }
   };
   return <div className="diagnostic-report-form">
-    <p>诊断及选填描述将发送给合谱维护人员，保存 30 天。不自动上传乐谱、批注或登录凭据。</p>
+    <p>诊断及选填描述将发送给合谱维护人员，保存 30 天。不自动上传乐谱、笔记或登录凭据。</p>
     <label htmlFor="diagnostic-description">刚才遇到了什么问题？（选填）</label>
     <textarea id="diagnostic-description" rows={3} maxLength={1000} value={submission.description}
       readOnly={submission.report !== null} aria-describedby="diagnostic-description-hint"

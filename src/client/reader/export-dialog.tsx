@@ -26,13 +26,13 @@ export function ExportDialog({ layers, workspace, source, versionId, fileName, a
       const link = document.createElement("a"); link.href = url; link.download = scorePdfFileName(fileName); link.click();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
       setMessage("PDF 已导出。");
-    } catch (error) { setMessage(error instanceof Error && /[\u3400-\u9fff]/.test(error.message) ? error.message : "导出未完成，未生成不完整文件。请确认联网与批注数据后重试。"); }
+    } catch (error) { setMessage(error instanceof Error && /[\u3400-\u9fff]/.test(error.message) ? error.message : "导出未完成，未生成不完整文件。请确认联网与笔记数据后重试。"); }
     finally { setBusy(false); release(); }
   };
   return <ModalOverlay className="modal-overlay" isOpen isDismissable={!busy} onOpenChange={open => { if (!open && !busy) onClose(); }}><Modal className="app-modal"><Dialog className="app-dialog" exitDisabled={busy}>
-    <Heading slot="title">导出 PDF</Heading><p>选择要包含的批注；本次选择不改变阅读订阅。不包含批注时导出原谱。</p>
-    <Button className="secondary-button" isDisabled={busy || selected.length === 0} onPress={() => setSelected([])}>取消全部批注</Button>
-    {layers.map(layer => <label className="confirmation-checkbox" key={layer.id}><input type="checkbox" disabled={busy} checked={selected.includes(layer.id)} onChange={event => setSelected(ids => event.target.checked ? [...ids, layer.id] : ids.filter(id => id !== layer.id))} />{layer.kind === "personal" && layer.canEdit ? "我的笔记" : layer.name}</label>)}
+    <Heading slot="title">导出 PDF</Heading><p>选择要包含的笔记；本次选择不改变阅读订阅。不包含笔记时导出原谱。</p>
+    <Button className="secondary-button" isDisabled={busy || selected.length === 0} onPress={() => setSelected([])}>取消全部笔记</Button>
+    {layers.map(layer => <label className="confirmation-checkbox" key={layer.id}><input type="checkbox" disabled={busy} checked={selected.includes(layer.id)} onChange={event => setSelected(ids => event.target.checked ? [...ids, layer.id] : ids.filter(id => id !== layer.id))} />{layer.name}</label>)}
     {selected.some(id => !layers.some(layer => layer.id === id)) && <p role="alert">部分已选层不再可用。<Button isDisabled={busy} onPress={() => setSelected(ids => ids.filter(id => layers.some(layer => layer.id === id)))}>移除不可用层</Button></p>}
     {message && <p role="status">{message}</p>}
     <div className="settings-actions"><Button className="secondary-button" isDisabled={busy} onPress={onClose}>关闭</Button><Button className="primary-button" isDisabled={busy} onPress={() => void run()}>{busy ? "正在导出…" : "导出 PDF"}</Button></div>

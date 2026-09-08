@@ -68,12 +68,12 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
     const svg = page.locator("[data-page-turn-current] .annotation-overlay svg");
     await svg.dispatchEvent("pointerdown", { pointerId: 1, pointerType: "touch", clientX: width / 2, clientY: 450, bubbles: true });
     await svg.dispatchEvent("pointerup", { pointerId: 1, pointerType: "touch", clientX: width / 2, clientY: 450, bubbles: true });
-    await page.getByRole("textbox", { name: "批注文本" }).fill("本机草稿等待重连");
+    await page.getByRole("textbox", { name: "笔记文本" }).fill("本机草稿等待重连");
     assert.equal(await page.locator(".annotation-controls").count(), 0);
     await captureStates(page, `${width}-text.png`);
     await page.evaluate(() => { window.fixtureStorageFailed = true; history.back(); });
     await page.getByText("本机保存失败", { exact: true }).waitFor();
-    assert.equal(await page.getByRole("textbox", { name: "批注文本" }).inputValue(), "本机草稿等待重连");
+    assert.equal(await page.getByRole("textbox", { name: "笔记文本" }).inputValue(), "本机草稿等待重连");
     await captureStates(page, `${width}-storage-failed.png`);
     await page.evaluate(() => { window.fixtureStorageFailed = false; });
     await page.evaluate(() => history.back());

@@ -29,7 +29,7 @@ const inputCte = `WITH input AS (SELECT value AS op FROM json_each(?)),
     JOIN scores s ON s.id = scope.score AND s.choir_id = c.id AND s.trashed_at IS NULL
     LEFT JOIN memberships m ON m.user_id = scope.actor AND m.choir_id = c.id AND m.status = 'active'
     LEFT JOIN effective_shared_layer_permissions g ON g.choir_id = c.id AND g.membership_id = m.id AND g.slot = l.default_slot
-    WHERE l.choir_id = c.id AND l.score_id = s.id
+    WHERE l.deleted_at IS NULL AND l.choir_id = c.id AND l.score_id = s.id
       AND l.id IN (SELECT json_extract(op, '$.layerId') FROM input)
       AND NOT EXISTS (SELECT 1 FROM user_lifecycle WHERE user_id = scope.actor)
   )`;

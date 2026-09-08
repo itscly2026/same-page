@@ -102,7 +102,7 @@ describe("AppRoutes", () => {
       ),
     ).toHaveAttribute("lang", "en");
     expect(
-      screen.getByText("为合唱排练与共享批注打造的乐谱云盘。"),
+      screen.getByText("为合唱排练与共享笔记打造的乐谱云盘。"),
     ).toHaveAttribute("lang", "zh-CN");
     expect(screen.getByRole("link", { name: "登录" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "隐私政策" })).toHaveAttribute(
@@ -167,16 +167,16 @@ describe("AppRoutes", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(await screen.findByRole("checkbox", { name: "E · Ensemble 默认显示" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "S · Soprano 默认显示" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Ensemble 默认显示" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Soprano 默认显示" }));
     releaseEnsemble(new Response(null, { status: 500 }));
     releaseSoprano(Response.json({ preference: { subscribed: false } }));
 
     await waitFor(() => {
-      expect(screen.getByRole("checkbox", { name: "E · Ensemble 默认显示" })).toBeChecked();
-      expect(screen.getByRole("checkbox", { name: "S · Soprano 默认显示" })).not.toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "Ensemble 默认显示" })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "Soprano 默认显示" })).not.toBeChecked();
       expect(screen.getByRole("alert")).toHaveTextContent("保存失败，修改已保留，请核对后重试。");
-      expect(screen.getByRole("button", { name: "重试 E · Ensemble" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "重试 Ensemble" })).toBeInTheDocument();
     });
   });
 
@@ -196,29 +196,29 @@ describe("AppRoutes", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<MemoryRouter initialEntries={["/choirs/choir-1/preferences"]}><AppRoutes /></MemoryRouter>);
-    expect(await screen.findByRole("checkbox", { name: "E · Ensemble 默认显示" })).not.toBeChecked();
-    expect(screen.queryByLabelText("E · Ensemble 批注颜色")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("link", { name: "批注颜色" }));
-    expect(screen.getByRole("heading", { name: "批注颜色" })).toBeInTheDocument();
+    expect(await screen.findByRole("checkbox", { name: "Ensemble 默认显示" })).not.toBeChecked();
+    expect(screen.queryByLabelText("Ensemble 笔记颜色")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("link", { name: "笔记颜色" }));
+    expect(screen.getByRole("heading", { name: "笔记颜色" })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    const color = screen.getByLabelText("E · Ensemble 批注颜色");
+    const color = screen.getByLabelText("Ensemble 笔记颜色");
     expect(screen.queryByRole("button", { name: /恢复默认颜色/ })).not.toBeInTheDocument();
     fireEvent.change(color, { target: { value: "#123456" } });
     expect(await screen.findByRole("alert")).toHaveTextContent("保存失败，修改已保留，请核对后重试。");
     expect(color).toHaveValue("#a12652");
     expect(screen.queryByText("已保存")).not.toBeInTheDocument();
     fail = false;
-    fireEvent.click(screen.getByRole("button", { name: "重试 E · Ensemble" }));
+    fireEvent.click(screen.getByRole("button", { name: "重试 Ensemble" }));
     await waitFor(() => expect(color).toHaveValue("#123456"));
     expect(screen.getByText("自定义")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenLastCalledWith("/api/choirs/choir-1/shared-layers/E/preference",
       expect.objectContaining({ body: JSON.stringify({ colorOverride: "#123456" }) }));
-    fireEvent.click(screen.getByRole("button", { name: "E · Ensemble 恢复默认颜色" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ensemble 恢复默认颜色" }));
     await waitFor(() => expect(color).toHaveValue("#a12652"));
     expect(screen.getByText("云盘默认")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /恢复默认颜色/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "返回阅读偏好" }));
-    expect(screen.getByRole("checkbox", { name: "E · Ensemble 默认显示" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Ensemble 默认显示" })).not.toBeChecked();
   });
 
   it.each([false, true])("applies management deletion to offline caches and recovers the original layer (lost response: %s)", async loseResponse => {
@@ -246,14 +246,14 @@ describe("AppRoutes", () => {
       return new Response(null, { status: 404 });
     }));
     render(<MemoryRouter initialEntries={["/choirs/choir-1/shared-layers"]}><AppRoutes /></MemoryRouter>);
-    fireEvent.click(await screen.findByRole("button", { name: "删除 E · Ensemble" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除 Ensemble" }));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText(/当前云盘全部乐谱/)).toBeVisible();
     expect(within(dialog).getByText(/30 天内/)).toBeVisible();
     expect(actions).toEqual([]);
     fireEvent.click(within(dialog).getByRole("button", { name: "删除整个共享层" }));
     await screen.findByText(loseResponse ? /操作结果未确认/ : "共享层已删除，可在已删除层入口查看并恢复。");
-    await waitFor(() => expect(screen.queryByRole("button", { name: "删除 E · Ensemble" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "删除 Ensemble" })).not.toBeInTheDocument());
     await waitFor(async () => expect(await readAnnotationLayers(workspace)).toEqual([]));
     expect((await localDatabase.offlineScores.get("management-offline"))?.annotationSnapshot.layers).toEqual([]);
     expect((await localDatabase.offlineScores.get("management-offline"))?.blob.size).toBe(3);
@@ -1262,7 +1262,7 @@ describe("AppRoutes", () => {
       id: "personal-layer",
       kind: "personal",
       sharedSlot: null,
-      name: "我的批注",
+      name: "我的笔记",
       sortOrder: 10_000,
       subscribed: true,
       subscriptionSource: "product",

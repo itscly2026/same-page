@@ -53,34 +53,34 @@ type JoinStep =
 
 const productFeatures = [
   {
-    title: "不同声部，分层共享批注",
+    title: "不同声部，分层共享笔记",
     illustration: sharedLayersIllustration,
     description:
-      "排练要求按声部分层共享，获授权的人可以留下批注，大家在同一份谱上查看。",
+      "排练要求按声部分层共享，获授权的人可以留下笔记，大家在同一份谱上查看。",
   },
   {
-    title: "共享批注按需看，个人笔记自己留",
+    title: "共享笔记按需看，个人笔记自己留",
     illustration: personalLayerIllustration,
     description:
-      "选择需要查看的声部批注，也能在个人层记下自己的提醒，默认仅自己可见。",
+      "选择需要查看的声部笔记，也能在个人层记下自己的提醒，默认仅自己可见。",
   },
   {
-    title: "替换乐谱，保留批注",
+    title: "替换乐谱，保留笔记",
     illustration: replacePdfIllustration,
     description:
-      "谱子有局部修订时，管理员可以直接替换 PDF；已有批注仍按原页码和位置显示，不必重新标注。",
+      "谱子有局部修订时，管理员可以直接替换 PDF；已有笔记仍按原页码和位置显示，不必重新标注。",
   },
   {
     title: "离线可用，联网同步",
     illustration: offlineSyncIllustration,
     description:
-      "提前下载离线副本，断网也能继续看谱、做批注；恢复联网后，批注会继续同步。",
+      "提前下载离线副本，断网也能继续看谱、做笔记；恢复联网后，笔记会继续同步。",
   },
   {
     title: "一份乐谱，多设备可用",
     illustration: everyDeviceIllustration,
     description:
-      "建议将合谱像应用一样安装到 Android 手机和平板、iPhone、iPad、Windows 电脑或 Mac，随时打开同一份乐谱和批注。",
+      "建议将合谱像应用一样安装到 Android 手机和平板、iPhone、iPad、Windows 电脑或 Mac，随时打开同一份乐谱和笔记。",
   },
 ] as const;
 
@@ -283,7 +283,7 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
                 A cloud-based score library built for choir rehearsals and shared
                 annotations.
               </p>
-              <p lang="zh-CN">为合唱排练与共享批注打造的乐谱云盘。</p>
+              <p lang="zh-CN">为合唱排练与共享笔记打造的乐谱云盘。</p>
             </div>
             <div className="hero-actions">
               <Button

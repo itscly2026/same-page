@@ -1,5 +1,5 @@
 import { noCapabilities } from "../src/shared/drive-permissions";
-import { cleanupSharedLayers } from "./annotations/cleanup";
+import { cleanupAnnotationLayers } from "./annotations/cleanup";
 import { RECOVERY_PERIOD_MS } from "./lifecycle/cleanup";
 import type { SharedLayerManagementSummary } from "../src/shared/annotations";
 import { setupNetwork } from "@msw/cloudflare";
@@ -104,7 +104,7 @@ describe("annotation layers and object synchronization", () => {
     expect((await change("restore", deleted.revision, member.cookie)).status).toBe(403);
     expect((await change("restore", original.revision)).status).toBe(409);
     expect((await change("restore", deleted.revision)).status).toBe(200);
-    await cleanupSharedLayers(env.DB, deleted.recoverUntil! + 1);
+    await cleanupAnnotationLayers(env.DB, deleted.recoverUntil! + 1);
     expect(await layerBySlot(fixture, fixture.adminCookie, slot)).toMatchObject({ id: layer!.id, subscribed: true, driveSubscribed: false, driveColorOverride: "#987654" });
     expect(await layerBySlot(fixture, member.cookie, slot)).toMatchObject({ id: layer!.id, canEdit: true });
     expect(await layerBySlot(second, fixture.adminCookie, slot)).toMatchObject({ id: secondLayer!.id });
@@ -129,8 +129,8 @@ describe("annotation layers and object synchronization", () => {
     const expiredAt = Date.now() - RECOVERY_PERIOD_MS - 1;
     await env.DB.prepare("UPDATE choir_shared_layer_settings SET deleted_at = ? WHERE choir_id = ? AND slot = 'E'").bind(expiredAt, fixture.choirId).run();
     expect((await callWorker(`${base}/shared-layers/E/lifecycle`, jsonRequest(fixture.adminCookie, { action: "restore", expectedRevision: 1 }))).status).toBe(409);
-    await cleanupSharedLayers(env.DB);
-    await cleanupSharedLayers(env.DB);
+    await cleanupAnnotationLayers(env.DB);
+    await cleanupAnnotationLayers(env.DB);
     const list = await (await callWorker(`${base}/shared-layers?state=deleted`, { headers: { cookie: fixture.adminCookie } })).json();
     expect(list).toMatchObject({ layers: [] });
     for (const table of ["annotation_layers", "annotation_objects", "annotation_sync_operations", "user_drive_layer_preferences", "user_score_layer_preferences"]) {
@@ -182,6 +182,43 @@ describe("annotation layers and object synchronization", () => {
     expect(await pull.json()).toMatchObject({ objects: [expect.objectContaining({ id: objectId, payload: expect.objectContaining({ text: "伴奏提示" }) })] });
   });
 
+  it("keeps named personal layers independent through sharing, rename, deletion, conflicts and restore", async () => {
+    const fixture = await createFixture();
+    const author = await createMember(fixture.joinCode!, "multi@example.test", "作者");
+    const base = `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}`;
+    const list = async (cookie = author.cookie) => (await (await callWorker(`${base}/layers`, { headers: { cookie } })).json() as { layers: Array<{ id: string; name: string; kind: string; canEdit: boolean; revision: number; sharing: boolean; subscribed: boolean }> }).layers;
+    const create = async (name: string) => {
+      const response = await callWorker(`${base}/personal-layers`, jsonRequest(author.cookie, { id: crypto.randomUUID(), name }));
+      expect(response.status).toBe(201);
+      return (await response.json() as { id: string }).id;
+    };
+    const update = (id: string, body: unknown, cookie = author.cookie) => callWorker(`${base}/personal-layers/${id}`, { ...jsonRequest(cookie, body), method: "PUT" });
+    await list();
+    const rehearsal = await create("排练记录"), concert = await create("演出提示");
+    expect((await list()).filter(layer => layer.canEdit && layer.kind === "personal").map(layer => layer.name)).toEqual(["我的笔记", "排练记录", "演出提示"]);
+    const actor = { ...fixture, adminCookie: author.cookie, ownerUserId: author.userId };
+    const first = crypto.randomUUID(), second = crypto.randomUUID();
+    expect(await (await push(actor, [operation(first, rehearsal, 0, "呼吸"), operation(second, concert, 0, "看指挥")])).json()).toMatchObject({ results: [{ status: "accepted" }, { status: "accepted" }] });
+    expect((await update(rehearsal, { sharing: true, expectedRevision: 0 })).status).toBe(200);
+    expect((await list(fixture.adminCookie)).filter(layer => [rehearsal, concert].includes(layer.id))).toMatchObject([{ id: rehearsal, name: "作者 · 排练记录", canEdit: false }]);
+    expect((await update(concert, { sharing: true, expectedRevision: 0 }, fixture.adminCookie)).status).toBe(409);
+    expect((await update(rehearsal, { name: "排练记录二", expectedRevision: 1 })).status).toBe(200);
+    expect((await update(rehearsal, { action: "delete", expectedRevision: 1 })).status).toBe(409);
+    expect((await update(rehearsal, { action: "delete", expectedRevision: 2 })).status).toBe(200);
+    expect((await list()).some(layer => layer.id === rehearsal)).toBe(false);
+    expect((await list(fixture.adminCookie)).some(layer => layer.id === rehearsal)).toBe(false);
+    expect(await (await push(actor, [operation(first, rehearsal, 1, "离线晚到"), operation(second, concert, 1, "另一层继续")])).json()).toMatchObject({ results: [{ status: "permission_denied" }, { status: "accepted" }] });
+    expect((await update(rehearsal, { action: "restore", expectedRevision: 3 })).status).toBe(200);
+    expect((await list()).find(layer => layer.id === rehearsal)).toMatchObject({ name: "排练记录二", sharing: false });
+    expect(await (await push(actor, [operation(first, rehearsal, 0, "离线冲突")])).json()).toMatchObject({ results: [{ status: "conflict" }] });
+    const subscribe = await callWorker(`${base}/personal-layers/${concert}/subscription`, { ...jsonRequest(author.cookie, { subscribed: false }), method: "PUT" });
+    expect(subscribe.status).toBe(200);
+    expect((await list()).find(layer => layer.id === concert)).toMatchObject({ subscribed: false });
+    expect((await update(rehearsal, { action: "delete", expectedRevision: 4 })).status).toBe(200);
+    await cleanupAnnotationLayers(env.DB, Date.now() + RECOVERY_PERIOD_MS + 1);
+    expect((await update(rehearsal, { action: "restore", expectedRevision: 5 })).status).toBe(409);
+  });
+
   it("shares only one score's personal notes with members, keeps author-only editing, and revokes access", async () => {
     const fixture = await createFixture();
     const author = await createMember(fixture.joinCode!, "author@example.test", "声部长");
@@ -196,7 +233,10 @@ describe("annotation layers and object synchronization", () => {
     const objectId = crypto.randomUUID();
     await push(authorFixture, [operation(objectId, personal.id, 0, "我的排练笔记")]);
     expect((await list(reader.cookie)).some(layer => layer.id === personal.id)).toBe(false);
-    const share = (sharing: boolean) => callWorker(`${base}/personal-layer/sharing`, { ...jsonRequest(author.cookie, { sharing }), method: "PUT" });
+    const share = async (sharing: boolean) => {
+      const current = (await (await callWorker(`${base}/layers`, { headers: { cookie: author.cookie } })).json() as { layers: { id: string; revision: number }[] }).layers.find(layer => layer.id === personal.id)!;
+      return callWorker(`${base}/personal-layers/${personal.id}`, { ...jsonRequest(author.cookie, { sharing, expectedRevision: current.revision }), method: "PUT" });
+    };
     expect((await share(true)).status).toBe(200);
     for (const cookie of [reader.cookie, fixture.adminCookie]) {
       expect((await list(cookie)).find(layer => layer.id === personal.id)).toMatchObject({ sharing: true, subscribed: false, canEdit: false });
@@ -228,6 +268,43 @@ describe("annotation layers and object synchronization", () => {
     const authorMembership = members.find(member => member.displayName === "声部长")!;
     await callWorker(`/api/choirs/${fixture.choirId}/memberships/${authorMembership.id}`, jsonRequest(fixture.adminCookie, { action: "remove", expectedRevision: 0 }));
     expect(await pull(reader.cookie)).toMatchObject({ objects: [] });
+  });
+
+  it("rejects a sharing request suspended across member removal and restoration", async () => {
+    const fixture = await createFixture();
+    const author = await createMember(fixture.joinCode!, "delayed-share@example.test", "作者");
+    const member = await createDatabase(env.DB).query.memberships.findFirst({ where: eq(memberships.userId, author.userId) });
+    const base = `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}`;
+    const layers = await (await callWorker(`${base}/layers`, { headers: { cookie: author.cookie } })).json() as { layers: { id: string; kind: string }[] };
+    const personal = layers.layers.find(layer => layer.kind === "personal")!;
+    const DB = new Proxy(env.DB, { get(db, key) {
+      if (key === "prepare") return (sql: string) => {
+        const statement = db.prepare(sql);
+        if (!sql.startsWith("UPDATE annotation_layers SET\n    name")) return statement;
+        return new Proxy(statement, { get(statement, key) {
+          if (key === "bind") return (...values: unknown[]) => {
+            const bound = statement.bind(...values);
+            return new Proxy(bound, { get(bound, key) {
+              if (key === "run") return async () => {
+                const path = `/api/choirs/${fixture.choirId}/memberships/${member!.id}`;
+                expect((await callWorker(path, jsonRequest(fixture.adminCookie, { action: "remove", expectedRevision: 0 }))).status).toBe(204);
+                expect((await callWorker(path, jsonRequest(fixture.adminCookie, { action: "restore", expectedRevision: 1 }))).status).toBe(204);
+                return bound.run();
+              };
+              const value = Reflect.get(bound, key); return typeof value === "function" ? value.bind(bound) : value;
+            } });
+          };
+          const value = Reflect.get(statement, key); return typeof value === "function" ? value.bind(statement) : value;
+        } });
+      };
+      const value = Reflect.get(db, key); return typeof value === "function" ? value.bind(db) : value;
+    } });
+    const execution = createExecutionContext();
+    const response = await worker.fetch(new Request(`https://same-page.test${base}/personal-layers/${personal.id}`, { ...jsonRequest(author.cookie, { sharing: true, expectedRevision: 0 }), method: "PUT" }), { ...env, DB }, execution);
+    await waitOnExecutionContext(execution);
+    expect(response.status).toBe(409);
+    const readerLayers = await (await callWorker(`${base}/layers`, { headers: { cookie: fixture.adminCookie } })).json() as { layers: { id: string }[] };
+    expect(readerLayers.layers.some(layer => layer.id === personal.id)).toBe(false);
   });
 
   it.each(["target", "actor"])("rejects a delayed grant across %s membership changes", async (changed) => {
@@ -651,7 +728,7 @@ describe("annotation layers and object synchronization", () => {
     expect(objects.results[0]?.id).toBe(operationRow?.annotation_id);
   });
 
-  it("resolves score subscriptions over user drive defaults without score colors", async () => {
+  it("resolves score subscriptions over user drive defaults with independent score colors", async () => {
     const fixture = await createFixture();
     const member = await createMember(fixture.joinCode!, "preference@example.test", "小周");
     const drivePath = `/api/choirs/${fixture.choirId}/shared-layers/E/preference`;
@@ -664,7 +741,7 @@ describe("annotation layers and object synchronization", () => {
     expect((await callWorker(scorePath, {
       ...jsonRequest(member.cookie, { colorOverride: "#445566" }),
       method: "PUT",
-    })).status).toBe(400);
+    })).status).toBe(200);
     expect((await callWorker(scorePath, {
       ...jsonRequest(member.cookie, { subscribed: true }),
       method: "PUT",
@@ -674,14 +751,21 @@ describe("annotation layers and object synchronization", () => {
     expect(customized).toMatchObject({
       subscribed: true,
       subscriptionSource: "score",
-      displayColor: "#112233",
-      colorSource: "drive",
+      displayColor: "#445566",
+      colorSource: "score",
       driveSubscribed: false,
       scoreSubscriptionOverride: true,
     });
 
+    const secondUpload = await callWorker(`/api/choirs/${fixture.choirId}/scores`, uploadRequest(fixture.adminCookie, "颜色隔离.pdf"));
+    const secondScore = (await secondUpload.json() as { score: { id: string } }).score.id;
+    expect(await layerBySlot({ ...fixture, scoreId: secondScore }, member.cookie, "E")).toMatchObject({ displayColor: "#112233", subscribed: false, colorSource: "drive" });
+    expect(await layerBySlot(fixture, fixture.adminCookie, "E")).toMatchObject({ displayColor: "#dc2626", subscribed: true });
+    await callWorker(drivePath, { ...jsonRequest(member.cookie, { colorOverride: "#778899", subscribed: false }), method: "PUT" });
+    expect(await layerBySlot(fixture, member.cookie, "E")).toMatchObject({ displayColor: "#445566", subscribed: true, colorSource: "score" });
+
     expect((await callWorker(scorePath, {
-      ...jsonRequest(member.cookie, { subscribed: null }),
+      ...jsonRequest(member.cookie, { subscribed: null, colorOverride: null }),
       method: "PUT",
     })).status).toBe(200);
     expect((await callWorker(drivePath, {
@@ -723,8 +807,8 @@ describe("annotation layers and object synchronization", () => {
           name: "Ensemble",
           subscribed: true,
           colorOverride: null,
-          adminDefaultColor: "#a12652",
-          displayColor: "#a12652",
+          adminDefaultColor: "#dc2626",
+          displayColor: "#dc2626",
           colorSource: "admin",
         },
       ]),
@@ -743,7 +827,7 @@ describe("annotation layers and object synchronization", () => {
         {
           slot: "E",
           name: "Ensemble",
-          defaultColor: "#a12652",
+          defaultColor: "#dc2626",
           grantedMemberCount: 0,
           sortOrder: 0, active: true, revision: 0, deletedAt: null, recoverUntil: null,
         },

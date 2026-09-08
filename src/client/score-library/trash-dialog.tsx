@@ -84,7 +84,7 @@ export function TrashDialog({
       if (!response.ok) throw new Error("restore_failed");
       setRestoreConflict(null);
       setTrash((current) => current.filter((entry) => entry.id !== score.id));
-      setMessage("文件已恢复。批注和 PDF 版本保持不变。");
+      setMessage("文件已恢复。笔记和 PDF 版本保持不变。");
       await onRestored();
     } catch {
       setMessage("恢复未完成，请稍后重试。");

@@ -79,7 +79,7 @@ function completeReaderLayers(overrides: AnnotationLayerSummary[] = []): Annotat
   }));
   const personal: AnnotationLayerSummary = {
     id: "00000000-0000-4000-8000-000000000006", kind: "personal", sharedSlot: null,
-    name: "Personal", sortOrder: 10000, subscribed: true, subscriptionSource: "personal",
+    name: "我的笔记", sortOrder: 10000, subscribed: true, subscriptionSource: "personal",
     displayColor: "#6750a4", colorSource: "product", adminDefaultColor: "#6750a4",
     driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: false,
   };
@@ -1371,7 +1371,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "本机离线副本无法解析，现有批注仍然保留",
+      "本机离线副本无法解析，现有笔记仍然保留",
     );
   });
 
@@ -1570,11 +1570,11 @@ it("keeps a single exit while the PDF never settles", async () => {
     fireEvent.keyDown(window, { key: "ArrowRight" });
     await finishPageTurn();
     expect(currentRenderedPage()).toBe("3");
-    fireEvent.click(screen.getByRole("button", { name: "看哪些批注" }));
-    expect(screen.getByRole("dialog", { name: "看哪些批注" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "关闭批注显示" }));
+    fireEvent.click(screen.getByRole("button", { name: "看哪些笔记" }));
+    expect(screen.getByRole("dialog", { name: "看哪些笔记" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭笔记显示" }));
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
-    expect(screen.queryByText("尚未同步批注")).not.toBeInTheDocument();
+    expect(screen.queryByText("尚未同步笔记")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "翻页" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -1606,7 +1606,7 @@ it("keeps a single exit while the PDF never settles", async () => {
               id: "11111111-1111-4111-8111-111111111111",
               kind: "personal",
               sharedSlot: null,
-              name: "Personal",
+              name: "我的笔记",
               sortOrder: 10_000,
               subscribed: true,
               subscriptionSource: "personal",
@@ -1647,7 +1647,7 @@ it("keeps a single exit while the PDF never settles", async () => {
         document.querySelectorAll<HTMLButtonElement>(".reader-chrome__actions button"),
         (button) => button.getAttribute("aria-label"),
       ),
-    ).toEqual(["编辑", "看哪些批注", "更多"]);
+    ).toEqual(["编辑", "看哪些笔记", "更多"]);
 
     fireEvent.click(editButton);
     await waitFor(() => {
@@ -1658,7 +1658,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     fireEvent.click(editButton);
     expect(editButton).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText(/编辑模式/)).not.toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: "文本" })).toHaveAttribute(
+    expect(await screen.findByRole("button", { name: "文字" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -1734,7 +1734,7 @@ it("keeps a single exit while the PDF never settles", async () => {
               id: "11111111-1111-4111-8111-111111111111",
               kind: "personal",
               sharedSlot: null,
-              name: "Personal",
+              name: "我的笔记",
               sortOrder: 10000,
               subscribed: true,
               subscriptionSource: "product",
@@ -1762,20 +1762,20 @@ it("keeps a single exit while the PDF never settles", async () => {
 
     await screen.findByLabelText("翻页阅读");
     toggleChrome();
-    fireEvent.click(screen.getByRole("button", { name: "看哪些批注" }));
-    const panel = screen.getByRole("dialog", { name: "看哪些批注" });
+    fireEvent.click(screen.getByRole("button", { name: "看哪些笔记" }));
+    const panel = screen.getByRole("dialog", { name: "看哪些笔记" });
 
     await within(panel).findByText("Ensemble");
-    expect(panel).toHaveTextContent("E·Ensemble");
-    expect(panel).toHaveTextContent("P·我的笔记");
-    expect(within(panel).getAllByRole("checkbox")).toHaveLength(5);
+    expect(panel).toHaveTextContent("Ensemble");
+    expect(panel).toHaveTextContent("我的笔记");
+    expect(within(panel).getAllByRole("checkbox")).toHaveLength(6);
     expect(within(panel).getByText("我的笔记")).toBeInTheDocument();
-    expect(within(panel).getByText("本谱")).toBeInTheDocument();
+    expect(within(panel).queryByText("本谱")).not.toBeInTheDocument();
     expect(within(panel).getByRole("button", { name: "使用云盘默认" })).toBeInTheDocument();
-    expect(within(panel).getByText(/始终显示/)).toBeInTheDocument();
+    expect(within(panel).getByRole("checkbox", { name: "显示 我的笔记" })).toBeChecked();
     expect(within(panel).queryByText("Preferences")).not.toBeInTheDocument();
     expect(within(panel).queryByRole("button", { name: /只读/ })).not.toBeInTheDocument();
-    expect(panel.querySelector('input[type="color"]')).toBeNull();
+    expect(panel.querySelectorAll('input[type="color"]')).toHaveLength(5);
   });
 
   it("identifies a persisted object conflict by page, layer and summary", async () => {
@@ -1816,7 +1816,7 @@ it("keeps a single exit while the PDF never settles", async () => {
                 driveSubscribed: null,
                 driveColorOverride: null,
                 scoreSubscriptionOverride: null,
-                canEdit: false,
+                canEdit: true,
               },
             ]),
             sharedLayerRevision: 0, permissions: { canManageLayers: false },
@@ -1844,6 +1844,16 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(
       within(screen.getByLabelText("翻页阅读")).getByLabelText("渲染第 2 页"),
     ).toBeInTheDocument();
+
+    toggleChrome();
+    const edit = await screen.findByRole("button", { name: "编辑" });
+    fireEvent.click(edit);
+    await screen.findByRole("button", { name: "完成编辑" });
+    expect(screen.queryByLabelText("本地笔记冲突")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("笔记同步异常")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "前往第 2 页" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "完成编辑" }));
+    await screen.findByRole("button", { name: "前往第 2 页" });
 
     view.unmount();
     render(
@@ -1972,7 +1982,7 @@ it("keeps a single exit while the PDF never settles", async () => {
         `.page-reader__sheet[data-page-number="${page}"]`,
       );
       expect(sheet?.querySelector(`[aria-label="渲染第 ${page} 页"]`)).not.toBeNull();
-      expect(sheet?.querySelector(`[aria-label="第 ${page} 页批注层"]`)).not.toBeNull();
+      expect(sheet?.querySelector(`[aria-label="第 ${page} 页笔记层"]`)).not.toBeNull();
     }
     fireEvent.pointerUp(viewport, {
       pointerId: 1,
@@ -2096,7 +2106,7 @@ it("keeps a single exit while the PDF never settles", async () => {
                 id: "11111111-1111-4111-8111-111111111111",
                 kind: "personal",
                 sharedSlot: null,
-                name: "Personal",
+                name: "我的笔记",
                 sortOrder: 10000,
                 subscribed: true,
                 subscriptionSource: "product",
@@ -2125,10 +2135,10 @@ it("keeps a single exit while the PDF never settles", async () => {
 
     await screen.findByText("练声曲");
     await screen.findByLabelText("翻页阅读");
-    const overlay = await screen.findByLabelText("第 1 页批注层");
+    const overlay = await screen.findByLabelText("第 1 页笔记层");
     fireEvent.pointerDown(overlay, { clientX: 20, clientY: 20 });
     fireEvent.pointerUp(overlay, { clientX: 20, clientY: 20 });
-    expect(screen.queryByLabelText("批注文本")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("笔记文本")).not.toBeInTheDocument();
 
     if (!screen.queryByLabelText("阅读器控制")) toggleChrome();
     expect(screen.getByText("练声曲", { selector: ".reader-chrome__title" })).toBeInTheDocument();
@@ -2190,28 +2200,19 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(editButton).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText(/编辑模式/)).not.toBeInTheDocument();
     expect(screen.getByLabelText("阅读器控制")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "页面位置" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "看哪些批注" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "更多" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "更多" }));
-    expect(screen.queryByRole("button", { name: "连续滚动" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText("阅读帮助", { selector: "summary" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "更多阅读选项" })).getByRole("button", { name: "故障诊断" }));
-    const report = screen.getByLabelText<HTMLTextAreaElement>("可发送给支持人员的诊断内容");
-    expect(JSON.parse(report.value).reader.interactionMode).toBe("editing");
-    fireEvent.click(within(screen.getByRole("dialog", { name: "故障诊断" })).getByRole("button", { name: "关闭" }));
-    expect(editButton).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByRole("dialog", { name: "更多阅读选项" })).not.toBeInTheDocument();
+    for (const name of ["页面位置", "看哪些笔记", "更多", "返回云盘"]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
     expect(screen.getByLabelText("当前页编辑")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "下一页" })).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(screen.getByRole("button", { name: "页面位置" })).toHaveTextContent("1 / 3");
-    expect(await screen.findByRole("button", { name: "文本" })).toHaveAttribute(
+    expect(screen.getByLabelText("第 1 页笔记层")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "文字" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
     fireEvent.click(screen.getByRole("button", { name: /当前编辑层/ }));
-    expect(screen.getByRole("button", { name: "P，我的笔记" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "我的笔记" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -2222,15 +2223,15 @@ it("keeps a single exit while the PDF never settles", async () => {
           .querySelectorAll<HTMLButtonElement>(".annotation-layer-slot"),
         (button) => button.getAttribute("aria-label"),
       ),
-    ).toEqual(["E，Ensemble", "S，Soprano，只读，查看权限说明", "A，Alto，只读，查看权限说明", "T，Tenor，只读，查看权限说明", "B，Bass，只读，查看权限说明", "P，我的笔记"]);
+    ).toEqual(["Ensemble", "Soprano，只读，查看权限说明", "Alto，只读，查看权限说明", "Tenor，只读，查看权限说明", "Bass，只读，查看权限说明", "我的笔记"]);
     expect(
-      screen.getByRole("button", { name: "S，Soprano，只读，查看权限说明" }),
+      screen.getByRole("button", { name: "Soprano，只读，查看权限说明" }),
     ).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "S，Soprano，只读，查看权限说明" }));
+    fireEvent.click(screen.getByRole("button", { name: "Soprano，只读，查看权限说明" }));
     expect(screen.getByRole("dialog", { name: "仅可查看" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "知道了" }));
-    fireEvent.click(screen.getByRole("button", { name: "E，Ensemble" }));
-    expect(screen.getByRole("button", { name: /当前编辑层：E · Ensemble/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Ensemble" }));
+    expect(screen.getByRole("button", { name: /当前编辑层：Ensemble/ })).toBeInTheDocument();
     expect(
       await localDatabase.annotationLayers.get(
         localWorkspaceRecordKey(
@@ -2242,7 +2243,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       subscribed: false,
       scoreSubscriptionOverride: null,
     });
-    const editingOverlay = screen.getByLabelText("第 1 页批注层");
+    const editingOverlay = screen.getByLabelText("第 1 页笔记层");
     vi.spyOn(editingOverlay, "getBoundingClientRect").mockReturnValue({
       x: 0,
       y: 0,
@@ -2256,11 +2257,11 @@ it("keeps a single exit while the PDF never settles", async () => {
     });
     fireEvent.pointerDown(editingOverlay, { clientX: 20, clientY: 30 });
     fireEvent.pointerUp(editingOverlay, { clientX: 20, clientY: 30 });
-    expect(screen.getByLabelText("批注文本")).toBeInTheDocument();
+    expect(screen.getByLabelText("笔记文本")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "完成" })).toHaveLength(1);
-    fireEvent.change(screen.getByLabelText("批注文本"), { target: { value: "连续布局退出前保存的文字" } });
-    fireEvent.click(screen.getByRole("button", { name: "返回云盘" }));
-    await waitFor(() => expect(screen.queryByRole("textbox", { name: "批注文本" })).not.toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("笔记文本"), { target: { value: "连续布局退出前保存的文字" } });
+    fireEvent.click(screen.getByRole("button", { name: "完成编辑" }));
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "笔记文本" })).not.toBeInTheDocument());
     expect(await screen.findByLabelText("连续滚动阅读")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
     expect(await screen.findByText("连续布局退出前保存的文字")).toBeInTheDocument();
@@ -2268,7 +2269,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     // A slow/failed ink write must retain the selected target from #141,
     // while #142 prevents changing layers, tools or history before persistence.
     fireEvent.click(screen.getByRole("button", { name: "画笔" }));
-    const inkOverlay = screen.getByLabelText("第 1 页批注层");
+    const inkOverlay = screen.getByLabelText("第 1 页笔记层");
     vi.spyOn(inkOverlay, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, top: 0, left: 0, right: 100, bottom: 100, width: 100, height: 100, toJSON: () => ({}) });
     let rejectWrite!: (reason: Error) => void;
     const write = vi.spyOn(localDatabase.annotations, "put").mockImplementation(() => new Dexie.Promise((_resolve, reject) => { rejectWrite = reject; }));
@@ -2276,10 +2277,10 @@ it("keeps a single exit while the PDF never settles", async () => {
     fireEvent.pointerMove(inkOverlay, { pointerId: 21, clientX: 40, clientY: 50 });
     fireEvent.pointerUp(inkOverlay, { pointerId: 21, clientX: 40, clientY: 50 });
     await waitFor(() => expect(write).toHaveBeenCalled());
-    const target = screen.getByRole("button", { name: /当前编辑层：E · Ensemble/ });
+    const target = screen.getByRole("button", { name: /当前编辑层：Ensemble/ });
     expect(target).toBeVisible();
     expect(target).toBeDisabled();
-    for (const name of ["文本", "画笔", "整条橡皮", "撤销", "重做"]) {
+    for (const name of ["文字", "画笔", "整条橡皮", "撤销", "重做"]) {
       expect(screen.getByRole("button", { name })).toBeDisabled();
     }
     rejectWrite(new DOMException("full", "QuotaExceededError"));
@@ -2324,7 +2325,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       );
     });
     fireEvent.click(screen.getByRole("button", { name: /^(编辑|完成编辑)$/ }));
-    expect(screen.getByRole("button", { name: /当前编辑层：E · Ensemble/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /当前编辑层：Ensemble/ })).toBeInTheDocument();
   });
 
   it("marks an offline copy only after app shell, layer and annotation snapshot verification", async () => {
@@ -2355,7 +2356,7 @@ it("keeps a single exit while the PDF never settles", async () => {
               })),
               {
                 id: "11111111-1111-4111-8111-111111111111", kind: "personal", sharedSlot: null,
-                name: "Personal", sortOrder: 10000, subscribed: true, subscriptionSource: "personal",
+                name: "我的笔记", sortOrder: 10000, subscribed: true, subscriptionSource: "personal",
                 displayColor: "#6750a4", colorSource: "product", adminDefaultColor: "#6750a4",
                 driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true,
               },
@@ -2394,7 +2395,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(activateVerifiedOfflineScore).toHaveBeenCalledWith(
       expect.objectContaining({
         annotationSnapshot: expect.objectContaining({
-          layers: expect.arrayContaining([expect.objectContaining({ name: "Ensemble" }), expect.objectContaining({ name: "Personal" })]),
+          layers: expect.arrayContaining([expect.objectContaining({ name: "Ensemble" }), expect.objectContaining({ name: "我的笔记" })]),
           annotations: [],
         }),
       }),
@@ -2424,7 +2425,7 @@ it("keeps a single exit while the PDF never settles", async () => {
             id: "11111111-1111-4111-8111-111111111111",
             kind: "personal",
             sharedSlot: null,
-            name: "我的批注",
+            name: "我的笔记",
             sortOrder: 10000,
             subscribed: true,
             subscriptionSource: "product",
@@ -2460,7 +2461,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     fireEvent.click(editButton);
     expect(editButton).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText(/编辑模式/)).not.toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: "文本" })).toHaveAttribute(
+    expect(await screen.findByRole("button", { name: "文字" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -2522,7 +2523,7 @@ it("keeps a single exit while the PDF never settles", async () => {
             id: "11111111-1111-4111-8111-111111111111",
             kind: "personal",
             sharedSlot: null,
-            name: "我的批注",
+            name: "我的笔记",
             sortOrder: 10_000,
             subscribed: true,
             subscriptionSource: "product",
@@ -2577,7 +2578,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     await screen.findByLabelText("翻页阅读");
     expect(screen.getByText("离线练声曲")).toBeInTheDocument();
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "本机离线副本和未同步批注仍保留，恢复后可继续同步",
+      "本机离线副本和未同步笔记仍保留，恢复后可继续同步",
     );
     toggleChrome();
     expect(screen.getByRole("button", { name: /^(编辑|完成编辑)$/ })).toHaveAttribute(
