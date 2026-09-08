@@ -81,7 +81,7 @@ function MembershipManagement({ choirId }: { choirId: string }) {
     if (["unconfirmed", "revoked", "saved-refresh-failed"].includes(result.kind) || (result.kind === "failed" && result.error instanceof SettingsRequestError && result.error.status === 409)) setNeedsRefresh(true);
     setBusy(false);
   };
-  return <div className="app-page"><AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回云盘</BackButton>} /><main className="page-shell settings-page settings-ux lifecycle-page">
+  return <div className="app-page"><AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回</BackButton>} /><main className="page-shell settings-page settings-ux lifecycle-page">
     <header className="settings-heading"><h1>成员与权限</h1><p>查看成员可以做什么，以及可以向他人授予哪些权限。修改仅在你的授权管理范围内生效。</p></header>
     {state && <>
       <div className="settings-actions" aria-label="权限查看方式"><Button className="secondary-button" aria-pressed={view === "member"} onPress={() => setView("member")}>按成员</Button><Button className="secondary-button" aria-pressed={view === "permission"} onPress={() => setView("permission")}>按权限</Button></div>
@@ -106,14 +106,15 @@ function describe(set: PermissionSet, layers: Layer[]): string {
 function MemberEditor({ focus, member, state, layers, busy, save, change, transfer, draft, onDraft }: { focus?: string; draft?: { operations: PermissionSet; management: PermissionSet }; onDraft: (draft: { operations: PermissionSet; management: PermissionSet }) => void; member: Member; state: State; layers: Layer[]; busy: boolean; save: (operations: PermissionSet, management: PermissionSet) => void; change: (action: "remove" | "restore") => void; transfer: () => void }) {
   const { operations, management } = draft ?? member;
   const owner = state.capabilities.isOwner;
-  const canAuthorize = owner || (isDelegated(state.capabilities.management) && !member.isOwner && !isDelegated(member.management) && member.id !== state.actorId);
+  const outsideScope = Boolean(focus && !owner && !hasPermission(state.capabilities.management, focus));
+  const canAuthorize = !outsideScope && (owner || (isDelegated(state.capabilities.management) && !member.isOwner && !isDelegated(member.management) && member.id !== state.actorId));
   const protectedMember = Boolean(member.isOwner) || isDelegated(member.management);
   return <details className="lifecycle-member" open={focus ? true : undefined}><summary><h2>{member.displayName}</h2></summary>
     <p>{member.status === "removed" ? "已移除" : member.isOwner ? "拥有者" : isDelegated(member.management) ? "受托权限管理者" : "普通成员"}</p>
     <p>操作权限：{describe(member.isOwner ? allPermissions() : member.operations, layers)}</p>
     <p>授权管理范围：{describe(member.isOwner ? allPermissions() : member.management, layers)}</p>
     {focus && <p>此项权限：{member.isOwner || hasPermission(member.operations, focus) ? "可以操作" : "不能操作"}；{member.isOwner || hasPermission(member.management, focus) ? "可以授权他人" : "不能授权他人"}</p>}
-    {!canAuthorize && <p>🔒 {member.isOwner || isDelegated(member.management) ? "只有云盘拥有者可以调整拥有者或受托人的权限。" : member.id === state.actorId ? "不能自行授权，请联系云盘拥有者或相应受托权限管理者。" : "你没有授权管理范围，请联系云盘拥有者或相应受托权限管理者。"} 拥有者：{state.memberships.find(row => row.isOwner)?.displayName ?? "请在成员列表中查看"}。</p>}
+    {!canAuthorize && <p>🔒 {outsideScope ? "这项权限不在你的授权管理范围内，请联系云盘拥有者或具有此项授权管理范围的受托人。" : member.isOwner || isDelegated(member.management) ? "只有云盘拥有者可以调整拥有者或受托人的权限。" : member.id === state.actorId ? "不能自行授权，请联系云盘拥有者或相应受托权限管理者。" : "你没有授权管理范围，请联系云盘拥有者或相应受托权限管理者。"} 拥有者：{state.memberships.find(row => row.isOwner)?.displayName ?? "请在成员列表中查看"}。</p>}
     {member.userDeleted ? <p>用户处于删除恢复期，须本人验证并恢复。</p> : member.status === "active" ? <>
       {canAuthorize && <>
         {member.isOwner === 1 && <p>拥有者始终具备全部能力。以下是转让后保留的显式授权。</p>}

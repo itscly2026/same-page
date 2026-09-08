@@ -64,3 +64,41 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   });
 }
+
+for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
+  test(`${name}: ordinary members inspect locked management and both permission views on a phone`, async t => {
+    const app = await startVisualServer({ script: "dev" });
+    const browser = await engine.launch();
+    t.after(async () => { await browser.close(); await app.stop(); });
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
+    const fixture = createVisualFixtureSession();
+    const empty = { operations: [], sharedLayers: [] };
+    const capabilities = { isOwner: false, operations: empty, management: empty };
+    await page.route("**/api/**", async route => {
+      const request = route.request(), pathname = new URL(request.url()).pathname;
+      if (pathname.endsWith("/management")) return route.fulfill({ json: { name: "排练云盘", guestAdmissionMode: "invite", capabilities, layers: [{ slot: "S", name: "Soprano", active: 1 }] } });
+      if (pathname.endsWith("/memberships")) return route.fulfill({ json: { actorId: "member", capabilities, memberships: [{ id: "owner", displayName: "小林", isOwner: 1, status: "active", revision: 0, operations: empty, management: empty }, { id: "member", displayName: "小花", isOwner: 0, status: "active", revision: 0, operations: { operations: [], sharedLayers: ["S"] }, management: empty }] } });
+      if (pathname.endsWith("/permission-layers")) return route.fulfill({ json: { layers: [{ slot: "S", name: "Soprano" }] } });
+      const result = fixture.resolve({ pathname, method: request.method(), identity: "admin", cookie: "" });
+      return route.fulfill({ status: result.status, contentType: result.contentType, body: result.body });
+    });
+    await page.goto(`${app.origin}/choirs/choir-1/management`);
+    await expect(page.getByText("Soprano · 启用")).toBeVisible();
+    await page.getByRole("button", { name: /查看与轮换邀请码/ }).click();
+    await expect(page.getByText("可以联系：小林。")).toBeVisible();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await mkdir("artifacts/visual-report", { recursive: true });
+    await page.screenshot({ path: `artifacts/visual-report/management-member-${name}.png`, fullPage: true });
+    await page.getByRole("link", { name: "成员与权限", exact: true }).click();
+    await page.getByRole("button", { name: "按权限", exact: true }).click();
+    await page.getByLabel("选择权限").selectOption("layer:S");
+    await expect(page.getByRole("heading", { name: "小花" })).toBeVisible();
+    await expect(page.getByText("操作权限：Soprano")).toBeVisible();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.screenshot({ path: `artifacts/visual-report/permissions-member-${name}.png`, fullPage: true });
+    await page.getByRole("button", { name: "应用菜单", exact: true }).click();
+    await page.getByRole("menuitem", { name: "帮助", exact: true }).click();
+    await page.getByRole("link", { name: "故障诊断", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "故障诊断", exact: true })).toBeVisible();
+  });
+}

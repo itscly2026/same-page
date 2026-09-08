@@ -18,7 +18,7 @@ function LeaveDrive({ choirId }: { choirId: string }) {
   const { state, message, busy, loading, blocked, reload, perform } = useUserLifecycle();
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   return <div className="app-page">
-    <AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回云盘</BackButton>} />
+    <AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回</BackButton>} />
     <main className="page-shell settings-page settings-ux lifecycle-page">
       <header className="settings-heading"><h1>云盘个人设置</h1></header>
       <section className="personal-settings-links"><Link className="settings-secondary-link" to={`/choirs/${choirId}/preferences`}>阅读偏好</Link><Link className="settings-secondary-link" to={`/choirs/${choirId}/storage`}>本机存储</Link></section>

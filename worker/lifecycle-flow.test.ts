@@ -315,11 +315,14 @@ it("lets active members read minimal permission facts and management configurati
   expect((await get("permission-changes")).status).toBe(403);
   expect((await get("join-code")).status).toBe(403);
   expect(data.memberships.every(row => !Object.hasOwn(row, "userDeleted"))).toBe(true);
-  await env.DB.prepare("UPDATE choirs SET guest_admission_mode = 'open', is_preview_entry = 1 WHERE id = ?").bind(choirId).run();
+  await env.DB.prepare("UPDATE choirs SET guest_admission_mode = 'open', join_code_hash = NULL, is_preview_entry = 1 WHERE id = ?").bind(choirId).run();
+  const guest = await post("/api/guest/session", "", { admission: "open", choirId });
+  expect(guest.status).toBe(200);
   // Preview access remains independent of membership, including after removal.
   for (const path of ["management", "memberships", "permission-layers"]) {
     expect((await get(path, outsider.cookie)).status).toBe(403);
-    expect((await callWorker(`/api/choirs/${choirId}/${path}`)).status).toBe(401);
+    expect((await callWorker(`/api/choirs/${choirId}/${path}`)).status).toBe(403);
+    expect((await get(path, cookieFrom(guest))).status).toBe(403);
   }
   const memberState = (await state(member.cookie)).memberships[0];
   const permissions = { operations: ["uploadFiles"], sharedLayers: [] };

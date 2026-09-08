@@ -106,3 +106,13 @@ it("shares drafts and revision checks across member and permission views", async
   fireEvent.click(screen.getByRole("button", { name: "保存 小花 的权限" }));
   await waitFor(() => expect(writes).toEqual([{ expectedRevision: 1, operations: { operations: ["uploadFiles"], sharedLayers: ["S"] }, management: emptyPermissions() }]));
 });
+
+it("explains an out-of-scope permission to a delegated manager without offering an empty save", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/permission-layers") ? Response.json({ layers: [] }) : Response.json({ ...state, capabilities: effectiveCapabilities(false, emptyPermissions(), { operations: ["uploadFiles"], sharedLayers: [] }) })));
+  render(page());
+  await screen.findByRole("heading", { name: "小花" });
+  fireEvent.click(screen.getByRole("button", { name: "按权限" }));
+  fireEvent.change(screen.getByLabelText("选择权限"), { target: { value: "modifyFiles" } });
+  expect(screen.getByText(/这项权限不在你的授权管理范围内/)).toBeVisible();
+  expect(screen.queryByRole("button", { name: "保存 小花 的权限" })).not.toBeInTheDocument();
+});

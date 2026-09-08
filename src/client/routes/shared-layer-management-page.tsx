@@ -85,7 +85,7 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
   };
 
   return <div className="app-page">
-    <AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回云盘</BackButton>} />
+    <AppHeader actions={<BackButton className="header-action" to={`/choirs/${choirId}`}>返回</BackButton>} />
     <main className="page-shell settings-page settings-ux">
       <header className="settings-heading">
         <p className="eyebrow">云盘管理 · {driveName}</p><h1>共享层管理</h1>

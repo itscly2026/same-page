@@ -99,7 +99,7 @@ function DriveLayerPreferences({ choirId }: { choirId: string }) {
   return (
     <div className="app-page">
       <AppHeader actions={<BackButton className="header-action" to={colors ? `/choirs/${choirId}/preferences` : `/choirs/${choirId}`}>
-        {colors ? "返回阅读偏好" : "返回云盘"}
+        返回
       </BackButton>} />
       <main className="page-shell settings-page settings-ux reading-preferences">
         <header className="settings-heading">
