@@ -5,8 +5,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 OUT = Path(__file__).resolve().parents[2] / 'src/client/assets/home'
 W, H, SCALE = 768, 512, 2
-COLORS = ['#557c53', '#37799c', '#8061a0', '#b87a35', '#ab5571']
-LABELS = ['E', 'S', 'A', 'T', 'B']
+COLORS = ['#ab5571', '#b87a35', '#8061a0', '#37799c', '#557c53']
+LABELS = ['B', 'T', 'A', 'S', 'E']
 FONT = ImageFont.truetype('DejaVuSans.ttf', 24 * SCALE)
 
 def frame(spread, reveal):
@@ -44,8 +44,16 @@ def frame(spread, reveal):
             pts=[(25+j*2,v-8-12*sin(j*pi/35)) for j in range(36)]
         elif i==1: pts=[(38,v+30),(102,v+17),(38,v+7)]
         else: pts=[(50+18*sin(j*2*pi/48),v+8+17*sin(j*2*pi/48+pi/2)) for j in range(49)]
-        line(x,y,pts[:max(2,int(len(pts)*amount))],color,3)
+        # Draw two separate strokes per layer, one after the other.
+        first = min(1, amount * 2)
+        line(x,y,pts[:max(2,int(len(pts)*first))],color,3)
+        second = max(0, amount * 2 - 1)
+        if second > 0:
+            line(x,y,[(82,v+30),(82+30*second,v+30)],color,3)
     return im.resize((W,H),Image.Resampling.LANCZOS)
+
+# Keep the accessible static alternative consistent with the animation.
+frame(1,5).save(OUT/'shared-layers.webp', quality=90)
 
 frames=[]
 # Blank score; spread layers appear one at a time; merge, hold, then reopen.

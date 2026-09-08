@@ -331,7 +331,7 @@ function HomeContent({ session, startup, linkInvite, finishInvitation }: { sessi
                     <source media="(prefers-reduced-motion: reduce)" srcSet={sharedLayersIllustration} />
                     <img
                       src={animateLayers ? sharedLayersAnimation : sharedLayersIllustration}
-                      alt="E、S、A、T、B 共享层的批注依次出现，再叠加到同一份乐谱上。"
+                      alt="从右到左 B、T、A、S、E 共享层各画两笔批注，再叠加到同一份乐谱上。"
                       width={768}
                       height={512}
                       loading="lazy"
