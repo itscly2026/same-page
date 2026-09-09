@@ -178,6 +178,19 @@ export function AnnotationOverlay({
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => editor?.registerFinishCommit(async () => {
+    if (!liveStroke.current || !currentStrokeId.current || !activeLayerId) return true;
+    const saved = editor.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: liveStroke.current }, true);
+    liveStroke.current = null;
+    currentStrokeId.current = null;
+    drawingPointer.current = null;
+    if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current);
+    strokeFrame.current = null;
+    setDraftStroke(null);
+    setDraftId(null);
+    return saved;
+  }), [editor, activeLayerId]);
+
   useEffect(() => {
     const flush = () => {
       if (liveStroke.current && currentStrokeId.current && activeLayerId) void editor?.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: liveStroke.current }, true);
@@ -344,7 +357,7 @@ export function AnnotationOverlay({
     return Boolean(saved);
   };
 
-  useEffect(() => { if (editing && textEditor) return editor?.registerTextCommit(finishTextEditor); });
+  useEffect(() => { if (editing && textEditor) return editor?.registerFinishCommit(finishTextEditor); });
 
   const addTransformPointer = (
     event: ReactPointerEvent<Element>,
@@ -512,14 +525,14 @@ export function AnnotationOverlay({
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (!canStartEdit || !activeLayerId) return;
     setHover(null);
+    if (objectTransform.current) {
+      addTransformPointer(event, objectTransform.current);
+      return;
+    }
     if (tool === "select") {
       const bounds = event.currentTarget.getBoundingClientRect();
       const found = [...pageAnnotations].reverse().find(annotation => annotation.payload?.kind === "ink" && inkHit(annotation.payload, bounds.width, bounds.height, event.clientX - bounds.left, event.clientY - bounds.top, 8));
       setSelectedId(found?.id ?? null);
-      return;
-    }
-    if (objectTransform.current) {
-      addTransformPointer(event, objectTransform.current);
       return;
     }
     if (tool === "text") {

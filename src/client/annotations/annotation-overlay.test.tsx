@@ -77,6 +77,21 @@ beforeEach(async () => {
 });
 
 describe("AnnotationOverlay", () => {
+  it.each(["ink", "highlighter"] as const)("finishes an active %s stroke before closing without pointerup", async tool => {
+    renderOverlay([], tool);
+    const overlay = screen.getByLabelText("第 1 页笔记层"); mockBounds(overlay);
+    fireEvent.pointerDown(overlay, { pointerId: 41, clientX: 20, clientY: 30 });
+    fireEvent.pointerMove(overlay, { pointerId: 41, clientX: 80, clientY: 30 });
+    await act(async () => {
+      expect(await editor.prepareFinish()).toBe(true);
+      expect(editor.finish()).toBe(true);
+    });
+    const note = (await localDatabase.annotations.toArray())[0]!;
+    expect(note.payload?.kind).toBe("ink");
+    if (note.payload?.kind !== "ink") return;
+    expect(note.payload.points.at(-1)).toMatchObject({ x: .8, y: .3 });
+  });
+
   it.each(["rectangle", "ellipse", "highlighter"] as const)("persists %s geometry and color with undo and redo", async tool => {
     const view = renderOverlay([], tool);
     const overlay = screen.getByLabelText("第 1 页笔记层"); mockBounds(overlay);
@@ -568,10 +583,10 @@ describe("AnnotationOverlay", () => {
     expect((await localDatabase.annotations.get(shape.key))?.payload).toEqual(shape.payload);
   });
 
-  it("adds a second pointer to scale and move text before one final save", async () => {
+  it.each(["text", "select"] as const)("adds a second pointer to scale and move text in %s mode before one final save", async tool => {
     const text = annotation("text-1", activeLayerId, textPayload("双指缩放"));
     await localDatabase.annotations.put(text);
-    renderOverlay([text], "text");
+    renderOverlay([text], tool);
     const button = screen.getByRole("button", { name: "双指缩放" });
     const overlay = screen.getByLabelText("第 1 页笔记层");
     mockBounds(button.parentElement!);

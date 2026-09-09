@@ -39,16 +39,18 @@ export class AnnotationEditor {
     return true;
   }
 
-  private commitText: (() => Promise<boolean>) | null = null;
-  registerTextCommit(commit: () => Promise<boolean>) {
-    this.commitText = commit;
-    return () => { if (this.commitText === commit) this.commitText = null; };
+  private readonly finishCommits = new Set<() => Promise<boolean>>();
+  registerFinishCommit(commit: () => Promise<boolean>) {
+    this.finishCommits.add(commit);
+    return () => { this.finishCommits.delete(commit); };
   }
   async prepareFinish() {
     if (this.state === "saving") await new Promise<void>(resolve => {
       const unsubscribe = this.subscribe(() => { if (this.state !== "saving") { unsubscribe(); resolve(); } });
     });
-    if (this.commitText && !await this.commitText()) return false;
+    for (const commit of [...this.finishCommits]) {
+      if (!await commit()) return false;
+    }
     if (this.state === "failed" && !await this.retry()) return false;
     return this.active && this.state === "idle";
   }
