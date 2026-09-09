@@ -140,6 +140,8 @@ function checksForPath(file) {
   }
   if (file.startsWith("renderer/")) return ["renderer", "build", "smoke", "deploy"];
   if (file.startsWith("migrations/")) return ["worker", "migration", "build", "smoke", "deploy"];
+  // Both browser suites import the evidence recorder; the runner launches only these suites.
+  if (["browser-tests/browser-evidence.mjs", "browser-tests/sanitize-browser-trace.py", "scripts/run-browser-tests.mjs"].includes(file)) return ["visual", "build", "smoke"];
   if (file.startsWith("browser-tests/")) return ["smoke", "build"];
   if (file === "visual-report/setup.mjs") return ["visual"];
   if (file.startsWith("visual-report/")) {
