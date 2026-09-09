@@ -1,7 +1,7 @@
 import pdfPackage from "pdfjs-dist/package.json";
 import { buildId } from "../../shared/build";
 import {
-  categoryForStatus, diagnosticCategories, diagnosticOperations, diagnosticStages, diagnosticSteps, diagnosticErrorTypes,
+  diagnosticErrorCodes, type DiagnosticErrorCode, categoryForStatus, diagnosticCategories, diagnosticOperations, diagnosticStages, diagnosticSteps, diagnosticErrorTypes,
   isDiagnosticId, operationForUrl, safeBuildId,
   type DiagnosticCategory, type DiagnosticOperation, type DiagnosticStage, type DiagnosticStep, type DiagnosticErrorType,
 } from "../../shared/diagnostics";
@@ -26,9 +26,37 @@ export function diagnosticErrorType(error: unknown): DiagnosticErrorType {
   } catch { return "OtherError"; }
 }
 
+export function diagnosticErrorCode(error: unknown): DiagnosticErrorCode | undefined {
+  try {
+    return error instanceof Error ? diagnosticErrorCodes.find(code => code === error.message) : undefined;
+  } catch { return undefined; }
+}
+
+export function diagnosticCauseType(error: unknown): DiagnosticErrorType | undefined {
+  const seen = new Set<unknown>();
+  const visit = (value: unknown, depth: number): DiagnosticErrorType | undefined => {
+    if (!value || typeof value !== "object" || depth > 3 || seen.has(value)) return;
+    seen.add(value);
+    try {
+      const nested = "cause" in value ? value.cause : "inner" in value ? value.inner : undefined;
+      const failures = "failures" in value && Array.isArray(value.failures) ? value.failures.slice(0, 3) : [];
+      for (const child of [nested, ...failures]) {
+        if (!child) continue;
+        const type = diagnosticErrorType(child);
+        if (type !== "OtherError" && type !== "BulkError" && type !== "ModifyError") return type;
+        const deeper = visit(child, depth + 1);
+        if (deeper) return deeper;
+      }
+    } catch { /* Hostile or unsupported error shapes stay unclassified. */ }
+  };
+  return visit(error, 0);
+}
+
 interface Failure {
   step?: DiagnosticStep;
   errorType?: DiagnosticErrorType;
+  causeType?: DiagnosticErrorType;
+  errorCode?: DiagnosticErrorCode;
   engineVersion?: string;
   pdfReason?: PdfReason;
   operation: DiagnosticOperation;
@@ -40,6 +68,8 @@ interface Failure {
 interface DiagnosticRecord {
   step?: DiagnosticStep;
   errorType?: DiagnosticErrorType;
+  causeType?: DiagnosticErrorType;
+  errorCode?: DiagnosticErrorCode;
   engineVersion?: string;
   pdfReason?: PdfReason;
   id: string;
@@ -126,7 +156,9 @@ export function recordFailure(failure: Failure) {
     const serverBuild = safeBuildId(failure.serverBuild);
     const step = diagnosticSteps.find(value => value === failure.step);
     const errorType = diagnosticErrorTypes.find(value => value === failure.errorType);
-    const previous = [...records].reverse().find((entry) => entry.operation === operation && entry.category === category && entry.stage === stage && entry.step === step && entry.errorType === errorType && entry.pdfReason === failure.pdfReason && now - entry.time < 30_000);
+    const errorCode = diagnosticErrorCodes.find(value => value === failure.errorCode);
+    const causeType = diagnosticErrorTypes.find(value => value === failure.causeType);
+    const previous = [...records].reverse().find((entry) => entry.operation === operation && entry.category === category && entry.stage === stage && entry.step === step && entry.errorType === errorType && entry.causeType === causeType && entry.errorCode === errorCode && entry.pdfReason === failure.pdfReason && now - entry.time < 30_000);
     if (previous) {
       previous.count = Math.min(previous.count + 1, 9999);
       previous.time = now;
@@ -137,6 +169,8 @@ export function recordFailure(failure: Failure) {
     records.push({
       ...(step ? { step } : {}),
       ...(errorType ? { errorType } : {}),
+      ...(causeType ? { causeType } : {}),
+      ...(errorCode ? { errorCode } : {}),
       ...(failure.engineVersion && /^(pdfjs|pdfium)-[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$/.test(failure.engineVersion) ? { engineVersion: failure.engineVersion } : {}),
       ...(failure.pdfReason && pdfReasons.includes(failure.pdfReason) ? { pdfReason: failure.pdfReason } : {}),
       id: crypto.randomUUID(), time: now, operation, category, stage,

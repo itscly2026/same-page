@@ -133,7 +133,7 @@ async function refreshAnnotations(
 ): Promise<SyncResult> {
   const diagnostics = { report, signal };
   startingLayers();
-  const applied = await diagnoseLocalOperation("sync-layers", () => refreshLayerCapabilities(workspace, signal), diagnostics);
+  const applied = await refreshLayerCapabilities(workspace, signal, report);
   layersApplied(applied);
   const base = `/api/choirs/${encodeURIComponent(workspace.choirId)}/scores/${encodeURIComponent(workspace.scoreId)}`;
 
@@ -168,25 +168,34 @@ async function refreshAnnotations(
   return { pushed, pulled };
 }
 
-export async function refreshLayerCapabilities(workspace: LocalWorkspace, signal: AbortSignal) {
+export async function refreshLayerCapabilities(workspace: LocalWorkspace, signal: AbortSignal, report = diagnosticScope()) {
+  const diagnostics = { report, signal };
   await assertLocalWorkspaceActive(workspace);
   signal.throwIfAborted();
   const base = `/api/choirs/${encodeURIComponent(workspace.choirId)}/scores/${encodeURIComponent(workspace.scoreId)}`;
-  const layerResponse = await refreshRequest(`${base}/layers`, signal);
+  const layerResponse = await diagnoseLocalOperation("sync-layers-request", async () => {
+    const response = await refreshRequest(`${base}/layers`, signal);
+    await assertLocalWorkspaceActive(workspace);
+    signal.throwIfAborted();
+    if (!response.ok) {
+      if ([401, 403, 404].includes(response.status)) {
+        await removeCachedPublications(workspace);
+        throw new Error("annotation_layer_access_denied");
+      }
+      throw new Error("annotation_layers_unavailable");
+    }
+    return response;
+  }, diagnostics);
+  const { layers, sharedLayerRevision } = await diagnoseLocalOperation("sync-layers-response", () => parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema), diagnostics);
   await assertLocalWorkspaceActive(workspace);
   signal.throwIfAborted();
-  if (!layerResponse.ok) {
-    if ([401, 403, 404].includes(layerResponse.status)) await removeCachedPublications(workspace);
-    throw new Error("annotation_layers_unavailable");
-  }
-  const { layers, sharedLayerRevision } = await parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema);
-  await assertLocalWorkspaceActive(workspace);
-  signal.throwIfAborted();
+  await diagnoseLocalOperation("sync-layers-identity", async () => {
   if (!hasCompleteOfflineLayers(layers, workspace.ownerKey)) {
     await removeCachedPublications(workspace);
     throw new Error("annotation_layer_identity_mismatch");
   }
-  const previous = await readAnnotationLayers(workspace);
+  }, diagnostics);
+  const previous = await diagnoseLocalOperation("sync-layers-cache", () => readAnnotationLayers(workspace), diagnostics);
   const applied = workspace.ownerKey.startsWith("user:") ? layers : layers.map(layer => ({
     ...layer,
     ...(() => {
@@ -197,7 +206,9 @@ export async function refreshLayerCapabilities(workspace: LocalWorkspace, signal
     })(),
   }));
   signal.throwIfAborted();
-  if (!await cacheAnnotationLayers(workspace, applied, sharedLayerRevision)) throw new Error("shared_layer_state_changed");
+  await diagnoseLocalOperation("sync-layers-cache", async () => {
+    if (!await cacheAnnotationLayers(workspace, applied, sharedLayerRevision)) throw new Error("shared_layer_state_changed");
+  }, diagnostics);
   await assertLocalWorkspaceActive(workspace);
   signal.throwIfAborted();
   return applied;

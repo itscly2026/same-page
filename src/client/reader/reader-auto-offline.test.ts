@@ -198,3 +198,29 @@ it("refreshes layers after preparing bytes instead of activating the opening lay
   expect(layerRequests).toBe(2);
   expect(session.getSnapshot().offline?.annotationSnapshot.layers).toHaveLength(4);
 });
+
+it("bounds document-ready opens that never produce a visible page, independently of note sync", async () => {
+  const session = await open();
+  await vi.waitFor(() => expect(session.getSnapshot().offline).not.toBeNull());
+  // Arm the session timer with fake time from the start of a new open.
+  session.dispose();
+  clearReaderDocumentCache();
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    const stalled = await open();
+    await vi.waitFor(() => expect(stalled.getSnapshot().document).not.toBeNull());
+    await vi.advanceTimersByTimeAsync(45_001);
+    expect(stalled.getSnapshot()).toMatchObject({ status: "error", error: expect.stringContaining("重试") });
+  } finally { vi.useRealTimers(); }
+});
+
+it("a confirmed visible page remains readable after the opening deadline", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    const session = await open();
+    await vi.waitFor(() => expect(session.getSnapshot().document).not.toBeNull());
+    session.confirmDisplay(session.getSnapshot().document!);
+    await vi.advanceTimersByTimeAsync(45_001);
+    expect(session.getSnapshot()).toMatchObject({ status: "ready", error: null });
+  } finally { vi.useRealTimers(); }
+});

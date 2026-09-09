@@ -61,9 +61,12 @@ async function prepareOfflineScore(workspace: LocalWorkspace, score: ScoreSummar
   await assertLocalWorkspaceActive(workspace);
   // This call requires a layer request started after the bytes are prepared;
   // an earlier reader refresh cannot establish fresh access for activation.
-  await syncAnnotations(workspace, { pull: true, signal });
-  signal.throwIfAborted();
-  const annotationSnapshot = await captureOfflineAnnotationSnapshot(workspace);
+  let annotationSnapshot;
+  try {
+    await syncAnnotations(workspace, { pull: true, push: false, signal });
+    signal.throwIfAborted();
+    annotationSnapshot = await captureOfflineAnnotationSnapshot(workspace);
+  } catch (cause) { throw new OfflineAnnotationPreparationError("offline_annotations_unavailable", { cause }); }
   const record = {
     key: localWorkspaceRecordKey(workspace, `${score.currentVersion.id}:${mode}`), ...workspace,
     versionId: score.currentVersion.id, fileName: score.fileName,
@@ -92,10 +95,12 @@ async function verifyImageDecode(blob: Blob, width: number, height: number) {
 }
 
 
+class OfflineAnnotationPreparationError extends Error {}
+
 export type OfflinePreparationState =
   | { phase: "idle" | "cancelled" }
   | { phase: "preparing"; intent: "automatic" | "explicit" }
-  | { phase: "failed"; reason: "identity" | "download" }
+  | { phase: "failed"; reason: "identity" | "download" | "annotations" }
   | { phase: "ready"; record: OfflineScoreRecord };
 type PreparationTask = {
   controller: AbortController;
@@ -205,7 +210,7 @@ export class OfflinePreparation {
           controller.signal.throwIfAborted();
           const record = await prepareOfflineScore(context.workspace, this.score, this.mode, controller.signal, bytes, context.fence);
           return { phase: "ready", record };
-        } catch { return controller.signal.aborted ? { phase: "cancelled" } : { phase: "failed", reason: "download" }; }
+        } catch (error) { return controller.signal.aborted ? { phase: "cancelled" } : { phase: "failed", reason: error instanceof OfflineAnnotationPreparationError ? "annotations" : "download" }; }
         finally { watcher.unsubscribe(); }
       })().then(state => {
         ownedTask.state = state;

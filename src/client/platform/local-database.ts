@@ -44,6 +44,9 @@ export interface OfflineScoreRecord {
   annotationSnapshot: OfflineAnnotationSnapshot;
 }
 
+export type OfflineScoreFile = Omit<OfflineScoreRecord, "annotationSnapshot">;
+export type OfflineSnapshotRecord = Pick<OfflineScoreRecord, "key" | "ownerKey" | "scopeKey" | "choirId" | "scoreId"> & { annotationSnapshot: OfflineAnnotationSnapshot };
+
 export interface OfflineAnnotationSnapshot {
   layers: LocalAnnotationLayerRecord[];
   annotations: LocalAnnotationRecord[];
@@ -159,7 +162,8 @@ export interface LocalDriveDirectory {
 export class SamePageDatabase extends Dexie {
   driveDirectories!: EntityTable<LocalDriveDirectory, "key">;
   system!: EntityTable<SystemRecord, "key">;
-  offlineScores!: EntityTable<OfflineScoreRecord, "key">;
+  offlineScores!: EntityTable<OfflineScoreFile, "key">;
+  offlineSnapshots!: EntityTable<OfflineSnapshotRecord, "key">;
   annotations!: EntityTable<LocalAnnotationRecord, "key">;
   annotationOutbox!: EntityTable<AnnotationOutboxRecord, "opId">;
   annotationConflicts!: EntityTable<AnnotationConflictRecord, "opId">;
@@ -258,6 +262,19 @@ export class SamePageDatabase extends Dexie {
     this.version(8).stores({
       annotationOutbox: "&opId,ownerKey,scopeKey,[ownerKey+scopeKey],[scopeKey+annotationId],createdAt",
     });
+    this.version(11).stores({
+      offlineSnapshots: "&key,ownerKey,scopeKey",
+    }).upgrade(async transaction => {
+      const files = transaction.table<OfflineScoreRecord>("offlineScores");
+      // One atomic upgrade: preserve bytes, all draft/outbox/conflict tables and
+      // the exact saved snapshot. Future metadata writes never touch file Blobs.
+      for (const record of await files.toArray()) {
+        const { annotationSnapshot, ...file } = record;
+        await transaction.table("offlineSnapshots").put({ key: file.key, ownerKey: file.ownerKey,
+          scopeKey: file.scopeKey, choirId: file.choirId, scoreId: file.scoreId, annotationSnapshot });
+        await transaction.table("offlineScores").put(file);
+      }
+    });
     this.version(10).stores({ driveDirectories: "&key,ownerKey,[ownerKey+choirId]" });
     this.version(9).stores({}).upgrade(async transaction => {
       const renameSlot = (layer: Record<string, unknown>) => {
@@ -337,7 +354,7 @@ export async function activateVerifiedOfflineScore(
 ) {
   await localDatabase.transaction(
     "rw",
-    [localDatabase.system, localDatabase.offlineScores, localDatabase.annotationLayers, localDatabase.annotations, localDatabase.annotationSyncCursors],
+    [localDatabase.system, localDatabase.offlineScores, localDatabase.offlineSnapshots, localDatabase.annotationLayers, localDatabase.annotations, localDatabase.annotationSyncCursors],
     async () => {
       const activeOwner = await localDatabase.system.get(ACTIVE_LOCAL_OWNER_KEY);
       const guestOwner = record.ownerKey.startsWith("guest:")
@@ -378,8 +395,9 @@ export async function activateVerifiedOfflineScore(
       // Blob values already read by another session remain valid after deleting
       // the IndexedDB reference. Annotation tables are deliberately untouched.
       await localDatabase.offlineScores.bulkDelete(existing.map((entry) => entry.key));
+      await localDatabase.offlineSnapshots.bulkDelete(existing.map((entry) => entry.key));
       expected?.signal?.throwIfAborted();
-      await localDatabase.offlineScores.put({
+      await storeOfflineScore({
         ...record,
         annotationSnapshot,
         active: 1,
@@ -390,16 +408,25 @@ export async function activateVerifiedOfflineScore(
   );
 }
 
-export function findActiveOfflineScore(
-  ownerKey: LocalWorkspaceOwnerKey,
-  choirId: string,
-  scoreId: string,
-) {
-  return localDatabase.offlineScores
-    .where("[ownerKey+choirId+scoreId]")
-    .equals([ownerKey, choirId, scoreId])
-    .filter((record) => record.active === 1)
-    .first();
+// Caller owns any workspace/activation fence. Both halves always commit together.
+export function storeOfflineScore(record: OfflineScoreRecord) {
+  return localDatabase.transaction("rw", [localDatabase.offlineScores, localDatabase.offlineSnapshots], async () => {
+    const { annotationSnapshot, ...file } = record;
+    await localDatabase.offlineScores.put(file);
+    await localDatabase.offlineSnapshots.put({ key: file.key, ownerKey: file.ownerKey,
+      scopeKey: file.scopeKey, choirId: file.choirId, scoreId: file.scoreId, annotationSnapshot });
+  });
+}
+
+export function findActiveOfflineScore(ownerKey: LocalWorkspaceOwnerKey, choirId: string, scoreId: string) {
+  return localDatabase.transaction("r", [localDatabase.offlineScores, localDatabase.offlineSnapshots], async () => {
+    const file = await localDatabase.offlineScores.where("[ownerKey+choirId+scoreId]")
+      .equals([ownerKey, choirId, scoreId]).filter(record => record.active === 1).first();
+    if (!file) return undefined;
+    const snapshot = await localDatabase.offlineSnapshots.get(file.key);
+    if (!snapshot || snapshot.scopeKey !== file.scopeKey || snapshot.ownerKey !== file.ownerKey) return undefined;
+    return { ...file, annotationSnapshot: snapshot.annotationSnapshot };
+  });
 }
 
 export function annotationRecordKey(scopeKey: string, annotationId: string) {

@@ -2406,7 +2406,7 @@ it("keeps a single exit while the PDF never settles", async () => {
   it.each(["expired", "checking", "hanging-cloud"])("allows the last local user to edit with authentication %s", async (state) => {
     readerAuthState.signedIn = false;
     readerAuthState.pending = state === "checking";
-    vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
+    const saved: NonNullable<Awaited<ReturnType<typeof findVerifiedOfflineScore>>> = {
       key: "offline-1",
       ...localWorkspace,
       versionId: "version-1",
@@ -2442,7 +2442,9 @@ it("keeps a single exit while the PDF never settles", async () => {
         cursor: 0,
         verifiedAt: 1,
       },
-    });
+    };
+    await localDatabase.offlineSnapshots.put({ ...localWorkspace, key: saved.key, annotationSnapshot: saved.annotationSnapshot });
+    vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce(saved);
     if (state === "hanging-cloud") vi.mocked(fetch).mockReturnValue(new Promise<Response>(() => {}));
     else vi.mocked(fetch).mockRejectedValue(new Error("offline"));
     const view = render(

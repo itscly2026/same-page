@@ -6,6 +6,7 @@ export function offlinePreparationDescription(preparation: OfflinePreparationSta
   if (copy?.readFailed) return "暂时无法读取本机副本，请重试校验";
   if (preparation.phase === "preparing") return "正在下载并校验…";
   if (preparation.phase === "failed") {
+    if (preparation.reason === "annotations") return "谱面已校验，笔记或访问权限未能确认，离线副本准备未完成。可继续在线阅读并重试。";
     if (preparation.reason === "identity") return "请先登录，再准备新的离线副本。现有副本仍可使用。";
     return copy ? offlineDownloadFailure(copy.record, versionId, copy.invalid, mode) : "离线下载未完成，尚未确认本机副本，请重试校验。";
   }

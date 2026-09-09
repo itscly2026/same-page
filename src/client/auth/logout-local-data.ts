@@ -1,3 +1,4 @@
+import { storeOfflineScore } from "../platform/local-database";
 import { retainGuestSharedAnnotations } from "../annotations/annotation-state";
 import {
   annotationRecordKey,
@@ -51,6 +52,7 @@ export async function clearPrivateLocalDataAfterLogout() {
       localDatabase.annotationSyncCursors,
       localDatabase.syncLeases,
       localDatabase.offlineScores,
+      localDatabase.offlineSnapshots,
     ],
     async () => {
       await localDatabase.driveDirectories.where("ownerKey").equals(ownerKey).delete();
@@ -73,7 +75,10 @@ export async function clearPrivateLocalDataAfterLogout() {
       };
 
       const nextOfflineScores = [];
-      for (const score of offlineScores) {
+      for (const file of offlineScores) {
+        const saved = await localDatabase.offlineSnapshots.get(file.key);
+        if (!saved) continue;
+        const score = { ...file, annotationSnapshot: saved.annotationSnapshot };
         const workspace = await guestWorkspace(score.choirId, score.scoreId);
         const snapshotPersonalIds = new Set(
           score.annotationSnapshot.layers
@@ -116,7 +121,8 @@ export async function clearPrivateLocalDataAfterLogout() {
       }
       await retainGuestSharedAnnotations(ownerKey, guestWorkspace);
       await localDatabase.offlineScores.bulkDelete(offlineScores.map(score => score.key));
-      await localDatabase.offlineScores.bulkPut(nextOfflineScores);
+      await localDatabase.offlineSnapshots.bulkDelete(offlineScores.map(score => score.key));
+      for (const score of nextOfflineScores) await storeOfflineScore(score);
     },
   );
   await clearCurrentAuthenticatedLocalOwner();

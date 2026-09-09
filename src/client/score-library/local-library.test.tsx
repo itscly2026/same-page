@@ -1,3 +1,4 @@
+import { storeOfflineScore } from "../platform/local-database";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, it } from "vitest";
@@ -8,7 +9,7 @@ import { LocalLibrary } from "./local-library";
 it("offers only the active user's saved files as recovery links, without claiming membership or verified availability", async () => {
   await activateAuthenticatedLocalOwner("a");
   for (const id of ["a", "b"]) {
-    await localDatabase.offlineScores.put({ key: id, ...createLocalWorkspace(authenticatedLocalOwnerKey(id), "drive", "score"),
+    await storeOfflineScore({ key: id, ...createLocalWorkspace(authenticatedLocalOwnerKey(id), "drive", "score"),
       versionId: "version", fileName: `${id}.pdf`, sha256: "unverified", pageCount: 1, blob: new Blob(["unverified"]), active: 1, verifiedAt: 1, annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 } });
   }
   const view = render(<MemoryRouter><LocalLibrary userId="a" /></MemoryRouter>);
@@ -43,7 +44,7 @@ it("keeps a retained copy discoverable without resurrecting it in a confirmed em
   await localDatabase.open();
   await activateAuthenticatedLocalOwner("retained");
   const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey("retained"), "drive", "removed"));
-  await localDatabase.offlineScores.put({ ...workspace, key: "retained", versionId: "version", fileName: "保留.pdf", sha256: "unverified", pageCount: 1, blob: new Blob(["PDF"]), active: 1, verifiedAt: 1, annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 } });
+  await storeOfflineScore({ ...workspace, key: "retained", versionId: "version", fileName: "保留.pdf", sha256: "unverified", pageCount: 1, blob: new Blob(["PDF"]), active: 1, verifiedAt: 1, annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 } });
   await rememberLocalDriveDirectory(workspace, { id: "drive", name: "排练", guestAdmissionMode: "invite" }, [], new AbortController().signal, true);
   // A confirmed DELETE removes the directory entry even if no later GET succeeds.
   const directory = (await readLocalDriveDirectories("retained"))[0];

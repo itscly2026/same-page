@@ -1,3 +1,4 @@
+import { storeOfflineScore } from "./platform/local-database";
 import { effectiveCapabilities, emptyPermissions, noCapabilities } from "../shared/drive-permissions";
 import { Blob as NodeBlob } from "node:buffer";
 import { cacheAnnotationLayers, readAnnotationLayers, saveAnnotationDraft } from "./annotations/annotation-state";
@@ -230,7 +231,7 @@ describe("AppRoutes", () => {
     const shared: AnnotationLayerSummary = { id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", kind: "shared", sharedSlot: "E", name: "Ensemble", sortOrder: 0, subscribed: true, subscriptionSource: "drive", displayColor: "#a12652", colorSource: "admin", adminDefaultColor: "#a12652", driveSubscribed: true, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true };
     await cacheAnnotationLayers(workspace, [shared], 0);
     await saveAnnotationDraft(workspace, { id: crypto.randomUUID(), layerId: shared.id, payload: { kind: "text", pageNumber: 1, x: .2, y: .3, fontScale: .024, text: "本机未同步草稿" } });
-    await localDatabase.offlineScores.put({ ...workspace, key: "management-offline", versionId: "version", fileName: "谱.pdf", sha256: "test", pageCount: 1, blob: new Blob(["PDF"]), active: 1, verifiedAt: 1, annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace) });
+    await storeOfflineScore({ ...workspace, key: "management-offline", versionId: "version", fileName: "谱.pdf", sha256: "test", pageCount: 1, blob: new Blob(["PDF"]), active: 1, verifiedAt: 1, annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace) });
     const actions: unknown[] = [];
     let lost = loseResponse;
     vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
@@ -256,7 +257,7 @@ describe("AppRoutes", () => {
     await screen.findByText(loseResponse ? /操作结果未确认/ : "共享层已删除，可在已删除层入口查看并恢复。");
     await waitFor(() => expect(screen.queryByRole("button", { name: "删除 Ensemble" })).not.toBeInTheDocument());
     await waitFor(async () => expect(await readAnnotationLayers(workspace)).toEqual([]));
-    expect((await localDatabase.offlineScores.get("management-offline"))?.annotationSnapshot.layers).toEqual([]);
+    expect((await localDatabase.offlineSnapshots.get("management-offline"))?.annotationSnapshot.layers).toEqual([]);
     expect((await localDatabase.offlineScores.get("management-offline"))?.blob.size).toBe(3);
     expect((await localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey).toArray())[0]).toMatchObject({ state: "draft", layerId: shared.id });
     fireEvent.click(screen.getByRole("button", { name: "已删除层" }));

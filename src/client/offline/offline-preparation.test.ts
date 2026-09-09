@@ -205,3 +205,43 @@ it('cleanup also fences an explicit request still waiting for its initial contex
   expect((await pending).phase).not.toBe('ready');
   expect(await findVerifiedOfflineScore(f.workspace)).toBeNull();
 });
+
+it('prepares a cleaned healthy score when rewriting another score file would fail, with no queued drafts', async () => {
+  const { clearLocalFiles } = await import('./local-files');
+  const f = await fixture();
+  const first = f.client().prepare('explicit');
+  await vi.waitFor(() => expect(f.downloads()).toBe(1));
+  f.finish();
+  expect((await first).phase).toBe('ready');
+  const otherScope = createLocalWorkspace(f.workspace.ownerKey, 'drive', 'other');
+  const other = f.client({ ...f.score, id: 'other' }, otherScope).prepare('explicit');
+  await vi.waitFor(() => expect(f.downloads()).toBe(2));
+  f.finish();
+  expect((await other).phase).toBe('ready');
+  await clearLocalFiles(f.workspace);
+  expect(await localDatabase.annotationOutbox.count()).toBe(0);
+  const bulkPut = localDatabase.offlineScores.bulkPut.bind(localDatabase.offlineScores);
+  const injection = vi.spyOn(localDatabase.offlineScores, 'bulkPut').mockImplementation((records, ...args) => {
+    if (records.some(record => record.scoreId === 'other')) throw new DOMException('unreadable file', 'NotFoundError');
+    return bulkPut(records, ...args);
+  });
+  try {
+    const retry = f.client().prepare('explicit');
+    await vi.waitFor(() => expect(f.downloads()).toBe(3));
+    f.finish();
+    expect((await retry).phase).toBe('ready');
+    expect((await findVerifiedOfflineScore(f.workspace))?.versionId).toBe('v1');
+  } finally { injection.mockRestore(); }
+});
+
+it('reports annotation preparation separately from verified PDF bytes and never certifies a partial copy', async () => {
+  const f = await fixture();
+  const originalFetch = fetch;
+  vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) =>
+    input.endsWith('/layers') ? new Response(null, { status: 403 }) : originalFetch(input, init)));
+  const pending = f.client().prepare('explicit');
+  await vi.waitFor(() => expect(f.downloads()).toBe(1));
+  f.finish();
+  expect(await pending).toEqual({ phase: 'failed', reason: 'annotations' });
+  expect(await findVerifiedOfflineScore(f.workspace)).toBeNull();
+});

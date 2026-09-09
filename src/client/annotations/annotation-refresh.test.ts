@@ -1,3 +1,4 @@
+import { storeOfflineScore } from "../platform/local-database";
 import { Blob as NodeBlob } from "node:buffer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
@@ -66,7 +67,7 @@ it("loads older notes on a newly shared layer and removes revoked notes from off
     blob: new Blob(["test"]), active: 1, verifiedAt: 1, annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace),
   };
   expect(await verifyOfflineScore(staleRecord)).toBe(true);
-  await localDatabase.offlineScores.put(staleRecord);
+  await storeOfflineScore(staleRecord);
   serverLayers = [{ ...own }];
   await syncAnnotations(workspace, { pull: true });
   expect(await findVerifiedOfflineScore(workspace)).not.toBeNull();
@@ -85,7 +86,7 @@ it("rejects an older sibling-score response after a drive-wide revocation", asyn
     ...sibling, key: "sibling-offline", versionId: "version", fileName: "谱.pdf", sha256: await sha256Hex(new TextEncoder().encode("test").buffer), pageCount: 1,
     blob: new Blob(["test"]), active: 1, verifiedAt: 1, annotationSnapshot: await captureOfflineAnnotationSnapshot(sibling),
   };
-  await localDatabase.offlineScores.put(staleSnapshot);
+  await storeOfflineScore(staleSnapshot);
   const response = deferred<Response>();
   let siblingStarted = false;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -100,7 +101,7 @@ it("rejects an older sibling-score response after a drive-wide revocation", asyn
   await rejected;
   await restoreOfflineAnnotationSnapshot(sibling, staleSnapshot);
   expect((await readAnnotationLayers(sibling)).map(layer => layer.id)).toEqual([own.id]);
-  expect((await localDatabase.offlineScores.get(staleSnapshot.key))?.annotationSnapshot.layers.map(layer => layer.id)).toEqual([own.id]);
+  expect((await localDatabase.offlineSnapshots.get(staleSnapshot.key))?.annotationSnapshot.layers.map(layer => layer.id)).toEqual([own.id]);
   expect(await findVerifiedOfflineScore(sibling)).not.toBeNull();
 });
 
@@ -120,7 +121,7 @@ it("checks layer status before reconnect uploads, keeps deleted-layer drafts and
     ...workspace, key: "deleted-layer-offline", versionId: "version", fileName: "谱.pdf", sha256: await sha256Hex(new TextEncoder().encode("test").buffer), pageCount: 1,
     blob: new Blob(["test"]), active: 1, verifiedAt: 1, annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace),
   };
-  await localDatabase.offlineScores.put(snapshot);
+  await storeOfflineScore(snapshot);
   serverLayers = [own];
   const requests: string[] = [];
   const uploaded: string[] = [];
@@ -163,7 +164,7 @@ it("keeps paused shared notes but does not restore their layer from an older off
     blob: new Blob(["test"]), active: 1, verifiedAt: 1, annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace),
   };
   expect(await verifyOfflineScore(staleRecord)).toBe(true);
-  await localDatabase.offlineScores.put(staleRecord);
+  await storeOfflineScore(staleRecord);
   serverLayers = [{ ...own }];
   await syncAnnotations(workspace, { pull: true });
   expect(await findVerifiedOfflineScore(workspace)).not.toBeNull();
@@ -395,4 +396,17 @@ it("rejects an old fallback holder after an expired lease has been taken over", 
   release.resolve();
   await successor;
   expect(getAnnotationSyncActivity(workspace.scopeKey)).toBe("idle");
+});
+
+it.each([
+  { response: () => new Response(null, { status: 403 }), step: 'sync-layers-request', errorCode: 'annotation_layer_access_denied' },
+  { response: () => new Response('not json'), step: 'sync-layers-response', errorCode: 'invalid_server_response' },
+  { response: () => Response.json({ layers: [], sharedLayerRevision: 0, permissions: { canManageLayers: false } }), step: 'sync-layers-identity', errorCode: 'annotation_layer_identity_mismatch' },
+])('identifies $step without exporting response or exception text', async ({ response, step, errorCode }) => {
+  const { clearDiagnostics, exportDiagnostics } = await import('../diagnostics/diagnostics');
+  clearDiagnostics();
+  vi.stubGlobal('fetch', vi.fn(response));
+  await expect(syncAnnotations(workspace, { pull: true })).rejects.toThrow();
+  expect(JSON.parse(exportDiagnostics()).records).toContainEqual(expect.objectContaining({ step, errorCode }));
+  expect(exportDiagnostics()).not.toContain('not json');
 });
