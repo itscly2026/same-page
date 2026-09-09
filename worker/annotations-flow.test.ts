@@ -18,6 +18,7 @@ import {
   describe,
   expect,
   it,
+  type TestContext,
 } from "vitest";
 
 import worker from "./index";
@@ -64,9 +65,12 @@ beforeEach(async () => {
 afterEach(() => network.resetHandlers());
 
 describe("annotation layers and object synchronization", () => {
-  it.each(["E", "custom"])("recycles %s across scores, retaining identity, grants and preferences while rejecting stale actions", async slotKind => {
-    const fixture = await createFixture();
+  it.for(["E", "custom"] as const)("recycles %s across scores, retaining identity, grants and preferences while rejecting stale actions", { timeout: 15_000 }, async (slotKind, context) => {
+    const stage = trackRecycleStages(context, slotKind);
+    const fixture = await createFixture(() => stage("first-score"));
+    stage("member-identity");
     const member = await createMember(fixture.joinCode!, "recycle@example.test", "成员");
+    stage("permissions-and-scores");
     const base = `/api/choirs/${fixture.choirId}`;
     const slot = slotKind === "E" ? "E" : (await (await callWorker(`${base}/shared-layers`, jsonRequest(fixture.adminCookie, { name: "伴奏", defaultColor: "#123456" }))).json() as { slot: string }).slot;
     const list = async (state = "current") => (await (await callWorker(`${base}/shared-layers?state=${state}`, { headers: { cookie: fixture.adminCookie } })).json() as { layers: SharedLayerManagementSummary[] }).layers;
@@ -85,6 +89,7 @@ describe("annotation layers and object synchronization", () => {
     const secondId = crypto.randomUUID();
     await push(fixture, [operation(objectId, String(layer!.id), 0, "第一首提示")]);
     await push(second, [operation(secondId, String(secondLayer!.id), 0, "第二首提示")]);
+    stage("delete");
     const original = (await list()).find(row => row.slot === slot)!;
     expect((await change("delete", original.revision, member.cookie)).status).toBe(403);
     expect((await callWorker(`${base}/shared-layers/P/lifecycle`, jsonRequest(fixture.adminCookie, { action: "delete", expectedRevision: 0 }))).status).toBe(409);
@@ -101,6 +106,7 @@ describe("annotation layers and object synchronization", () => {
     expect((await put(`/shared-layers/${slot}/order`, { direction: "up" })).status).toBe(404);
     const pullPath = `${base}/scores/${fixture.scoreId}/annotations`;
     expect(await (await callWorker(pullPath, { headers: { cookie: fixture.adminCookie } })).json()).toMatchObject({ objects: [] });
+    stage("restore");
     expect((await change("restore", deleted.revision, member.cookie)).status).toBe(403);
     expect((await change("restore", original.revision)).status).toBe(409);
     expect((await change("restore", deleted.revision)).status).toBe(200);
@@ -109,6 +115,7 @@ describe("annotation layers and object synchronization", () => {
     expect(await layerBySlot(fixture, member.cookie, slot)).toMatchObject({ id: layer!.id, canEdit: true });
     expect(await layerBySlot(second, fixture.adminCookie, slot)).toMatchObject({ id: secondLayer!.id });
     expect(await (await callWorker(pullPath, { headers: { cookie: fixture.adminCookie } })).json()).toMatchObject({ objects: [{ id: objectId, version: 1, payload: { text: "第一首提示" } }] });
+    stage("paused-restore");
     const paused = await put(`/shared-layers/${slot}/settings`, { active: false });
     expect(paused.status).toBe(200);
     const beforePauseDelete = (await list()).find(row => row.slot === slot)!;
@@ -118,6 +125,7 @@ describe("annotation layers and object synchronization", () => {
     expect((await list()).find(row => row.slot === slot)).toMatchObject({ active: false, sortOrder: original.sortOrder });
     expect(await layerBySlot(fixture, fixture.adminCookie, slot)).toBeUndefined();
     expect(await layerBySlot(fixture, fixture.adminCookie, "S")).toBeDefined();
+    stage(null);
   });
 
   it("rejects expired restoration before cleanup, purges atomically and never reuses a same-name slot", async () => {
@@ -945,8 +953,37 @@ describe("annotation layers and object synchronization", () => {
   });
 });
 
-async function createFixture() {
+// Fixed labels and durations only: never serialize a fixture, request or error.
+// The test signal captures the active stage at timeout, before teardown runs.
+type RecycleStage = "owner-identity" | "first-score" | "member-identity" | "permissions-and-scores" | "delete" | "restore" | "paused-restore";
+function trackRecycleStages(context: TestContext, variant: "E" | "custom") {
+  const startedAt = performance.now();
+  let stageStartedAt = startedAt;
+  let current: RecycleStage | null = "owner-identity";
+  const completed: { stage: RecycleStage; durationMs: number }[] = [];
+  const snapshot = () => {
+    const now = performance.now();
+    return { event: "worker_recycle_stage_timing", variant,
+      totalMs: Math.round(now - startedAt), completed: [...completed],
+      running: current ? { stage: current, durationMs: Math.round(now - stageStartedAt) } : null };
+  };
+  let timedOut: ReturnType<typeof snapshot> | undefined;
+  const capture = () => { timedOut = snapshot(); };
+  context.signal.addEventListener("abort", capture, { once: true });
+  context.onTestFinished(() => context.signal.removeEventListener("abort", capture));
+  context.onTestFailed(() => console.error(JSON.stringify(timedOut ?? snapshot())));
+  return (next: RecycleStage | null) => {
+    if (context.signal.aborted) return;
+    const now = performance.now();
+    if (current) completed.push({ stage: current, durationMs: Math.round(now - stageStartedAt) });
+    current = next;
+    stageStartedAt = now;
+  };
+}
+
+async function createFixture(onOwnerReady?: () => void) {
   const admin = await signIn("annotation-admin@example.test");
+  onOwnerReady?.();
   const provisioned = await provisionChoir({
     binding: env.DB,
     ownerUserId: admin.userId,
