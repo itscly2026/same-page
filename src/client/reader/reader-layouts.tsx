@@ -241,7 +241,7 @@ export function ContinuousLayout({
 }: ReaderLayoutProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const alignedPage = useRef<{ page: number; geometryReady: boolean } | null>(null);
+  const alignedPage = useRef<{ page: number; restorePage: number; geometryReady: boolean } | null>(null);
   const size = useElementSize(scrollRef);
   const pageWidth = Math.max(1, size.width * zoom);
   const ratios = usePageAspectRatios(document);
@@ -263,19 +263,22 @@ export function ContinuousLayout({
     // Initial zero-width measurements cannot establish the saved page position.
     if (size.width <= 0 || size.height <= 0 || annotationProps.editing ||
       (alignedPage.current?.page === currentPage && alignedPage.current.geometryReady === geometryReady)) return;
-    // Correct the initial estimate once actual page geometry arrives.
-    alignedPage.current = { page: currentPage, geometryReady };
+    // A short final page can clamp the estimated scroll and temporarily select
+    // its predecessor. Keep the requested page until actual geometry is aligned.
+    const restorePage = geometryReady && alignedPage.current?.geometryReady === false
+      ? alignedPage.current.restorePage : currentPage;
+    alignedPage.current = { page: currentPage, restorePage, geometryReady };
     const scrollElement = scrollRef.current;
     const target = virtualizer
       .getVirtualItems()
-      .find((item) => item.index === currentPage - 1);
+      .find((item) => item.index === restorePage - 1);
     const visible =
       scrollElement &&
       target &&
       target.start >= scrollElement.scrollTop &&
       target.end <= scrollElement.scrollTop + scrollElement.clientHeight;
     if (!visible) {
-      virtualizer.scrollToIndex(currentPage - 1, { align: "start" });
+      virtualizer.scrollToIndex(restorePage - 1, { align: "start" });
     }
   }, [annotationProps.editing, currentPage, virtualizer, size.width, size.height, geometryReady]);
 
@@ -319,7 +322,8 @@ export function ContinuousLayout({
         const first = virtualizer.getVirtualItemForOffset(threshold);
         if (first) {
           const page = first.index + 1;
-          alignedPage.current = { page, geometryReady };
+          alignedPage.current = { page, restorePage: alignedPage.current?.restorePage ?? currentPage,
+            geometryReady: alignedPage.current?.geometryReady ?? false };
           onPageChange(page);
         }
       }}

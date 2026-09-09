@@ -48,14 +48,16 @@ test("restores a later continuous page and confirms its first canvas", { timeout
               await page.locator(".reader-loading").waitFor({ state: "hidden", timeout: 5000 });
               // Geometry and scroll events commit independently of the first bitmap.
               try {
-                await page.waitForFunction(() => {
+                await page.waitForFunction(expected => {
                 const viewport = document.querySelector(".continuous-reader");
                 const threshold = viewport.getBoundingClientRect().top + 8;
                 const first = [...viewport.querySelectorAll(".pdf-page-canvas")]
                   .find(canvas => canvas.getBoundingClientRect().bottom + 8 > threshold);
                 const selected = JSON.parse(localStorage.getItem("reader-preferences:visual-user-member:visual-choir:visual-score")).page;
-                return selected === Number(first?.dataset.pageNumber);
-                }, undefined, { timeout: 5000 });
+                const requested = viewport.querySelector(`.pdf-page-canvas[data-page-number="${expected}"]`);
+                const rect = requested?.getBoundingClientRect();
+                return selected === Number(first?.dataset.pageNumber) && rect && rect.top < viewport.getBoundingClientRect().bottom && rect.bottom > viewport.getBoundingClientRect().top;
+                }, expectedPage, { timeout: 5000 });
               } catch (error) {
                 console.error("reader-presentation geometry", JSON.stringify({ engine: name, savedPage, expectedPage, reopen,
                   geometry: await page.locator(".continuous-reader").evaluate(viewport => ({
