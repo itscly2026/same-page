@@ -23,3 +23,9 @@
 ## 验收范围
 
 以上为本机自动化、浏览器 fixture 和截图检查。未部署、未进行真实 iPad / 手机 PWA 或真实排练验收；窄视口不是设备验收。#226 的导航和视觉重做不在本次范围内。
+
+## PR #228 CI 修复
+
+首次 CI 的 `checks` 和 `integration` 通过，`visual` 的 Chromium / WebKit 显示名与云盘改名场景仍等待旧文案“成员与权限（需联网）”而超时，`verify` 随此失败。本机用 `node --test --test-name-pattern='chromium:' visual-report/drive-settings.test.mjs` 复现相同断言失败。更新该场景以验证在线刷新失败后的真实状态：菜单保留、成员入口禁用且不存在管理链接、显示集中权限确认提示、不出现旧的逐项离线标签。未修改产品逻辑或放宽超时。
+
+修正后使用 CI 同样的共享服务方式 `node --test --test-global-setup=./visual-report/setup.mjs visual-report/drive-settings.test.mjs`，Chromium / WebKit 共 4 项全部通过。直接逐场景启动的补跑曾在最后一个场景清理子进程时遇到本机 `kill EPERM`；该结果未记作完整通过，未为此修改进程管理逻辑。
