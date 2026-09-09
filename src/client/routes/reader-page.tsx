@@ -80,7 +80,7 @@ import {
 import type { DiagnosticReader } from "../../shared/diagnostic-report";
 import { DiagnosticReportDialog, DiagnosticReportModal } from "../diagnostics/diagnostic-report-dialog";
 
-type ReaderPanel = "layers" | "pages";
+type ReaderPanel = "layers";
 
 const ReaderEditingControls = lazy(() =>
   import("../reader/reader-editing-controls").then((module) => ({
@@ -334,7 +334,6 @@ function ReaderPageContent() {
     return true;
   };
   useExitLayer(editing, "editing", finishEditing);
-  useExitLayer(readerPanel === "pages", "overlay", () => { setReaderPanel(null); return true; });
 
   const manualSync = async () => {
     if (!annotationActions || syncing) return;
@@ -522,15 +521,6 @@ function ReaderPageContent() {
                 <Ellipsis aria-hidden="true" size={21} />
               </Button></>}
             </div>
-            {!editing && <Button
-              aria-label="页面位置"
-              aria-expanded={readerPanel === "pages"}
-              className="reader-page-indicator"
-              isDisabled={editing}
-              onPress={() => openReaderPanel("pages")}
-            >
-              <span>{currentPage} / {document.numPages}</span>
-            </Button>}
             {editing && annotationInteraction !== "composing-text" && <span className="reader-save-feedback" role="status">
               {persistence === "saving" ? "正在保存到本机…" : persistence === "failed" ? "本机保存失败" : annotations.some(annotation => annotation.state === "draft") ? "已保存在本机" : "正在编辑当前页"}
             </span>}
@@ -633,15 +623,15 @@ function ReaderPageContent() {
         </header>
       ) : null}
 
-      {!editing && chromeVisible && readerPanel === "pages" ? (
-        <PageNavigatorPanel
-          document={document}
-          currentPage={currentPage}
-          onSelect={(page) => {
-            goToPage(page);
-            setReaderPanel(null);
-          }}
-        />
+      {!editing && chromeVisible ? (
+        <>
+          <PageNavigatorPanel
+            key={score.currentVersion.id}
+            document={document}
+            currentPage={currentPage}
+            onSelect={page => { setZoom(1); setCurrentPage(page); }}
+          />
+        </>
       ) : null}
 
       {editing && editor && annotationInteraction === "idle" ? (

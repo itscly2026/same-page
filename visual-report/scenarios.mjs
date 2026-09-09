@@ -326,7 +326,7 @@ export const visualReportScenarios = [
   {
     id: "reader-controls-narrow",
     title: "阅读器 · 手机控制",
-    description: "手机宽度下编辑、图层与更多完整保留，页码作为胶囊下方提示。",
+    description: "手机宽度下编辑、图层与更多完整保留，底部显示紧凑缩略图和独立页码胶囊。",
     device: "narrow",
     identity: "member",
     route: "/choirs/visual-choir/scores/visual-score",
@@ -339,14 +339,13 @@ export const visualReportScenarios = [
   {
     id: "reader-pages",
     title: "阅读器 · 页面定位",
-    description: "页码入口按需打开缩略图定位，不常驻占用谱面空间。",
+    description: "轻点中央随工具栏显示紧凑缩略图与独立页码，再次轻点一起隐藏。",
     device: "landscape",
     identity: "member",
     route: "/choirs/visual-choir/scores/visual-score",
     ready: { type: "selector", selector: ".page-preview-strip" },
     actions: [
       { type: "clickCenter", selector: ".page-reader__viewport" },
-      { type: "clickRole", role: "button", name: "页面位置" },
     ],
     waitsForPdf: true,
   },

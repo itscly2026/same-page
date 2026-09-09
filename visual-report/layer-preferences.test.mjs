@@ -159,7 +159,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByRole("button", { name: "Ensemble", exact: true }).click();
     await page.getByText("第一排男高音这里请统一提前吸气并保持轻声进入", { exact: true }).waitFor();
     assert.equal(await page.getByText("换气", { exact: true }).count(), 0, "editing shows only the selected shared layer");
-    assert.equal(await page.getByRole("button", { name: "页面位置" }).count(), 0);
+    assert.equal(await page.getByLabel("页面位置").count(), 0);
     await capture(page, `${engineName}-edit-hidden-layer`);
     await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
     await page.getByText("第一排男高音这里请统一提前吸气并保持轻声进入", { exact: true }).waitFor({ state: "hidden" });

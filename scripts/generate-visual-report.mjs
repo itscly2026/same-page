@@ -221,6 +221,10 @@ async function runActions(page, actions, fixture) {
       await page.getByRole(action.role, { name: action.name, exact: true }).click();
       continue;
     }
+    if (action.type === "pressRole") {
+      await page.getByRole(action.role, { name: action.name, exact: true }).press(action.key);
+      continue;
+    }
     if (action.type === "fillRole") {
       await page.getByRole(action.role, { name: action.name, exact: true }).fill(action.value);
       continue;

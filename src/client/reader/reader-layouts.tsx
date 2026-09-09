@@ -8,6 +8,7 @@ import {
   type TransitionEvent as ReactTransitionEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -316,7 +317,8 @@ export function ContinuousLayout({
         // real geometry is aligned. Do not turn that estimate into user intent.
         if (annotationProps.editing || !geometryReady || !alignedPage.current?.geometryReady) return;
         const scrollTop = scrollRef.current?.scrollTop ?? 0;
-        const threshold = scrollTop + 8;
+        // Editing and preview follow the page at the viewport center.
+        const threshold = scrollTop + (scrollRef.current?.clientHeight ?? 0) / 2;
         // Scroll events can precede the virtual window update; use full geometry.
         const first = virtualizer.getVirtualItemForOffset(threshold);
         if (first) {
@@ -367,50 +369,84 @@ export function PageNavigatorPanel({
   currentPage: number;
   onSelect(page: number): void;
 }) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  // TanStack Virtual intentionally exposes mutable measurement functions.
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const virtualizer = useVirtualizer({
-    count: document.numPages,
-    getScrollElement: () => panelRef.current,
-    estimateSize: () => 64,
-    horizontal: true,
-    overscan: 5,
-  });
-
+  const [draftPage, setDraftPage] = useState<number | null>(null);
+  const pendingPage = useRef(currentPage);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectRef = useRef(onSelect);
+  useLayoutEffect(() => { selectRef.current = onSelect; }, [onSelect]);
+  const page = draftPage ?? currentPage;
+  const panelRef = useRef<HTMLElement>(null);
+  const size = useElementSize(panelRef);
+  // Sample the document at a density that leaves gaps between resting thumbnails.
+  // The range input still addresses every page, including those not sampled.
+  const count = Math.min(document.numPages, 40, Math.max(1, Math.floor((size.width - 48) / 28) + 1));
+  const activeIndex = document.numPages === 1 ? 0 : Math.round((page - 1) / (document.numPages - 1) * (count - 1));
+  const thumbnails = Array.from({ length: count }, (_, index) =>
+    count === 1 ? 1 : 1 + Math.round(index * (document.numPages - 1) / (count - 1)),
+  );
+  const clearPending = () => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  const finish = () => {
+    clearPending();
+    selectRef.current(pendingPage.current);
+    setDraftPage(null);
+  };
+  useEffect(() => () => { if (timer.current !== null) clearTimeout(timer.current); }, []);
   useEffect(() => {
-    virtualizer.scrollToIndex(currentPage - 1, { align: "auto" });
-  }, [currentPage, virtualizer]);
+    if (draftPage === null) return;
+    // Native range controls own dragging, including release outside the track.
+    const release = () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+      timer.current = null;
+      selectRef.current(pendingPage.current);
+      setDraftPage(null);
+    };
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+      window.removeEventListener("blur", release);
+    };
+  }, [draftPage]);
 
   return (
-    <nav className="page-preview-strip" aria-label="页面缩略图">
-      <output className="page-preview-strip__position" aria-live="polite">
-        {currentPage} / {document.numPages}
-      </output>
-      <div className="page-preview-strip__track" ref={panelRef}>
-        <div
-          className="page-preview-strip__inner"
-          style={{ width: virtualizer.getTotalSize() }}
-        >
-          {virtualizer.getVirtualItems().map((item) => (
-            <button
-              className="page-preview-strip__button"
-              data-current={item.index + 1 === currentPage || undefined}
-              key={item.key}
-              onClick={() => onSelect(item.index + 1)}
-              style={{ transform: `translateX(${item.start}px)` }}
-              aria-label={`前往第 ${item.index + 1} 页`}
-            >
-              <PdfPageThumbnail
-                document={document}
-                pageNumber={item.index + 1}
-              />
-              <span>{item.index + 1}</span>
-            </button>
+    <>
+      <output className="reader-page-indicator" aria-label="页面位置">{page} / {document.numPages}</output>
+      <nav className="page-preview-strip" aria-label="页面缩略图" ref={panelRef}>
+        <div className="page-preview-strip__track" aria-hidden="true">
+          {thumbnails.map((number, index) => (
+            <div className="page-preview-strip__thumbnail" key={index}
+              data-active={index === activeIndex || undefined}
+              style={{ left: `${count === 1 ? 50 : index / (count - 1) * 100}%` }}>
+              <PdfPageThumbnail document={document} pageNumber={index === activeIndex ? page : number} />
+            </div>
           ))}
         </div>
-      </div>
-    </nav>
+        <input type="range" className="page-preview-strip__slider" aria-label="跳转页码"
+          min={1} max={document.numPages} step={1} value={page}
+          aria-valuetext={`第 ${page} 页，共 ${document.numPages} 页`}
+          disabled={document.numPages === 1}
+          onChange={event => {
+            const next = Number(event.target.value);
+            pendingPage.current = next;
+            setDraftPage(next);
+            clearPending();
+            // Page numbers follow the finger immediately; expensive page rendering
+            // waits for a short pause and never queues intermediate destinations.
+            timer.current = setTimeout(() => {
+              timer.current = null;
+              selectRef.current(next);
+            }, 120);
+          }}
+          onKeyUp={() => { if (draftPage !== null) finish(); }}
+          onBlur={() => { if (draftPage !== null) finish(); }}
+        />
+      </nav>
+    </>
   );
 }
 

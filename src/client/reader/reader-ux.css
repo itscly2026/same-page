@@ -86,11 +86,10 @@
 .reader-layer-panel .layer-card__identity strong { flex-wrap: wrap; }
 
 
-/* One light control surface, with the page position integrated underneath. */
+/* One light surface for the top reading controls. */
 .reader-shell .reader-chrome__actions-stack { background: rgb(255 255 255 / 96%); border-radius: 0.65rem; }
 .reader-shell .reader-chrome__back,
 .reader-shell .reader-chrome__actions { border: 0; box-shadow: none; backdrop-filter: none; border-radius: 0.65rem; }
-.reader-shell .reader-page-indicator { min-height: 44px !important; margin: 0; border: 0 !important; box-shadow: none !important; }
 .reader-shell .annotation-controls { box-shadow: 0 2px 10px #0001; backdrop-filter: none; }
 .reader-shell::before { height: 7rem; background: linear-gradient(to bottom, #ffffff90, transparent 100%); }
 .reader-more-popover { z-index: 60; width: min(24rem, calc(100vw - 1.5rem)); }
