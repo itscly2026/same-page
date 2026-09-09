@@ -3,6 +3,14 @@ name: Browser stability experiment
 # Explicit, bounded experiments; ordinary PR pushes do not pay for ten runs.
 on:
   workflow_dispatch:
+    inputs:
+      scenario:
+        description: Bounded browser scenario to repeat
+        type: choice
+        default: navigation-offline
+        options:
+          - navigation-offline
+          - reader-touch
   pull_request:
     types: [labeled]
 
@@ -25,21 +33,32 @@ jobs:
       - run: npm ci --prefer-offline --no-audit --no-fund
       - run: npx playwright install --with-deps chromium webkit
       - run: npm run build
-      - name: Ten consecutive runs of both engines and both target files
+      - name: Ten consecutive runs of the selected scenario
         shell: bash
+        env:
+          STABILITY_SCENARIO: ${{ inputs.scenario || 'navigation-offline' }}
         run: |
           mkdir -p artifacts/stability
           git rev-parse HEAD > artifacts/stability/commit.txt
           node --version > artifacts/stability/node.txt
           cp /etc/os-release artifacts/stability/os-release.txt
           npx playwright --version > artifacts/stability/playwright.txt
+          case "$STABILITY_SCENARIO" in
+            navigation-offline)
+              test_args=(visual-report/drive-navigation.test.mjs browser-tests/offline-entry-smoke.test.mjs)
+              ;;
+            reader-touch)
+              test_args=(--test-name-pattern='continuous native touch|continuous touch pinch' visual-report/reader-immersive.test.mjs)
+              ;;
+            *) echo "Unknown stability scenario" >&2; exit 1 ;;
+          esac
+          printf '%s\n' "$STABILITY_SCENARIO" > artifacts/stability/scenario.txt
           failed=0
           for attempt in $(seq 1 10); do
             started=$(date +%s)
             status=0
             node --test --test-reporter=tap --test-concurrency=1 \
-              visual-report/drive-navigation.test.mjs \
-              browser-tests/offline-entry-smoke.test.mjs \
+              "${test_args[@]}" \
               > "artifacts/stability/run-${attempt}.log" 2>&1 || status=$?
             duration=$(( $(date +%s) - started ))
             printf '%s\t%s\t%s\n' "$attempt" "$status" "$duration" >> artifacts/stability/results.tsv
