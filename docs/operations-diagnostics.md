@@ -58,3 +58,9 @@ npm run diagnostics:inbox -- mark --remote --id REPORT_UUID --status resolved
 `step` 和 `errorType` 为可选白名单字段。先用 step 区分 outbox-scan、sync-lock/layers/push/pull/apply、draft-save/sync-retry/conflict-resolve、offline-read/file/manifest/snapshot；再结合固定错误类型判断数据库/Blob 读取异常、配额不足或验证失败。ValidationError 代表校验拒绝，OtherError 代表不在白名单内的异常类型，不保留原始名称、message 或 stack。同阶段但步骤或错误类型不同的事件分别保存。
 
 “暂时无法读取本机副本，请重试校验”表示尚未确认副本有效性；点击“重试校验”重新读取和验证，不删除、替换或重新下载副本。与已读到内容但校验未通过的“本地副本不可用，请重新下载”分开。相关实现和真实浏览器负对照见 `docs/verification/webkit-sync-diagnostics.md`。
+
+### 离线副本与打开故障（#221）
+
+`sync-layers` 现在细分为 `sync-layers-request`、`sync-layers-response`、`sync-layers-identity`、`sync-layers-cache`、`sync-layers-snapshot`，分别定位请求、响应解析、身份/层完整性、缓存事务与离线快照更新。`errorCode` 只接受固定枚举；`errorType` 可区分 `BulkError` / `ModifyError`，`causeType` 只保留有界嵌套异常中的白名单类型（如 `NotFoundError`）。不记录异常原文、任意字段、文件名、笔记或凭据。
+
+打开超时以 `reader-source`、`reader-document`、`reader-presentation` 区分尚未选定源、文档未就绪及首屏未呈现。PDF 文档就绪不等于首屏已显示。诊断证明某个失败步骤，不自动证明 Safari 底层文件异常的触发原因；真实 iPad PWA 验证需先核对设备 buildId，再分别执行打开、下载、清理后重试、断网重开、联网同步。

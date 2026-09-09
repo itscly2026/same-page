@@ -1,3 +1,4 @@
+import { offlinePreparationDescription } from "../offline/offline-score-status";
 import { offlineScoreSummary as scoreFromOffline } from "../offline/retained-scores";
 import { revokeOfflinePreparationIdentity, OfflinePreparation, type OfflinePreparationState } from "../offline/offline-score";
 import { liveQuery } from "dexie";
@@ -8,7 +9,7 @@ import { restoreOfflineAnnotationSnapshot } from "../annotations/annotation-stat
 import { syncAnnotations } from "../annotations/sync";
 import { type OfflineScoreRecord } from "../platform/local-database";
 import { assertLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
-import { findVerifiedOfflineScore } from "../offline/offline-score-verification";
+import { readOfflineFileBytes, findVerifiedOfflineScore } from "../offline/offline-score-verification";
 import { markLoadingJourneyMilestone } from "../performance/loading-performance";
 import { acquireReaderDocument, confirmReaderDocumentVersion, invalidateReaderDocument, ReaderDocumentVersionMismatchError, type ReaderDocumentLease } from "./reader-document-cache";
 import { peekReaderScore, rememberReaderScore, forgetReaderScore } from "./reader-score-cache";
@@ -48,14 +49,17 @@ export class ReaderSession {
   private lease: ReaderDocumentLease | null = null;
   private generation = 0;
   private displayPrepared = false;
+  private displayed: ScoreDocument | null = null;
   private retained: { document: ScoreDocument; mode: ScoreDisplayMode; source: Source | null; lease: ReaderDocumentLease | null } | null = null;
   private retainDisplay() {
-    if (this.retained || !this.state.document || this.cloudInvalidated) return;
+    if (this.retained || !this.state.document || this.displayed !== this.state.document || this.cloudInvalidated) return;
     this.retained = { document: this.state.document, mode: this.state.mode, source: this.source, lease: this.lease };
     this.lease = null;
   }
   confirmDisplay = (document: ScoreDocument) => {
     if (document !== this.state.document || !this.displayPrepared) return;
+    this.displayed = document;
+    if (this.deadline) clearTimeout(this.deadline);
     this.retained?.lease?.release();
     this.retained = null;
   };
@@ -70,6 +74,8 @@ export class ReaderSession {
     this.retained = null;
     this.displayPrepared = true;
     this.pdfFailed = false;
+    this.displayed = previous.document;
+    if (this.deadline) clearTimeout(this.deadline);
     this.publish({ document: previous.document, mode: previous.mode, status: "ready", error: null, modeMessage: "显示恢复未完成，已保留原谱面。" });
     return true;
   }
@@ -167,7 +173,9 @@ export class ReaderSession {
     if (this.deadline) clearTimeout(this.deadline);
     this.deadline = setTimeout(() => {
       if (this.retained) { this.restoreDisplay(); return; }
-      if (this.state.status === "loading") {
+      if (this.state.status === "loading" || !this.state.score || this.displayed !== this.state.document) {
+        recordFailure({ operation: "pdf", category: "internal", stage: "prepare",
+          step: this.state.document ? "reader-presentation" : this.source ? "reader-document" : "reader-source", errorType: "TimeoutError", pdfReason: "timeout" });
         this.publish({ status: "error", error: "加载用时较长，可以重试或返回云盘。这不代表设备不兼容。" });
         invalidateReaderDocument({ ...this.workspace });
         this.dispose();
@@ -223,7 +231,15 @@ export class ReaderSession {
   private async openOffline(offline: OfflineScoreRecord) {
     if (this.source?.kind === "offline" && this.source.versionId === offline.versionId) return;
     const generation = this.generation;
-    const data = offline.imageManifest ? undefined : await offline.blob.arrayBuffer();
+    let data: ArrayBuffer | undefined;
+    try { data = offline.imageManifest ? undefined : await readOfflineFileBytes(offline.blob); }
+    catch {
+      if (!await this.current() || generation !== this.generation) return;
+      this.publish({ offline: null, downloadMessage: "本机谱面读取失败，请重新下载；本机笔记仍然保留。" });
+      this.startCloudIfNeeded();
+      this.resolveFailure();
+      return;
+    }
     if (!await this.current() || generation !== this.generation || !this.localMatches()) return;
     if (this.state.cloudState !== "active") this.publish({ score: scoreFromOffline(offline) });
     this.openSource({ kind: "offline", versionId: offline.versionId }, data);
@@ -331,7 +347,7 @@ export class ReaderSession {
         const state = preparation.getSnapshot();
         this.publish({ preparation: state, downloading: state.phase === "preparing",
           downloadMessage: state.phase === "ready" ? "离线副本已完整校验，可以离线打开。"
-            : state.phase === "failed" ? "离线下载未完成，仍可在线阅读，现有离线版本没有切换。请重试。" : null,
+            : state.phase === "failed" ? offlinePreparationDescription(state, { record: this.state.offline, invalid: false }, this.state.score?.currentVersion.id ?? "", this.state.mode) : null,
           ...(state.phase === "ready" ? { offline: state.record } : {}),
         });
       });

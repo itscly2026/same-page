@@ -13,7 +13,7 @@ export async function readRetainedScores(workspace: LocalWorkspace): Promise<Sco
     .equals(workspace.ownerKey).filter(record => record.choirId === workspace.choirId).toArray();
   const scores = await Promise.all([...new Set(candidates.map(record => record.scoreId))].map(async scoreId => {
     const scope = { ...createLocalWorkspace(workspace.ownerKey, workspace.choirId, scoreId), sessionEpoch: workspace.sessionEpoch };
-    const { record } = await inspectOfflineScore(scope);
+    const { record } = await inspectOfflineScore(scope).catch(() => ({ record: null }));
     return record ? offlineScoreSummary(record) : null;
   }));
   await assertLocalWorkspaceActive(workspace);

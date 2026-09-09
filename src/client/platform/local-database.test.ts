@@ -1,5 +1,6 @@
+import { Blob as NodeBlob } from "node:buffer";
 import Dexie from "dexie";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AnnotationPayload } from "../../shared/annotations";
 import {
@@ -101,3 +102,45 @@ const versionFiveStores = {
   syncLeases: "&scopeKey,ownerKey,expiresAt",
   annotationLayers: "&key,ownerKey,scopeKey,[scopeKey+id],kind,sortOrder",
 };
+
+it("upgrades version 10 without losing file bytes, snapshots, drafts, outbox or conflicts", async () => {
+  const name = `split-offline-${crypto.randomUUID()}`;
+  const old = new Dexie(name);
+  old.version(10).stores({ ...versionFiveStores,
+    annotationOutbox: "&opId,ownerKey,scopeKey,[ownerKey+scopeKey],[scopeKey+annotationId],createdAt",
+    driveDirectories: "&key,ownerKey,[ownerKey+choirId]" });
+  await old.open();
+  const scope = { ownerKey: "user:a", scopeKey: "scope", choirId: "drive", scoreId: "score" };
+  const snapshot = { layers: [], annotations: [], cursor: 12, verifiedAt: 42 };
+  const draft = { ...scope, key: "draft", state: "draft", payload: { text: "keep this draft" } };
+  await old.table("offlineScores").put({ ...scope, key: "file", blob: new NodeBlob(["PDF bytes"]), annotationSnapshot: snapshot, active: 1 });
+  await old.table("offlineScores").put({ ...scope, key: "unreadable", blob: new NodeBlob(["retained"]), annotationSnapshot: snapshot, active: 1 });
+  await old.table("annotations").put(draft);
+  await old.table("annotationOutbox").put({ ...scope, opId: "pending" });
+  await old.table("annotationConflicts").put({ ...scope, opId: "conflict" });
+  old.close();
+  const originalPut = IDBObjectStore.prototype.put;
+  const writes = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, ...args) {
+    if (this.name === "offlineScores") throw new DOMException("broken Blob rewrite", "NotFoundError");
+    return originalPut.apply(this, args);
+  });
+  const originalGet = IDBObjectStore.prototype.get;
+  const reads = vi.spyOn(IDBObjectStore.prototype, "get").mockImplementation(function (this: IDBObjectStore, ...args) {
+    if (this.name === "offlineScores" && args[0] === "unreadable") throw new DOMException("broken file read", "NotReadableError");
+    return originalGet.apply(this, args);
+  });
+  const upgraded = new SamePageDatabase(name);
+  try {
+    await upgraded.open();
+    const file = await upgraded.offlineScores.get("file");
+    expect(file?.blob.size).toBe(9);
+    expect(await file?.blob.text()).toBe("PDF bytes");
+    // Legacy embedded metadata is inert; the current snapshot lives separately.
+    expect((await upgraded.offlineSnapshots.get("file"))?.annotationSnapshot).toEqual(snapshot);
+    expect(await upgraded.offlineScores.count()).toBe(2);
+    expect(await upgraded.offlineSnapshots.get("unreadable")).toBeUndefined();
+    expect(await upgraded.annotations.get("draft")).toEqual(draft);
+    expect(await upgraded.annotationOutbox.get("pending")).toBeDefined();
+    expect(await upgraded.annotationConflicts.get("conflict")).toBeDefined();
+  } finally { reads.mockRestore(); writes.mockRestore(); upgraded.close(); await Dexie.delete(name); }
+});

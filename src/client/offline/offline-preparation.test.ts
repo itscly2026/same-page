@@ -205,3 +205,97 @@ it('cleanup also fences an explicit request still waiting for its initial contex
   expect((await pending).phase).not.toBe('ready');
   expect(await findVerifiedOfflineScore(f.workspace)).toBeNull();
 });
+
+it('prepares a cleaned healthy score when rewriting another score file would fail, with no queued drafts', async () => {
+  const { clearLocalFiles } = await import('./local-files');
+  const f = await fixture();
+  const first = f.client().prepare('explicit');
+  await vi.waitFor(() => expect(f.downloads()).toBe(1));
+  f.finish();
+  expect((await first).phase).toBe('ready');
+  const otherScope = createLocalWorkspace(f.workspace.ownerKey, 'drive', 'other');
+  const other = f.client({ ...f.score, id: 'other' }, otherScope).prepare('explicit');
+  await vi.waitFor(() => expect(f.downloads()).toBe(2));
+  f.finish();
+  expect((await other).phase).toBe('ready');
+  await clearLocalFiles(f.workspace);
+  expect(await localDatabase.annotationOutbox.count()).toBe(0);
+  const bulkPut = localDatabase.offlineScores.bulkPut.bind(localDatabase.offlineScores);
+  const injection = vi.spyOn(localDatabase.offlineScores, 'bulkPut').mockImplementation((records, ...args) => {
+    if (records.some(record => record.scoreId === 'other')) throw new DOMException('unreadable file', 'NotFoundError');
+    return bulkPut(records, ...args);
+  });
+  try {
+    const retry = f.client().prepare('explicit');
+    await vi.waitFor(() => expect(f.downloads()).toBe(3));
+    f.finish();
+    expect((await retry).phase).toBe('ready');
+    expect((await findVerifiedOfflineScore(f.workspace))?.versionId).toBe('v1');
+  } finally { injection.mockRestore(); }
+});
+
+it('reports annotation preparation separately from verified PDF bytes and never certifies a partial copy', async () => {
+  const f = await fixture();
+  const originalFetch = fetch;
+  vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) =>
+    input.endsWith('/layers') ? new Response(null, { status: 403 }) : originalFetch(input, init)));
+  const pending = f.client().prepare('explicit');
+  await vi.waitFor(() => expect(f.downloads()).toBe(1));
+  f.finish();
+  expect(await pending).toEqual({ phase: 'failed', reason: 'annotations' });
+  expect(await findVerifiedOfflineScore(f.workspace)).toBeNull();
+});
+
+it('isolates a malformed sibling snapshot and can replace a file whose snapshot is missing', async () => {
+  const f = await fixture();
+  const first = f.client().prepare('explicit');
+  await vi.waitFor(() => expect(f.downloads()).toBe(1));
+  f.finish();
+  expect((await first).phase).toBe('ready');
+  await localDatabase.offlineSnapshots.clear();
+  const sibling = createLocalWorkspace(f.workspace.ownerKey, 'drive', 'other');
+  await localDatabase.offlineSnapshots.put({ ...sibling, key: 'malformed', annotationSnapshot: JSON.parse('{"layers":null,"annotations":null}') });
+  const retry = f.client().prepare('explicit');
+  await vi.waitFor(() => expect(f.downloads()).toBe(2));
+  f.finish();
+  expect((await retry).phase).toBe('ready');
+  expect((await findVerifiedOfflineScore(f.workspace))?.versionId).toBe('v1');
+  expect(await localDatabase.offlineSnapshots.get('malformed')).toBeDefined();
+});
+
+it('cancels an automatic preparation even when the displayed PDF byte provider never resolves', async () => {
+  const f = await fixture();
+  const client = f.client();
+  const provider = vi.fn(() => new Promise<Uint8Array>(() => {}));
+  const pending = client.prepare('automatic', provider);
+  await vi.waitFor(() => expect(provider).toHaveBeenCalled());
+  client.dispose();
+  expect(await pending).toEqual({ phase: 'cancelled' });
+  expect(f.downloads()).toBe(0);
+});
+
+it('reports a whole-preparation deadline during stalled notes as a timeout, not a PDF download failure', async () => {
+  const f = await fixture();
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const deadlines = vi.spyOn(AbortSignal, 'timeout').mockImplementation(ms => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException('deadline', 'TimeoutError')), ms);
+    return controller.signal;
+  });
+  const originalFetch = fetch;
+  let layersRequested = false;
+  vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+    if (input.endsWith('/layers')) { layersRequested = true; return new Promise<Response>(() => {}); }
+    return originalFetch(input, init);
+  }));
+  try {
+    const pending = f.client().prepare('explicit');
+    await vi.waitFor(() => expect(f.downloads()).toBe(1));
+    await vi.advanceTimersByTimeAsync(150_000);
+    f.finish();
+    await vi.waitFor(() => expect(layersRequested).toBe(true));
+    await vi.advanceTimersByTimeAsync(30_001);
+    expect(await pending).toEqual({ phase: 'failed', reason: 'timeout' });
+    expect(await findVerifiedOfflineScore(f.workspace)).toBeNull();
+  } finally { deadlines.mockRestore(); vi.useRealTimers(); }
+});

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { diagnosticCategories, diagnosticOperations, diagnosticStages, diagnosticSteps, diagnosticErrorTypes } from "./diagnostics";
+import { diagnosticErrorCodes, diagnosticCategories, diagnosticOperations, diagnosticStages, diagnosticSteps, diagnosticErrorTypes } from "./diagnostics";
 
 export const diagnosticReportMaxBytes = 64 * 1024;
 export const diagnosticReportRetentionMs = 30 * 24 * 60 * 60_000;
@@ -38,6 +38,8 @@ export const diagnosticReportSchema = z.object({
     stage: z.enum(diagnosticStages),
     step: z.enum(diagnosticSteps).optional(),
     errorType: z.enum(diagnosticErrorTypes).optional(),
+    causeType: z.enum(diagnosticErrorTypes).optional(),
+    errorCode: z.enum(diagnosticErrorCodes).optional(),
     serverBuild: build,
     requestId: z.uuidv4().nullable(),
     retryable: z.boolean(),

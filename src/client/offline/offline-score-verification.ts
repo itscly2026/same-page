@@ -4,7 +4,7 @@ import type { DiagnosticStep } from "../../shared/diagnostics";
 import { imageManifestSchema } from "../../shared/score-images";
 import Dexie from "dexie";
 import { annotationLayerSummarySchema, annotationPayloadSchema, type AnnotationLayerSummary } from "../../shared/annotations";
-import { findActiveOfflineScore, type OfflineScoreRecord } from "../platform/local-database";
+import { findActiveOfflineScore, type OfflineScoreRecord, type OfflineSnapshotRecord } from "../platform/local-database";
 import { assertLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
 
 const verificationTasks = new WeakMap<Blob, Map<string, Promise<boolean>>>();
@@ -50,7 +50,7 @@ async function verifyRecord(record: OfflineScoreRecord, report: ReturnType<typeo
   };
   try {
     if (!record.blob.size || !record.verifiedAt) return invalid();
-    if (await sha256Hex(await record.blob.arrayBuffer()) !== record.sha256) return invalid();
+    if (await sha256Hex(await readOfflineFileBytes(record.blob)) !== record.sha256) return invalid();
     if (record.imageManifest) {
       step = "offline-manifest";
       const manifest = imageManifestSchema.parse(record.imageManifest);
@@ -58,7 +58,7 @@ async function verifyRecord(record: OfflineScoreRecord, report: ReturnType<typeo
       let offset = 0;
       for (const page of manifest.pages) {
         const asset = page.assets[0];
-        const bytes = await record.blob.slice(offset, offset + asset.sizeBytes).arrayBuffer();
+        const bytes = await readOfflineFileBytes(record.blob.slice(offset, offset + asset.sizeBytes));
         if (bytes.byteLength !== asset.sizeBytes || await sha256Hex(bytes) !== asset.sha256) return invalid();
         if (bytes.byteLength < 24) return invalid();
         const header = new DataView(bytes);
@@ -88,6 +88,16 @@ async function verifyRecord(record: OfflineScoreRecord, report: ReturnType<typeo
     report({ operation: "storage", category: "internal", stage: "decode", step, errorType: diagnosticErrorType(error) });
     throw error;
   }
+}
+
+// Invalid snapshots remain stored for recovery, but never become readable or
+// take part in another score's permissions transaction.
+export function hasValidSnapshotShape(record: OfflineSnapshotRecord): boolean {
+  const snapshot = record.annotationSnapshot;
+  if (!snapshot || !Array.isArray(snapshot.layers) || !Array.isArray(snapshot.annotations)) return false;
+  return snapshot.layers.every(layer => annotationLayerSummarySchema.safeParse(layer).success && layer.scopeKey === record.scopeKey && layer.ownerKey === record.ownerKey)
+    && snapshot.annotations.every(annotation => annotation && annotation.scopeKey === record.scopeKey && annotation.ownerKey === record.ownerKey
+      && (!annotation.payload || annotationPayloadSchema.safeParse(annotation.payload).success));
 }
 
 export function hasCompleteOfflineLayers(layers: AnnotationLayerSummary[], ownerKey: string) {
@@ -130,4 +140,13 @@ export async function findVerifiedOfflineScore(workspace: LocalWorkspace) {
 export async function sha256Hex(data: ArrayBuffer) {
   const hash = await crypto.subtle.digest("SHA-256", data);
   return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+// Some storage engines can leave a Blob read pending. Release verification slots
+// and let the reader choose its online source without waiting indefinitely.
+export function readOfflineFileBytes(blob: Blob): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new DOMException("offline_file_read_timeout", "TimeoutError")), 15_000);
+    void blob.arrayBuffer().then(resolve, reject).finally(() => clearTimeout(timer));
+  });
 }

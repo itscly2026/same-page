@@ -1,3 +1,4 @@
+import { storeOfflineScore } from "../platform/local-database";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -124,7 +125,7 @@ describe("logout local privacy", () => {
       canonical: null,
       createdAt: 1,
     });
-    await localDatabase.offlineScores.put({
+    await storeOfflineScore({
       key: "offline-1",
       ...workspace,
       versionId: "version-1",
@@ -162,7 +163,7 @@ describe("logout local privacy", () => {
     expect((await localDatabase.annotations.toArray()).map((entry) => entry.id)).toEqual([
       sharedSynced.id,
     ]);
-    const offline = await localDatabase.offlineScores.toCollection().first();
+    const offline = await localDatabase.offlineSnapshots.toCollection().first();
     expect(offline?.ownerKey).toMatch(/^guest:/);
     expect(offline?.annotationSnapshot.layers.map((layer) => layer.id)).toEqual([
       sharedLayer.id,

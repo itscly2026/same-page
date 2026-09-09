@@ -1,3 +1,4 @@
+import { untilAborted } from "../platform/abortable";
 import { readLogoutFence } from "../auth/logout-fence";
 import { liveQuery } from "dexie";
 import type { OfflineScoreRecord } from "../platform/local-database";
@@ -8,7 +9,7 @@ import { diagnosticFetch } from "../diagnostics/diagnostics";
 import type { ScoreSummary } from "../../shared/scores";
 import { captureOfflineAnnotationSnapshot, ensureOfflineAppShell } from "../annotations/offline-snapshot";
 import { syncAnnotations } from "../annotations/sync";
-import { activateVerifiedOfflineScore, findActiveOfflineScore } from "../platform/local-database";
+import { activateVerifiedOfflineScore, findActiveOfflineFile } from "../platform/local-database";
 import { assertLocalWorkspaceActive, captureLocalWorkspaceSession, localWorkspaceRecordKey, type LocalWorkspace } from "../platform/local-workspace";
 
 import { findVerifiedOfflineScore, sha256Hex, verifyOfflineScore } from "./offline-score-verification";
@@ -21,7 +22,7 @@ async function prepareOfflineScore(workspace: LocalWorkspace, score: ScoreSummar
   fileFence ??= await captureOfflineFileFence(workspace);
   workspace = await captureLocalWorkspaceSession(workspace);
   if (workspace.choirId !== score.choirId || workspace.scoreId !== score.id) throw new Error("offline_score_scope_mismatch");
-  const previous = await findActiveOfflineScore(workspace.ownerKey, workspace.choirId, workspace.scoreId);
+  const previous = await findActiveOfflineFile(workspace.ownerKey, workspace.choirId, workspace.scoreId);
   const base = `/api/choirs/${encodeURIComponent(score.choirId)}/scores/${encodeURIComponent(score.id)}`;
   let blob: Blob, hash: string, imageManifest: ImageManifest | undefined;
   if (mode === "images") {
@@ -61,9 +62,12 @@ async function prepareOfflineScore(workspace: LocalWorkspace, score: ScoreSummar
   await assertLocalWorkspaceActive(workspace);
   // This call requires a layer request started after the bytes are prepared;
   // an earlier reader refresh cannot establish fresh access for activation.
-  await syncAnnotations(workspace, { pull: true, signal });
-  signal.throwIfAborted();
-  const annotationSnapshot = await captureOfflineAnnotationSnapshot(workspace);
+  let annotationSnapshot;
+  try {
+    await syncAnnotations(workspace, { pull: true, push: false, signal });
+    signal.throwIfAborted();
+    annotationSnapshot = await captureOfflineAnnotationSnapshot(workspace);
+  } catch (cause) { throw new OfflineAnnotationPreparationError("offline_annotations_unavailable", { cause }); }
   const record = {
     key: localWorkspaceRecordKey(workspace, `${score.currentVersion.id}:${mode}`), ...workspace,
     versionId: score.currentVersion.id, fileName: score.fileName,
@@ -92,10 +96,12 @@ async function verifyImageDecode(blob: Blob, width: number, height: number) {
 }
 
 
+class OfflineAnnotationPreparationError extends Error {}
+
 export type OfflinePreparationState =
   | { phase: "idle" | "cancelled" }
   | { phase: "preparing"; intent: "automatic" | "explicit" }
-  | { phase: "failed"; reason: "identity" | "download" }
+  | { phase: "failed"; reason: "identity" | "download" | "annotations" | "timeout" }
   | { phase: "ready"; record: OfflineScoreRecord };
 type PreparationTask = {
   controller: AbortController;
@@ -201,11 +207,12 @@ export class OfflinePreparation {
       }).subscribe({ next: valid => { if (!valid) controller.abort(); }, error: () => controller.abort() });
       task.result = (async (): Promise<OfflinePreparationState> => {
         try {
-          const bytes = await pdfData?.().catch(() => undefined);
+          const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(this.mode === "images" ? 240_000 : 180_000)]);
+          const bytes = pdfData ? await untilAborted(pdfData().catch(() => undefined), signal) : undefined;
           controller.signal.throwIfAborted();
-          const record = await prepareOfflineScore(context.workspace, this.score, this.mode, controller.signal, bytes, context.fence);
+          const record = await untilAborted(prepareOfflineScore(context.workspace, this.score, this.mode, signal, bytes, context.fence), signal);
           return { phase: "ready", record };
-        } catch { return controller.signal.aborted ? { phase: "cancelled" } : { phase: "failed", reason: "download" }; }
+        } catch (error) { return controller.signal.aborted ? { phase: "cancelled" } : { phase: "failed", reason: error instanceof OfflineAnnotationPreparationError ? "annotations" : error instanceof DOMException && error.name === "TimeoutError" ? "timeout" : "download" }; }
         finally { watcher.unsubscribe(); }
       })().then(state => {
         ownedTask.state = state;

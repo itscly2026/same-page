@@ -1,3 +1,4 @@
+import { storeOfflineScore } from "../platform/local-database";
 import { effectiveCapabilities, emptyPermissions } from "../../shared/drive-permissions";
 import { Blob as NodeBlob } from "node:buffer";
 import { sha256Hex } from "../offline/offline-score-verification";
@@ -24,7 +25,7 @@ async function saved(userId = "a") {
   const workspace = createLocalWorkspace(authenticatedLocalOwnerKey(userId), "drive", "score");
   const blob = new Blob(["verified test PDF"]);
   await localDatabase.driveDirectories.put({ key: JSON.stringify([workspace.ownerKey, "drive"]), ownerKey: workspace.ownerKey, choirId: "drive", choir: { id: "drive", name: "排练云盘", guestAdmissionMode: "invite" }, scores: [{ id: "score", choirId: "drive", fileName: `${userId}.pdf`, updatedAt: 1, currentVersion: { id: "version", versionNumber: 1, sizeBytes: blob.size, sha256: await sha256Hex(await blob.arrayBuffer()), etag: "v", pageCount: 1, createdAt: 1 } }], membership: true });
-  await localDatabase.offlineScores.put({ key: userId, ...workspace,
+  await storeOfflineScore({ key: userId, ...workspace,
     versionId: "version", fileName: `${userId}.pdf`, sha256: await sha256Hex(await blob.arrayBuffer()), pageCount: 1, blob, active: 1, verifiedAt: 1,
     annotationSnapshot: { layers: [{ ...workspace, key: "personal", id: "00000000-0000-4000-8000-000000000001", kind: "personal", sharedSlot: null, name: "我的笔记", sortOrder: 0, subscribed: true, subscriptionSource: "personal", displayColor: "#000000", colorSource: "personal", adminDefaultColor: null, driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }], annotations: [], cursor: 0, verifiedAt: 1 } });
 }

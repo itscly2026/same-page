@@ -19,7 +19,7 @@ export async function listLocalFiles() {
 }
 export type LocalFileScope = { ownerKey: LocalWorkspaceOwnerKey; choirId?: string; scoreId?: string };
 export async function clearLocalFiles(scope: LocalFileScope) {
-  return localDatabase.transaction("rw", [localDatabase.system, localDatabase.offlineScores], async () => {
+  return localDatabase.transaction("rw", [localDatabase.system, localDatabase.offlineScores, localDatabase.offlineSnapshots], async () => {
     const owner = await currentLocalOwnerKey();
     if (scope.ownerKey.startsWith("user:") ? owner !== scope.ownerKey : owner?.startsWith("user:") || !scope.choirId || (await localDatabase.system.get(guestOwnerSystemKey(scope.choirId)))?.value !== scope.ownerKey) throw new Error("local_workspace_owner_changed");
     const key = JSON.stringify(["offline-files", scope.ownerKey, ...(scope.choirId ? [scope.choirId] : []), ...(scope.scoreId ? [scope.scoreId] : [])]);
@@ -27,6 +27,7 @@ export async function clearLocalFiles(scope: LocalFileScope) {
     const files = await localDatabase.offlineScores.where("ownerKey").equals(scope.ownerKey)
       .filter(file => (!scope.choirId || file.choirId === scope.choirId) && (!scope.scoreId || file.scoreId === scope.scoreId)).toArray();
     await localDatabase.offlineScores.bulkDelete(files.map(file => file.key));
+    await localDatabase.offlineSnapshots.bulkDelete(files.map(file => file.key));
     return files.reduce((bytes, file) => bytes + file.blob.size, 0);
   });
 }

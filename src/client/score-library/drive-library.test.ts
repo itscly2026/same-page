@@ -1,3 +1,4 @@
+import { storeOfflineScore } from "../platform/local-database";
 import { Blob as NodeBlob } from "node:buffer";
 import { sha256Hex } from "../offline/offline-score-verification";
 import { effectiveCapabilities, emptyPermissions, noCapabilities } from "../../shared/drive-permissions";
@@ -96,7 +97,7 @@ describe("DriveLibrary interface", () => {
     await activateAuthenticatedLocalOwner("one");
     const { library, transport } = create(async () => opened());
     await library.refresh();
-    await localDatabase.offlineScores.put({ ...createLocalWorkspace(authenticatedLocalOwnerKey("one"), choirId, "score-one"), key: "retained", versionId: "version-one", fileName: "秋日.pdf", sha256: "unverified", pageCount: 1, blob: new Blob(["PDF"]), active: 1, verifiedAt: 1, annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 } });
+    await storeOfflineScore({ ...createLocalWorkspace(authenticatedLocalOwnerKey("one"), choirId, "score-one"), key: "retained", versionId: "version-one", fileName: "秋日.pdf", sha256: "unverified", pageCount: 1, blob: new Blob(["PDF"]), active: 1, verifiedAt: 1, annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 } });
     await library.confirmRemoval("score-one");
     await library.confirmName("新云盘名称");
     transport.load.mockRejectedValueOnce(new TypeError("offline"));
@@ -361,9 +362,9 @@ it("keeps only verified retained copies after confirmed denial, observes corrupt
   const blob = new Blob(["verified retained content"]);
   const record: OfflineScoreRecord = { ...workspace, key: "retained-only", versionId: "retained-v1", fileName: "保留.pdf", sha256: await sha256Hex(await blob.arrayBuffer()), pageCount: 1, blob, active: 1, verifiedAt: 1,
     annotationSnapshot: { annotations: [], cursor: 0, verifiedAt: 1, layers: [{ ...workspace, key: "personal", id: "00000000-0000-4000-8000-000000000001", kind: "personal" as const, sharedSlot: null, name: "我的笔记", sortOrder: 10000, subscribed: true, subscriptionSource: "personal" as const, displayColor: "#6750a4", colorSource: "product" as const, adminDefaultColor: "#6750a4", driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }] } };
-  await localDatabase.offlineScores.put(record);
+  await storeOfflineScore(record);
   // An active flag with invalid content must never become an available row.
-  await localDatabase.offlineScores.put({ ...record, key: "invalid", scoreId: "invalid", scopeKey: "invalid", sha256: "invalid" });
+  await storeOfflineScore({ ...record, key: "invalid", scoreId: "invalid", scopeKey: "invalid", sha256: "invalid" });
   library.setSort("updated");
   transport.load.mockResolvedValue({ kind: "denied" });
   await library.changed();
