@@ -34,6 +34,7 @@ import personalLayerAnimation from "../assets/home/personal-layer-animation.webp
 import personalLayerIllustration from "../assets/home/personal-layer.webp";
 import replacePdfAnimation from "../assets/home/replace-pdf-animation.webp";
 import replacePdfIllustration from "../assets/home/replace-pdf.webp";
+import offlineSyncAnimation from "../assets/home/offline-sync-animation.webp";
 import offlineSyncIllustration from "../assets/home/offline-sync.webp";
 import everyDeviceIllustration from "../assets/home/every-device.webp";
 import {
@@ -331,10 +332,10 @@ function HomeContent({ identity, startup, linkInvite, finishInvitation }: { iden
                   {feature.description}
                 </p>
               </div>
-              {index < 3 ? (
+              {index < 4 ? (
                 <FeatureAnimation
                   illustration={feature.illustration}
-                  animation={index === 0 ? sharedLayersAnimation : index === 1 ? personalLayerAnimation : replacePdfAnimation}
+                  animation={index === 0 ? sharedLayersAnimation : index === 1 ? personalLayerAnimation : index === 2 ? replacePdfAnimation : offlineSyncAnimation}
                   label={feature.title}
                 />
               ) : <img
