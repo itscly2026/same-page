@@ -157,38 +157,85 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
  }
 }
 
-test("continuous native touch scroll continues after release and touch pinch preserves the anchor", async context => {
+for (const pausedRelease of [false, true]) {
+ test(`continuous native touch scroll: ${pausedRelease ? "stationary-release control" : "momentum after release"}`, { timeout: 30_000 }, async context => {
   const browser = await chromium.launch({ headless: true });
   context.after(() => browser.close());
+  const { reader, cdp } = await openContinuousTouchReader(browser);
+  // Measure from native release in the browser, rather than a host-side
+  // position read before dispatching touchEnd.
+  await reader.evaluate(element => {
+    const probe = { events: [], release: null, maximumAfterRelease: null };
+    element.__touchProbe = probe;
+    for (const type of ["touchstart", "touchmove", "touchend", "scroll"]) {
+      element.addEventListener(type, event => {
+        const sample = { type, time: performance.now(), inputTime: event.timeStamp, top: element.scrollTop };
+        probe.events.push(sample);
+        if (type === "touchend") {
+          probe.release = sample;
+          probe.maximumAfterRelease = sample.top;
+        }
+        if (probe.release) probe.maximumAfterRelease = Math.max(probe.maximumAfterRelease, sample.top);
+      }, { passive: true });
+    }
+  });
+  // Explicit input timestamps define velocity; protocol transport and Node
+  // scheduling must not turn a swipe into a stationary release.
+  let probe;
+  try {
+    const started = Date.now() / 1000;
+    const send = (type, y, offset) => cdp.send("Input.dispatchTouchEvent", {
+      type, timestamp: started + offset,
+      touchPoints: type === "touchEnd" ? [] : [{ x: 400, y, id: 1 }],
+    });
+    await send("touchStart", 550, 0);
+    for (let step = 1; step <= 8; step++) {
+      await send("touchMove", 550 - step * 20, step * 0.016);
+      await new Promise(resolve => setTimeout(resolve, 16));
+    }
+    // Regression pressure: transport stalls must not change input velocity.
+    // Without explicit timestamps this reproduces the original missing fling.
+    await new Promise(resolve => setTimeout(resolve, 150));
+    await send("touchEnd", 390, 0.144 + (pausedRelease ? 0.15 : 0));
+    await expect.poll(() => reader.evaluate(element => {
+      const release = element.__touchProbe.release;
+      return release !== null && performance.now() - release.time >= 1000;
+    }), { timeout: 5000, message: "native gesture must release and finish its observation window" }).toBe(true);
+  } finally {
+    probe = await reader.evaluate(element => element.__touchProbe);
+    context.diagnostic(JSON.stringify({ pausedRelease, ...probe }));
+  }
+  assert.ok(probe.release.top > 50, `native scroll did not move: ${JSON.stringify(probe)}`);
+  const momentum = probe.maximumAfterRelease - probe.release.top;
+  if (pausedRelease) assert.ok(momentum <= 20, `no-fling control moved after release: ${momentum}`);
+  else assert.ok(momentum > 20, `no momentum: ${probe.release.top} -> ${probe.maximumAfterRelease}`);
+ });
+}
+
+test("continuous touch pinch doubles the zoom", { timeout: 30_000 }, async context => {
+  const browser = await chromium.launch({ headless: true });
+  context.after(() => browser.close());
+  const { reader, cdp } = await openContinuousTouchReader(browser);
+  await reader.evaluate(el => { el.scrollTop = 300; });
+  const send = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x,y,id]) => ({ x,y,id })) });
+  await send('touchStart', [[200,300,1], [400,300,2]]);
+  await send('touchMove', [[100,300,1], [500,300,2]]);
+  await send('touchEnd', []);
+  await expect(reader).toHaveAttribute('data-zoom', '2');
+});
+
+async function openContinuousTouchReader(browser) {
   const page = await openMemberReader(browser, { width: 834, height: 700 });
   await showReaderChrome(page);
   await page.getByRole("button", { name: "更多", exact: true }).click();
   await page.getByRole("button", { name: "连续滚动", exact: true }).click();
   await page.getByRole("button", { name: "更多", exact: true }).click();
-  const reader = page.locator('.continuous-reader');
   await page.locator('.continuous-reader [data-pdf-canvas-active]').first().waitFor();
+  const reader = page.locator('.continuous-reader');
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
-  const send = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x,y,id]) => ({ x,y,id })) });
-  await send('touchStart', [[400, 550, 1]]);
-  for(let y = 530; y >= 390; y -= 20) {
-    await send('touchMove', [[400, y, 1]]);
-    await page.waitForTimeout(16);
-  }
-  const beforeRelease = await reader.evaluate(el => el.scrollTop);
-  await send('touchEnd', []);
-  await page.waitForTimeout(200);
-  const afterRelease = await reader.evaluate(el => el.scrollTop);
-  assert.ok(beforeRelease > 50, `native scroll did not move: ${beforeRelease}`);
-  assert.ok(afterRelease > beforeRelease + 20, `no momentum: ${beforeRelease} -> ${afterRelease}`);
-  await page.waitForTimeout(1000);
-  await reader.evaluate(el => { el.scrollTop = 300; });
-  await send('touchStart', [[200,300,1], [400,300,2]]);
-  await send('touchMove', [[100,300,1], [500,300,2]]);
-  await page.waitForTimeout(30);
-  await send('touchEnd', []);
-  await expect(reader).toHaveAttribute('data-zoom', '2');
-});
+  return { reader, cdp };
+}
 
 for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
  test(`${engineName}: shape tools share button corners and text mode can drag a shape into trash`, async context => {
