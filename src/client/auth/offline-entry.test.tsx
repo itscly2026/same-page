@@ -1,3 +1,4 @@
+import { cleanupAuthClient } from "../../test/cleanup-auth-client";
 import { storeOfflineScore } from "../platform/local-database";
 import { effectiveCapabilities, emptyPermissions } from "../../shared/drive-permissions";
 import { Blob as NodeBlob } from "node:buffer";
@@ -19,7 +20,7 @@ beforeEach(async () => {
   clearDriveLibraryCache();
   authClient.$store.atoms.session.set({ ...authClient.$store.atoms.session.get(), data: null, error: null, isPending: true, isRefetching: false });
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { cleanupAuthClient(); vi.unstubAllGlobals(); });
 async function saved(userId = "a") {
   await activateAuthenticatedLocalOwner(userId);
   const workspace = createLocalWorkspace(authenticatedLocalOwnerKey(userId), "drive", "score");
