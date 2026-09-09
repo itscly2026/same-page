@@ -264,7 +264,7 @@ describe("AppRoutes", () => {
     expect((await localDatabase.offlineSnapshots.get("management-offline"))?.annotationSnapshot.layers).toEqual([]);
     expect((await localDatabase.offlineScores.get("management-offline"))?.blob.size).toBe(3);
     expect((await localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey).toArray())[0]).toMatchObject({ state: "draft", layerId: shared.id });
-    fireEvent.click(screen.getByRole("radio", { name: "已删除层" }));
+    fireEvent.click(await screen.findByRole("radio", { name: "已删除层" }));
     expect(await screen.findByText(/恢复截止：/)).toHaveTextContent("恢复后启用");
     fireEvent.click(screen.getByRole("button", { name: /^恢复$/ }));
     await waitFor(() => expect(screen.queryByRole("button", { name: /^恢复$/ })).not.toBeInTheDocument());

@@ -27,3 +27,5 @@
 - [阅读器快捷入口](../operations/issue-238/390-reader.png)
 - [安静的图层显示](../operations/issue-238/390-quiet-layers.png)
 - [桌面导出弹窗](../operations/issue-238/1440-library-export.png)
+
+CI 首跑进一步发现：移除成功通知后，删除测试可能在确认弹窗关闭前读取后方页面控件。改为等待“已删除层”控件实际可访问；相关 AppRoutes 34 项复跑通过，未改变产品逻辑或放宽超时。
