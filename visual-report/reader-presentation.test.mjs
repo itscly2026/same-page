@@ -47,14 +47,27 @@ test("restores a later continuous page and confirms its first canvas", { timeout
               await page.locator(`.pdf-page-canvas[data-page-number="${expectedPage}"] [data-pdf-canvas-active]`).waitFor({ timeout: 5000 });
               await page.locator(".reader-loading").waitFor({ state: "hidden", timeout: 5000 });
               // Geometry and scroll events commit independently of the first bitmap.
-              await page.waitForFunction(() => {
+              try {
+                await page.waitForFunction(() => {
                 const viewport = document.querySelector(".continuous-reader");
                 const threshold = viewport.getBoundingClientRect().top + 8;
                 const first = [...viewport.querySelectorAll(".pdf-page-canvas")]
                   .find(canvas => canvas.getBoundingClientRect().bottom + 8 > threshold);
                 const selected = JSON.parse(localStorage.getItem("reader-preferences:visual-user-member:visual-choir:visual-score")).page;
                 return selected === Number(first?.dataset.pageNumber);
-              }, undefined, { timeout: 5000 });
+                }, undefined, { timeout: 5000 });
+              } catch (error) {
+                console.error("reader-presentation geometry", JSON.stringify({ engine: name, savedPage, expectedPage, reopen,
+                  geometry: await page.locator(".continuous-reader").evaluate(viewport => ({
+                    selected: JSON.parse(localStorage.getItem("reader-preferences:visual-user-member:visual-choir:visual-score")).page,
+                    scrollTop: viewport.scrollTop, top: viewport.getBoundingClientRect().top,
+                    pages: [...viewport.querySelectorAll(".pdf-page-canvas")].map(canvas => ({ page: canvas.dataset.pageNumber,
+                      top: canvas.getBoundingClientRect().top, bottom: canvas.getBoundingClientRect().bottom,
+                      rowTop: canvas.closest(".continuous-reader__page").getBoundingClientRect().top,
+                      rowBottom: canvas.closest(".continuous-reader__page").getBoundingClientRect().bottom })),
+                  })),
+                })); throw error;
+              }
               const actualPage = await page.evaluate(() => JSON.parse(localStorage.getItem("reader-preferences:visual-user-member:visual-choir:visual-score")).page);
               await page.locator(`.pdf-page-canvas[data-page-number="${actualPage}"] [data-pdf-canvas-active]`).waitFor({ timeout: 5000 });
               const current = await page.locator(`.pdf-page-canvas[data-page-number="${expectedPage}"]`).boundingBox();

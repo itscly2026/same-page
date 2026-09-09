@@ -241,10 +241,11 @@ export function ContinuousLayout({
 }: ReaderLayoutProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const alignedPage = useRef<number | null>(null);
+  const alignedPage = useRef<{ page: number; geometryReady: boolean } | null>(null);
   const size = useElementSize(scrollRef);
   const pageWidth = Math.max(1, size.width * zoom);
   const ratios = usePageAspectRatios(document);
+  const geometryReady = ratios.length === document.numPages;
   // PDF page geometry is known independently of canvas rendering. Key the
   // virtual measurements by that geometry, so zoom never reuses old heights.
   const getItemKey = useCallback((index: number) => `${index}:${pageWidth}:${ratios[index] ?? 0.707}`, [pageWidth, ratios]);
@@ -260,8 +261,10 @@ export function ContinuousLayout({
 
   useEffect(() => {
     // Initial zero-width measurements cannot establish the saved page position.
-    if (size.width <= 0 || size.height <= 0 || annotationProps.editing || alignedPage.current === currentPage) return;
-    alignedPage.current = currentPage;
+    if (size.width <= 0 || size.height <= 0 || annotationProps.editing ||
+      (alignedPage.current?.page === currentPage && alignedPage.current.geometryReady === geometryReady)) return;
+    // Correct the initial estimate once actual page geometry arrives.
+    alignedPage.current = { page: currentPage, geometryReady };
     const scrollElement = scrollRef.current;
     const target = virtualizer
       .getVirtualItems()
@@ -274,7 +277,7 @@ export function ContinuousLayout({
     if (!visible) {
       virtualizer.scrollToIndex(currentPage - 1, { align: "start" });
     }
-  }, [annotationProps.editing, currentPage, virtualizer, size.width, size.height]);
+  }, [annotationProps.editing, currentPage, virtualizer, size.width, size.height, geometryReady]);
 
   useReturnViewport(scrollRef, "continuous", size.width > 0);
 
@@ -316,7 +319,7 @@ export function ContinuousLayout({
         const first = virtualizer.getVirtualItemForOffset(threshold);
         if (first) {
           const page = first.index + 1;
-          alignedPage.current = page;
+          alignedPage.current = { page, geometryReady };
           onPageChange(page);
         }
       }}
