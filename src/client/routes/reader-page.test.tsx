@@ -1553,20 +1553,21 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(currentRenderedPage()).toBe("2");
 
     toggleChrome();
-    expect(screen.queryByLabelText("页面缩略图")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "页面位置" }));
-    const pageStrip = screen.getByLabelText("页面缩略图");
-    expect(screen.getByRole("button", { name: "前往第 2 页" })).toHaveAttribute(
-      "data-current",
-    );
-    expect(within(pageStrip).getByText("2 / 3")).toBeInTheDocument();
-    expect(virtualTestState.scrollToIndex).toHaveBeenCalledWith(1, {
-      align: "auto",
-    });
-    fireEvent.click(screen.getByRole("button", { name: "前往第 3 页" }));
-    await finishPageTurn();
+    expect(screen.getByLabelText("页面缩略图")).toBeInTheDocument();
+    const scrubber = screen.getByRole("slider", { name: "跳转页码" });
+    expect(scrubber).toHaveValue("2");
+    expect(screen.getByLabelText("页面位置")).toHaveTextContent("2 / 3");
+    fireEvent.change(scrubber, { target: { value: "1" } });
+    fireEvent.change(scrubber, { target: { value: "3" } });
+    expect(screen.getByLabelText("页面位置")).toHaveTextContent("3 / 3");
+    expect(currentRenderedPage()).toBe("2");
+    fireEvent.pointerUp(window);
     expect(currentRenderedPage()).toBe("3");
+    expect(screen.getByLabelText("页面缩略图")).toBeInTheDocument();
+    toggleChrome();
     expect(screen.queryByLabelText("页面缩略图")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("页面位置")).not.toBeInTheDocument();
+    toggleChrome();
     fireEvent.keyDown(window, { key: "ArrowLeft" });
     await finishPageTurn();
     expect(currentRenderedPage()).toBe("2");
@@ -1584,7 +1585,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "连续滚动" }));
     expect(screen.getByLabelText("连续滚动阅读")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "页面位置" })).toHaveTextContent("3 / 3");
+    expect(screen.getByLabelText("页面位置")).toHaveTextContent("3 / 3");
     expect(
       screen.getByText("轻点页面中央显示控制，上下滑动连续浏览"),
     ).toBeInTheDocument();
@@ -1592,6 +1593,41 @@ it("keeps a single exit while the PDF never settles", async () => {
       screen.queryByText("轻点页面中央显示控制，点按两侧或左右滑动翻页"),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("编辑")).not.toBeInTheDocument();
+  });
+
+  it("selects the page at the viewport center before locking it for editing", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);
+    vi.mocked(fetch).mockImplementation((input: string | URL | Request) =>
+      Promise.resolve(String(input).includes("/layers")
+        ? Response.json({
+            layers: completeReaderLayers().map(layer => ({ ...layer, canEdit: layer.kind === "personal" })),
+            sharedLayerRevision: 0, permissions: { canManageLayers: false },
+          })
+        : activeBootstrapResponse()),
+    );
+    render(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+      <Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByLabelText("翻页阅读");
+    toggleChrome();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    fireEvent.click(screen.getByRole("button", { name: "连续滚动" }));
+    const reader = screen.getByLabelText("连续滚动阅读");
+    Object.defineProperty(reader, "clientHeight", { configurable: true, value: 100 });
+    await act(async () => { /* Resolve PDF geometry before scrolling. */ });
+    // Page 1 still has a 20px tail, while page 2 occupies the viewport center.
+    reader.scrollTop = 80;
+    virtualTestState.scrollToIndex.mockClear();
+    fireEvent.scroll(reader);
+    expect(screen.getByLabelText("页面位置")).toHaveTextContent("2 / 3");
+    expect(virtualTestState.scrollToIndex).not.toHaveBeenCalledWith(1, { align: "start" });
+    const edit = screen.getByRole("button", { name: "编辑" });
+    await waitFor(() => expect(edit).toHaveAttribute("data-state", "ready"));
+    fireEvent.click(edit);
+    expect(screen.getByLabelText("第 2 页笔记层").closest(".continuous-reader__page")).not.toHaveAttribute("inert");
+    expect(screen.getByLabelText("第 1 页笔记层").closest(".continuous-reader__page")).toHaveAttribute("inert");
+    expect(reader.scrollTop).toBe(80);
   });
 
   it("keeps editing discoverable and retries when layer preparation fails", async () => {
@@ -1856,7 +1892,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(screen.queryByLabelText("笔记同步异常")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "前往第 2 页" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "完成编辑" }));
-    await screen.findByRole("button", { name: "前往第 2 页" });
+    expect(within(await screen.findByLabelText("本地笔记冲突")).getByRole("button", { name: "前往第 2 页" })).toBeInTheDocument();
 
     view.unmount();
     render(

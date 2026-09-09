@@ -34,9 +34,9 @@ test(`${engineName}: reader controls remain reachable without overlap across vie
   for (const width of engineName === "chromium" ? [320, 360, 390] : [320, 768, 834, 1194]) {
     await page.setViewportSize({ width, height: 800 });
     await page.waitForFunction(() => {
-      const controls = [...document.querySelectorAll(".reader-chrome__actions button, .reader-chrome__back, .reader-page-indicator")];
+      const controls = [...document.querySelectorAll(".reader-chrome__actions button, .reader-chrome__back")];
       const boxes = controls.map(element => element.getBoundingClientRect());
-      return boxes.length >= 5 && boxes.every(box => box.width >= 44 && box.height >= 44 && box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight)
+      return boxes.length >= 4 && boxes.every(box => box.width >= 44 && box.height >= 44 && box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight)
         && boxes.every((box, i) => boxes.slice(i + 1).every(other => box.right <= other.left || other.right <= box.left || box.bottom <= other.top || other.bottom <= box.top));
     });
   }
@@ -44,8 +44,28 @@ test(`${engineName}: reader controls remain reachable without overlap across vie
   await page.locator(".annotation-controls").waitFor();
   for (const name of ["返回云盘", "看哪些笔记", "更多"]) assert.equal(await page.getByRole("button", { name, exact: true }).count(), 0);
   await page.getByRole("button", { name: "完成编辑", exact: true }).click();
-  await page.getByRole("button", { name: "页面位置", exact: true }).click();
   await page.locator(".page-preview-strip").waitFor({ state: "visible" });
+  const preview = await page.getByRole("slider", { name: "跳转页码" }).boundingBox();
+  assert.ok(preview.width >= 44 && preview.height >= 44);
+  assert.equal(await page.locator(".reader-chrome .reader-page-indicator").count(), 0);
+  const positionBadge = await page.locator(".reader-page-indicator").boundingBox();
+  assert.ok(positionBadge.height < 32, "the page position is a compact status badge");
+  await page.getByRole("button", { name: "更多", exact: true }).click();
+  await page.getByRole("button", { name: "连续滚动", exact: true }).click();
+  const reader = page.locator(".continuous-reader");
+  await page.locator('.continuous-reader__page[data-index="1"]').waitFor();
+  await reader.evaluate(element => {
+    const next = element.querySelector('.continuous-reader__page[data-index="1"]');
+    element.scrollTop += next.getBoundingClientRect().top - element.getBoundingClientRect().top - 20;
+  });
+  await page.waitForFunction(() => document.querySelector(".reader-page-indicator")?.textContent.trim().startsWith("2 /"));
+  const position = await reader.evaluate(element => element.scrollTop);
+  assert.equal(await page.getByRole("slider", { name: "跳转页码" }).inputValue(), "2");
+  await page.getByRole("button", { name: "编辑", exact: true }).click();
+  await page.locator('.continuous-reader[data-editing]').waitFor();
+  assert.equal(await page.locator('.continuous-reader__page[data-index="1"]').getAttribute("inert"), null);
+  assert.equal(await page.locator('.continuous-reader__page[data-index="0"]').getAttribute("inert"), "");
+  assert.equal(await reader.evaluate(element => element.scrollTop), position);
 });
 }
 

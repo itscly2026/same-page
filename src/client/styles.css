@@ -1859,16 +1859,20 @@ h1 {
 }
 
 .reader-page-indicator {
-  min-width: 3.5rem;
-  min-height: 2.25rem !important;
-  margin-top: 0.1rem;
-  border-color: transparent !important;
-  padding: 0.3rem 0.65rem !important;
-  color: rgb(0 0 0 / 72%) !important;
-  background: transparent !important;
-  box-shadow: none !important;
+  height: fit-content;
+  line-height: 1.4;
+  position: absolute;
+  z-index: 20;
+  right: max(0.75rem, env(safe-area-inset-right));
+  top: calc(max(0.75rem, env(safe-area-inset-top)) + 4rem);
+  border-radius: 0.4rem;
+  padding: 0.25rem 0.65rem;
+  color: rgb(0 0 0 / 72%);
+  background: rgb(255 255 255 / 72%);
+  backdrop-filter: blur(18px) saturate(115%);
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 .reader-edit-status {
@@ -2311,77 +2315,78 @@ h1 {
   bottom: max(0.75rem, env(safe-area-inset-bottom));
   left: max(0.75rem, env(safe-area-inset-left));
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 0.65rem;
-  max-width: 34rem;
   margin-inline: auto;
-  border: 1px solid rgb(0 0 0 / 8%);
-  border-radius: 0.85rem;
+  border: 1px solid rgb(0 0 0 / 4%);
+  border-radius: 999px;
   padding: 0.35rem 0.45rem;
   color: #000;
-  background: #fff;
-  box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 18%);
+  background: rgb(255 255 255 / 88%);
+  box-shadow: 0 1px 6px rgb(0 0 0 / 6%);
   backdrop-filter: blur(18px) saturate(115%);
 }
 
-.page-preview-strip__position {
-  min-width: 3.2rem;
-  font-size: 0.68rem;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-
 .page-preview-strip__track {
-  min-width: 0;
-  height: 4rem;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  touch-action: pan-x;
-}
-
-.page-preview-strip__track::-webkit-scrollbar {
-  display: none;
-}
-
-.page-preview-strip__inner {
   position: relative;
-  height: 4rem;
+  height: 2.75rem;
+  margin-inline: 1rem;
+  pointer-events: none;
 }
 
-.page-preview-strip__button {
+.page-preview-strip__thumbnail {
   position: absolute;
-  top: 0;
-  left: 0;
-  display: grid;
-  place-items: center;
-  gap: 0.1rem;
-  width: 3.5rem;
-  height: 4rem;
-  border: 2px solid transparent;
-  border-radius: 0.4rem;
-  padding: 0.15rem;
-  color: #111;
-  background: transparent;
-  cursor: pointer;
+  top: 0.4rem;
+  width: 1.5rem;
+  height: 2rem;
+  transform: translateX(-50%);
+  background: white;
+  box-shadow: 0 1px 2px #0002;
+  transition: transform 100ms ease;
+  transform-origin: center;
 }
 
-.page-preview-strip__button[data-current] {
-  border-color: #111;
-  background: #f2f2f2;
+/* Keep the miniature score marks light, like ink viewed at a distance. */
+.page-preview-strip__thumbnail .pdf-thumbnail {
+  opacity: 0.28;
 }
 
-.page-preview-strip__button span {
-  font-size: 0.58rem;
-  line-height: 1;
+.page-preview-strip__thumbnail[data-active] .pdf-thumbnail {
+  opacity: 0.5;
 }
+
+.page-preview-strip__thumbnail[data-active] {
+  z-index: 1;
+  transform: translateX(-50%) scale(1.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-preview-strip__thumbnail { transition: none; }
+}
+
+.page-preview-strip__slider {
+  position: absolute;
+  inset: 0 1rem;
+  width: calc(100% - 2rem);
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.page-preview-strip:has(input:focus-visible) {
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
+}
+
 
 .pdf-thumbnail,
 .pdf-thumbnail canvas {
   display: block;
-  max-width: 2.35rem;
-  max-height: 2.9rem;
+  max-width: 1.5rem;
+  max-height: 1.75rem;
   object-fit: contain;
 }
 

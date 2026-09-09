@@ -50,7 +50,7 @@ test("restores a later continuous page and confirms its first canvas", { timeout
               try {
                 await page.waitForFunction(expected => {
                 const viewport = document.querySelector(".continuous-reader");
-                const threshold = viewport.getBoundingClientRect().top + 8;
+                const threshold = viewport.getBoundingClientRect().top + viewport.clientHeight / 2;
                 const first = [...viewport.querySelectorAll(".pdf-page-canvas")]
                   .find(canvas => canvas.getBoundingClientRect().bottom + 8 > threshold);
                 const selected = JSON.parse(localStorage.getItem("reader-preferences:visual-user-member:visual-choir:visual-score")).page;
@@ -73,7 +73,7 @@ test("restores a later continuous page and confirms its first canvas", { timeout
               const actualPage = await page.evaluate(() => JSON.parse(localStorage.getItem("reader-preferences:visual-user-member:visual-choir:visual-score")).page);
               await page.locator(`.pdf-page-canvas[data-page-number="${actualPage}"] [data-pdf-canvas-active]`).waitFor({ timeout: 5000 });
               const current = await page.locator(`.pdf-page-canvas[data-page-number="${expectedPage}"]`).boundingBox();
-              assert.ok(current.y < 1148 && current.y + current.height > 0, "the requested page must be in the viewport");
+              assert.ok(current.y < 1148 && current.y + current.height > 0, `the requested page must be in the viewport: ${JSON.stringify({ name, savedPage, expectedPage, actualPage, reopen, current, scrollTop: await page.locator(".continuous-reader").evaluate(el => el.scrollTop) })}`);
               expectedPage = actualPage;
             }
           } finally { await context.close(); }
