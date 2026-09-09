@@ -472,6 +472,7 @@ function ReaderPageContent() {
         }}
       />
       <h1 className="visually-hidden">{scoreDisplayName(score.fileName)}</h1>
+      {editing && annotationInteraction !== "composing-text" && persistence === "failed" && <aside className="reader-alert" role="alert">本机保存失败</aside>}
       {cloudState === "trashed" ? (
         <aside className="reader-alert reader-alert--trash" role="alert">
           乐谱已移入回收站。本机离线副本和未同步笔记仍保留，恢复后可继续同步。
@@ -526,9 +527,6 @@ function ReaderPageContent() {
                 <Ellipsis aria-hidden="true" size={21} />
               </Button></>}
             </div>
-            {editing && annotationInteraction !== "composing-text" && <span className="reader-save-feedback" role="status">
-              {persistence === "failed" ? "本机保存失败" : "正在编辑当前页"}
-            </span>}
             {editAvailability !== "ready" && !(editAvailability === "preparing" && readerPanel !== null) ? (
               <p
                 className="reader-edit-status"

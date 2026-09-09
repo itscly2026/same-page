@@ -38,7 +38,8 @@ test("literal search, verified offline read and failed/successful immutable PDF 
   assert.equal((await context.request.post(`${base}/versions/${version.id}/publish`, { data: { expectedRevision: versions.revision } })).status(), 204);
   await page.goto(`${fixture.origin}/choirs/${fixture.choirId}`);
   await expect(page.getByRole("button", { name: /^离线副本：.*旧版可离线使用/ })).toBeVisible();
-  await expect(page.getByRole("status").filter({ hasText: /^需更新$/ })).toBeVisible();
+  await expect(page.locator(".offline-score-control[data-state=stale]")).toBeVisible();
+  await expect(page.locator(".offline-score-label")).toHaveCount(0);
   await context.setOffline(true);
   await expect(page.getByRole("button", { name: /^离线副本：/ })).toBeDisabled();
   await context.setOffline(false);
@@ -55,8 +56,8 @@ test("literal search, verified offline read and failed/successful immutable PDF 
   });
   await page.getByRole("button", { name: /^离线副本：/ }).click();
   await page.getByRole("button", { name: "更新离线副本", exact: true }).click();
-  await page.getByRole("status").filter({ hasText: /下载未完成/ }).waitFor();
-  await expect(page.getByRole("status").filter({ hasText: /下载未完成/ })).toContainText("旧版 PDF 仍可离线使用");
+  await page.getByRole("status").filter({ hasText: /准备未完成/ }).waitFor();
+  await expect(page.getByRole("status").filter({ hasText: /准备未完成/ })).toContainText("旧版 PDF 仍可离线使用");
   await context.setOffline(false);
   await page.getByRole("button", { name: "重试保存", exact: true }).click();
   await page.getByRole("status").filter({ hasText: /^可离线使用$/ }).waitFor();
