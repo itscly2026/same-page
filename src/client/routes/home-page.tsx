@@ -35,6 +35,7 @@ import personalLayerIllustration from "../assets/home/personal-layer.webp";
 import replacePdfAnimation from "../assets/home/replace-pdf-animation.webp";
 import replacePdfIllustration from "../assets/home/replace-pdf.webp";
 import offlineSyncIllustration from "../assets/home/offline-sync.webp";
+import offlineSyncAnimation from "../assets/home/offline-sync-animation.webp";
 import everyDeviceIllustration from "../assets/home/every-device.webp";
 import {
   clearGuestSession,
@@ -60,30 +61,35 @@ const productFeatures = [
   {
     title: "不同声部，分层共享笔记",
     illustration: sharedLayersIllustration,
+    animation: sharedLayersAnimation,
     description:
       "排练要求按声部分层共享，获授权的人可以留下笔记，大家在同一份谱上查看。",
   },
   {
     title: "共享笔记按需看，个人笔记自己留",
     illustration: personalLayerIllustration,
+    animation: personalLayerAnimation,
     description:
       "选择需要查看的声部笔记，也能在个人层记下自己的提醒，默认仅自己可见。",
   },
   {
     title: "替换乐谱，保留笔记",
     illustration: replacePdfIllustration,
+    animation: replacePdfAnimation,
     description:
       "谱子有局部修订时，管理员可以直接替换 PDF；已有笔记仍按原页码和位置显示，不必重新标注。",
   },
   {
     title: "离线可用，联网同步",
     illustration: offlineSyncIllustration,
+    animation: offlineSyncAnimation,
     description:
       "提前下载离线副本，断网也能继续看谱、做笔记；恢复联网后，笔记会继续同步。",
   },
   {
     title: "一份乐谱，多设备可用",
     illustration: everyDeviceIllustration,
+    animation: null,
     description:
       "建议将合谱像应用一样安装到 Android 手机和平板、iPhone、iPad、Windows 电脑或 Mac，随时打开同一份乐谱和笔记。",
   },
@@ -331,10 +337,10 @@ function HomeContent({ identity, startup, linkInvite, finishInvitation }: { iden
                   {feature.description}
                 </p>
               </div>
-              {index < 3 ? (
+              {feature.animation ? (
                 <FeatureAnimation
                   illustration={feature.illustration}
-                  animation={index === 0 ? sharedLayersAnimation : index === 1 ? personalLayerAnimation : replacePdfAnimation}
+                  animation={feature.animation}
                   label={feature.title}
                 />
               ) : <img
