@@ -35,3 +35,9 @@ CI 首跑进一步发现：移除成功通知后，删除测试可能在确认�
 integration 的失败来自 `access-smoke.test.mjs` 仍断言已删除的“需更新”小字，且后续两处仍等待旧“下载未完成”文案。改为核对离线图标的 stale 状态和无常驻小字，并使用现行失败文案；真实 Worker/D1 的两项 access smoke 通过。
 
 与 #239 的 `f050c78955d37d2c5efdb33893ab12e016e92d94` 有两个共同文件：`reader-page.tsx`、`pdf-export.test.mjs`。唯一文本冲突是编辑工具栏的保存反馈段。现与 #239 一致移除常态文字，将本机保存失败保留到异常区域；40 项阅读器客户端测试和包含真实本机失败/恢复的浏览器场景通过，lint/typecheck 通过。导出底层仍调用 `exportAnnotatedPdf`，因此能接入 #239 的新笔刷几何；本检查不等同于两个分支合并后的完整运行验收。
+
+## #239 合并后的 rebase
+
+已 rebase 到包含 #239 的 main `1001b2344069b53cf985dcdf9867bfe84e625232`。旧提交重放中的保存提示冲突按最终设计解决：常态文案移除、本机失败单独提示，保留新笔刷样式和导出流程。
+
+运行 `34371645964` 的 visual job 未进入浏览器测试：`playwright install --with-deps chromium webkit` 在 Ubuntu Azure 软件镜像下载阶段持续等待，最终达到 job 10 分钟时限而取消；同轮 checks 和 integration 通过。这是安装阶段的环境失败，不是视觉测试断言失败。未修改产品逻辑或放宽测试时限，rebase 推送后重新检查 CI。
