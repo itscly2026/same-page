@@ -1,6 +1,7 @@
-import { resolveSharedLayerPreference, type AnnotationLayerSummary } from "../../shared/annotations";
+import { driveLayerPreferencesResponseSchema, resolveSharedLayerPreference, type DriveLayerPreferenceSummary, type AnnotationLayerSummary } from "../../shared/annotations";
 import { localDatabase } from "../platform/local-database";
 import { assertLocalWorkspaceActive, withLocalWorkspaceTransaction, type LocalWorkspace } from "../platform/local-workspace";
+import { settingsResponse } from "../settings/settings-request";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 
 export type PreferenceTarget = { kind: "shared" | "personal" | "drive"; id: string };
@@ -30,6 +31,66 @@ export function projectReadingPreferences(layer: AnnotationLayerSummary, rows: R
     scoreSubscriptionOverride: score?.subscribed === undefined ? layer.scoreSubscriptionOverride : score.subscribed,
     scoreColorOverride: score?.colorOverride === undefined ? layer.scoreColorOverride ?? null : score.colorOverride };
   return { ...layer, ...fields, ...resolveSharedLayerPreference({ ...fields, productDefaultColor: "#dc2626", adminDefaultColor: layer.adminDefaultColor }) };
+}
+
+// Runs inside the caller's layer-acceptance transaction, so display reconciliation
+// and authority/snapshot changes commit together. Only incoming layers survive.
+export async function reconcileAnnotationReadingPreferences(
+  workspace: LocalWorkspace,
+  layers: AnnotationLayerSummary[],
+  previous: AnnotationLayerSummary[],
+  preferenceVersion?: string,
+) {
+  const preferences = await readReadingPreferences(workspace);
+  const stale = preferenceVersion === undefined || preferenceVersion !== await readingPreferenceVersion(workspace);
+  const projected = layers.map(layer => {
+    const cached = previous.find(entry => entry.id === layer.id);
+    const display = stale && cached ? { ...layer, subscribed: cached.subscribed, displayColor: cached.displayColor,
+      subscriptionSource: cached.subscriptionSource, colorSource: cached.colorSource, driveSubscribed: cached.driveSubscribed,
+      driveColorOverride: cached.driveColorOverride, scoreSubscriptionOverride: cached.scoreSubscriptionOverride, scoreColorOverride: cached.scoreColorOverride } : layer;
+    return projectReadingPreferences(display, preferences.filter(row => row.pending || stale && !row.observed));
+  });
+  if (!stale) for (const row of preferences.filter(row => !row.pending && row.kind !== "drive")) {
+    await localDatabase.readingPreferences.update(row.key, { observed: true });
+  }
+  return projected;
+}
+
+const driveDefaultsKey = (workspace: LocalWorkspace) => JSON.stringify(["reading-defaults", workspace.ownerKey, workspace.choirId]);
+
+export async function loadDriveReadingPreferences(workspace: LocalWorkspace, signal: AbortSignal, transport: typeof fetch = diagnosticFetch) {
+  const version = await withLocalWorkspaceTransaction(workspace, "r", [], () => readingPreferenceVersion(workspace));
+  signal.throwIfAborted();
+  const body = driveLayerPreferencesResponseSchema.parse(await settingsResponse(await transport(
+    `/api/choirs/${encodeURIComponent(workspace.choirId)}/shared-layer-preferences`,
+    { signal, headers: { "x-same-page-owner-user-id": workspace.ownerKey.slice(5) } },
+  )));
+  await withLocalWorkspaceTransaction(workspace, "rw", [localDatabase.readingPreferences], async () => {
+    signal.throwIfAborted();
+    if (version === await readingPreferenceVersion(workspace)) {
+      const rows = await readReadingPreferences(workspace);
+      for (const row of rows.filter(row => row.kind === "drive" && !row.pending)) {
+        await localDatabase.readingPreferences.update(row.key, { observed: true });
+      }
+    }
+    await localDatabase.system.put({ key: driveDefaultsKey(workspace), value: JSON.stringify(body) });
+  });
+  return body;
+}
+
+export function restoreDriveReadingPreferences(workspace: LocalWorkspace) {
+  return withLocalWorkspaceTransaction(workspace, "r", [], async () => {
+    const saved = await localDatabase.system.get(driveDefaultsKey(workspace));
+    return saved ? driveLayerPreferencesResponseSchema.parse(JSON.parse(saved.value)) : null;
+  });
+}
+
+export function projectDriveReadingPreferences(layers: DriveLayerPreferenceSummary[], rows: ReadingPreferenceRecord[]) {
+  return layers.map(layer => {
+    const row = rows.find(row => row.kind === "drive" && row.id === layer.slot && !row.observed);
+    const colorOverride = row?.colorOverride === undefined ? layer.colorOverride : row.colorOverride;
+    return { ...layer, subscribed: row?.subscribed ?? layer.subscribed, colorOverride, displayColor: colorOverride ?? layer.adminDefaultColor };
+  });
 }
 
 export async function saveReadingPreference(workspace: LocalWorkspace, target: PreferenceTarget, change: ReadingPreferenceChange, version = crypto.randomUUID()) {

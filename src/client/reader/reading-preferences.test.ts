@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { localDatabase } from "../platform/local-database";
 import { activateAuthenticatedLocalOwner, captureLocalWorkspaceSession, createLocalWorkspace } from "../platform/local-workspace";
 import { cacheAnnotationLayers, readAnnotationLayers } from "../annotations/annotation-state";
-import { saveReadingPreference, flushReadingPreferences } from "./reading-preferences";
+import { saveReadingPreference, flushReadingPreferences, readingPreferenceVersion } from "./reading-preferences";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 const layer: AnnotationLayerSummary = { id: "s", kind: "shared", sharedSlot: "S", name: "Soprano", sortOrder: 1, subscribed: false, subscriptionSource: "drive", displayColor: "#dc2626", colorSource: "admin", adminDefaultColor: "#dc2626", driveSubscribed: false, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: false };
 beforeEach(async () => {
@@ -11,6 +11,7 @@ beforeEach(async () => {
 it("durably displays the last intent before PUT resolves and protects it from a stale refresh", async () => {
   const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(await activateAuthenticatedLocalOwner("reader"), "drive", "score"));
   await cacheAnnotationLayers(workspace, [layer]);
+  const version = await readingPreferenceVersion(workspace);
   let release!: () => void;
   const transport = vi.fn<typeof fetch>(async () => { await new Promise<void>(resolve => { release = resolve; }); return new Response(null, { status: 200 }); });
   await saveReadingPreference(workspace, { kind: "shared", id: "S" }, { subscribed: true });
@@ -19,7 +20,7 @@ it("durably displays the last intent before PUT resolves and protects it from a 
   expect((await readAnnotationLayers(workspace))[0].subscribed).toBe(true);
   await saveReadingPreference(workspace, { kind: "shared", id: "S" }, { subscribed: false });
   await saveReadingPreference(workspace, { kind: "shared", id: "S" }, { subscribed: true, colorOverride: "#123456" });
-  await cacheAnnotationLayers(workspace, [layer]);
+  await cacheAnnotationLayers(workspace, [layer], undefined, version);
   expect((await readAnnotationLayers(workspace))[0]).toMatchObject({ subscribed: true, displayColor: "#123456" });
   release();
   await vi.waitFor(() => expect(transport).toHaveBeenCalledTimes(2));
@@ -61,7 +62,6 @@ it("does not resend an observed obsolete color when only visibility changes", as
   await cacheAnnotationLayers(workspace, [layer]);
   await saveReadingPreference(workspace, { kind: "shared", id: "S" }, { colorOverride: "#ff0000" });
   await flushReadingPreferences(workspace, async () => new Response(null, { status: 200 }));
-  const { readingPreferenceVersion } = await import("./reading-preferences");
   const version = await readingPreferenceVersion(workspace);
   await cacheAnnotationLayers(workspace, [{ ...layer, scoreColorOverride: "#0000ff", displayColor: "#0000ff", colorSource: "score" }], undefined, version);
   await saveReadingPreference(workspace, { kind: "shared", id: "S" }, { subscribed: true });
