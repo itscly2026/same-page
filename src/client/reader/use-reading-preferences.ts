@@ -1,8 +1,10 @@
+import type { AnnotationLayerSummary, DriveLayerPreferenceSummary } from "../../shared/annotations";
+import { useReadResource } from "../settings/use-read-resource";
 import { useReadingPreferenceIntents, currentReadingIntent, setReadingIntent, finishReadingIntent, clearReadingIntent } from "./reading-preference-intents";
 import { useEffect, useRef } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { captureLocalWorkspaceSession, type LocalWorkspace } from "../platform/local-workspace";
-import { flushReadingPreferences, preferenceKey, readReadingPreferences, saveReadingPreference, type PreferenceTarget, type ReadingPreferenceChange } from "./reading-preferences";
+import { loadDriveReadingPreferences, restoreDriveReadingPreferences, projectDriveReadingPreferences, projectReadingPreferences, flushReadingPreferences, preferenceKey, readReadingPreferences, saveReadingPreference, type PreferenceTarget, type ReadingPreferenceChange } from "./reading-preferences";
 
 export function useReadingPreferences(workspace: LocalWorkspace, signedIn: boolean) {
   const lifetime = useRef<AbortController | null>(null);
@@ -47,5 +49,21 @@ export function useReadingPreferences(workspace: LocalWorkspace, signedIn: boole
       : row ? { message: row.error ?? (row.pending ? "已保存到本机，等待同步。" : signedIn ? "已同步。" : "已保存到本机。"),
         retry: row.error ? () => { if (signedIn) void captureLocalWorkspaceSession(workspace).then(current => flushReadingPreferences(current, undefined, lifetime.current?.signal, key)).catch(() => undefined); } : undefined } : null;
   };
-  return { save, feedback, rows };
+  return { save, feedback,
+    projectDriveLayers: (layers: DriveLayerPreferenceSummary[]) => projectDriveReadingPreferences(layers, rows),
+    projectLayers: (layers: AnnotationLayerSummary[]) =>
+      layers.map(layer => projectReadingPreferences(layer, rows.filter(row => !row.observed))),
+  };
+}
+
+// The page consumes display state and save intent; cache and reconciliation
+// knowledge stays with the reading preference implementation.
+export function useDriveReadingPreferences(workspace: LocalWorkspace, signedIn: boolean) {
+  const resource = useReadResource(`${workspace.ownerKey}:${workspace.choirId}:reading-defaults`,
+    signal => loadDriveReadingPreferences(workspace, signal),
+    () => restoreDriveReadingPreferences(workspace));
+  const preferences = useReadingPreferences(workspace, signedIn && resource.authority !== "revoked" && resource.authority !== "signed-out");
+  return { drive: resource.data?.drive ?? null, layers: preferences.projectDriveLayers(resource.data?.layers ?? []),
+    loading: resource.loading, error: resource.error, authority: resource.authority, refresh: resource.refresh,
+    save: preferences.save, feedback: preferences.feedback };
 }

@@ -1,5 +1,4 @@
 import { useReadingPreferenceProjection } from "./reading-preference-intents";
-import { projectReadingPreferences } from "./reading-preferences";
 import { loginHref } from "../auth/login-return";
 import { annotationLayerListResponseSchema } from "../../shared/annotations";
 import { useEffect, useRef, useState } from "react";
@@ -38,7 +37,7 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
   const [feedbackInManagement, setFeedbackInManagement] = useState(false);
   const preferences = useReadingPreferences(workspace, signedIn);
   const projectedLayers = useReadingPreferenceProjection(workspace, storedLayers);
-  const layers = projectedLayers.map(layer => projectReadingPreferences(layer, preferences.rows.filter(row => !row.observed)));
+  const layers = preferences.projectLayers(projectedLayers);
   const busy = useRef(false);
   const active = useRef(true);
   useEffect(() => {
