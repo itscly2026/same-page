@@ -120,7 +120,7 @@ export function ReaderEditingControls({
       {selectedLayer?.kind === "personal" && <input type="color" aria-label="工具颜色" title={toolHasStyle ? "工具颜色" : "当前工具不使用颜色"} disabled={isDisabled || !selectedLayer.canEdit || !toolHasStyle} value={toolHasStyle ? toolColor : "#e5e7e5"} onChange={event => onColorChange(event.target.value)} />}
       <Button
         className="annotation-tool-button annotation-style-trigger"
-        aria-label="下一笔样式"
+        aria-label="工具设置"
         aria-haspopup="dialog"
         aria-expanded={styleSource === "settings"}
         aria-controls={styleSource === "settings" ? styleDialogId : undefined}
@@ -135,8 +135,7 @@ export function ReaderEditingControls({
         placement="top"
         offset={12}
       >
-        <Dialog id={styleDialogId} aria-label="下一笔样式">
-          <h2>{tool === "text" ? "新文字样式" : "下一笔样式"}</h2>
+        <Dialog id={styleDialogId} aria-label="工具设置">
           <div style={{ color: selectedLayer?.kind === "shared" ? selectedLayer.displayColor : toolColor }}>
             <StyleFields tool={tool} value={toolStyle} onChange={onStyleChange} />
           </div>

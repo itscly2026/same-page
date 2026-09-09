@@ -226,5 +226,3 @@
 @media (max-width: 640px) { .reader-shell .annotation-history-controls { grid-column: 4; } .reader-shell .annotation-drawing-tools .annotation-tool-button { min-width: 0; padding-inline: 5px; } }
 
 .annotation-hover-tool { position: absolute; transform: translate(14px, 14px); padding: 3px 7px; background: #203b3bed; color: white; border-radius: 5px; font-size: 11px; white-space: nowrap; pointer-events: none; }
-
-.annotation-style-popover h2 { margin-bottom: 18px; }

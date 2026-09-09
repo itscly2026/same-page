@@ -10,7 +10,7 @@ await page.locator(".annotated-pdf-page canvas:not([hidden])").first().waitFor()
 await page.locator(".annotated-pdf-page").first().click({ position: { x: 280, y: 300 } });
 await page.getByRole("button", { name: "编辑", exact: true }).click();
 await page.getByRole("button", { name: "荧光笔", exact: true }).click();
-await page.getByRole("button", { name: "下一笔样式" }).click();
+await page.getByRole("button", { name: "工具设置" }).click();
 await page.getByRole("slider", { name: "荧光笔宽度" }).fill("32").catch(async () => { const slider=page.getByRole("slider", {name:"荧光笔宽度"}); await slider.focus(); await page.keyboard.press("Home"); for(let i=0;i<31;i++) await page.keyboard.press("ArrowRight"); });
 await page.screenshot({ path: "artifacts/editor-preview/style.png" });
 console.log(await page.locator("body").innerText());

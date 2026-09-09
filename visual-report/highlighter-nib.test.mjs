@@ -59,7 +59,7 @@ test("Pencil event samples persist tilt and twist, preview the nib, and keep suc
   const note=await page.evaluate(async()=>{const {localDatabase}=await import("/src/client/platform/local-database.ts");return (await localDatabase.annotations.toArray()).find(note=>note.state==="draft"&&note.payload?.kind==="ink");});
   assert.equal(note.payload.nib,"chisel"); assert.equal(note.payload.points[1].tiltX,60); assert.equal(note.payload.points[1].twist,90);
   assert.equal(await page.locator(".reader-save-feedback").count(),0);
-  await page.getByRole("button",{name:"下一笔样式"}).click();
+  await page.getByRole("button",{name:"工具设置"}).click();
   assert.equal(await page.getByRole("button",{name:"扁头",exact:true}).getAttribute("aria-pressed"),"true");
   await page.screenshot({path:"artifacts/editor-preview/chisel-reader.png"});
   await page.keyboard.press("Escape");
