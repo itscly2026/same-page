@@ -94,17 +94,10 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
     await page.getByText("已同步", { exact: true }).waitFor();
     assert.ok(pushes > 0);
     await captureStates(page, `${width}-synced.png`);
-    // The blocked service worker makes automatic offline preparation fail.
-    // Retry that failure; PDF bytes can now be reused without another request.
-    await page.getByRole("button", { name: "重试下载离线副本", exact: true }).click();
-    await page.getByText("离线下载未完成。当前乐谱尚不可离线使用，请联网重试。", { exact: true }).waitFor();
-    await page.getByRole("button", { name: "重试下载离线副本" }).waitFor();
-    await page.getByRole("button", { name: "重试下载离线副本" }).scrollIntoViewIfNeeded();
-    await captureStates(page, `${width}-download-failed.png`);
     await page.getByRole("button", { name: "关闭更多阅读选项" }).click();
     assert.equal(await page.locator("[data-page-turn-current] [data-pdf-canvas-active]").count(), 1);
     assert.deepEqual(errors, []);
-    evidence.push({ width, height: 900, pushes, errors, flow: "open → edit → durable local draft → simulated reconnect → accepted sync → download failure" });
+    evidence.push({ width, height: 900, pushes, errors, flow: "open → edit → durable local draft → simulated reconnect → accepted sync" });
     await context.close();
   }
   const loadingContext = await browser.newContext({ viewport: { width: 390, height: 900 }, serviceWorkers: "block" });

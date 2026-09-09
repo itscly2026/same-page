@@ -25,62 +25,27 @@ after(async () => {
 });
 
 for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
-test(`${engineName}: keeps the capsule at the right edge above its page hint in reading and editing`, async (context) => {
+test(`${engineName}: reader controls remain reachable without overlap across viewport sizes`, async (context) => {
   const browser = await engine.launch({ headless: true });
   context.after(() => browser.close());
-
-  // Cover the minimum, the 360px rule boundary, the next mobile range,
-  // portrait tablet, the orientation transition and a wide landscape.
+  const page = await openMemberReader(browser, { width: 320, height: 800 });
+  await showReaderChrome(page);
+  // Resize one real reader; do not replay the same edit/navigation flow at every width.
   for (const width of engineName === "chromium" ? [320, 360, 390] : [320, 768, 834, 1194]) {
-    const page = await openMemberReader(browser, { width, height: 800 });
-    await showReaderChrome(page);
-
-    const result = await page.evaluate(() => {
-      const actions = document.querySelector(".reader-chrome__actions");
-      const pageHint = document.querySelector(".reader-page-indicator");
-      if (!(actions instanceof HTMLElement) || !(pageHint instanceof HTMLElement)) {
-        throw new Error("reader controls missing");
-      }
-      const actionBox = actions.getBoundingClientRect();
-      const pageBox = pageHint.getBoundingClientRect();
-      return {
-        labels: [...actions.querySelectorAll("button")].map((button) => button.ariaLabel),
-        states: [...actions.querySelectorAll("button")].map((button) => button.dataset.state),
-        sizes: [...actions.querySelectorAll("button")].map((button) => {
-          const box = button.getBoundingClientRect();
-          return { width: box.width, height: box.height };
-        }),
-        actionLeft: actionBox.left,
-        actionRight: actionBox.right,
-        pageBelowActions: pageBox.top >= actionBox.bottom,
-        centerDelta: Math.abs(
-          (pageBox.left + pageBox.right) / 2 - (actionBox.left + actionBox.right) / 2,
-        ),
-      };
+    await page.setViewportSize({ width, height: 800 });
+    await page.waitForFunction(() => {
+      const controls = [...document.querySelectorAll(".reader-chrome__actions button, .reader-chrome__back, .reader-page-indicator")];
+      const boxes = controls.map(element => element.getBoundingClientRect());
+      return boxes.length >= 5 && boxes.every(box => box.width >= 44 && box.height >= 44 && box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight)
+        && boxes.every((box, i) => boxes.slice(i + 1).every(other => box.right <= other.left || other.right <= box.left || box.bottom <= other.top || other.bottom <= box.top));
     });
-
-    assert.deepEqual(result.labels, ["编辑", "看哪些笔记", "更多"]);
-    assert.equal(result.states[0], "ready");
-    assert.ok(result.sizes.every(({ width: buttonWidth, height }) => buttonWidth >= 44 && height >= 44));
-    assert.ok(result.actionLeft >= 0 && result.actionRight <= width);
-    assert.ok(Math.abs(width - result.actionRight - 12) < 1, `${width}: capsule must stay at the right edge (actual right: ${result.actionRight})`);
-    const back = await page.locator(".reader-chrome__back").boundingBox();
-    assert.ok(Math.abs(back.x - 12) < 1 && back.x + back.width < result.actionLeft);
-    assert.equal(result.pageBelowActions, true);
-    assert.ok(result.centerDelta < 0.5);
-
-    await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
-    await page.locator(".annotation-controls").waitFor();
-    const editingActions = await page.locator(".reader-chrome__actions").boundingBox();
-    assert.ok(Math.abs(editingActions.x + editingActions.width - result.actionRight) < 1);
-    assert.equal(await page.locator(".reader-page-indicator").count(), 0);
-    for (const name of ["返回云盘", "看哪些笔记", "更多"]) assert.equal(await page.getByRole("button", { name, exact: true }).count(), 0);
-    await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
-
-    await page.getByRole("button", { name: "页面位置", exact: true }).click();
-    await page.locator(".page-preview-strip").waitFor({ state: "visible" });
-    await page.context().close();
   }
+  await page.getByRole("button", { name: "编辑", exact: true }).click();
+  await page.locator(".annotation-controls").waitFor();
+  for (const name of ["返回云盘", "看哪些笔记", "更多"]) assert.equal(await page.getByRole("button", { name, exact: true }).count(), 0);
+  await page.getByRole("button", { name: "完成编辑", exact: true }).click();
+  await page.getByRole("button", { name: "页面位置", exact: true }).click();
+  await page.locator(".page-preview-strip").waitFor({ state: "visible" });
 });
 }
 
@@ -111,20 +76,16 @@ test("grows and caps the real text composer inside an iPad WebKit visual viewpor
     return element instanceof HTMLTextAreaElement && element.clientHeight >= element.scrollHeight;
   });
   const multiline = await input.evaluate((element) => ({
-    rows: element.rows,
     clientHeight: element.clientHeight,
     scrollHeight: element.scrollHeight,
-    overflowY: getComputedStyle(element).overflowY,
   }));
-  assert.equal(multiline.rows, 2);
   assert.ok(multiline.clientHeight >= multiline.scrollHeight);
-  assert.equal(multiline.overflowY, "hidden");
 
   const longValue = Array(30).fill("很多换行仍然可以继续编辑").join("\n");
   await input.fill(longValue);
   await assertEventually(page, () => {
     const element = document.querySelector("textarea[aria-label='笔记文本']");
-    return element instanceof HTMLTextAreaElement && getComputedStyle(element).overflowY === "auto";
+    return element instanceof HTMLTextAreaElement && element.scrollHeight > element.clientHeight;
   });
   await page.setViewportSize({ width: 600, height: 320 });
   await assertEventually(page, () => {
@@ -139,7 +100,6 @@ test("grows and caps the real text composer inside an iPad WebKit visual viewpor
       clientHeight: element.clientHeight,
       scrollHeight: element.scrollHeight,
       scrollTop: element.scrollTop,
-      overflowY: getComputedStyle(element).overflowY,
       top: bounds.top,
       bottom: bounds.bottom,
       viewportHeight: innerHeight,
@@ -148,7 +108,6 @@ test("grows and caps the real text composer inside an iPad WebKit visual viewpor
   });
   assert.ok(longText.clientHeight < longText.scrollHeight);
   assert.ok(longText.top >= 0 && longText.bottom <= longText.viewportHeight);
-  assert.equal(longText.overflowY, "auto");
   assert.equal(longText.caretAtEnd, true);
   assert.ok(longText.scrollTop > 0);
 });

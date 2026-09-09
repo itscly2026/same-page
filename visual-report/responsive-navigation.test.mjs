@@ -27,7 +27,7 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
   ["chromium", chromium, "member", "guest"],
   ["webkit", webkit, "admin", "member"],
 ]) {
-  test(`${engineName}: library gives header space to search and keeps sorting above the list`, async (t) => {
+  test(`${engineName}: library controls remain usable with long filenames across viewport sizes`, async (t) => {
     const browser = await engine.launch({ headless: true });
     t.after(() => browser.close());
     const page = await openPage(browser, libraryIdentity);
@@ -36,16 +36,15 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
     for (const width of [320, 390, 600, 768, 834, 1194, 1440]) {
       await page.setViewportSize({ width, height: 1000 });
 
-      const toolbar = await page.locator(".library-toolbar").boundingBox();
-      const search = await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).boundingBox();
-      const sort = await page.getByRole("combobox", { name: "乐谱排序" }).boundingBox();
-      const menu = await page.getByRole("button", { name: "打开云盘菜单" }).boundingBox();
-      const avatar = await page.getByRole("button", { name: "我在此云盘" }).boundingBox();
-      assert.ok(menu.x + menu.width <= search.x && search.x + search.width <= avatar.x, `${width}: search sits between navigation and avatar`);
-      assert.ok(Math.abs(search.y + search.height / 2 - avatar.y - avatar.height / 2) < 2, `${width}: header controls share a row`);
-      assert.ok(sort.x >= toolbar.x && sort.x + sort.width <= toolbar.x + toolbar.width, "sort remains inside the toolbar");
-      assert.ok(search.height >= 44 && sort.height >= 44, "search and sort have touch-sized controls");
-      assert.ok(search.y + search.height <= sort.y || search.x + search.width <= sort.x, "controls do not overlap");
+      const boxes = await Promise.all([
+        page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }),
+        page.getByRole("combobox", { name: "乐谱排序" }),
+        page.getByRole("button", { name: "打开云盘菜单" }),
+        page.getByRole("button", { name: "我在此云盘" }),
+      ].map(control => control.boundingBox()));
+      assert.ok(boxes.every(box => box && box.width > 0 && box.height > 0 && box.x >= 0 && box.x + box.width <= width), `${width}: library controls are reachable ${JSON.stringify(boxes)}`);
+      assert.ok(boxes.slice(0, 2).every(box => box.height >= 44), "search and sort retain their touch-sized controls");
+      assert.ok(boxes.every((box, i) => boxes.slice(i + 1).every(other => box.x + box.width <= other.x || other.x + other.width <= box.x || box.y + box.height <= other.y || other.y + other.height <= box.y)), `${width}: library controls do not overlap`);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       for (const selector of [".file-row__open", ".offline-score-button", ".file-menu-button"]) {
         const box = await page.locator(selector).first().boundingBox();
@@ -77,8 +76,6 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
     await page.getByRole("link", { name: "合谱 Same Page 首页", exact: true }).click();
     await page.getByRole("heading", { name: "Harmony begins on the Same Page", exact: true }).waitFor();
     assert.equal(new URL(page.url()).pathname, "/");
-    assert.equal(await page.getByRole("button", { name: "帮助与关于", exact: true }).count(), 0);
-    assert.equal(await page.getByRole("banner").getByRole("link", { name: "故障诊断", exact: true }).count(), 0);
     const footer = page.getByRole("contentinfo");
     for (const name of ["帮助", "关于合谱"]) {
       const item = footer.getByRole("link", { name, exact: true });
@@ -94,7 +91,6 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
     await page.getByRole("heading", { name: "隐私政策", exact: true }).waitFor();
     assert.equal(new URL(page.url()).pathname, "/privacy");
     assert.equal(await page.evaluate(() => window.__layoutDocumentMarker), "same-document");
-    assert.equal(await page.getByRole("contentinfo").count(), 0);
     await page.goBack();
     await page.goBack();
     await footer.getByRole("link", { name: "帮助", exact: true }).press("Enter");

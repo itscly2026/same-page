@@ -1,5 +1,7 @@
 # Reader touch momentum CI stability
 
+> 后续测试价值审查：本文保留 #227 的历史诊断证据。常规 CI 已移除惯性位移和停住后松手对照，改为触点按下期间的原生滚动集成检查；`reader-touch` 实验现在重复该集成检查与原生双指输入。见 [2026-09-09 测试价值清理](../operations/test-value-audit-2026-09-09.md)。
+
 ## Failure and controlled reproduction
 
 PR #223 head `3254a952` and merge `118a39a1` have the same Git tree

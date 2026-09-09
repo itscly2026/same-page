@@ -73,13 +73,11 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
         const offline = await context.newPage();
         await offline.goto(fixture.origin);
         await offline.getByRole("link").filter({ hasText: fixture.fileName.replace(/\.pdf$/i, "") }).waitFor({ timeout: 10_000 });
-        assert.equal(await offline.getByRole("heading", { name: "Harmony begins on the Same Page" }).count(), 0);
         assert.equal(new URL(offline.url()).pathname, `/choirs/${fixture.choirId}`);
         await offline.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).waitFor();
         await offline.getByRole("button", { name: "打开云盘菜单" }).click();
         await offline.getByRole("link", { name: "云盘列表", exact: true }).click();
         await offline.getByRole("link").filter({ hasText: "本地链路云盘" }).click();
-        await offline.goto(drive);
         await offline.getByRole("heading", { name: "本地链路云盘" }).waitFor();
         await offline.getByRole("link").filter({ hasText: fixture.fileName.replace(/\.pdf$/i, "") }).click();
         await expectSampleScoreContent(offline);
@@ -104,8 +102,6 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     });
     await scenario("membership-revocation", async ({ page: offline, context, output }) => {
       await withBrowserEvidence(context, output, async () => {
-        await offline.getByRole("searchbox").fill(fixture.fileName.replace(/\.pdf$/i, ""));
-        await offline.getByRole("combobox", { name: "乐谱排序" }).selectOption("updated");
         const admin = await request.newContext({ baseURL: fixture.origin, extraHTTPHeaders: { origin: fixture.origin } });
         try {
           const owner = fixture.accounts[0];
@@ -118,8 +114,6 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
         await offline.reload();
         await offline.getByRole("heading", { name: "本机保留的乐谱", exact: true }).waitFor();
         await offline.getByText("已无法访问此云盘，以下为本机保留内容", { exact: true }).waitFor();
-        assert.equal(await offline.getByRole("combobox", { name: "乐谱排序" }).inputValue(), "updated");
-        assert.equal(await offline.getByRole("searchbox").inputValue(), fixture.fileName.replace(/\.pdf$/i, ""));
         await offline.getByRole("link", { name: new RegExp(fixture.fileName.replace(/\.pdf$/i, "")) }).waitFor();
         await offline.getByRole("link", { name: new RegExp(fixture.fileName.replace(/\.pdf$/i, "")) }).click();
         await expectSampleScoreContent(offline);

@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       scenario:
-        description: Bounded browser scenario to repeat
+        description: Bounded integration scenario to repeat (no browser physics assertions)
         type: choice
         default: navigation-offline
         options:
