@@ -22,7 +22,7 @@ test("literal search, verified offline read and failed/successful immutable PDF 
   await page.getByRole("searchbox").fill("%_");
   await expect(page.locator(".file-row__open")).toHaveCount(1);
   await page.getByRole("button", { name: /^离线副本：/ }).click();
-  await page.getByRole("button", { name: "下载离线副本", exact: true }).click();
+  await page.getByRole("button", { name: "保存供离线使用", exact: true }).click();
   await page.getByRole("status").filter({ hasText: /^可离线使用$/ }).waitFor();
   await page.getByRole("button", { name: "关闭", exact: true }).click();
   await page.locator(".file-row__open").click();
@@ -54,11 +54,11 @@ test("literal search, verified offline read and failed/successful immutable PDF 
     };
   });
   await page.getByRole("button", { name: /^离线副本：/ }).click();
-  await page.getByRole("button", { name: "下载新版离线副本", exact: true }).click();
+  await page.getByRole("button", { name: "更新离线副本", exact: true }).click();
   await page.getByRole("status").filter({ hasText: /下载未完成/ }).waitFor();
   await expect(page.getByRole("status").filter({ hasText: /下载未完成/ })).toContainText("旧版 PDF 仍可离线使用");
   await context.setOffline(false);
-  await page.getByRole("button", { name: "重试下载", exact: true }).click();
+  await page.getByRole("button", { name: "重试保存", exact: true }).click();
   await page.getByRole("status").filter({ hasText: /^可离线使用$/ }).waitFor();
   await page.getByRole("button", { name: "关闭", exact: true }).click();
   await page.locator(".file-row__open").click();

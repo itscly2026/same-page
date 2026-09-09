@@ -1,0 +1,62 @@
+import assert from "node:assert/strict";
+import { mkdir } from "node:fs/promises";
+import { test } from "node:test";
+import { chromium } from "playwright";
+import { startVisualServer } from "./setup.mjs";
+import { createVisualFixtureSession } from "./fixtures.mjs";
+
+test("library and reader share export choices without saving notices at desktop and narrow widths", async t => {
+  const app = await startVisualServer({ script: "dev" });
+  const browser = await chromium.launch();
+  t.after(async () => { await browser.close(); await app.stop(); });
+  await mkdir("artifacts/issue-238", { recursive: true });
+  for (const width of [1440, 390]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: "block", reducedMotion: "reduce" });
+    const fixture = createVisualFixtureSession();
+    const writes = [];
+    await context.route("**/api/**", route => {
+      const request = route.request();
+      const pathname = new URL(request.url()).pathname;
+      if (pathname.endsWith("/preference") && request.method() === "PUT") writes.push(pathname);
+      return route.fulfill(fixture.resolve({ pathname, method: request.method(), identity: "admin", cookie: "", body: request.postDataJSON() }));
+    });
+    const page = await context.newPage(); page.setDefaultTimeout(15000);
+    await page.goto(`${app.origin}/choirs/visual-choir`);
+    const row = page.locator(".file-row").filter({ hasText: "排练示例" });
+    await row.waitFor();
+    assert.equal(await page.locator(".offline-score-label").count(), 0);
+    await page.screenshot({ path: `artifacts/issue-238/${width}-library.png`, fullPage: true });
+    await row.getByRole("button", { name: /更多操作/ }).click();
+    await page.getByRole("menuitem", { name: "导出 PDF", exact: true }).click();
+    let dialog = page.getByRole("dialog", { name: "导出 PDF" });
+    await dialog.getByRole("checkbox", { name: "Ensemble", exact: true }).waitFor();
+    const defaults = await dialog.getByRole("checkbox").evaluateAll(inputs => inputs.map(input => [input.closest("label").textContent, input.checked]));
+    await page.screenshot({ path: `artifacts/issue-238/${width}-library-export.png`, fullPage: true });
+    const [annotated] = await Promise.all([page.waitForEvent("download"), dialog.getByRole("button", { name: "导出 PDF", exact: true }).click()]);
+    assert.equal(await annotated.failure(), null);
+    await annotated.saveAs(`artifacts/issue-238/${width}-annotated.pdf`);
+    await dialog.getByRole("radio", { name: "仅原谱", exact: true }).check();
+    const [original] = await Promise.all([page.waitForEvent("download"), dialog.getByRole("button", { name: "导出 PDF", exact: true }).click()]);
+    assert.equal(await original.failure(), null);
+    assert.equal(writes.length, 0);
+    await dialog.getByRole("button", { name: "取消", exact: true }).click();
+    await row.getByRole("link").click();
+    await page.waitForFunction(() => document.querySelector("[data-pdf-canvas-active]")?.width > 100);
+    await page.locator(".page-reader__viewport").click();
+    const back = await page.getByRole("button", { name: "返回云盘" }).boundingBox();
+    const shortcut = page.getByRole("button", { name: "导出 PDF", exact: true });
+    const box = await shortcut.boundingBox(); assert.ok(box.x >= back.x + back.width);
+    await page.screenshot({ path: `artifacts/issue-238/${width}-reader.png`, fullPage: true });
+    await shortcut.click();
+    dialog = page.getByRole("dialog", { name: "导出 PDF" });
+    assert.deepEqual(await dialog.getByRole("checkbox").evaluateAll(inputs => inputs.map(input => [input.closest("label").textContent, input.checked])), defaults);
+    await page.screenshot({ path: `artifacts/issue-238/${width}-reader-export.png`, fullPage: true });
+    await dialog.getByRole("button", { name: "取消", exact: true }).click();
+    await page.getByRole("button", { name: "看哪些笔记", exact: true }).click();
+    const toggle = page.getByRole("checkbox", { name: "显示 Ensemble", exact: true });
+    await toggle.click();
+    assert.equal(await page.getByText(/已同步。|等待同步。|正在保存到本机/).count(), 0);
+    await page.screenshot({ path: `artifacts/issue-238/${width}-quiet-layers.png`, fullPage: true });
+    await context.close();
+  }
+});

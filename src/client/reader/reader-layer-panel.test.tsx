@@ -231,11 +231,13 @@ it("updates shared and personal visibility while PUT is delayed without locking 
   const soprano = await screen.findByRole("checkbox", { name: "显示 Soprano" });
   fireEvent.click(soprano);
   expect(soprano).toBeChecked();
+  expect(screen.queryByText(/正在保存到本机|等待同步。|已同步。/)).not.toBeInTheDocument();
   expect(screen.getByRole("checkbox", { name: "显示 我的笔记" })).toBeEnabled();
   fireEvent.click(screen.getByRole("checkbox", { name: "显示 我的笔记" }));
   expect(screen.getByRole("checkbox", { name: "显示 我的笔记" })).not.toBeChecked();
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   expect(fetchMock.mock.calls.every(([, init]) => init?.method === "PUT")).toBe(true);
+  expect(screen.queryByText(/正在保存到本机|等待同步。|已同步。/)).not.toBeInTheDocument();
   for (const release of pending) release();
   await waitFor(async () => expect((await localDatabase.readingPreferences.toArray()).every(row => !row.pending)).toBe(true));
 });
@@ -251,7 +253,8 @@ it("retains the choice but never claims saved when local persistence fails", asy
   expect(requests).toHaveLength(0);
   write.mockRestore();
   fireEvent.click(screen.getByRole("button", { name: "重试" }));
-  await screen.findByText("已同步。");
+  await waitFor(() => expect(screen.queryByText("尚未保存到本机，请重试。")).not.toBeInTheDocument());
+  await waitFor(async () => expect((await localDatabase.readingPreferences.toArray()).some(row => !row.pending)).toBe(true));
   expect((await readAnnotationLayers(workspace)).find(layer => layer.id === own.id)?.subscribed).toBe(false);
 });
 

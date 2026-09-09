@@ -9,7 +9,7 @@ import { useApplicationIdentity } from "../auth/application-identity";
 import { IdentityNotice } from "../auth/local-entry";
 import type { ApplicationIdentity } from "../auth/application-identity";
 import { ChevronDown } from "lucide-react";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   Button,
   Form,
@@ -50,6 +50,8 @@ import { UploadFab } from "../score-library/upload-fab";
 import type { LibrarySort } from "../score-library/library-view-state";
 import { OfflineScoreControl } from "../score-library/offline-score-control";
 
+const LibraryExportDialog = lazy(() => import("../score-library/library-export-dialog").then(module => ({ default: module.LibraryExportDialog })));
+
 export default function ChoirPage() {
   const { choirId = "" } = useParams();
   const identity = useApplicationIdentity();
@@ -69,6 +71,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
   const [message, setMessage] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [quotaBlocked, setQuotaBlocked] = useState(false);
+  const [exportScore, setExportScore] = useState<ScoreSummary | null>(null);
   const [scoreAction, setScoreAction] = useState<ScoreActionSelection | null>(null);
   const refresh = library.refresh;
   const refreshAfterMutation = library.changed;
@@ -235,8 +238,9 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
                         <Menu
                           aria-label={`${scoreDisplayName(score.fileName)} 操作`}
                           disabledKeys={access.local ? ["rename", "replace", "history", "trash"] : []}
-                          onAction={(key) => openScoreAction(score, key as ScoreAction)}
+                          onAction={(key) => key === "export" ? setExportScore(score) : openScoreAction(score, key as ScoreAction)}
                         >
+                          <MenuItem id="export">导出 PDF</MenuItem>
                           <MenuItem id="info">文件信息</MenuItem>
                           {managementVisible && <>
                           {visible("modifyFiles") && <MenuItem id="rename">重命名</MenuItem>}
@@ -256,7 +260,8 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
         </section>
       </main>
 
-      {settingsField && !access.local && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} userId={userId!} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async value => { setDisplayName(value); await refreshAfterMutation(); setMessage("已保存。"); }} />}
+      {exportScore && <Suspense fallback={<p role="status">正在准备导出…</p>}><LibraryExportDialog key={`${exportScore.id}:${userId}`} score={exportScore} authenticatedUserId={userId ?? null} onClose={() => setExportScore(null)} /></Suspense>}
+      {settingsField && !access.local && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} userId={userId!} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async value => { setDisplayName(value); await refreshAfterMutation(); setMessage(null); }} />}
       {visible("uploadFiles") && <UploadFab disabled={Boolean(access.local)} onPress={() => setUploadOpen(true)} />}
 
 

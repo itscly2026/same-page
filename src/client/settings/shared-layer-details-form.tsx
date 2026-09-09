@@ -20,20 +20,20 @@ export function SharedLayerDetailsForm({ choirId, layer, onSaved }: {
   const save = async () => {
     if (busy.current || !name.trim()) return false;
     const lifetime = generation.current;
-    busy.current = true; setPending(true); setFeedback({ message: "正在保存…" });
+    busy.current = true; setPending(true); setFeedback(null);
     const changes = { name: name.trim(), defaultColor: color, active };
     const result = await runSettingsMutation(() => diagnosticFetch(`/api/choirs/${choirId}/shared-layers/${layer.slot}/settings`, {
       method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(changes),
     }));
     if (lifetime !== generation.current) return false;
     if (result.kind === "saved") onSaved({ ...layer, ...changes });
-    setFeedback({ message: settingsMutationMessage(result, "共享层设置已保存。"), failed: result.kind !== "saved" });
+    setFeedback(result.kind === "saved" ? null : { message: settingsMutationMessage(result), failed: true });
     busy.current = false; setPending(false);
     return result.kind === "saved";
   };
   const exitDialog = useUnsavedChanges({ subject: "共享层配置", dirty, save, discard });
   return <form className="settings-card layer-details-form" aria-label="共享层设置" onSubmit={event => { event.preventDefault(); void save(); }}>
-    {exitDialog}<p role="status">{dirty ? "未保存" : "所有修改已保存"}</p>
+    {exitDialog}{dirty && <p role="status">未保存</p>}
     <p className="settings-copy">此云盘所有成员的默认；个人显示覆盖仍保留。</p>
     <label>名称<input type="text" value={name} required maxLength={60} disabled={pending} onChange={event => setName(event.target.value)} /></label>
     <label className="settings-color-control">云盘默认颜色<input type="color" value={color} disabled={pending} onChange={event => setColor(event.target.value)} /></label>

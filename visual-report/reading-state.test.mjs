@@ -48,7 +48,7 @@ test("desktop and narrow readers preserve local intent and warm display name dra
     assert.equal(await ensemble.isChecked(), !initial);
     await page.screenshot({ path: `${output}/${width}-pending-preference.png`, fullPage: true });
     hold = false; releases.splice(0).forEach(release => release());
-    await page.getByText("已同步。", { exact: true }).waitFor();
+    await waitForPreferences(page);
     assert.equal(await ensemble.isChecked(), !initial);
     if (width === 1440) {
       hold = true; const before = puts; await ensemble.click();
@@ -61,7 +61,7 @@ test("desktop and narrow readers preserve local intent and warm display name dra
       await other.waitFor(); await other.click();
       assert.equal(puts, before + 1, "second tab waits for the first tab's preference lock");
       hold = false; releases.splice(0).forEach(release => release());
-      await second.getByText("已同步。", { exact: true }).waitFor();
+      await waitForPreferences(second);
       assert.equal(await other.isChecked(), !initial);
       assert.equal(puts, before + 2, "lock holder drains the newer durable intent");
       await second.close();
@@ -86,3 +86,12 @@ test("desktop and narrow readers preserve local intent and warm display name dra
   }
   await writeFile(`${output}/checks.json`, JSON.stringify(evidence, null, 2));
 });
+
+async function waitForPreferences(page) {
+  await page.waitForFunction(async () => {
+    const { localDatabase } = await import("/src/client/platform/local-database.ts");
+    const rows = await localDatabase.readingPreferences.toArray();
+    return rows.length > 0 && rows.every(row => !row.pending);
+  });
+  assert.equal(await page.getByText(/正在保存到本机|等待同步。|已同步。/).count(), 0);
+}

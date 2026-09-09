@@ -79,7 +79,7 @@ const productFeatures = [
     title: "离线可用，联网同步",
     illustration: offlineSyncIllustration,
     description:
-      "提前下载离线副本，断网也能继续看谱、做笔记；恢复联网后，笔记会继续同步。",
+      "提前保存供离线使用，断网也能继续看谱、做笔记；恢复联网后，笔记会继续同步。",
   },
   {
     title: "一份乐谱，多设备可用",

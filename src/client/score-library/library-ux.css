@@ -90,7 +90,6 @@
 .drive-drawer-management > a, .drive-drawer-management nav > a, .drive-drawer-management nav > span, .drive-drawer-management > button { display: flex; align-items: center; min-height: 44px; padding: .5rem .75rem; text-decoration: none; color: inherit; }
 .drive-drawer .dialog-heading { display: flex; align-items: center; justify-content: space-between; }
 .offline-score-control { display: flex; flex-direction: column; align-items: center; }
-.offline-score-label { font-size: .8rem; color: var(--ink); white-space: nowrap; }
 .drive-drawer-content { max-height: calc(100dvh - 2rem); overflow-y: auto; }
 
 .drive-drawer-management > button { width: 100%; border: 0; border-radius: .6rem; background: transparent; font: inherit; text-align: left; cursor: pointer; }

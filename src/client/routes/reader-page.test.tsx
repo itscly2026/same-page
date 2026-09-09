@@ -1926,7 +1926,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     await screen.findByLabelText("翻页阅读");
     openMoreMenu();
     expect(
-      await screen.findByText("离线下载未完成，尚未确认本机副本，请重试校验。"),
+      await screen.findByText("离线准备未完成，尚未确认本机副本，请重试校验。"),
     ).toBeInTheDocument();
     expect(activateVerifiedOfflineScore).not.toHaveBeenCalled();
   });
@@ -2633,7 +2633,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     expect(screen.queryByRole("button", { name: "立即同步" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "下载离线副本" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存供离线使用" })).toBeDisabled();
     expect(await localDatabase.annotationOutbox.count()).toBe(1);
     expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).endsWith("/annotations/push"))).toBe(false);
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
