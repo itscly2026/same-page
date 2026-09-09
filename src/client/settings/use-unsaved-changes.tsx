@@ -3,8 +3,9 @@ import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-compone
 import { useExitLayer } from "../navigation/navigation-context";
 
 // A manual form never submits merely because navigation was requested.
-export function useUnsavedChanges({ dirty, save, discard, subject = "修改" }: {
+export function useUnsavedChanges({ dirty, save, discard, saveState, subject = "修改" }: {
   dirty: boolean; subject?: string; save(): Promise<boolean>; discard(): void;
+  saveState?: { blocked: boolean; message: string | null };
 }) {
   const resolve = useRef<((result: boolean | "cancelled") => void) | null>(null);
   const [open, setOpen] = useState(false);
@@ -25,10 +26,10 @@ export function useUnsavedChanges({ dirty, save, discard, subject = "修改" }: 
   };
   return <ModalOverlay className="modal-overlay" isOpen={open} isDismissable={!saving} onOpenChange={value => { if (!value && !saving) finish("cancelled"); }}>
     <Modal className="app-modal app-modal--compact"><Dialog className="app-dialog" aria-label="处理未保存的修改">
-      <Heading slot="title">有未保存的修改</Heading><p>{subject}尚未保存。要保存后离开吗？</p>
-      {failed && <p role="alert">保存尚未确认，请核对后重试；修改仍保留。</p>}
+      <Heading slot="title">{dirty ? "有未保存的修改" : "修改已保存"}</Heading><p>{dirty ? `${subject}尚未保存。要保存后离开吗？` : "保存已确认，请核对后续处理结果。"}</p>
+      {failed && <p role="alert">{saveState?.message ?? "保存尚未确认，请核对后重试；修改仍保留。"}</p>}
       <div className="unsaved-actions">
-        <Button className="primary-button" isDisabled={saving} onPress={async () => {
+        <Button className="primary-button" isDisabled={saving || saveState?.blocked} onPress={async () => {
           setSaving(true);
           try { if (await save()) finish(true); else setFailed(true); }
           catch { setFailed(true); }

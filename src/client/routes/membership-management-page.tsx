@@ -2,9 +2,8 @@ import { ViewSelector } from "../components/view-selector";
 import { useReadResource } from "../settings/use-read-resource";
 import { useUnsavedChanges } from "../settings/use-unsaved-changes";
 import { SettingsFeedback } from "../settings/settings-feedback";
-import { runSettingsMutation, settingsMutationMessage } from "../settings/settings-mutation";
+import { useSettingsMutation } from "../settings/settings-mutation";
 import { SettingsRequestError, settingsError } from "../settings/settings-request";
-import { useSettingsLifetime } from "../settings/use-settings-lifetime";
 import { PermissionMatrix } from "../settings/permission-matrix";
 import { ConfirmDialog, type Confirmation } from "../settings/confirm-dialog";
 import { authClient } from "../auth/auth-client";
@@ -25,16 +24,12 @@ export default function MembershipManagementPage() {
   return <MembershipManagement key={`${session.data?.user.id ?? "guest"}:${choirId}`} choirId={choirId} userId={session.data?.user.id ?? "guest"} />;
 }
 function MembershipManagement({ choirId, userId }: { choirId: string; userId: string }) {
-  const lifetime = useSettingsLifetime();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("active");
   const [view, setView] = useState<"member" | "permission">("member");
   const [permission, setPermission] = useState("uploadFiles");
   const [editingMember, setEditingMember] = useState("");
-  const [needsRefresh, setNeedsRefresh] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, { operations: PermissionSet; management: PermissionSet }>>({});
-  const [message, setMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const load = useCallback(async (signal: AbortSignal) => {
     const response = await diagnosticFetch(`/api/choirs/${choirId}/memberships`, { signal });
@@ -48,27 +43,19 @@ function MembershipManagement({ choirId, userId }: { choirId: string; userId: st
   const state = resource.data?.next ?? null;
   const layers = resource.data?.layers ?? [];
   const loading = resource.request === "pending";
-  const reload = async () => { await resource.refresh(); setNeedsRefresh(false); setMessage(null); };
-  const mutate = async (path: string, body: unknown, method = "POST", draftId?: string) => {
-    if (busy || !resource.canMutate || needsRefresh) return false;
-    const generation = lifetime.current;
-    setBusy(true); setMessage(null);
-    const result = await runSettingsMutation(
+  const mutation = useSettingsMutation({ enabled: resource.canMutate, refresh: resource.refresh, onRevoked: resource.clear });
+  const { pending: busy, needsRefresh, message, refresh: reload } = mutation;
+  const mutate = async (path: string, body: unknown, method = "POST", draftId?: string) =>
+    await mutation.submit(
       () => diagnosticFetch(`/api/choirs/${choirId}/${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-      async () => { if (generation === lifetime.current) await reload(); },
-    );
-    if (generation !== lifetime.current) return false;
-    setMessage(result.kind === "saved" ? null : settingsMutationMessage(result));
-    if (draftId && (result.kind === "saved" || result.kind === "saved-refresh-failed")) setDrafts(current => {
-      const next = { ...current }; delete next[draftId]; return next;
-    });
-    if (result.kind === "revoked") resource.clear();
-    if (["unconfirmed", "revoked", "saved-refresh-failed"].includes(result.kind) || (result.kind === "failed" && result.error instanceof SettingsRequestError && result.error.status === 409)) setNeedsRefresh(true);
-    setBusy(false);
-    return result.kind === "saved";
-  };
+      { confirmed: () => {
+        if (draftId) setDrafts(current => {
+          const next = { ...current }; delete next[draftId]; return next;
+        });
+      } },
+    ) === true;
   const dirtyMembers = state?.memberships.filter(member => drafts[member.id] && !sameMemberPermissions(drafts[member.id], member)) ?? [];
-  const exitDialog = useUnsavedChanges({ subject: "成员权限", dirty: dirtyMembers.length > 0,
+  const exitDialog = useUnsavedChanges({ subject: "成员权限", dirty: dirtyMembers.length > 0, saveState: mutation,
     discard: () => setDrafts({}),
     save: async () => {
       for (const member of dirtyMembers) {
@@ -90,7 +77,7 @@ function MembershipManagement({ choirId, userId }: { choirId: string; userId: st
       <PermissionPeople title="可以授权" members={state.memberships.filter(member => member.status === "active" && (member.isOwner || hasPermission(member.management, permission)))} />
       {state.capabilities.isOwner || hasPermission(state.capabilities.management, permission) ? <details className="permission-edit-entry"><summary>调整此项权限</summary><label>选择成员<select value={editingMember} onChange={event => setEditingMember(event.target.value)}><option value="">选择要调整的成员</option>{state.memberships.filter(member => member.status === "active" && (state.capabilities.isOwner || !member.isOwner && !isDelegated(member.management) && member.id !== state.actorId)).map(member => <option key={member.id} value={member.id}>{member.displayName}</option>)}</select></label><p className="settings-copy">受托人只能调整普通成员，不能为自己或其他受托人授权。</p></details> : <p className="settings-copy permission-note">这项权限不在你的授权管理范围内。需要调整时，请联系上方可以授权的成员。</p>}
     </>}
-    {state?.memberships.filter(member => view === "member" ? member.status === status && member.displayName.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) : member.id === editingMember).map(member => <MemberEditor focus={view === "permission" ? permission : undefined} key={`${member.id}:${member.revision}:${state.capabilities.isOwner}`} member={member} state={state} layers={layers} busy={busy || !resource.canMutate || needsRefresh} draft={drafts[member.id]} cancel={() => setDrafts(current => { const next = { ...current }; delete next[member.id]; return next; })} onDraft={draft => setDrafts(current => ({ ...current, [member.id]: draft }))}
+    {state?.memberships.filter(member => view === "member" ? member.status === status && member.displayName.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) : member.id === editingMember).map(member => <MemberEditor focus={view === "permission" ? permission : undefined} key={`${member.id}:${member.revision}:${state.capabilities.isOwner}`} member={member} state={state} layers={layers} busy={mutation.blocked} draft={drafts[member.id]} cancel={() => setDrafts(current => { const next = { ...current }; delete next[member.id]; return next; })} onDraft={draft => setDrafts(current => ({ ...current, [member.id]: draft }))}
       save={(operations, management) => void mutate(`memberships/${member.id}/permissions`, { expectedRevision: member.revision, operations, management }, "PUT", member.id)}
       change={action => setConfirmation({ title: action === "restore" ? "恢复成员关系" : "移除成员", action: action === "restore" ? "确认恢复" : "确认移除", destructive: action === "remove", message: action === "restore" ? "恢复成员关系和保留期内的个人层，不恢复旧权限、管理范围或分享。" : "立即撤销成员权限；断网设备已下载的内容无法即时撤回。", onConfirm: async () => { await mutate(`memberships/${member.id}`, { action, expectedRevision: member.revision }); } })}
       transfer={() => {
@@ -99,7 +86,7 @@ function MembershipManagement({ choirId, userId }: { choirId: string; userId: st
       }} />)}
     {state?.capabilities.isOwner && <AuditLog choirId={choirId!} revision={state.memberships.map(m => m.revision).join(":")} />}
     <SettingsFeedback loading={resource.loading} loadError={resource.error ? settingsError(resource.error, "成员列表更新失败，已有内容已保留。") : null} message={message} retry={() => void reload().catch(() => undefined)} />
-    {(!state || needsRefresh) && <Button className="secondary-button" isDisabled={busy || loading} onPress={() => void reload().catch(() => { setMessage("成员列表加载失败，请重试。"); })}>重新读取成员列表</Button>}
+    {(!state || needsRefresh) && <Button className="secondary-button" isDisabled={busy || loading} onPress={() => void reload().catch(() => undefined)}>重新读取成员列表</Button>}
     <ConfirmDialog confirmation={confirmation} busy={busy} onClose={() => setConfirmation(null)} />
   </main></div>;
 }
