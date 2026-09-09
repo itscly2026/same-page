@@ -4,7 +4,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useId, useRef, useState } from "react";
 import { Button,  Heading, Popover, Tooltip, TooltipTrigger } from "react-aria-components";
 import { Dialog } from "../navigation/overlays";
-import { CircleAlert, Download, HardDriveDownload, LoaderCircle, RefreshCw, HardDrive, Check } from "lucide-react";
+import { CircleAlert, HardDriveDownload, LoaderCircle, RefreshCw, HardDrive, Check } from "lucide-react";
 import type { ScoreSummary } from "../../shared/scores";
 import { ACTIVE_LOCAL_OWNER_KEY, guestOwnerSystemKey, localDatabase } from "../platform/local-database";
 import { authenticatedLocalOwnerKey, createLocalWorkspace, resolveLocalWorkspace, type LocalWorkspaceOwnerKey } from "../platform/local-workspace";
@@ -49,8 +49,8 @@ export function OfflineScoreControl({ score, authenticatedUserId, authenticatedS
   const needsDownload = !record || invalid || stale || failed;
   const state = downloading ? "downloading" : failed || invalid || readFailed ? "error" : stale ? "stale" : record ? "ready" : "missing";
   const description = offlinePreparationDescription(attempt, inspected ? { record, invalid: Boolean(invalid), readFailed } : null, score.currentVersion.id);
-  const actionLabel = failed ? "重试下载" : stale ? "下载新版离线副本" : "下载离线副本";
-  const Icon = state === "downloading" ? LoaderCircle : state === "error" ? CircleAlert : state === "stale" ? RefreshCw : state === "ready" ? HardDrive : Download;
+  const actionLabel = failed ? "重试保存" : stale ? "更新离线副本" : "保存供离线使用";
+  const Icon = state === "downloading" ? LoaderCircle : state === "error" ? CircleAlert : state === "stale" ? RefreshCw : state === "ready" ? HardDrive : HardDrive;
 
   return <div className="offline-score-control" data-state={state}>
     <TooltipTrigger delay={400}>
@@ -71,14 +71,13 @@ export function OfflineScoreControl({ score, authenticatedUserId, authenticatedS
       </Button>
       <Tooltip className="offline-score-tooltip">{description}</Tooltip>
     </TooltipTrigger>
-    {!detailsOpen && <span className="offline-score-label" role="status">{!inspected ? "检查中" : { downloading: "正在下载", error: readFailed ? "读取失败" : invalid ? "副本不可用" : attempt.phase === "failed" && attempt.reason === "annotations" ? "笔记未就绪" : "准备失败", stale: "需更新", ready: "可离线", missing: "待下载" }[state]}</span>}
     <Popover triggerRef={triggerRef} isOpen={detailsOpen} onOpenChange={setDetailsOpen} placement="bottom end" className="offline-score-popover">
       <Dialog id={detailsId} className="offline-score-details">
         <Heading slot="title"><HardDriveDownload aria-hidden="true" size={18} />离线副本</Heading>
         <p role="status">{description}</p>
         <p>保存在这台设备上，供断网时打开。</p>
         {readFailed && <Button className="secondary-button" onPress={() => setInspectionAttempt(value => value + 1)}>重试校验</Button>}
-        {!readFailed && needsDownload && <Button className="secondary-button" isDisabled={disabled || !workspace || explicitDownload} onPress={() => void prepare()}>{downloading ? explicitDownload ? "正在下载…" : "继续下载（切换页面不中断）" : actionLabel}</Button>}
+        {!readFailed && needsDownload && <Button className="secondary-button" isDisabled={disabled || !workspace || explicitDownload} onPress={() => void prepare()}>{downloading ? explicitDownload ? "正在准备…" : "继续保存（切换页面不中断）" : actionLabel}</Button>}
         <Button className="text-button" onPress={() => setDetailsOpen(false)}>关闭</Button>
       </Dialog>
     </Popover>

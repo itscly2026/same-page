@@ -65,7 +65,7 @@ function SharedLayerManagement({ choirId, userId, authorized, accessError, retry
     if (busy.current || loading) return;
     const lifetime = generation.current;
     const workspace = workspaceRef.current;
-    busy.current = true; setPending(true); setFeedback({ message: "正在保存…" });
+    busy.current = true; setPending(true); setFeedback(null);
     const result = await runSettingsMutation(
       () => diagnosticFetch(`/api/choirs/${choirId}/shared-layers${path}`, {
         method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
@@ -80,7 +80,7 @@ function SharedLayerManagement({ choirId, userId, authorized, accessError, retry
       },
     );
     if (lifetime !== generation.current) return;
-    setFeedback({ message: settingsMutationMessage(result, message), failed: result.kind !== "saved", refreshFailed: result.kind === "saved-refresh-failed" });
+    setFeedback(result.kind === "saved" ? null : { message: settingsMutationMessage(result, message), failed: true, refreshFailed: result.kind === "saved-refresh-failed" });
     if ((result.kind === "saved" || result.kind === "saved-refresh-failed") && method === "POST") setNewName("");
     setDeleting(null);
     if (result.kind === "revoked") resource.clear();

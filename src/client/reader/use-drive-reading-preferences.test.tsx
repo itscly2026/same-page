@@ -34,7 +34,8 @@ it("keeps choices made during a read after PUT succeeds and after offline reopen
   act(() => { refreshing = view.result.current.refresh(); });
   await waitFor(() => expect(release).toBeTypeOf("function"));
   await act(() => view.result.current.save({ kind: "drive", id: "S" }, { subscribed: true, colorOverride: "#123456" }));
-  await waitFor(() => expect(view.result.current.feedback({ kind: "drive", id: "S" })?.message).toBe("已同步。"));
+  await waitFor(async () => expect((await localDatabase.readingPreferences.toArray()).some(row => !row.pending && !row.observed)).toBe(true));
+  expect(view.result.current.feedback({ kind: "drive", id: "S" })).toBeNull();
   await act(async () => { release(Response.json(defaults())); await refreshing; });
   expect(view.result.current.layers[0]).toMatchObject({ subscribed: true, displayColor: "#123456" });
   view.unmount();
@@ -54,7 +55,8 @@ it("accepts fresh remote colors without resending an observed color on the next 
   const view = renderHook(() => useDriveReadingPreferences(workspace, true));
   await waitFor(() => expect(view.result.current.authority).toBe("confirmed"));
   await act(() => view.result.current.save({ kind: "drive", id: "S" }, { colorOverride: "#ff0000" }));
-  await waitFor(() => expect(view.result.current.feedback({ kind: "drive", id: "S" })?.message).toBe("已同步。"));
+  await waitFor(async () => expect((await localDatabase.readingPreferences.toArray()).some(row => !row.pending && !row.observed)).toBe(true));
+  expect(view.result.current.feedback({ kind: "drive", id: "S" })).toBeNull();
   serverDefaults = defaults("#0000ff");
   await act(() => view.result.current.refresh());
   await waitFor(() => expect(view.result.current.layers[0].displayColor).toBe("#0000ff"));

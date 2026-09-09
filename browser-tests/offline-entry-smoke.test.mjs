@@ -36,7 +36,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
             await page.getByRole("searchbox", { name: "搜索「本地链路云盘」中的乐谱", exact: true }).waitFor();
             await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
             await page.getByRole("button", { name: /^离线副本：/ }).click();
-            await page.getByRole("button", { name: "下载离线副本", exact: true }).click();
+            await page.getByRole("button", { name: "保存供离线使用", exact: true }).click();
             await page.getByRole("status").filter({ hasText: /^可离线使用$/ }).waitFor();
             await page.getByRole("button", { name: "关闭", exact: true }).click();
             return page;

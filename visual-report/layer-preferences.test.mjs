@@ -180,7 +180,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByText(/恢复截止：/).waitFor();
     await geometry(".settings-layer-link button", "deleted-layers", managementSizes);
     await page.getByRole("button", { name: "恢复", exact: true }).click();
-    await page.getByText("原共享层已恢复，原有启用或停用状态保留。", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "恢复", exact: true }).waitFor({ state: "hidden" });
     await page.locator(".view-selector-option").filter({ hasText: "当前共享层" }).click();
     await page.getByRole("link", { name: /Ensemble.*已授权/ }).click();
     await page.getByRole("heading", { name: "Ensemble" }).waitFor();

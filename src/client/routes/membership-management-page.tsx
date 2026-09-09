@@ -58,7 +58,7 @@ function MembershipManagement({ choirId, userId }: { choirId: string; userId: st
       async () => { if (generation === lifetime.current) await reload(); },
     );
     if (generation !== lifetime.current) return false;
-    setMessage(settingsMutationMessage(result));
+    setMessage(result.kind === "saved" ? null : settingsMutationMessage(result));
     if (draftId && (result.kind === "saved" || result.kind === "saved-refresh-failed")) setDrafts(current => {
       const next = { ...current }; delete next[draftId]; return next;
     });

@@ -81,7 +81,7 @@ it("retains navigation metadata across a cold start without claiming cloud files
   open("/choirs/drive");
   await screen.findByText("cloud");
   expect(screen.queryByRole("link", { name: /^cloud$/ })).not.toBeInTheDocument();
-  expect(await screen.findByText("需联网下载")).toBeInTheDocument();
+  expect(await screen.findByText("需联网打开")).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: /^a$/ })).not.toBeInTheDocument();
   expect(await localDatabase.offlineScores.get("a")).toBeDefined();
 });

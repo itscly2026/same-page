@@ -116,13 +116,13 @@ test("reader export uses reading subscriptions even when opened from editing", a
   await page.getByRole("button", { name: "编辑", exact: true }).click();
   await page.getByRole("button", { name: "完成编辑", exact: true }).click();
   await page.getByRole("button", { name: "更多", exact: true }).click();
-  await page.getByRole("button", { name: "导出 PDF", exact: true }).click();
+  await page.getByRole("dialog", { name: "更多阅读选项" }).getByRole("button", { name: "导出 PDF", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "导出 PDF" }); await dialog.waitFor();
   assert.equal(await dialog.getByRole("checkbox", { name: "Ensemble", exact: true }).isChecked(), true);
   assert.equal(await dialog.getByRole("checkbox", { name: "Bass", exact: true }).isChecked(), false);
   assert.equal(await dialog.getByRole("checkbox", { name: "我的笔记", exact: true }).isChecked(), true);
-  await dialog.getByRole("button", { name: "取消全部笔记" }).click();
-  assert.equal(await dialog.locator("input:checked").count(), 0);
+  for (const checkbox of await dialog.getByRole("checkbox").all()) await checkbox.uncheck();
+  assert.equal(await dialog.locator("input[type=checkbox]:checked").count(), 0);
   assert.equal(preferenceWrites.length, 0, "export selection must not change reading subscriptions");
   await dialog.getByRole("checkbox", { name: "Ensemble", exact: true }).check();
   await dialog.getByRole("checkbox", { name: "我的笔记", exact: true }).check();

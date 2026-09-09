@@ -45,9 +45,12 @@ export function useReadingPreferences(workspace: LocalWorkspace, signedIn: boole
     const key = preferenceKey(workspace, target);
     const intent = intents.find(row => row.key === key);
     const row = savedRows.find(row => row.key === key);
-    return intent && intent.localState !== "saved" ? { message: intent.localState === "failed" ? "尚未保存到本机，请重试。" : "正在保存到本机…", retry: intent.localState === "failed" ? () => void save(target, { subscribed: intent.subscribed, colorOverride: intent.colorOverride }) : undefined }
-      : row ? { message: row.error ?? (row.pending ? "已保存到本机，等待同步。" : signedIn ? "已同步。" : "已保存到本机。"),
-        retry: row.error ? () => { if (signedIn) void captureLocalWorkspaceSession(workspace).then(current => flushReadingPreferences(current, undefined, lifetime.current?.signal, key)).catch(() => undefined); } : undefined } : null;
+    if (intent && intent.localState !== "saved") return intent.localState === "failed"
+      ? { message: "尚未保存到本机，请重试。", retry: () => void save(target, { subscribed: intent.subscribed, colorOverride: intent.colorOverride }) }
+      : null;
+    return row?.error ? { message: row.error, retry: () => {
+      if (signedIn) void captureLocalWorkspaceSession(workspace).then(current => flushReadingPreferences(current, undefined, lifetime.current?.signal, key)).catch(() => undefined);
+    } } : null;
   };
   return { save, feedback,
     projectDriveLayers: (layers: DriveLayerPreferenceSummary[]) => projectDriveReadingPreferences(layers, rows),

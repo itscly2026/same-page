@@ -16,7 +16,7 @@ import "../reader/reader-ux.css";
 import { useReaderSession } from "../reader/use-reader-session";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
-  ArrowLeft, Download, Ellipsis, Layers, Maximize2, Minus, Pencil, Plus, BookOpen,
+  ArrowLeft, FileUp, HardDrive, Ellipsis, Layers, Maximize2, Minus, Pencil, Plus, BookOpen,
   RefreshCw, Rows3, Check, X,
 } from "lucide-react";
 import {
@@ -28,7 +28,7 @@ import {
   Suspense,
 } from "react";
 import {
-  Button,  Modal, ModalOverlay, Popover,
+  Button, Tooltip, TooltipTrigger, Modal, ModalOverlay, Popover,
 } from "react-aria-components";
 import { Dialog } from "../navigation/overlays";
 import { Link, useParams } from "react-router-dom";
@@ -472,6 +472,7 @@ function ReaderPageContent() {
         }}
       />
       <h1 className="visually-hidden">{scoreDisplayName(score.fileName)}</h1>
+      {editing && annotationInteraction !== "composing-text" && persistence === "failed" && <aside className="reader-alert" role="alert">本机保存失败</aside>}
       {cloudState === "trashed" ? (
         <aside className="reader-alert reader-alert--trash" role="alert">
           乐谱已移入回收站。本机离线副本和未同步笔记仍保留，恢复后可继续同步。
@@ -484,9 +485,10 @@ function ReaderPageContent() {
       {reader.snapshot.modeMessage ? <p className="reader-display-notice" role="status">{reader.snapshot.modeMessage}{reader.snapshot.mode === "images" && <Button className="text-button" onPress={() => navigation.afterEditing(reader.retry)}>重试 PDF 阅读</Button>}</p> : null}
       {chromeVisible ? (
       <header className="reader-chrome" aria-label="阅读器控制">
-          {!editing && <Button aria-label="返回云盘" className="reader-chrome__back reader-icon-button" onPress={() => { startLoadingJourney("exit-score", "warm"); navigation.back(`/choirs/${choirId}`); }}>
+          {!editing && <div className="reader-chrome__leading"><Button aria-label="返回云盘" className="reader-chrome__back reader-icon-button" onPress={() => { startLoadingJourney("exit-score", "warm"); navigation.back(`/choirs/${choirId}`); }}>
             <ArrowLeft aria-hidden="true" size={21} />
-          </Button>}
+          </Button>
+          <TooltipTrigger><Button aria-label="导出 PDF" className="reader-icon-button reader-chrome__export" onPress={() => setExportOpen(true)}><FileUp aria-hidden="true" size={21} /></Button><Tooltip className="offline-score-tooltip">导出 PDF</Tooltip></TooltipTrigger></div>}
           <strong className="reader-chrome__title">{readerTitle}</strong>
           <div className="reader-chrome__actions-stack">
             <div className="reader-chrome__actions">
@@ -595,8 +597,8 @@ function ReaderPageContent() {
                 isDisabled={(preparation.phase === "preparing" && preparation.intent === "explicit") || cloudState === "trashed"}
                 onPress={() => void downloadOffline()}
               >
-                <Download aria-hidden="true" size={18} />
-                {downloading ? preparation.phase === "preparing" && preparation.intent === "automatic" ? "继续下载（切换页面不中断）" : "正在下载并校验…" : preparation.phase === "failed" ? "重试下载离线副本" : hasNewOfflineVersion ? "下载新版离线副本" : "下载离线副本"}
+                <HardDrive aria-hidden="true" size={18} />
+                {downloading ? preparation.phase === "preparing" && preparation.intent === "automatic" ? "继续保存（切换页面不中断）" : "正在准备并校验…" : preparation.phase === "failed" ? "重试保存离线副本" : hasNewOfflineVersion ? "更新离线副本" : "保存供离线使用"}
               </Button>
               )}
               {downloadMessage && preparation.phase === "idle" && <p className="reader-more-menu__status" role="status">{downloadMessage}</p>}
