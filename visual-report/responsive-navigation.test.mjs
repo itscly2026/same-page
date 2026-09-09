@@ -40,7 +40,7 @@ for (const [engineName, engine, libraryIdentity, footerIdentity] of [
       const search = await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).boundingBox();
       const sort = await page.getByRole("combobox", { name: "乐谱排序" }).boundingBox();
       const menu = await page.getByRole("button", { name: "打开云盘菜单" }).boundingBox();
-      const avatar = await page.getByRole("button", { name: "我的" }).boundingBox();
+      const avatar = await page.getByRole("button", { name: "我在此云盘" }).boundingBox();
       assert.ok(menu.x + menu.width <= search.x && search.x + search.width <= avatar.x, `${width}: search sits between navigation and avatar`);
       assert.ok(Math.abs(search.y + search.height / 2 - avatar.y - avatar.height / 2) < 2, `${width}: header controls share a row`);
       assert.ok(sort.x >= toolbar.x && sort.x + sort.width <= toolbar.x + toolbar.width, "sort remains inside the toolbar");
@@ -131,3 +131,36 @@ async function capture(page, name) {
   await mkdir(process.env.LAYOUT_CAPTURE_DIR, { recursive: true });
   await page.screenshot({ path: path.join(process.env.LAYOUT_CAPTURE_DIR, `${name}.png`) });
 }
+
+test("phone home keeps a full-width primary entry when optional actions disappear", async t => {
+  const browser = await chromium.launch();
+  t.after(() => browser.close());
+  for (const [preview, installed] of [[true, false], [false, false], [true, true], [false, true]]) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
+    try {
+      await context.addInitScript(installed => { Object.defineProperty(navigator, "standalone", { value: installed }); }, installed);
+      await context.route("**/api/**", route => {
+        const pathname = new URL(route.request().url()).pathname;
+        if (!preview && pathname === "/api/guest/preview-choir") return route.fulfill({ json: { choir: null } });
+        return route.fulfill(resolveFixtureRequest({ pathname, method: route.request().method(), identity: "guest", cookie: "" }));
+      });
+      const page = await context.newPage();
+      await page.goto(`${origin}/#home`);
+      await page.getByRole("button", { name: "进入云盘", exact: true }).waitFor();
+      if (preview) await page.getByRole("link", { name: "先看示例", exact: true }).waitFor();
+      for (const width of [320, 360, 390, 430]) {
+        await page.setViewportSize({ width, height: 844 });
+        const actions = await page.locator(".hero-actions").boundingBox();
+        const primary = await page.locator(".hero-cta").boundingBox();
+        assert.ok(Math.abs(primary.width - actions.width) < 2);
+        const secondary = page.locator(".hero-actions .install-button, .hero-preview-link");
+        assert.equal(await secondary.count(), Number(preview) + Number(!installed));
+        for (const item of await secondary.all()) {
+          const box = await item.boundingBox();
+          assert.ok(box.y >= primary.y + primary.height && box.height >= 44);
+        }
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      }
+    } finally { await context.close(); }
+  }
+});

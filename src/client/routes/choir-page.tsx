@@ -64,6 +64,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
   const { library, snapshot } = useDriveLibrary(cacheOwner, choirId, Boolean(identity.authenticatedUserId) && online, !identity.restoring && (Boolean(userId) || identity.onlineState !== "checking"));
   const { access, view: { search, sort }, scores: visibleScores, refreshMessage: searchMessage, joining: busy } = snapshot;
   const [openAdmissionDisplayName, setOpenAdmissionDisplayName] = useState("");
+  const [displayName, setDisplayName] = useState<string>();
   const [settingsField, setSettingsField] = useState<"display-name" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -159,7 +160,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
 
   return (
     <div className="app-page drive-page">
-      <DriveHeader choirId={choirId} choirName={choir.name} userId={userId} localOnly={Boolean(access.local)} onEditDisplayName={(access.isMember || access.rememberedMembership) ? () => setSettingsField("display-name") : undefined} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
+      <DriveHeader displayName={displayName} choirId={choirId} choirName={choir.name} userId={userId} localOnly={Boolean(access.local)} onEditDisplayName={(access.isMember || access.rememberedMembership) ? () => setSettingsField("display-name") : undefined} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
         management={access.isMember || access.rememberedMembership || managementVisible ? () => <section className="drive-drawer-management">
           <h3>云盘管理</h3>
           <nav aria-label="云盘管理菜单">{[
@@ -255,7 +256,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
         </section>
       </main>
 
-      {settingsField && !access.local && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} userId={userId!} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async () => { await refreshAfterMutation(); setMessage("已保存。"); }} />}
+      {settingsField && !access.local && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} userId={userId!} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async value => { setDisplayName(value); await refreshAfterMutation(); setMessage("已保存。"); }} />}
       {visible("uploadFiles") && <UploadFab disabled={Boolean(access.local)} onPress={() => setUploadOpen(true)} />}
 
 

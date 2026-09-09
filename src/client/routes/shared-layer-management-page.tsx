@@ -1,3 +1,4 @@
+import { ViewSelector } from "../components/view-selector";
 import { useReadResource } from "../settings/use-read-resource";
 import { driveManagementSchema } from "../../shared/drive-management";
 import { runSettingsMutation, settingsMutationMessage } from "../settings/settings-mutation";
@@ -96,10 +97,7 @@ function SharedLayerManagement({ choirId, userId, authorized, accessError, retry
       </header>
       <SettingsFeedback loading={resource.loading} loadError={loadError} message={null} retry={retryLoad} />
       {feedback && <p role={feedback.failed ? "alert" : "status"}>{feedback.message}</p>}
-      <div className="layer-order-actions">
-        <button className="secondary-button" disabled={pending || view === "current"} onClick={() => { setView("current"); }}>当前共享层</button>
-        <button className="secondary-button" disabled={pending || view === "deleted"} onClick={() => { setView("deleted"); }}>已删除层</button>
-      </div>
+      <ViewSelector<"current" | "deleted"> label="共享层视图" value={view} pending={pending} onChange={setView} options={[{ id: "current", label: "当前共享层" }, { id: "deleted", label: "已删除层" }]} />
       {view === "deleted" && <p className="settings-copy">删除影响当前云盘全部乐谱。30 天内恢复原层及其笔记、授权和阅读偏好，之后永久清理。恢复不会恢复已终止的成员关系。</p>}
       {resource.data && <>
         <section className="settings-card" aria-label="共享层管理列表" aria-busy={loading || pending}>

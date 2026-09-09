@@ -300,7 +300,6 @@ function HomeContent({ identity, startup, linkInvite, finishInvitation }: { iden
               >
                 进入云盘
               </Button>}
-              <InstallButton />
               {previewChoir ? (
                 <Link
                   className="hero-preview-link"
@@ -310,6 +309,7 @@ function HomeContent({ identity, startup, linkInvite, finishInvitation }: { iden
                   先看示例
                 </Link>
               ) : null}
+              <InstallButton />
             </div>
           </div>
           <a className="marketing-more-features" href="#features">

@@ -37,7 +37,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await scenario("history-and-destinations", async page => {
       await page.goto("data:text/html,<h1>Previous document</h1>");
       await page.goto(`${app.origin}/choirs/visual-choir`);
-      await page.getByRole("button", { name: "我的" }).waitFor();
+      await page.getByRole("button", { name: "我在此云盘" }).waitFor();
       await page.getByRole("button", { name: "打开云盘菜单" }).click();
       await page.getByRole("dialog", { name: "云盘菜单" }).waitFor();
       await page.evaluate(() => history.back());
@@ -46,7 +46,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
       await page.evaluate(() => history.back());
       await page.getByRole("heading", { name: "Previous document" }).waitFor();
       await page.goto(`${app.origin}/choirs/visual-choir`);
-      await page.getByRole("button", { name: "我的" }).waitFor();
+      await page.getByRole("button", { name: "我在此云盘" }).waitFor();
       await page.getByRole("button", { name: "打开云盘菜单" }).click();
       await page.getByRole("dialog", { name: "云盘菜单" }).waitFor();
       await page.getByRole("link", { name: "云盘列表", exact: true }).click();
@@ -60,6 +60,20 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
       assert.equal(new URL(page.url()).pathname, "/drives");
       await page.getByRole("link", { name: /示例云盘/ }).click();
       await page.getByRole("dialog").waitFor({ state: "hidden" });
+    });
+    await scenario("personal-menu-scope", async page => {
+      await page.goto(`${app.origin}/choirs/visual-choir`);
+      const trigger = page.getByRole("button", { name: "我在此云盘", exact: true });
+      await trigger.click();
+      await expect(page.getByRole("menuitem", { name: "阅读偏好", exact: true })).toBeVisible();
+      await expect(page.getByRole("menuitem", { name: "本机存储", exact: true })).toBeVisible();
+      for (const name of ["账户", "帮助", "关于合谱", "退出登录"]) await expect(page.getByRole("menuitem", { name, exact: true })).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(trigger).toBeFocused();
+      await page.getByRole("button", { name: "打开云盘菜单" }).click();
+      for (const name of ["阅读偏好", "本机存储", "帮助"]) await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
+      await page.getByRole("button", { name: "关闭云盘菜单", exact: true }).click();
+      await expect(page.getByRole("button", { name: "打开云盘菜单" })).toBeFocused();
     });
     await scenario("drawer-keyboard-focus", async page => {
       await page.goto(`${app.origin}/choirs/visual-choir`);

@@ -161,7 +161,6 @@
 .personal-layer-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .25rem; margin-top: .5rem; }
 .reader-layer-panel .personal-layer-footer button { width: auto; min-height: 44px; border: 0; background: transparent; padding: .5rem .35rem; box-shadow: none; }
 .reader-layer-panel .personal-layer-create { color: #444; }
-.reader-layer-panel .personal-layer-deleted { margin-left: auto; color: #666; font-size: .8rem; text-decoration: underline; text-decoration-color: #bbb; text-underline-offset: 3px; }
 .reader-shell .annotation-tool-button { border-radius: 0.65rem; }
 .reader-shell .annotation-tool-divider { margin-left: 0.25rem; }
 @media (max-width: 640px) {
@@ -182,3 +181,16 @@
 .reader-layer-preferences a { display: flex; align-items: center; min-height: 44px; color: inherit; font-size: .85rem; text-underline-offset: 3px; }
 .reader-layer-preferences a:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 .reader-layer-panel > .reader-layer-help { font-size: .85rem; }
+
+.personal-layer-share { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 10px; border: 1px solid #9daead; border-radius: 24px; flex-shrink: 0; cursor: pointer; font-size: 13px; }
+.personal-layer-share-track { width: 26px; height: 16px; border-radius: 10px; background: #849491; padding: 2px; box-sizing: border-box; }
+.personal-layer-share-track::after { content: ""; display: block; width: 12px; height: 12px; background: white; border-radius: 50%; }
+.personal-layer-share[data-selected] { background: #e0f1e8; border-color: #236548; font-weight: 700; }
+.personal-layer-share[data-selected] .personal-layer-share-track { background: #236548; }
+.personal-layer-share[data-selected] .personal-layer-share-track::after { transform: translateX(10px); }
+.personal-layer-share[data-focus-visible] { outline: 3px solid #3157a4; outline-offset: 2px; }
+.personal-layer-share[data-disabled] { opacity: .55; cursor: default; }
+.personal-layer-management { padding: 12px; border: 1px solid #cbd8d9; border-radius: 12px; margin-top: 12px; }
+.layer-card__main .reader-layer-toggle { min-width: 0; flex: 1; }
+.layer-card__main strong { overflow-wrap: anywhere; }
+.personal-layer-more { min-width: 44px; min-height: 44px; }
