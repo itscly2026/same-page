@@ -1,6 +1,6 @@
 # 测试价值审查与清理 · 2026-09-09
 
-初始审查基线：`eeb1b5cd13d217de1040a694eb14c11f017269dd`（#227）；交付已接到 `9db12ed`（#228/#229），并补查其新增与修改测试。用户要求对相关测试逐项判断并彻底清理，目标是降低低价值门禁和误报，而非测试数量或覆盖率达标。本次不改变产品行为，不全局加超时、重试或 skip。
+初始审查基线：`eeb1b5cd13d217de1040a694eb14c11f017269dd`（#227）；交付已接到 `8aa7d4e`（#228/#229/#230），并补查其新增与修改测试。用户要求对相关测试逐项判断并彻底清理，目标是降低低价值门禁和误报，而非测试数量或覆盖率达标。本次不改变产品行为，不全局加超时、重试或 skip。
 
 ## 判断边界
 
@@ -12,7 +12,7 @@
 
 ## 审查方法和范围
 
-清点基线上所有 `*.test.ts/tsx/js/mjs`，核对用例目标、断言模式与运行配置。对删改项读取原测试、相应实现和替代覆盖；对保留项按其独立风险和执行层判断。以下逐文件结论是本基线的覆盖责任清单，不宣称每个保留用例均已做故障注入。另检查原生 renderer、迁移、PWA、加载和发布验证入口。#228/#229 在审查期间合并，其 3 个新增测试文件和既有测试变更已补查：持久化选择、跨标签串行、读取权限未确认时禁止修改、晚到刷新不覆盖草稿、权限表单恢复均保留。合并冲突保留新版“我在此云盘”入口及云盘列表返回路径；个人层开关行为继续由 reader-layer-panel 与真实 Worker 保护。
+清点基线上所有 `*.test.ts/tsx/js/mjs`，核对用例目标、断言模式与运行配置。对删改项读取原测试、相应实现和替代覆盖；对保留项按其独立风险和执行层判断。以下逐文件结论是本基线的覆盖责任清单，不宣称每个保留用例均已做故障注入。另检查原生 renderer、迁移、PWA、加载和发布验证入口。#228/#229/#230 在审查期间合并，其 4 个新增测试文件和既有测试变更已补查：持久化选择、跨标签串行、读取权限未确认时禁止修改、晚到刷新不覆盖草稿、权限表单恢复均保留。其中 #230 的真实认证监听器清理防止 jsdom 销毁后延迟异常，属于测试资源隔离而非重复测试认证库。合并冲突保留新版“我在此云盘”入口及云盘列表返回路径；个人层开关行为继续由 reader-layer-panel 与真实 Worker 保护。
 
 ## 删除后的风险去向
 
@@ -27,13 +27,15 @@
 | schema 三种合法输入、性能标签词汇快照、modulepreload 标签形状 | Worker preference 实际路由、完整加载脚本真实资源请求；保留领域默认值优先级、中位数报告、预加载取消行为 |
 | 加载脚本单次 return <=200ms 与 reopen <=cold | 保留粗粒度 15s 默认预算、测量身份和冷/重开记录；drive-library-lifecycle 挂住响应证明内容先返回，reader-document-cache 证明实际复用 |
 
+首页尺寸矩阵中 WebKit 继续使用移动触摸上下文，验证页面 viewport 遵守设备宽度；合并重复 iPad 启动不丢掉这层接缝。
+
 保留 #229 明确要求的手机首页主入口独占一行、可选入口隐藏后的触控与布局检查；这是本次产品交付的明确行为，不把它等同于无业务理由的装饰间距。
 
 未把所有使用 mock、时间或几何的测试一律删除。PDF canvas 交接、Pencil 激活、失权和超时都需要受控边界；检验这些应用行为和重复验证平台本身是两回事。
 
 ## 逐文件判断
 
-初始基线有 121 个自动收集测试文件，#228 新增 3 个，以下共 **124 个测试文件**（每个文件恰好一行）。参数矩阵和子测试不以声明行数冒充运行用例数量。
+初始基线有 121 个自动收集测试文件，#228/#230 新增 4 个，以下共 **125 个测试文件**（每个文件恰好一行）。参数矩阵和子测试不以声明行数冒充运行用例数量。
 
 | 文件 | 决定 | 理由与覆盖责任 |
 | --- | --- | --- |
@@ -68,6 +70,7 @@
 | [src/client/annotations/sync.test.ts](../../src/client/annotations/sync.test.ts) | 保留 | 真实本地 outbox 与传输的衔接、丢回执重放及删除顺序；与本地 reducer 测试的接缝不同 |
 | [src/client/annotations/use-annotation-editor.test.tsx](../../src/client/annotations/use-annotation-editor.test.tsx) | 保留 | React 生命周期刷新不会丢掉失败编辑或打开的编辑会话 |
 | [src/client/app.test.tsx](../../src/client/app.test.tsx) | 保留 | 真实路由组合、认证/邀请入口及组件接线；不机械删除所有与下层状态测试同名的场景 |
+| [src/client/auth/auth-client-cleanup.test.ts](../../src/client/auth/auth-client-cleanup.test.ts) | 保留 | #230 新增：真实 session 监听器在环境销毁前卸载，受控时钟检出延迟清理泄漏 |
 | [src/client/auth/drive-entry.test.ts](../../src/client/auth/drive-entry.test.ts) | 保留 | 访客、成员和公开体验准入意图，不因登录自动扩大成员关系 |
 | [src/client/auth/logout-local-data.test.ts](../../src/client/auth/logout-local-data.test.ts) | 保留 | 用户确认前后草稿清理、跨用户隔离与迟到身份响应 |
 | [src/client/auth/offline-entry.test.tsx](../../src/client/auth/offline-entry.test.tsx) | 保留 | 首次断网/会话失效时本机可达性，缓存不成为云端授权 |
@@ -178,4 +181,4 @@
 - 使用 Node 24 和临时安装的 renderer Python 依赖。初始 #227 基线上，renderer、真实两个构建的 PWA 更新、`npm run check` 全链路及加载测量通过：Node 77、客户端 486、Worker 108、visual 73、smoke 18 项；lint、typecheck、迁移、构建和 precache 通过。
 - 首次 `check:full` 在未修改的 offline-entry 首项等待本机文件链接时失败；该文件独跑 9/9、后续完整客户端 486/486 通过。失败时页面仍在加载，尚未证明根因；没有删除该测试或加大超时，不能把重跑通过称为已修复。
 - 原生滚动故障注入：临时给真实 `.continuous-reader` 设置 `touch-action: none !important`，精简后的触摸用例明确失败于 `native touch must move the displayed score`（0 未大于 0）。实验结束还出现独立的 macOS 进程清理 `kill EPERM`，不把这个退出错误冒充断言检出。生产 CSS 随后恢复，完整 visual 正向通过。
-- 接到 #228/#229 后，lint、typecheck 和受影响的菜单/权限/返回/首页/PDF 导出浏览器测试 26/26 通过。上述全量计数属于最初基线，最终合并组合由 PR CI 再验证。未做真实 iPad 手感验收，也不以删减行数宣称已降低 CI 故障率或生产延迟。
+- 接到 #228/#229 后，lint、typecheck 和受影响的菜单/权限/返回/首页/PDF 导出浏览器测试 26/26 通过。上述全量计数属于最初基线，移动触摸 viewport 补查 2/2 通过；最终包含 #230 的完整客户端用本机 2 workers 运行，58 文件 / 502 项通过，无未捕获异常；完整组合由 PR CI 再验证。未做真实 iPad 手感验收，也不以删减行数宣称已降低 CI 故障率或生产延迟。

@@ -31,13 +31,14 @@ for (const [engineName, engine] of [
     async (t) => {
       const browser = await engine.launch({ headless: true });
       t.after(() => browser.close());
-      const { context, page } = await openGuestPage(browser);
+      const { context, page } = await openGuestPage(browser, engineName === "webkit" ? { isMobile: true, hasTouch: true } : {});
       await page.goto(`${origin}/`, { waitUntil: "domcontentloaded" });
       await page.getByRole("region", { name: "产品特点" }).waitFor();
 
       for (const width of [320, 720, 721, 1024]) {
         await page.setViewportSize({ width, height: 1000 });
         const layout = await readHomepageLayout(page);
+        assert.equal(layout.viewportWidth, width, "the page viewport must respect the device width");
         assertPageFits(layout, `${engineName} ${width}px`);
       }
 
