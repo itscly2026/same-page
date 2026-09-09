@@ -107,6 +107,9 @@ vi.mock("@tanstack/react-virtual", () => ({
         end: index * virtualTestState.itemSize + virtualTestState.itemSize,
         size: virtualTestState.itemSize,
       })),
+    getVirtualItemForOffset: (offset: number) => ({
+      index: Math.max(0, Math.min(options.count - 1, Math.floor(offset / virtualTestState.itemSize))),
+    }),
     measureElement: vi.fn(),
     scrollToIndex: virtualTestState.scrollToIndex,
   }),
@@ -156,7 +159,7 @@ vi.mock("../reader/pdf-page", async () => {
           lease?.cancel();
         };
       }, [onRenderStart, pageNumber]);
-      useEffect(() => { leaseRef.current?.ready(); recoveryRef.current?.ready(pageNumber); }, [onRenderStart, pageNumber]);
+      useEffect(() => { leaseRef.current?.ready(); recoveryRef.current?.ready(pageNumber); }, [onRenderStart, pageNumber, recovery?.currentPage]);
       return <div aria-label={`渲染第 ${pageNumber} 页`} />;
     },
   };

@@ -29,8 +29,16 @@ export function PdfPageCanvas({
   const frontCanvas = useRef(0);
   const source = useRef({ document, pageNumber });
   const renderLease = useRef<PdfPageRenderLease | null>(null);
-  const [visibleCanvas, setVisibleCanvas] = useState<number | null>(null);
+  const [painted, setPainted] = useState<{ canvas: number; document: ScoreDocument; pageNumber: number } | null>(null);
+  const visibleCanvas = painted?.canvas ?? null;
   const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!error && className === "pdf-page-canvas" && painted?.document === document &&
+      painted.pageNumber === pageNumber && recovery?.currentPage === pageNumber) {
+      recoveryRef.current?.ready(pageNumber);
+    }
+  }, [painted, document, pageNumber, recovery?.currentPage, className, error]);
 
   useLayoutEffect(() => {
     const lease = onRenderStart?.(pageNumber) ?? null;
@@ -61,7 +69,7 @@ export function PdfPageCanvas({
       return;
     }
     if (sourceChanged) {
-      setVisibleCanvas(null);
+      setPainted(null);
     }
     let active = true;
     let cancelRender: (() => void) | undefined;
@@ -114,9 +122,8 @@ export function PdfPageCanvas({
       .then(() => {
         if (!active) return;
         frontCanvas.current = nextFront;
-        setVisibleCanvas(nextFront);
+        setPainted({ canvas: nextFront, document, pageNumber });
         setError(false);
-        if (className === "pdf-page-canvas") recoveryRef.current?.ready(pageNumber);
         lease?.ready();
         window.requestAnimationFrame(() => {
           completeLoadingJourney("open-score", "first-canvas-visible");

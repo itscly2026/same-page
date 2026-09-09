@@ -450,6 +450,7 @@ function ReaderPageContent() {
 
   return (
     <DisplayRecovery.Provider value={{
+      currentPage,
       ready: page => { if (page === currentPage) { setVisibleDisplay(document); setFailedDisplay(null); reader.confirmDisplay(document); } },
       failed: (page, reason) => {
         if (page !== currentPage) return;
