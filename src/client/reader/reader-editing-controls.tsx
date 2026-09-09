@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, Eraser, Highlighter, Square, Circle, Lock, Pencil, Redo2, Type, Undo2, X } from "lucide-react";
+import { MousePointer2, SlidersHorizontal, ChevronDown, Eraser, Highlighter, Square, Circle, Lock, Pencil, Redo2, Type, Undo2, X } from "lucide-react";
 import { Button,  DialogTrigger, Popover } from "react-aria-components";
 import { Dialog } from "../navigation/overlays";
 
@@ -9,6 +9,8 @@ import {
 import type { AnnotationTool } from "../annotations/annotation-overlay";
 import type { AnnotationEditor } from "../annotations/annotation-editor";
 import "./reader-ux.css";
+import { StyleFields } from "../annotations/style-fields";
+import { defaultToolStyle, type ToolStyle } from "../annotations/tool-style";
 
 export function ReaderEditingControls({
   isDisabled,
@@ -16,6 +18,8 @@ export function ReaderEditingControls({
   layers,
   tool,
   toolColor,
+  toolStyle = defaultToolStyle(tool),
+  onStyleChange = () => undefined,
   onColorChange,
   activeLayerId,
   onToolChange,
@@ -26,6 +30,8 @@ export function ReaderEditingControls({
   layers: AnnotationLayerSummary[];
   tool: AnnotationTool;
   toolColor: string;
+  toolStyle?: ToolStyle;
+  onStyleChange?(style: ToolStyle): void;
   onColorChange(color: string): void;
   activeLayerId: string | null;
   onToolChange(tool: AnnotationTool): void;
@@ -82,10 +88,10 @@ export function ReaderEditingControls({
       </DialogTrigger>
       <div className="annotation-control-group annotation-drawing-tools" aria-label="工具">
         <div className="segmented-control" aria-label="笔记工具">
-          {(["ink", "highlighter", "eraser", "text", "rectangle", "ellipse"] as const).map((entry) => (
+          {(["select", "ink", "highlighter", "eraser", "text", "rectangle", "ellipse"] as const).map((entry) => (
             <Button
               isDisabled={isDisabled || !selectedLayer?.canEdit}
-              aria-label={{ text: "文字", ink: "画笔", highlighter: "荧光笔", rectangle: "矩形", ellipse: "椭圆", eraser: "整条橡皮" }[entry]}
+              aria-label={{ select: "选择", text: "文字", ink: "画笔", highlighter: "荧光笔", rectangle: "矩形", ellipse: "椭圆", eraser: "整条橡皮" }[entry]}
               aria-pressed={tool === entry}
               className={`annotation-tool-button${entry === "text" || entry === "rectangle" ? " annotation-tool-divider" : ""}`}
               key={entry}
@@ -96,7 +102,8 @@ export function ReaderEditingControls({
           ))}
         </div>
       </div>
-      {selectedLayer?.kind === "personal" && tool !== "eraser" && <input type="color" aria-label="工具颜色" disabled={isDisabled} value={toolColor} onChange={event => onColorChange(event.target.value)} />}
+      {selectedLayer?.kind === "personal" && tool !== "eraser" && tool !== "select" && <input type="color" aria-label="工具颜色" disabled={isDisabled} value={toolColor} onChange={event => onColorChange(event.target.value)} />}
+      {tool !== "eraser" && tool !== "select" && <DialogTrigger><Button className="annotation-tool-button annotation-style-trigger" aria-label="下一笔样式" isDisabled={isDisabled || !selectedLayer?.canEdit}><SlidersHorizontal size={20} /></Button><Popover className="annotation-style-popover" placement="top" offset={12}><Dialog aria-label="下一笔样式"><h2>{tool === "text" ? "新文字样式" : "下一笔样式"}</h2><p>只影响新建笔记；修改已有笔记请用选择工具。</p><div style={{ color: selectedLayer?.kind === "shared" ? selectedLayer.displayColor : toolColor }}><StyleFields tool={tool} value={toolStyle} onChange={onStyleChange} /></div></Dialog></Popover></DialogTrigger>}
       <div className="annotation-control-group annotation-history-controls" aria-label="历史">
         <Button
           isDisabled={isDisabled || !selectedLayer?.canEdit}
@@ -183,6 +190,7 @@ function LayerPermissionContent({
 }
 
 function AnnotationToolIcon({ tool }: { tool: AnnotationTool }) {
+  if (tool === "select") return <MousePointer2 aria-hidden="true" size={20} />;
   if (tool === "text") return <Type aria-hidden="true" size={20} strokeWidth={2} />;
   if (tool === "ink") return <Pencil aria-hidden="true" size={20} strokeWidth={2} />;
   if (tool === "highlighter") return <Highlighter aria-hidden="true" size={20} />;

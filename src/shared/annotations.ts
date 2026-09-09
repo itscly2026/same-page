@@ -49,8 +49,10 @@ export const inkPointSchema = z.object({
 export const inkAnnotationPayloadSchema = annotationBaseSchema.extend({
   kind: z.literal("ink"),
   points: z.array(inkPointSchema).min(2).max(5_000),
-  strokeWidth: z.union([z.literal(0.003), z.literal(0.018)]),
-  opacity: z.union([z.literal(1), z.literal(0.3)]).optional(),
+  brush: z.enum(["pen", "highlighter"]),
+  pressureMode: z.enum(["uniform", "pressure"]),
+  strokeWidth: z.number().finite().min(0.001).max(0.06),
+  opacity: z.number().finite().min(0.05).max(1).optional(),
 });
 
 export const shapeAnnotationPayloadSchema = annotationBaseSchema.extend({
@@ -58,7 +60,7 @@ export const shapeAnnotationPayloadSchema = annotationBaseSchema.extend({
   shape: z.enum(["rectangle", "ellipse"]),
   x: normalizedCoordinateSchema, y: normalizedCoordinateSchema,
   width: normalizedCoordinateSchema, height: normalizedCoordinateSchema,
-  strokeWidth: z.literal(0.003),
+  strokeWidth: z.number().finite().min(0.001).max(0.06),
 });
 
 export const annotationPayloadSchema = z.discriminatedUnion("kind", [

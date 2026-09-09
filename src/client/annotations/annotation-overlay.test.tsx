@@ -68,6 +68,7 @@ const layers: AnnotationLayerSummary[] = [
 ];
 
 beforeEach(async () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   await localDatabase.open();
   await localDatabase.annotations.clear();
   await activateAuthenticatedLocalOwner("user-1");
@@ -83,9 +84,10 @@ describe("AnnotationOverlay", () => {
     fireEvent.pointerMove(overlay, { pointerId: 41, clientX: 70, clientY: 80 });
     fireEvent.pointerUp(overlay, { pointerId: 41, clientX: 70, clientY: 80 });
     await waitFor(async () => expect(await localDatabase.annotations.count()).toBe(1));
+    await act(async () => { await editor.prepareFinish(); });
     const note = (await localDatabase.annotations.toArray())[0]!;
     expect(note.payload).toMatchObject(tool === "highlighter"
-      ? { kind: "ink", color: "#facc15", opacity: 0.3, strokeWidth: 0.018, points: [{ x: .2, y: .3 }, { x: .2, y: .3 }, { x: .7, y: .8 }] }
+      ? { kind: "ink", brush: "highlighter", pressureMode: "uniform", color: "#facc15", opacity: 0.3, strokeWidth: 0.018, points: [{ x: .2, y: .3 }, { x: .2, y: .3 }, { x: .7, y: .8 }] }
       : { kind: "shape", shape: tool, color: "#dc2626", x: .2, y: .3, width: expect.closeTo(.5), height: expect.closeTo(.5) });
     await act(async () => { await editor.undo(activeLayerId); });
     expect(await localDatabase.annotations.count()).toBe(0);
@@ -93,7 +95,7 @@ describe("AnnotationOverlay", () => {
     expect((await localDatabase.annotations.toArray())[0]!.payload).toEqual(note.payload);
     const personal = { ...layers[0]!, kind: "personal" as const, sharedSlot: null };
     view.rerender(<AnnotationOverlay editor={editor} pageNumber={1} layers={[personal]} annotations={[note]} editing tool={tool} toolColor="#0000ff" activeLayerId={activeLayerId} />);
-    expect(overlay.querySelector(tool === "rectangle" ? "rect" : tool === "ellipse" ? "ellipse" : "polyline")).toHaveAttribute("stroke", tool === "highlighter" ? "#facc15" : "#dc2626");
+    expect(overlay.querySelector(tool === "rectangle" ? "rect" : tool === "ellipse" ? "ellipse" : "path[data-ink-stroke]")).toHaveAttribute(tool === "highlighter" ? "fill" : "stroke", tool === "highlighter" ? "#facc15" : "#dc2626");
   });
 
   it("stops new edits after layer deletion while saving an open composer to the original layer", async () => {
@@ -667,14 +669,14 @@ describe("AnnotationOverlay", () => {
 
   it("erases nearby ink reliably but never text or another layer", async () => {
     const ink = annotation("ink-1", activeLayerId, {
-      kind: "ink",
+      kind: "ink", brush: "pen", pressureMode: "uniform",
       pageNumber: 1,
       points: [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }],
       strokeWidth: 0.003,
     });
     const text = annotation("text-1", activeLayerId, textPayload("不能擦除", 0.5, 0.5));
     const otherInk = annotation("ink-2", otherLayerId, {
-      kind: "ink",
+      kind: "ink", brush: "pen", pressureMode: "uniform",
       pageNumber: 1,
       points: [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }],
       strokeWidth: 0.003,

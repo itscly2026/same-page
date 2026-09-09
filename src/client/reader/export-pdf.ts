@@ -1,3 +1,4 @@
+import { inkOutline } from "../annotations/ink-geometry";
 import { paintExportText } from "./export-text";
 import { PDFDocument, concatTransformationMatrix, popGraphicsState, pushGraphicsState } from "pdf-lib";
 import type { AnnotationLayerSummary, AnnotationPayload } from "../../shared/annotations";
@@ -26,14 +27,11 @@ export async function exportAnnotatedPdf(source: PDFDocumentProxy, annotations: 
       context.fillStyle = context.strokeStyle = colors.get(object.layerId) ?? payload.color ?? "#dc2626";
       context.globalAlpha = payload.kind === "ink" ? payload.opacity ?? 1 : 1;
       if (payload.kind === "ink") {
-        context.lineWidth = payload.strokeWidth * viewport.width;
-        context.lineCap = context.lineJoin = "round";
+        const outline = inkOutline(payload, viewport.width, viewport.height);
         context.beginPath();
-        payload.points.forEach((point, i) => {
-          if (i === 0) context.moveTo(point.x * viewport.width, point.y * viewport.height);
-          else context.lineTo(point.x * viewport.width, point.y * viewport.height);
-        });
-        context.stroke();
+        outline.forEach(([x, y], index) => { if (index === 0) context.moveTo(x!, y!); else context.lineTo(x!, y!); });
+        context.closePath();
+        context.fill();
       } else if (payload.kind === "shape") {
         context.lineWidth = payload.strokeWidth * viewport.width;
         context.beginPath();

@@ -82,6 +82,8 @@ import { DiagnosticReportDialog, DiagnosticReportModal } from "../diagnostics/di
 
 type ReaderPanel = "layers";
 
+import { useToolStyle } from "../reader/use-tool-style";
+
 const ReaderEditingControls = lazy(() =>
   import("../reader/reader-editing-controls").then((module) => ({
     default: module.ReaderEditingControls,
@@ -122,6 +124,7 @@ function ReaderPageContent() {
   const [annotationInteraction, setAnnotationInteraction] =
     useState<AnnotationOverlayInteraction>("idle");
   const [tool, setTool] = useState<AnnotationTool>("text");
+  const { style: toolStyle, setStyle: setToolStyle } = useToolStyle(resolvedWorkspace?.ownerKey ?? `user:${identity.localUserId ?? "guest"}`, tool);
   const { color: toolColor, setColor: setToolColor } = useToolColor(resolvedWorkspace?.ownerKey ?? `user:${identity.localUserId ?? "guest"}`, tool);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const [syncOutcome, setSyncOutcome] = useState<ReaderSyncOutcome>("none");
@@ -428,6 +431,7 @@ function ReaderPageContent() {
     editing,
     tool,
     toolColor,
+    toolStyle,
     activeLayerId,
     onInteractionChange: setAnnotationInteraction,
     editor,
@@ -642,6 +646,8 @@ function ReaderPageContent() {
             layers={layers}
             tool={tool}
             toolColor={toolColor}
+            toolStyle={toolStyle}
+            onStyleChange={setToolStyle}
             onColorChange={setToolColor}
             activeLayerId={activeLayerId}
             onToolChange={setTool}
