@@ -1,0 +1,58 @@
+name: Browser stability experiment
+
+# Explicit, bounded experiments; ordinary PR pushes do not pay for ten runs.
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+jobs:
+  repeat:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'browser-stability'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --prefer-offline --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run build
+      - name: Ten consecutive runs of both engines and both target files
+        shell: bash
+        run: |
+          mkdir -p artifacts/stability
+          git rev-parse HEAD > artifacts/stability/commit.txt
+          node --version > artifacts/stability/node.txt
+          cp /etc/os-release artifacts/stability/os-release.txt
+          npx playwright --version > artifacts/stability/playwright.txt
+          failed=0
+          for attempt in $(seq 1 10); do
+            started=$(date +%s)
+            status=0
+            node --test --test-reporter=tap --test-concurrency=1 \
+              visual-report/drive-navigation.test.mjs \
+              browser-tests/offline-entry-smoke.test.mjs \
+              > "artifacts/stability/run-${attempt}.log" 2>&1 || status=$?
+            duration=$(( $(date +%s) - started ))
+            printf '%s\t%s\t%s\n' "$attempt" "$status" "$duration" >> artifacts/stability/results.tsv
+            if [ -d artifacts/verification ]; then
+              mv artifacts/verification "artifacts/stability/evidence-${attempt}"
+            fi
+            if [ "$status" -ne 0 ]; then failed=1; fi
+          done
+          cat artifacts/stability/results.tsv >> "$GITHUB_STEP_SUMMARY"
+          exit "$failed"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: browser-stability-${{ github.run_id }}
+          path: artifacts/stability/
+          retention-days: 14

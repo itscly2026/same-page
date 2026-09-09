@@ -60,6 +60,9 @@ test("runtime areas select only their relevant expensive checks", (t) => {
     ["src/shared/health.ts", ["client", "worker", "visual", "performance", "build", "smoke", "deploy"]],
     ["migrations/0002.sql", ["worker", "migration", "build", "smoke", "deploy"]],
     ["visual-report/layout.test.mjs", ["visual"]],
+    ["browser-tests/browser-evidence.mjs", ["visual", "build", "smoke"]],
+    ["browser-tests/sanitize-browser-trace.py", ["visual", "build", "smoke"]],
+    ["scripts/run-browser-tests.mjs", ["visual", "build", "smoke"]],
     ["scripts/verify-score-schema-migration.mjs", ["migration"]],
   ]);
 
