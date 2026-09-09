@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import { MousePointer2, SlidersHorizontal, ChevronDown, Eraser, Highlighter, Square, Circle, Lock, Pencil, Redo2, Type, Undo2, X } from "lucide-react";
 import { Button,  DialogTrigger, Popover } from "react-aria-components";
 import { Dialog } from "../navigation/overlays";
@@ -37,6 +37,13 @@ export function ReaderEditingControls({
   onToolChange(tool: AnnotationTool): void;
   onLayerChange(layerId: string): void;
 }) {
+  const styleAnchor = useRef<Element | null>(null);
+  const styleDialogId = useId();
+  const [styleSource, setStyleSource] = useState<AnnotationTool | "settings" | null>(null);
+  const openStyle = (source: AnnotationTool | "settings", anchor: Element) => {
+    styleAnchor.current = anchor;
+    setStyleSource(source);
+  };
   const [choosingLayer, setChoosingLayer] = useState(false);
   const [showHint, setShowHint] = useState(() => {
     try { return localStorage.getItem("reader-edit-hint-seen") !== "true"; } catch { return true; }
@@ -45,6 +52,7 @@ export function ReaderEditingControls({
   const selectedLayer = layers.find((layer) => layer.id === activeLayerId);
   const chooseLayer = (layerId: string) => {
     onLayerChange(layerId);
+    setStyleSource(null);
     setChoosingLayer(false);
   };
   const personalLayers = layers.filter((layer) => layer.kind === "personal" && layer.canEdit);
@@ -94,9 +102,15 @@ export function ReaderEditingControls({
               isDisabled={isDisabled || !selectedLayer?.canEdit}
               aria-label={{ select: "选择", text: "文字", ink: "画笔", highlighter: "荧光笔", rectangle: "矩形", ellipse: "椭圆", eraser: "整条橡皮" }[entry]}
               aria-pressed={tool === entry}
+              aria-haspopup={entry === tool && toolHasStyle ? "dialog" : undefined}
+              aria-expanded={entry === tool && toolHasStyle ? styleSource === entry : undefined}
+              aria-controls={styleSource === entry ? styleDialogId : undefined}
               className={`annotation-tool-button${entry === "text" || entry === "rectangle" ? " annotation-tool-divider" : ""}`}
               key={entry}
-              onPress={() => onToolChange(entry)}
+              onPress={event => {
+                if (entry === tool && toolHasStyle) openStyle(entry, event.target);
+                else { setStyleSource(null); onToolChange(entry); }
+              }}
             >
               <AnnotationToolIcon tool={entry} />
             </Button>
@@ -104,7 +118,30 @@ export function ReaderEditingControls({
         </div>
       </div>
       {selectedLayer?.kind === "personal" && <input type="color" aria-label="工具颜色" title={toolHasStyle ? "工具颜色" : "当前工具不使用颜色"} disabled={isDisabled || !selectedLayer.canEdit || !toolHasStyle} value={toolHasStyle ? toolColor : "#e5e7e5"} onChange={event => onColorChange(event.target.value)} />}
-      <DialogTrigger><Button className="annotation-tool-button annotation-style-trigger" aria-label="下一笔样式" isDisabled={isDisabled || !selectedLayer?.canEdit || !toolHasStyle}><SlidersHorizontal size={20} /></Button><Popover className="annotation-style-popover" placement="top" offset={12}><Dialog aria-label="下一笔样式"><h2>{tool === "text" ? "新文字样式" : "下一笔样式"}</h2><p>只影响新建笔记；修改已有笔记请用选择工具。</p><div style={{ color: selectedLayer?.kind === "shared" ? selectedLayer.displayColor : toolColor }}><StyleFields tool={tool} value={toolStyle} onChange={onStyleChange} /></div></Dialog></Popover></DialogTrigger>
+      <Button
+        className="annotation-tool-button annotation-style-trigger"
+        aria-label="下一笔样式"
+        aria-haspopup="dialog"
+        aria-expanded={styleSource === "settings"}
+        aria-controls={styleSource === "settings" ? styleDialogId : undefined}
+        isDisabled={isDisabled || !selectedLayer?.canEdit || !toolHasStyle}
+        onPress={event => openStyle("settings", event.target)}
+      ><SlidersHorizontal size={20} /></Button>
+      <Popover
+        className="annotation-style-popover"
+        triggerRef={styleAnchor}
+        isOpen={styleSource !== null && !isDisabled && !!selectedLayer?.canEdit && toolHasStyle}
+        onOpenChange={open => { if (!open) setStyleSource(null); }}
+        placement="top"
+        offset={12}
+      >
+        <Dialog id={styleDialogId} aria-label="下一笔样式">
+          <h2>{tool === "text" ? "新文字样式" : "下一笔样式"}</h2>
+          <div style={{ color: selectedLayer?.kind === "shared" ? selectedLayer.displayColor : toolColor }}>
+            <StyleFields tool={tool} value={toolStyle} onChange={onStyleChange} />
+          </div>
+        </Dialog>
+      </Popover>
       <div className="annotation-control-group annotation-history-controls" aria-label="历史">
         <Button
           isDisabled={isDisabled || !selectedLayer?.canEdit}
