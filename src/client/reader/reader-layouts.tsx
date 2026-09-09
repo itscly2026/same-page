@@ -382,7 +382,7 @@ export function PageNavigatorPanel({
   const size = useElementSize(panelRef);
   // Sample the document at a density that leaves gaps between resting thumbnails.
   // The range input still addresses every page, including those not sampled.
-  const count = Math.min(document.numPages, 40, Math.max(1, Math.floor((size.width - 48) / 28) + 1));
+  const count = Math.min(document.numPages, 40, Math.max(1, Math.floor((size.width - 32) / 14) + 1));
   const activeIndex = document.numPages === 1 ? 0 : Math.round((page - 1) / (document.numPages - 1) * (count - 1));
   const thumbnails = Array.from({ length: count }, (_, index) =>
     count === 1 ? 1 : 1 + Math.round(index * (document.numPages - 1) / (count - 1)),
@@ -419,7 +419,8 @@ export function PageNavigatorPanel({
   return (
     <>
       <output className="reader-page-indicator" aria-label="页面位置">{page} / {document.numPages}</output>
-      <nav className="page-preview-strip" aria-label="页面缩略图" ref={panelRef}>
+      <nav className="page-preview-strip" aria-label="页面缩略图" ref={panelRef}
+        style={{ width: `${34 + (Math.min(document.numPages, 40) - 1) * 14}px` }}>
         <div className="page-preview-strip__track" aria-hidden="true">
           {thumbnails.map((number, index) => (
             <div className="page-preview-strip__thumbnail" key={index}

@@ -2314,6 +2314,7 @@ h1 {
   right: max(0.75rem, env(safe-area-inset-right));
   bottom: max(0.75rem, env(safe-area-inset-bottom));
   left: max(0.75rem, env(safe-area-inset-left));
+  max-width: calc(100% - max(0.75rem, env(safe-area-inset-left)) - max(0.75rem, env(safe-area-inset-right)));
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: center;
@@ -2321,25 +2322,25 @@ h1 {
   margin-inline: auto;
   border: 1px solid rgb(0 0 0 / 4%);
   border-radius: 999px;
-  padding: 0.35rem 0.45rem;
+  padding: 0.175rem 0.225rem;
   color: #000;
-  background: rgb(255 255 255 / 88%);
+  background: rgb(255 255 255 / 50%);
   box-shadow: 0 1px 6px rgb(0 0 0 / 6%);
-  backdrop-filter: blur(18px) saturate(115%);
+  backdrop-filter: blur(8px) saturate(115%);
 }
 
 .page-preview-strip__track {
   position: relative;
-  height: 2.75rem;
-  margin-inline: 1rem;
+  height: 1.375rem;
+  margin-inline: 0.7rem;
   pointer-events: none;
 }
 
 .page-preview-strip__thumbnail {
   position: absolute;
-  top: 0.4rem;
-  width: 1.5rem;
-  height: 2rem;
+  top: 0.2rem;
+  width: 0.75rem;
+  height: 1rem;
   transform: translateX(-50%);
   background: white;
   box-shadow: 0 1px 2px #0002;
@@ -2363,6 +2364,12 @@ h1 {
 
 @media (prefers-reduced-motion: reduce) {
   .page-preview-strip__thumbnail { transition: none; }
+}
+
+.page-preview-strip__thumbnail .pdf-thumbnail,
+.page-preview-strip__thumbnail .pdf-thumbnail canvas {
+  max-width: 0.75rem;
+  max-height: 0.875rem;
 }
 
 .page-preview-strip__slider {
