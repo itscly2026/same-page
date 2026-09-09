@@ -87,7 +87,7 @@ describe("AnnotationOverlay", () => {
     await act(async () => { await editor.prepareFinish(); });
     const note = (await localDatabase.annotations.toArray())[0]!;
     expect(note.payload).toMatchObject(tool === "highlighter"
-      ? { kind: "ink", brush: "highlighter", pressureMode: "uniform", color: "#facc15", opacity: 0.3, strokeWidth: 0.018, points: [{ x: .2, y: .3 }, { x: .2, y: .3 }, { x: .7, y: .8 }] }
+      ? { kind: "ink", brush: "highlighter", nib: "chisel", pressureMode: "uniform", color: "#facc15", opacity: 0.3, strokeWidth: 0.018, points: [{ x: .2, y: .3 }, { x: .2, y: .3 }, { x: .7, y: .8 }] }
       : { kind: "shape", shape: tool, color: "#dc2626", x: .2, y: .3, width: expect.closeTo(.5), height: expect.closeTo(.5) });
     await act(async () => { await editor.undo(activeLayerId); });
     expect(await localDatabase.annotations.count()).toBe(0);
@@ -669,14 +669,14 @@ describe("AnnotationOverlay", () => {
 
   it("erases nearby ink reliably but never text or another layer", async () => {
     const ink = annotation("ink-1", activeLayerId, {
-      kind: "ink", brush: "pen", pressureMode: "uniform",
+      kind: "ink", brush: "pen", nib: "round", pressureMode: "uniform",
       pageNumber: 1,
       points: [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }],
       strokeWidth: 0.003,
     });
     const text = annotation("text-1", activeLayerId, textPayload("不能擦除", 0.5, 0.5));
     const otherInk = annotation("ink-2", otherLayerId, {
-      kind: "ink", brush: "pen", pressureMode: "uniform",
+      kind: "ink", brush: "pen", nib: "round", pressureMode: "uniform",
       pageNumber: 1,
       points: [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }],
       strokeWidth: 0.003,

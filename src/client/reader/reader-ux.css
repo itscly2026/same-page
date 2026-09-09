@@ -126,7 +126,6 @@
 .reader-more-menu .reader-display-defaults summary::after { content: "+"; margin-left: auto; }
 .reader-more-menu .reader-display-defaults[open] summary::after { content: "−"; }
 .reader-display-defaults button { width: 100%; justify-content: start; }
-.reader-save-feedback { max-width: 10rem; padding: 0 0.35rem 0.4rem; color: #555; font-size: 0.7rem; text-align: center; }
 
 .reader-leave-dialog { width: min(28rem, calc(100vw - 2rem)); padding: 1rem; color: #111; background: #fff; border-radius: 0.75rem; }
 .reader-leave-dialog h2 { font-size: 1.1rem; }

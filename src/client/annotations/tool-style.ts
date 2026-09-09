@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AnnotationTool } from "./annotation-overlay";
 export const toolStyleSchema = z.object({
+  nib: z.enum(["round", "chisel"]),
   strokeWidth: z.number().finite().min(0.001).max(0.06),
   opacity: z.number().finite().min(0.05).max(1),
   pressureMode: z.enum(["uniform", "pressure"]),
@@ -8,5 +9,5 @@ export const toolStyleSchema = z.object({
 });
 export type ToolStyle = z.infer<typeof toolStyleSchema>;
 export function defaultToolStyle(tool: AnnotationTool): ToolStyle {
-  return { strokeWidth: tool === "highlighter" ? 0.018 : 0.003, opacity: tool === "highlighter" ? 0.3 : 1, pressureMode: "uniform", fontScale: 0.024 };
+  return { nib: tool === "highlighter" ? "chisel" : "round", strokeWidth: tool === "highlighter" ? 0.018 : 0.003, opacity: tool === "highlighter" ? 0.3 : 1, pressureMode: "uniform", fontScale: 0.024 };
 }

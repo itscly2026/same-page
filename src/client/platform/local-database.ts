@@ -265,6 +265,7 @@ export class SamePageDatabase extends Dexie {
     this.version(8).stores({
       annotationOutbox: "&opId,ownerKey,scopeKey,[ownerKey+scopeKey],[scopeKey+annotationId],createdAt",
     });
+    this.version(14).stores({}).upgrade(migrateBrushStyles);
     this.version(13).stores({}).upgrade(migrateBrushStyles);
     this.version(12).stores({ readingPreferences: "&key,ownerKey,[ownerKey+choirId]" });
     this.version(11).stores({

@@ -525,9 +525,6 @@ function ReaderPageContent() {
                 <Ellipsis aria-hidden="true" size={21} />
               </Button></>}
             </div>
-            {editing && annotationInteraction !== "composing-text" && <span className="reader-save-feedback" role="status">
-              {persistence === "saving" ? "正在保存到本机…" : persistence === "failed" ? "本机保存失败" : annotations.some(annotation => annotation.state === "draft") ? "已保存在本机" : "正在编辑当前页"}
-            </span>}
             {editAvailability !== "ready" && !(editAvailability === "preparing" && readerPanel !== null) ? (
               <p
                 className="reader-edit-status"

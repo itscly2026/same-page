@@ -20,8 +20,9 @@ import type { AnnotationEditor } from "./annotation-editor";
 import { useEditorPersistence } from "./use-annotation-editor";
 import { calculateTextEditorLayout } from "./text-editor-layout";
 
-import { inkSvgPath, inkHit } from "./ink-geometry";
+import { inkSvgPaths, inkHit } from "./ink-geometry";
 import { defaultToolStyle, type ToolStyle } from "./tool-style";
+import { highlighterNibPath } from "./highlighter-geometry";
 import { ObjectProperties } from "./object-properties";
 
 export type AnnotationTool = "select" | "text" | "ink" | "highlighter" | "rectangle" | "ellipse" | "eraser";
@@ -109,7 +110,7 @@ export function AnnotationOverlay({
   const [draftId, setDraftId] = useState<string | null>(null);
   const [aspectRatio, setAspectRatio] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
+  const [hover, setHover] = useState<Extract<AnnotationPayload, { kind: "ink" }>["points"][number] | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [draftShape, setDraftShape] = useState<Extract<AnnotationPayload, { kind: "shape" }> | null>(null);
   const shapeStart = useRef<{ x: number; y: number } | null>(null);
@@ -235,6 +236,7 @@ export function AnnotationOverlay({
       x: clamp((event.clientX - bounds.left) / bounds.width),
       y: clamp((event.clientY - bounds.top) / bounds.height),
       ...(event.pressure > 0 ? { pressure: event.pressure } : {}),
+      ...(event.pointerType === "pen" ? { tiltX: event.tiltX || 0, tiltY: event.tiltY || 0, twist: event.twist || 0 } : {}),
     };
   };
 
@@ -576,6 +578,7 @@ export function AnnotationOverlay({
       pageNumber,
       points: [position, position],
       brush: tool === "highlighter" ? "highlighter" : "pen",
+      nib: tool === "highlighter" ? toolStyle.nib : "round",
       pressureMode: tool === "ink" ? toolStyle.pressureMode : "uniform",
       strokeWidth: toolStyle.strokeWidth,
       opacity: tool === "highlighter" ? toolStyle.opacity : 1,
@@ -736,18 +739,18 @@ export function AnnotationOverlay({
                   vectorEffect="non-scaling-stroke"
                 />
               ) : null}
-              <path data-ink-stroke d={inkSvgPath(payload, aspectRatio)} fill={color} opacity={payload.opacity ?? 1} />
-              {selectedId === annotation.id && tool === "select" && <path d={inkSvgPath(payload, aspectRatio)} fill="none" stroke="#014653" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray="4 3" />}
+              {inkSvgPaths(payload, aspectRatio).map((path, index) => <path key={index} data-ink-stroke d={path} fill={color} fillRule="evenodd" opacity={payload.opacity ?? 1} />)}
+              {selectedId === annotation.id && tool === "select" && <path d={inkSvgPaths(payload, aspectRatio).join("")} fill="none" stroke="#014653" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray="4 3" />}
 
             </g>
           );
         })}
         {editing && draftShape ? <ShapePreview payload={draftShape} color={activeLayerColor} /> : null}
         {editing && draftStroke ? (
-          <path data-ink-draft d={inkSvgPath(draftStroke, aspectRatio)} fill={activeLayerColor} opacity={draftStroke.opacity ?? 1} />
+          <g>{inkSvgPaths(draftStroke, aspectRatio).map((path, index) => <path key={index} data-ink-draft d={path} fill={activeLayerColor} fillRule="evenodd" opacity={draftStroke.opacity ?? 1} />)}</g>
         ) : null}
         {hover && canStartEdit && <g pointerEvents="none" aria-label="笔尖预览">
-          <ellipse cx={hover.x * 1000} cy={hover.y * 1000} rx={tool === "eraser" ? 14 * 1000 / pageWidth : tool === "text" || tool === "select" ? 4 : toolStyle.strokeWidth * 500} ry={(tool === "eraser" ? 14 * 1000 / pageWidth : tool === "text" || tool === "select" ? 4 : toolStyle.strokeWidth * 500) * aspectRatio} fill={tool === "highlighter" ? activeLayerColor : "none"} fillOpacity={toolStyle.opacity} stroke={activeLayerColor} strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          {tool === "highlighter" ? <path d={highlighterNibPath({ nib: toolStyle.nib, strokeWidth: toolStyle.strokeWidth }, hover, aspectRatio)} fill={activeLayerColor} fillOpacity={toolStyle.opacity} stroke={activeLayerColor} strokeWidth="1" vectorEffect="non-scaling-stroke" /> : <ellipse cx={hover.x * 1000} cy={hover.y * 1000} rx={tool === "eraser" ? 14 * 1000 / pageWidth : tool === "text" || tool === "select" ? 4 : toolStyle.strokeWidth * 500} ry={(tool === "eraser" ? 14 * 1000 / pageWidth : tool === "text" || tool === "select" ? 4 : toolStyle.strokeWidth * 500) * aspectRatio} fill="none" fillOpacity={toolStyle.opacity} stroke={activeLayerColor} strokeWidth="1" vectorEffect="non-scaling-stroke" />}
         </g>}
       </svg>
       {hover && canStartEdit && <span className="annotation-hover-tool" style={{ left: `${hover.x * 100}%`, top: `${hover.y * 100}%` }}>{({ ink: "画笔", highlighter: "荧光笔", rectangle: "矩形", ellipse: "椭圆", text: "文字", eraser: "整条橡皮", select: "选择" })[tool]}</span>}

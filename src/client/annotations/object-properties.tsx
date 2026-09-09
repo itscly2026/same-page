@@ -13,7 +13,7 @@ export function ObjectProperties({ payload, personal, displayColor, onApply, onC
   const [failed, setFailed] = useState(false);
   const apply = async () => {
     setSaving(true);
-    const next = { ...payload, ...(personal ? { color } : {}), ...(payload.kind === "text" ? { fontScale: style.fontScale } : { strokeWidth: style.strokeWidth }), ...(payload.kind === "ink" ? { opacity: style.opacity, pressureMode: style.pressureMode } : {}) };
+    const next = { ...payload, ...(personal ? { color } : {}), ...(payload.kind === "text" ? { fontScale: style.fontScale } : { strokeWidth: style.strokeWidth }), ...(payload.kind === "ink" ? { nib: style.nib, opacity: style.opacity, pressureMode: style.pressureMode } : {}) };
     const saved = await onApply(next);
     setSaving(false); setFailed(!saved);
     if (saved) onClose();

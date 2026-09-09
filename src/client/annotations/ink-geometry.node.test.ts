@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { annotationPayloadSchema } from "../../shared/annotations";
-import { inkHit, inkOutline, inkSvgPath } from "./ink-geometry";
-const stroke = { kind: "ink" as const, brush: "pen" as const, pressureMode: "uniform" as const, pageNumber: 1, strokeWidth: .02, points: [{ x: .2, y: .5, pressure: .1 }, { x: .5, y: .5, pressure: .9 }, { x: .8, y: .5, pressure: .9 }] };
+import { inkHit, inkOutline, inkSvgPaths } from "./ink-geometry";
+const stroke = { kind: "ink" as const, brush: "pen" as const, nib: "round" as const, pressureMode: "uniform" as const, pageNumber: 1, strokeWidth: .02, points: [{ x: .2, y: .5, pressure: .1 }, { x: .5, y: .5, pressure: .9 }, { x: .8, y: .5, pressure: .9 }] };
 describe("ink geometry", () => {
   it("shares page geometry between SVG and export without stretching wide strokes", () => {
     const outline = inkOutline(stroke, 1000, 2000);
-    expect(inkSvgPath(stroke, .5)).toBe(`M${outline.map(([x,y]) => `${x},${y!*.5}`).join("L")}Z`);
+    expect(inkSvgPaths(stroke, .5)[0]).toBe(`M${outline.map(([x,y]) => `${x},${y!*.5}`).join("L")}Z`);
     expect(Math.max(...outline.map(p => p[1]!)) - Math.min(...outline.map(p => p[1]!))).toBeCloseTo(20, 0);
     expect(inkHit(stroke, 1000, 2000, 500, 1008, 0)).toBe(true);
     expect(inkHit(stroke, 1000, 2000, 500, 1020, 0)).toBe(false);

@@ -4,7 +4,7 @@ import { defaultToolStyle, toolStyleSchema, type ToolStyle } from "../annotation
 export function useToolStyle(owner: string, tool: AnnotationTool) {
   const key = `note-tool-style:${owner}:${tool}`;
   const read = () => {
-    try { const result = toolStyleSchema.safeParse(JSON.parse(localStorage.getItem(key) ?? "null")); if (result.success) return result.data; } catch { /* Optional preference. */ }
+    try { const result = toolStyleSchema.safeParse({ ...defaultToolStyle(tool), ...JSON.parse(localStorage.getItem(key) ?? "null") }); if (result.success) return result.data; } catch { /* Optional preference. */ }
     return defaultToolStyle(tool);
   };
   const [state, setState] = useState(() => ({ key, value: read() }));

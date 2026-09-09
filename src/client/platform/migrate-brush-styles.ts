@@ -9,6 +9,7 @@ export function upgradeBrushContent(value: unknown): boolean {
     record.pressureMode = "uniform";
     changed = true;
   }
+  if (record.kind === "ink" && record.nib === undefined) { record.nib = "round"; changed = true; }
   for (const child of Object.values(record)) changed = upgradeBrushContent(child) || changed;
   return changed;
 }
