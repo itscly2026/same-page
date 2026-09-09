@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { userLifecycleSchema } from "../../shared/lifecycle";
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
-import { runSettingsMutation, settingsMutationMessage } from "./settings-mutation";
+import { useSettingsMutation } from "./settings-mutation";
 import { SettingsRequestError, settingsError } from "./settings-request";
 import { useSettingsLifetime, captureSettingsLifetime } from "./use-settings-lifetime";
 
@@ -15,11 +15,9 @@ export function useUserLifecycle() {
   const lifetime = useSettingsLifetime();
   const [state, setState] = useState<ReturnType<typeof userLifecycleSchema.parse> | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [needsRefresh, setNeedsRefresh] = useState(false);
-  const reload = useCallback(async () => {
-    const isCurrent = captureSettingsLifetime(lifetime);
+  const read = async (isCurrent: () => boolean) => {
     setLoading(true);
     try {
       const next = await loadUserLifecycle();
@@ -32,7 +30,7 @@ export function useUserLifecycle() {
       }
       throw error;
     } finally { if (isCurrent()) setLoading(false); }
-  }, [lifetime]);
+  };
   useEffect(() => {
     const isCurrent = captureSettingsLifetime(lifetime);
     void loadUserLifecycle().then(next => {
@@ -41,19 +39,13 @@ export function useUserLifecycle() {
       if (isCurrent()) { setLoading(false); setNeedsRefresh(true); setMessage(settingsError(error, "暂时无法读取用户状态，请重试。")); }
     });
   }, [lifetime]);
+  const mutation = useSettingsMutation({ enabled: !loading && !needsRefresh, refresh: read, onRevoked: () => setState(null) });
   const perform = async (path: string, body: unknown, complete?: (isCurrent: () => boolean) => Promise<void>) => {
-    if (busy || loading || needsRefresh) return;
-    const isCurrent = captureSettingsLifetime(lifetime);
-    setBusy(true); setMessage(null);
-    const result = await runSettingsMutation(
+    setMessage(null);
+    await mutation.submit(
       () => diagnosticFetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-      async () => { if (isCurrent()) await (complete ? complete(isCurrent) : reload()); },
+      { confirmed: complete ? (_response, isCurrent) => complete(isCurrent) : undefined, refresh: !complete, successMessage: complete ? undefined : "已保存。" },
     );
-    if (!isCurrent()) return;
-    if (!complete || result.kind !== "saved") setMessage(settingsMutationMessage(result));
-    if (result.kind === "revoked") setState(null);
-    if (["unconfirmed", "revoked", "saved-refresh-failed"].includes(result.kind)) setNeedsRefresh(true);
-    setBusy(false);
   };
-  return { state, setState, message, setMessage, busy, loading, blocked: busy || loading || needsRefresh, reload, perform };
+  return { state, setState, message: mutation.message ?? message, setMessage, busy: mutation.pending, loading, blocked: mutation.blocked, reload: mutation.refresh, perform };
 }

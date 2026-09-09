@@ -1,7 +1,7 @@
 import { ViewSelector } from "../components/view-selector";
 import { useReadResource } from "../settings/use-read-resource";
 import { driveManagementSchema } from "../../shared/drive-management";
-import { runSettingsMutation, settingsMutationMessage } from "../settings/settings-mutation";
+import { useSettingsMutation } from "../settings/settings-mutation";
 import { captureLocalWorkspaceSession, resolveLocalWorkspace, type LocalWorkspace } from "../platform/local-workspace";
 import { applySharedLayerAvailability } from "../annotations/annotation-state";
 import { Button, Heading, Modal, ModalOverlay } from "react-aria-components";
@@ -15,7 +15,6 @@ import { TaskHeader } from "../components/task-header";
 import { authClient } from "../auth/auth-client";
 import { SettingsFeedback } from "../settings/settings-feedback";
 import { settingsError, settingsResponse } from "../settings/settings-request";
-import { useSettingsLifetime } from "../settings/use-settings-lifetime";
 
 export default function SharedLayerManagementPage() {
   const { choirId = "" } = useParams();
@@ -42,10 +41,6 @@ function SharedLayerManagement({ choirId, userId, authorized, accessError, retry
   const [view, setView] = useState<"current" | "deleted">("current");
   const [deleting, setDeleting] = useState<SharedLayerManagementSummary | null>(null);
   const [newName, setNewName] = useState("");
-  const [pending, setPending] = useState(false);
-  const busy = useRef(false);
-  const [feedback, setFeedback] = useState<{ message: string; failed?: boolean; refreshFailed?: boolean } | null>(null);
-  const generation = useSettingsLifetime();
   const resource = useReadResource(`${userId}:${choirId}:shared-layers:${view}`, async signal => {
     if (!userId) throw new Error("authentication_required");
     const workspace = await captureLocalWorkspaceSession(await resolveLocalWorkspace({ choirId, scoreId: "shared-layer-management", authenticatedUserId: userId, signal }));
@@ -57,35 +52,32 @@ function SharedLayerManagement({ choirId, userId, authorized, accessError, retry
   });
   const layers = resource.data?.layers ?? [];
   const driveName = resource.data?.drive.name ?? "";
-  const loading = !authorized || !resource.canMutate;
+  const mutation = useSettingsMutation({
+    enabled: authorized && resource.canMutate,
+    refresh: async () => { await Promise.all([retryAccess(), resource.refresh()]); },
+    onRevoked: resource.clear,
+  });
+  const { pending, message: feedback } = mutation;
+  const loading = mutation.blocked;
   const loadError = accessError ?? (resource.error ? settingsError(resource.error, "暂时无法更新共享层，已有内容已保留。") : null);
-  const retryLoad = () => { void Promise.allSettled([retryAccess(), resource.refresh()]); };
+  const retryLoad = () => { void mutation.refresh().catch(() => undefined); };
 
-  const change = async (path: string, method: "POST" | "PUT", body: object, message: string) => {
-    if (busy.current || loading) return;
-    const lifetime = generation.current;
+  const change = async (path: string, method: "POST" | "PUT", body: object) => {
     const workspace = workspaceRef.current;
-    busy.current = true; setPending(true); setFeedback(null);
-    const result = await runSettingsMutation(
+    const result = await mutation.submit(
       () => diagnosticFetch(`/api/choirs/${choirId}/shared-layers${path}`, {
         method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       }),
-      async response => {
-        if (lifetime !== generation.current) return;
+      { confirmed: async (response, isCurrent) => {
+        if (method === "POST") setNewName("");
         if (path.endsWith("/lifecycle")) {
           const state = sharedLayerAvailabilitySchema.parse(await response.json());
+          if (!isCurrent()) return;
           if (!workspace || !await applySharedLayerAvailability(workspace, state)) throw new Error("shared_layer_state_changed");
         }
-        await resource.refresh();
-      },
+      } },
     );
-    if (lifetime !== generation.current) return;
-    setFeedback(result.kind === "saved" ? null : { message: settingsMutationMessage(result, message), failed: true, refreshFailed: result.kind === "saved-refresh-failed" });
-    if ((result.kind === "saved" || result.kind === "saved-refresh-failed") && method === "POST") setNewName("");
-    setDeleting(null);
-    if (result.kind === "revoked") resource.clear();
-    else if (result.kind === "unconfirmed" || result.kind === "failed") await resource.refresh().catch(() => undefined);
-    busy.current = false; setPending(false);
+    if (result !== null) setDeleting(null);
   };
 
   return <div className="app-page">
@@ -96,7 +88,8 @@ function SharedLayerManagement({ choirId, userId, authorized, accessError, retry
         <p className="settings-copy">适用于此云盘的所有乐谱。选择一个层，修改名称、颜色或启用状态。编辑权限在“成员与权限”设置。</p>
       </header>
       <SettingsFeedback loading={resource.loading} loadError={loadError} message={null} retry={retryLoad} />
-      {feedback && <p role={feedback.failed ? "alert" : "status"}>{feedback.message}</p>}
+      {feedback && <p role="alert">{feedback}</p>}
+      {mutation.needsRefresh && <button className="secondary-button" disabled={pending} onClick={retryLoad}>重新读取共享层</button>}
       <ViewSelector<"current" | "deleted"> label="共享层视图" value={view} pending={pending} onChange={setView} options={[{ id: "current", label: "当前共享层" }, { id: "deleted", label: "已删除层" }]} />
       {view === "deleted" && <p className="settings-copy">删除影响当前云盘全部乐谱。30 天内恢复原层及其笔记、授权和阅读偏好，之后永久清理。恢复不会恢复已终止的成员关系。</p>}
       {resource.data && <>
@@ -110,7 +103,7 @@ function SharedLayerManagement({ choirId, userId, authorized, accessError, retry
                 ? `恢复截止：${new Date(layer.recoverUntil).toLocaleString()} · 恢复后${layer.active ? "启用" : "停用"}`
                 : "已到期 · 不可恢复，等待永久清理"}</small>
               <button className="secondary-button" disabled={pending || loading || layer.recoverUntil === null || layer.recoverUntil <= now}
-                onClick={() => void change(`/${layer.slot}/lifecycle`, "POST", { action: "restore", expectedRevision: layer.revision }, "原共享层已恢复，原有启用或停用状态保留。")}>恢复</button>
+                onClick={() => void change(`/${layer.slot}/lifecycle`, "POST", { action: "restore", expectedRevision: layer.revision })}>恢复</button>
             </div> : <>
             <Link className="settings-layer-link" to={`/choirs/${choirId}/shared-layers/${layer.slot}`}>
               <span className="settings-layer-swatch" style={{ background: layer.defaultColor }} />
@@ -118,14 +111,14 @@ function SharedLayerManagement({ choirId, userId, authorized, accessError, retry
               <small>{layer.active ? `已授权 ${layer.grantedMemberCount} 位成员` : "已停用 · 笔记保留"}</small><span aria-hidden="true">›</span>
             </Link>
             <div className="layer-order-actions">
-              <button aria-label={`上移 ${layer.name}`} disabled={pending || loading || index === 0} onClick={() => void change(`/${layer.slot}/order`, "PUT", { direction: "up" }, "顺序已保存。") }><ArrowUp size={18} aria-hidden="true" /></button>
-              <button aria-label={`下移 ${layer.name}`} disabled={pending || loading || index === layers.length - 1} onClick={() => void change(`/${layer.slot}/order`, "PUT", { direction: "down" }, "顺序已保存。") }><ArrowDown size={18} aria-hidden="true" /></button>
+              <button aria-label={`上移 ${layer.name}`} disabled={pending || loading || index === 0} onClick={() => void change(`/${layer.slot}/order`, "PUT", { direction: "up" }) }><ArrowUp size={18} aria-hidden="true" /></button>
+              <button aria-label={`下移 ${layer.name}`} disabled={pending || loading || index === layers.length - 1} onClick={() => void change(`/${layer.slot}/order`, "PUT", { direction: "down" }) }><ArrowDown size={18} aria-hidden="true" /></button>
               <button className="text-button" disabled={pending || loading} onClick={() => setDeleting(layer)} aria-label={`删除 ${layer.name}`}>删除</button>
             </div>
             </>}
           </article>)}
         </section>
-        {view === "current" && <form className="layer-create-form" onSubmit={event => { event.preventDefault(); if (newName.trim()) void change("", "POST", { name: newName.trim(), defaultColor: "#3157a4" }, "共享层已创建。"); }}>
+        {view === "current" && <form className="layer-create-form" onSubmit={event => { event.preventDefault(); if (newName.trim()) void change("", "POST", { name: newName.trim(), defaultColor: "#3157a4" }); }}>
           <label>新共享层名称<input type="text" value={newName} maxLength={60} required disabled={pending || loading} onChange={event => setNewName(event.target.value)} /></label>
           <button className="secondary-button" disabled={pending || loading}>新增共享层</button>
         </form>}
@@ -140,7 +133,7 @@ function SharedLayerManagement({ choirId, userId, authorized, accessError, retry
         <div className="dialog-actions">
           <Button className="secondary-button" isDisabled={pending} onPress={() => setDeleting(null)}>取消</Button>
           <Button className="primary-button" isDisabled={pending} onPress={() => {
-            if (deleting) void change(`/${deleting.slot}/lifecycle`, "POST", { action: "delete", expectedRevision: deleting.revision }, "共享层已删除，可在已删除层入口查看并恢复。");
+            if (deleting) void change(`/${deleting.slot}/lifecycle`, "POST", { action: "delete", expectedRevision: deleting.revision });
           }}>{pending ? "正在删除…" : "删除整个共享层"}</Button>
         </div>
       </Dialog></Modal>

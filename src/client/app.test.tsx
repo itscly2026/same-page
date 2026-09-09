@@ -258,7 +258,12 @@ describe("AppRoutes", () => {
     expect(within(dialog).getByText(/30 天内/)).toBeVisible();
     expect(actions).toEqual([]);
     fireEvent.click(within(dialog).getByRole("button", { name: "删除整个共享层" }));
-    if (loseResponse) await screen.findByText(/操作结果未确认/);
+    if (loseResponse) {
+      await screen.findByText(/操作结果未确认/);
+      expect(screen.getByRole("button", { name: "删除 Ensemble" })).toBeDisabled();
+      expect(actions).toEqual([{ action: "delete", expectedRevision: 0 }]);
+      fireEvent.click(screen.getByRole("button", { name: "重新读取共享层" }));
+    }
     await waitFor(() => expect(screen.queryByRole("button", { name: "删除 Ensemble" })).not.toBeInTheDocument());
     await waitFor(async () => expect(await readAnnotationLayers(workspace)).toEqual([]));
     expect((await localDatabase.offlineSnapshots.get("management-offline"))?.annotationSnapshot.layers).toEqual([]);

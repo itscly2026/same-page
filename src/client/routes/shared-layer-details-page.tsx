@@ -1,6 +1,6 @@
 import { SharedLayerDetailsForm } from "../settings/shared-layer-details-form";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
-import { useEffect, useState } from "react";
+import { useReadResource } from "../settings/use-read-resource";
 import { useParams } from "react-router-dom";
 
 import {
@@ -16,40 +16,22 @@ import { settingsError, settingsResponse } from "../settings/settings-request";
 export default function SharedLayerDetailsPage() {
   const { choirId = "", slot: slotParam = "" } = useParams();
   const session = authClient.useSession();
-  return <SharedLayerDetails key={`${session.data?.user.id ?? "guest"}:${choirId}:${slotParam}`} choirId={choirId} slotParam={slotParam} />;
+  return <SharedLayerDetails key={`${session.data?.user.id ?? "guest"}:${choirId}:${slotParam}`} choirId={choirId} slotParam={slotParam} userId={session.data?.user.id ?? null} />;
 }
 
-function SharedLayerDetails({ choirId, slotParam }: { choirId: string; slotParam: string }) {
+function SharedLayerDetails({ choirId, slotParam, userId }: { choirId: string; slotParam: string; userId: string | null }) {
   const parsedSlot = sharedLayerSlotSchema.safeParse(slotParam);
   const slot = parsedSlot.success ? parsedSlot.data : null;
-  const [driveName, setDriveName] = useState("");
-  const [layer, setLayer] = useState<SharedLayerManagementSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadAttempt, setLoadAttempt] = useState(0);
-  const retryLoad = () => {
-    setLoadError(null);
-    setLoading(true);
-    setLoadAttempt((attempt) => attempt + 1);
+  const resource = useReadResource(`${userId}:${choirId}:shared-layer:${slotParam}`, async signal => {
+    if (!slot) throw new Error("invalid_shared_layer");
+    return sharedLayerManagementResponseSchema.parse(await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/shared-layers`, { signal })));
+  });
+  const driveName = resource.data?.drive.name ?? "";
+  const layer = resource.data?.layers.find(entry => entry.slot === slot) ?? null;
+  const loadError = resource.error ? settingsError(resource.error, "暂时无法读取编辑权限。") : null;
+  const setLayer = (next: SharedLayerManagementSummary) => {
+    if (resource.data) resource.confirm({ ...resource.data, layers: resource.data.layers.map(entry => entry.slot === next.slot ? next : entry) });
   };
-  useEffect(() => {
-    if (!slot) return;
-    let active = true;
-    void
-      diagnosticFetch(`/api/choirs/${choirId}/shared-layers`).then(async (response) => {
-        return sharedLayerManagementResponseSchema.parse(await settingsResponse(response));
-      }).then((management) => {
-      if (!active) return;
-      setDriveName(management.drive.name);
-      setLayer(management.layers.find((entry) => entry.slot === slot) ?? null);
-      setLoading(false);
-    }).catch((error: unknown) => {
-      if (active) { setLoadError(settingsError(error, "暂时无法读取编辑权限。")); setLoading(false); }
-    });
-    return () => {
-      active = false;
-    };
-  }, [choirId, slot, loadAttempt]);
 
   const layerName = layer ? layer.name : slot ?? "共享层";
 
@@ -63,8 +45,8 @@ function SharedLayerDetails({ choirId, slotParam }: { choirId: string; slotParam
 
           <p className="settings-copy">配置对当前云盘中的全部乐谱生效，不授予编辑内容的权限。停用的共享层暂停所有人的编辑，恢复后授权继续生效。</p>
         </header>
-        {slot ? <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} /> : <p role="alert">共享层不存在。</p>}
-        {!loading && !loadError && layer && <SharedLayerDetailsForm choirId={choirId} layer={layer} onSaved={setLayer} />}
+        {slot ? <SettingsFeedback loading={resource.loading} loadError={loadError} message={null} retry={() => void resource.refresh().catch(() => undefined)} /> : <p role="alert">共享层不存在。</p>}
+        {layer && <SharedLayerDetailsForm choirId={choirId} layer={layer} onSaved={setLayer} authorized={resource.canMutate} refresh={resource.refresh} onRevoked={resource.clear} />}
       </main>
     </div>
   );
