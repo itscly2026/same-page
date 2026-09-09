@@ -264,12 +264,12 @@ describe("AppRoutes", () => {
     expect((await localDatabase.offlineSnapshots.get("management-offline"))?.annotationSnapshot.layers).toEqual([]);
     expect((await localDatabase.offlineScores.get("management-offline"))?.blob.size).toBe(3);
     expect((await localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey).toArray())[0]).toMatchObject({ state: "draft", layerId: shared.id });
-    fireEvent.click(screen.getByRole("button", { name: "已删除层" }));
+    fireEvent.click(screen.getByRole("radio", { name: "已删除层" }));
     expect(await screen.findByText(/恢复截止：/)).toHaveTextContent("恢复后启用");
     fireEvent.click(screen.getByRole("button", { name: /^恢复$/ }));
     await screen.findByText("原共享层已恢复，原有启用或停用状态保留。");
     expect(actions).toEqual([{ action: "delete", expectedRevision: 0 }, { action: "restore", expectedRevision: 1 }]);
-    fireEvent.click(screen.getByRole("button", { name: "当前共享层" }));
+    fireEvent.click(screen.getByRole("radio", { name: "当前共享层" }));
     expect(await screen.findByText("已授权 2 位成员")).toBeVisible();
   });
 
@@ -1014,8 +1014,8 @@ describe("AppRoutes", () => {
     );
 
     await screen.findByRole("searchbox", { name: /搜索.*中的乐谱/ });
-    fireEvent.click(await screen.findByRole("button", { name: "打开云盘菜单" }));
-    expect(await screen.findByRole("link", { name: "阅读偏好" })).toHaveAttribute(
+    fireEvent.click(await screen.findByRole("button", { name: "我在此云盘" }));
+    expect(await screen.findByRole("menuitem", { name: "阅读偏好" })).toHaveAttribute(
       "href",
       "/choirs/choir-1/preferences",
     );
@@ -1207,8 +1207,10 @@ describe("AppRoutes", () => {
     // Let the real local-directory read finish while bootstrap is still pending.
     await screen.findByText("本机尚未保存这个云盘的目录或乐谱，请联网后下载。");
     expect(screen.getByRole("heading", { name: "已知云盘名称" })).toBeInTheDocument();
-    expect(fetchMock.mock.calls.map(([input]) => input).filter(input => input !== "/api/choirs")).toEqual([
+    // The avatar reads its display name independently; library access still uses one bootstrap.
+    expect(fetchMock.mock.calls.map(([input]) => input).filter(input => input !== "/api/choirs").sort()).toEqual([
       "/api/choirs/choir-1/bootstrap",
+      "/api/choirs/choir-1/settings",
     ]);
 
     finishBootstrap(Response.json(driveBootstrapBody({ access: "membership" })));

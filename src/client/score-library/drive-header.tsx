@@ -1,14 +1,14 @@
 import { useReturnViewport } from "../navigation/use-return-viewport";
-import { Menu as MenuIcon, X, ArrowLeft } from "lucide-react";
+import { Menu as MenuIcon, ArrowLeft } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { Button,  Form, Heading, Input,   Modal, ModalOverlay,  TextField } from "react-aria-components";
 import { useReturnState } from "../navigation/navigation-context";
-import { PersonalMenu } from "../components/personal-menu";
+import { DrivePersonalMenu } from "./drive-personal-menu";
 import { Dialog } from "../navigation/overlays";
 import { Link } from "react-router-dom";
 
-export function DriveHeader({ choirId, choirName, userId, search, onSearch, onRefresh, management, onEditDisplayName, localOnly = false, resolvingIdentity = false, loading = false }: {
-  choirId: string; choirName: string; userId?: string; search: string;
+export function DriveHeader({ choirId, choirName, userId, search, onSearch, onRefresh, management, onEditDisplayName, displayName, localOnly = false, resolvingIdentity = false, loading = false }: {
+  choirId: string; choirName: string; displayName?: string; userId?: string; search: string;
   onSearch: (value: string) => void; onRefresh: () => void;
   loading?: boolean; resolvingIdentity?: boolean; localOnly?: boolean; onEditDisplayName?: () => void;
   management?: (close: () => void) => ReactNode;
@@ -26,20 +26,14 @@ export function DriveHeader({ choirId, choirName, userId, search, onSearch, onRe
       <Form className="library-search drive-search" role="search" onSubmit={event => { event.preventDefault(); onRefresh(); }}>
         <TextField value={search} onChange={onSearch} aria-label={`搜索「${choirName}」中的乐谱`}><Input type="search" placeholder="搜索乐谱" /></TextField>
       </Form>
-      {userId ? <PersonalMenu /> : resolvingIdentity ? <span className="drive-avatar" aria-label="正在恢复用户">我</span> : <Link className="drive-avatar" aria-label="登录或注册" to="/login">访</Link>}
+      {userId ? <DrivePersonalMenu key={`${userId}:${choirId}:${displayName ?? ""}`} choirId={choirId} userId={userId} displayName={displayName} localOnly={localOnly} onEditDisplayName={onEditDisplayName} /> : resolvingIdentity ? <span className="drive-avatar" aria-label="正在恢复用户">我</span> : <Link className="drive-avatar" aria-label="登录或注册" to="/login">访</Link>}
     </header>
     <ModalOverlay className="drive-drawer-overlay" isOpen={drawerOpen && !loading} onOpenChange={setDrawerOpen} isDismissable>
       <Modal className="drive-drawer"><Dialog preserveOnNavigate aria-label="云盘菜单">{({ close }) => <DrawerBody>
         <Link className="drive-drawer-switch" to="/drives" ><ArrowLeft size={18} aria-hidden="true" />云盘列表</Link>
-        <div className="dialog-heading"><Heading slot="title">{choirName}</Heading><Button className="icon-button" aria-label="关闭云盘菜单" onPress={close}><X aria-hidden="true" size={22} /></Button></div>
-
-        {userId && <section className="drive-drawer-management"><h3>我在此云盘</h3>
-          {onEditDisplayName && <Button isDisabled={localOnly} onPress={() => { close(); onEditDisplayName(); }}>云盘内显示名</Button>}
-          <Link to={`/choirs/${choirId}/preferences`}>阅读偏好</Link>
-          <Link to={`/choirs/${choirId}/storage`}>本机存储</Link>
-        </section>}
+        <div className="dialog-heading"><Heading slot="title">{choirName}</Heading></div>
         {management?.(close)}
-        <footer className="drive-drawer-footer"><Link to="/help">帮助</Link>{onEditDisplayName && <Link to={`/choirs/${choirId}/me`}>退出云盘成员身份</Link>}</footer>
+        <footer className="drive-drawer-footer"><Button className="text-button" onPress={close}>关闭云盘菜单</Button></footer>
       </DrawerBody>}</Dialog></Modal>
     </ModalOverlay>
   </>;

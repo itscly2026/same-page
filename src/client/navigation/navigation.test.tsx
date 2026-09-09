@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { createMemoryRouter, Link, Outlet, RouterProvider } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { expect, it, vi } from "vitest";
 import { NavigationProvider } from "./navigation";
 import { useAppNavigation, useExitLayer } from "./navigation-context";
@@ -66,13 +66,13 @@ it("returns from drawer destinations to the open drawer, but deep links start cl
   const { DriveHeader } = await import("../score-library/drive-header");
   const router = createMemoryRouter([{ element: <NavigationProvider><Outlet /></NavigationProvider>, children: [
     { path: "/choirs/one", element: <DriveHeader choirId="one" choirName="排练" search="" onSearch={() => {}} onRefresh={() => {}} /> },
-    { path: "/help", element: <h1>帮助内容</h1> },
+    { path: "/drives", element: <h1>云盘列表内容</h1> },
   ] }], { initialEntries: ["/choirs/one"] });
   render(<RouterProvider router={router} />);
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "打开云盘菜单" }));
-  fireEvent.click(await screen.findByRole("link", { name: "帮助" }));
-  await screen.findByRole("heading", { name: "帮助内容" });
+  fireEvent.click(await screen.findByRole("link", { name: "云盘列表" }));
+  await screen.findByRole("heading", { name: "云盘列表内容" });
   await act(() => router.navigate(-1));
   expect(await screen.findByRole("dialog", { name: "云盘菜单" })).toBeInTheDocument();
 });
@@ -100,4 +100,33 @@ it("asks before losing a changed form, keeps failed saves and returns after conf
   succeeds = true;
   fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
   expect(await screen.findByRole("heading", { name: "云盘" })).toBeInTheDocument();
+});
+
+it("keeps the known drive display name while membership is being restored", async () => {
+  const { DriveHeader } = await import("../score-library/drive-header");
+  const { rememberResource, readResource } = await import("../settings/read-resource");
+  const key = "reader:one:settings";
+  const settings = { name: "排练", nameRevision: 0, displayName: "林老师", membershipRevision: 2, canEditDriveInfo: false };
+  rememberResource(key, settings);
+  let confirmMembership!: () => void;
+  let finishSettings!: (response: Response) => void;
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => { finishSettings = resolve; })));
+  function RestoringHeader() {
+    const [member, setMember] = useState(false);
+    useEffect(() => { confirmMembership = () => setMember(true); }, []);
+    return <DriveHeader loading={!member} choirId="one" choirName="排练" userId="reader" search="" onSearch={() => {}} onRefresh={() => {}} onEditDisplayName={member ? () => {} : undefined} />;
+  }
+  const router = createMemoryRouter([{ element: <NavigationProvider><Outlet /></NavigationProvider>, children: [
+    { path: "/choirs/one", element: <RestoringHeader /> },
+  ] }], { initialEntries: ["/choirs/one"] });
+  render(<RouterProvider router={router} />);
+  await act(async () => { await Promise.resolve(); });
+  expect(screen.getByRole("button", { name: "我在此云盘" })).toHaveTextContent("林");
+  expect(readResource(key)).toEqual(settings);
+  fireEvent.click(screen.getByRole("button", { name: "我在此云盘" }));
+  await screen.findByRole("menuitem", { name: "阅读偏好" });
+  await act(async () => { confirmMembership(); finishSettings(Response.json({ ...settings, displayName: "小林" })); });
+  expect(screen.getByRole("menuitem", { name: "阅读偏好" })).toBeVisible();
+  expect(screen.getByRole("menuitem", { name: "云盘内显示名" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "我在此云盘", hidden: true })).toHaveTextContent("小");
 });

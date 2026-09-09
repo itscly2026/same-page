@@ -90,7 +90,7 @@ it("lets ordinary members inspect owner, delegated scopes and layer grants from 
   expect(screen.getByText(/操作权限：上传文件、Soprano/)).toBeVisible();
   expect(screen.getByText(/授权管理范围：修改文件/)).toBeVisible();
   expect(screen.queryByRole("button", { name: "保存 小花 的权限" })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "按权限" }));
+  fireEvent.click(screen.getByRole("radio", { name: "按权限" }));
   fireEvent.change(screen.getByLabelText("选择权限"), { target: { value: "layer:S" } });
   expect(within(screen.getByRole("region", { name: "可以操作" })).getByText("小花")).toBeVisible();
   expect(screen.queryByText(/操作权限：上传文件/)).not.toBeInTheDocument();
@@ -105,7 +105,7 @@ it("shares drafts and revision checks across member and permission views", async
   render(page());
   fireEvent.click(await screen.findByRole("heading", { name: "小花" }));
   fireEvent.click(screen.getByRole("checkbox", { name: "上传文件：可以操作" }));
-  fireEvent.click(screen.getByRole("button", { name: "按权限" }));
+  fireEvent.click(screen.getByRole("radio", { name: "按权限" }));
   fireEvent.change(screen.getByLabelText("选择权限"), { target: { value: "layer:S" } });
   fireEvent.click(screen.getByText("调整此项权限"));
   fireEvent.change(screen.getByLabelText("选择成员"), { target: { value: "member" } });
@@ -118,7 +118,7 @@ it("explains an out-of-scope permission to a delegated manager without offering 
   vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/permission-layers") ? Response.json({ layers: [] }) : Response.json({ ...state, capabilities: effectiveCapabilities(false, emptyPermissions(), { operations: ["uploadFiles"], sharedLayers: [] }) })));
   render(page());
   await screen.findByRole("heading", { name: "小花" });
-  fireEvent.click(screen.getByRole("button", { name: "按权限" }));
+  fireEvent.click(screen.getByRole("radio", { name: "按权限" }));
   fireEvent.change(screen.getByLabelText("选择权限"), { target: { value: "modifyFiles" } });
   expect(screen.getByText(/这项权限不在你的授权管理范围内/)).toBeVisible();
   expect(screen.queryByRole("button", { name: "保存 小花 的权限" })).not.toBeInTheDocument();

@@ -1,3 +1,4 @@
+import { ViewSelector } from "../components/view-selector";
 import { useReadResource } from "../settings/use-read-resource";
 import { useUnsavedChanges } from "../settings/use-unsaved-changes";
 import { SettingsFeedback } from "../settings/settings-feedback";
@@ -79,7 +80,7 @@ function MembershipManagement({ choirId, userId }: { choirId: string; userId: st
   return <div className="app-page"><TaskHeader title={"成员与权限"} backTo={`/choirs/${choirId}`} /><main className="page-shell settings-page settings-ux lifecycle-page">
     {exitDialog}<header className="settings-heading"><p>找有权处理问题的人，或查看成员的权限。</p></header>
     {state && <>
-      <div className="settings-actions" aria-label="权限查看方式"><Button className="secondary-button" aria-pressed={view === "member"} onPress={() => setView("member")}>按成员</Button><Button className="secondary-button" aria-pressed={view === "permission"} onPress={() => setView("permission")}>按权限</Button></div>
+      <ViewSelector<"member" | "permission"> label="权限查看方式" value={view} onChange={setView} options={[{ id: "member", label: "按成员" }, { id: "permission", label: "按权限" }]} />
       {view === "member" && <div className="member-filters"><label>搜索成员<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="云盘内显示名" /></label><label>成员状态<select value={status} onChange={event => setStatus(event.target.value)}><option value="active">活动成员</option><option value="removed">已移除成员</option></select></label></div>}
       {dirtyMembers.length > 0 && <p role="status">{dirtyMembers.length} 位成员的权限未保存</p>}
       {view === "permission" && <div className="permission-filter"><label>选择权限<select value={permission} onChange={event => { setPermission(event.target.value); setEditingMember(""); }}>{operationKeys.map(key => <option key={key} value={key}>{operationLabels[key]}</option>)}<option value="all-layers">编辑全部共享层（包括未来新增层）</option>{layers.map(layer => <option key={layer.slot} value={`layer:${layer.slot}`}>编辑 {layer.name}</option>)}</select></label></div>}
@@ -103,7 +104,7 @@ function MembershipManagement({ choirId, userId }: { choirId: string; userId: st
   </main></div>;
 }
 function PermissionPeople({ title, members }: { title: string; members: Member[] }) {
-  return <section className="permission-people" aria-label={title}><h2>{title}<span>{members.length} 人</span></h2>{members.length ? <ul>{members.map(member => <li key={member.id}><span>{member.displayName}</span><small>{member.isOwner ? "拥有者" : isDelegated(member.management) ? "受托人" : "成员"}</small></li>)}</ul> : <p className="settings-copy">暂无成员</p>}</section>;
+  return <section className="permission-people" aria-label={title}><h2>{title}<span>{members.length} 人</span></h2>{members.length ? <ul>{members.map(member => <li key={member.id}><span>{member.displayName}</span></li>)}</ul> : <p className="settings-copy">暂无成员</p>}</section>;
 }
 function describe(set: PermissionSet, layers: Layer[]): string {
   return [...set.operations.map(key => operationLabels[key]), ...(set.sharedLayers === "all" ? ["全部共享层（包括未来新增层）"] : set.sharedLayers.map(slot => layers.find(layer => layer.slot === slot)?.name ?? slot))].join("、") || "无";
@@ -115,8 +116,8 @@ function MemberEditor({ focus, member, state, layers, busy, save, change, transf
   const outsideScope = Boolean(focus && !owner && !hasPermission(state.capabilities.management, focus));
   const canAuthorize = !outsideScope && (owner || (isDelegated(state.capabilities.management) && !member.isOwner && !isDelegated(member.management) && member.id !== state.actorId));
   const protectedMember = Boolean(member.isOwner) || isDelegated(member.management);
-  return <details className="lifecycle-member" open={focus ? true : undefined}><summary><span className="member-identity"><span className="member-name"><h2>{member.displayName}</h2>{member.id === state.actorId && <span className="member-self">我</span>}</span><span className="member-role">{member.isOwner ? "拥有者" : isDelegated(member.management) ? "受托权限管理者" : member.status === "removed" ? "已移除" : "成员"}</span></span></summary>
-    <p>{member.status === "removed" ? "已移除" : member.isOwner ? "拥有者" : isDelegated(member.management) ? "受托权限管理者" : "普通成员"}</p>
+  return <details className="lifecycle-member" open={focus ? true : undefined}><summary><span className="member-identity"><span className="member-name"><h2>{member.displayName}</h2>{member.id === state.actorId && <span className="member-self">我</span>}</span>{member.status === "removed" && <span className="member-role">已移除</span>}</span></summary>
+    {Boolean(member.isOwner) && <p>云盘拥有者</p>}
     {!focus && <><p>操作权限：{describe(member.isOwner ? allPermissions() : member.operations, layers)}</p>
     <p>授权管理范围：{describe(member.isOwner ? allPermissions() : member.management, layers)}</p></>}
     {focus && <p>此项权限：{member.isOwner || hasPermission(member.operations, focus) ? "可以操作" : "不能操作"}；{member.isOwner || hasPermission(member.management, focus) ? "可以授权他人" : "不能授权他人"}</p>}

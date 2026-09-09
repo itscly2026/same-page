@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { PersonalLayerCard } from "./personal-layer-card";
 import { Link } from "react-router-dom";
-import { Button } from "react-aria-components";
+import { Button, MenuItem, MenuTrigger, Popover } from "react-aria-components";
+import { Menu } from "../navigation/overlays";
 
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import { syncAnnotations } from "../annotations/sync";
@@ -21,13 +22,20 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
   layers: AnnotationLayerSummary[];
   signedIn: boolean;
 }) {
+  const managementTrigger = useRef<HTMLButtonElement>(null);
   const [creationId, setCreationId] = useState<string | null>(null);
   const [managing, setManaging] = useState(false);
+  const [managementTarget, setManagementTarget] = useState<{ id: string; action: "rename" | "delete" } | null>(null);
   const [newName, setNewName] = useState("");
+  const [deletedLoaded, setDeletedLoaded] = useState(false);
+  const [needsRefresh, setNeedsRefresh] = useState(false);
   const [deleted, setDeleted] = useState<AnnotationLayerSummary[]>([]);
   const [personalRetry, setPersonalRetry] = useState<(() => Promise<void>) | null>(null);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
+  const [feedbackName, setFeedbackName] = useState("");
+  const [feedbackTarget, setFeedbackTarget] = useState<string | null>(null);
+  const [feedbackInManagement, setFeedbackInManagement] = useState(false);
   const preferences = useReadingPreferences(workspace, signedIn);
   const projectedLayers = useReadingPreferenceProjection(workspace, storedLayers);
   const layers = projectedLayers.map(layer => projectReadingPreferences(layer, preferences.rows.filter(row => !row.observed)));
@@ -56,12 +64,14 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
     if (!response.ok) throw new Error("deleted_layers_refresh_failed");
     const result = annotationLayerListResponseSchema.parse(await response.json());
     await assertLocalWorkspaceActive(workspace);
-    if (active.current) setDeleted(result.layers.filter(layer => layer.kind === "personal" && layer.canEdit && layer.deletedAt));
+    if (active.current) { setDeleted(result.layers.filter(layer => layer.kind === "personal" && layer.canEdit && layer.deletedAt)); setDeletedLoaded(true); }
   };
 
-  const personalRequest = async (path: string, method: string, body?: unknown) => {
-    if (busy.current) return;
+  const personalRequest = async (path: string, method: string, body?: unknown, inManagement = false) => {
+    if (busy.current || needsRefresh) return;
     busy.current = true; setPending(true); setMessage(""); setPersonalRetry(null);
+    const target = path.startsWith("personal-layers/") ? path.split("/")[1] : null;
+    setFeedbackTarget(target); setFeedbackName([...layers, ...deleted].find(layer => layer.id === target)?.name ?? ""); setFeedbackInManagement(inManagement);
     let confirmed = false;
     let changed = false;
     try {
@@ -72,12 +82,12 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
       await assertLocalWorkspaceActive(workspace);
       changed = response.status === 409;
       if (!response.ok) throw new Error("personal_layer_update_failed");
-      confirmed = true;
+      confirmed = method !== "GET";
       if (method === "GET") {
         const result = annotationLayerListResponseSchema.parse(await response.json());
         if (active.current) {
           setDeleted(result.layers.filter(layer => layer.kind === "personal" && layer.canEdit && layer.deletedAt));
-          setManaging(true);
+          setDeletedLoaded(true); setManaging(true);
         }
       } else {
         if (active.current && method === "POST" && path === "personal-layers") { setCreationId(null); setNewName(""); }
@@ -87,13 +97,14 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
       return true;
     } catch {
       if (active.current) {
-        setMessage(confirmed ? "修改已保存，内容刷新失败。请重试刷新。" : "修改尚未确认，请检查网络后重试。");
+        setNeedsRefresh(confirmed || changed);
+        setMessage(method === "GET" ? "个人层列表读取失败，请重试。" : confirmed ? "修改已保存，内容刷新失败。请重试刷新。" : "修改尚未确认，请检查网络后重试。");
         setPersonalRetry(() => confirmed || changed ? async () => {
           setPending(true);
-          try { await syncAnnotations(workspace, { pull: true }); if (managing) await refreshDeleted(); if (active.current) { setMessage(changed ? "图层已刷新，请核对当前状态后重新操作。" : ""); setPersonalRetry(null); } }
+          try { await syncAnnotations(workspace, { pull: true }); if (managing) await refreshDeleted(); if (active.current) { setMessage(changed ? "图层已刷新，请核对当前状态后重新操作。" : ""); setPersonalRetry(null); setNeedsRefresh(false); } }
           catch { if (active.current) setMessage("图层刷新失败，请重试。"); }
           finally { if (active.current) setPending(false); }
-        } : async () => { await personalRequest(path, method, body); });
+        } : async () => { await personalRequest(path, method, body, inManagement); });
       }
       return false;
     } finally {
@@ -101,6 +112,14 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
       if (active.current) setPending(false);
     }
   };
+
+  const mutationFeedback = (target: string | null, inManagement = false, showName = false) => feedbackTarget === target && feedbackInManagement === inManagement && (pending || message)
+    ? <div className="reader-layer-feedback">{showName && feedbackName && <strong>{feedbackName}</strong>}<p role="status">{pending ? "正在处理…" : message}</p>{personalRetry && <Button isDisabled={pending} onPress={() => void personalRetry()}>重试</Button>}</div> : null;
+
+  const managementOpen = managing || managementTarget !== null;
+  const managedLayers = personalLayers.filter(layer => managing || layer.id === managementTarget?.id);
+  const missingFeedbackRow = feedbackTarget !== null && !(feedbackInManagement ? [...managedLayers, ...(managing ? deleted : [])] : personalLayers).some(layer => layer.id === feedbackTarget);
+  const feedbackOutsideManagement = feedbackInManagement && !managementOpen;
 
   return (
     <section className="reader-layer-panel" aria-label="看哪些笔记" aria-busy={pending}>
@@ -140,25 +159,40 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
         </div>
       </div>
       {(personalLayers.length > 0 || signedIn) && <div className="layer-section layer-section--personal">
-        <div className="layer-section__heading"><h3>个人层</h3></div>
-        {message && <div className="reader-layer-feedback"><p role="status">{message}</p>{personalRetry && <Button isDisabled={pending} onPress={() => void personalRetry()}>重试</Button>}</div>}
-        {personalLayers.map(layer => <div key={layer.id}><PersonalLayerCard key={layer.id} layer={layer} workspace={workspace} pending={pending || !signedIn}
+        <div className="layer-section__heading"><h3>个人层</h3>{signedIn && <MenuTrigger>
+          <Button ref={managementTrigger} className="personal-layer-more" aria-label="管理个人层" isDisabled={pending || needsRefresh}>⋯</Button>
+          <Popover className="file-menu-popover"><Menu aria-label="个人层操作">
+            {personalLayers.length === 1 ? <>
+              <MenuItem onAction={() => setManagementTarget({ id: personalLayers[0].id, action: "rename" })}>重命名 {personalLayers[0].name}</MenuItem>
+              <MenuItem onAction={() => setManagementTarget({ id: personalLayers[0].id, action: "delete" })}>删除 {personalLayers[0].name}</MenuItem>
+            </> : <MenuItem onAction={() => { setManaging(true); void personalRequest("layers?state=deleted", "GET", undefined, true); }}>管理个人层</MenuItem>}
+            <MenuItem onAction={() => { setManaging(true); void personalRequest("layers?state=deleted", "GET", undefined, true); }}>已删除个人层</MenuItem>
+          </Menu></Popover></MenuTrigger>}</div>
+        {mutationFeedback(null)}{(feedbackOutsideManagement || (!feedbackInManagement && missingFeedbackRow)) && mutationFeedback(feedbackTarget, feedbackInManagement, true)}
+        {personalLayers.map(layer => <div key={layer.id}><PersonalLayerCard key={layer.id} layer={layer} workspace={workspace} pending={pending || !signedIn || needsRefresh}
           onChange={change => personalRequest(`personal-layers/${layer.id}`, "PUT", { ...change, expectedRevision: layer.revision ?? 0 })}
-          onSubscribe={subscribed => void preferences.save({ kind: "personal", id: layer.id }, { subscribed })} />{preferenceFeedback("personal", layer.id)}</div>)}
+          onSubscribe={subscribed => void preferences.save({ kind: "personal", id: layer.id }, { subscribed })} />{preferenceFeedback("personal", layer.id)}{mutationFeedback(layer.id)}</div>)}
         {signedIn && <>
           <div className="personal-layer-footer">
-            {!creationId && <Button className="personal-layer-create" isDisabled={pending} onPress={() => setCreationId(crypto.randomUUID())}>＋ 新建个人层</Button>}
-            <Button className="personal-layer-deleted" isDisabled={pending} aria-expanded={managing}
-              onPress={() => { if (managing) setManaging(false); else void personalRequest("layers?state=deleted", "GET"); }}>已删除个人层</Button>
+            {!creationId && <Button className="personal-layer-create" isDisabled={pending || needsRefresh} onPress={() => setCreationId(crypto.randomUUID())}>＋ 新建个人层</Button>}
+
           </div>
           {creationId && <form onSubmit={event => { event.preventDefault(); void personalRequest("personal-layers", "POST", { id: creationId, name: newName.trim() }); }}>
             <input aria-label="新个人层名称" placeholder="例如：排练记录" required maxLength={60} value={newName} onChange={event => setNewName(event.target.value)} />
-            <button disabled={pending || !newName.trim()}>新建个人层</button>
+            <button disabled={pending || needsRefresh || !newName.trim()}>新建个人层</button>
           <Button isDisabled={pending} onPress={() => setCreationId(null)}>取消</Button>
           </form>}
-          {managing && deleted.length === 0 && <p className="reader-layer-help" role="status">没有可恢复的个人层。</p>}
-          {managing && deleted.map(layer => <div key={layer.id}>{layer.name}<Button isDisabled={pending}
-            onPress={() => void personalRequest(`personal-layers/${layer.id}`, "PUT", { action: "restore", expectedRevision: layer.revision })}>恢复 {layer.name}</Button></div>)}
+          {(managing || managementTarget) && <section className="personal-layer-management" aria-label="个人层管理">
+            <div className="layer-section__heading"><h4>管理个人层</h4><Button onPress={() => { setManaging(false); setManagementTarget(null); requestAnimationFrame(() => managementTrigger.current?.focus()); }}>关闭管理</Button></div>
+            {managedLayers.map(layer => <div key={`${layer.id}:${managementTarget?.action ?? "manage"}`}><PersonalLayerCard layer={layer} workspace={workspace} pending={pending || needsRefresh}
+              managementAction={managementTarget?.id === layer.id ? managementTarget.action : "manage"} onCancel={() => setManagementTarget(null)}
+              onChange={async change => { const saved = await personalRequest(`personal-layers/${layer.id}`, "PUT", { ...change, expectedRevision: layer.revision ?? 0 }, true); if (saved) setManagementTarget(null); return saved; }} />{mutationFeedback(layer.id, true)}</div>)}
+            {mutationFeedback(null, true)}{feedbackInManagement && missingFeedbackRow && mutationFeedback(feedbackTarget, true, true)}{managing && <h4>已删除个人层</h4>}{managing && pending && <p role="status">正在更新个人层…</p>}
+          {managing && deletedLoaded && !pending && deleted.length === 0 && <p className="reader-layer-help" role="status">没有可恢复的个人层。</p>}
+          {managing && deleted.map(layer => <div key={layer.id}>{layer.name}<Button isDisabled={pending || needsRefresh}
+            onPress={() => void personalRequest(`personal-layers/${layer.id}`, "PUT", { action: "restore", expectedRevision: layer.revision }, true)}>恢复 {layer.name}</Button>{mutationFeedback(layer.id, true)}</div>)}
+          </section>}
+
         </>}
       </div>}
       {publishedLayers.length ? <div className="layer-section"><h3>成员分享</h3>

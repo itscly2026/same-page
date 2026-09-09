@@ -67,13 +67,13 @@ test("desktop and narrow readers preserve local intent and warm display name dra
       await second.close();
     }
     await page.goto(`${server.origin}/choirs/visual-choir`);
-    await page.getByRole("button", { name: "打开云盘菜单" }).click();
-    await page.getByRole("button", { name: "云盘内显示名", exact: true }).click();
+    await page.getByRole("button", { name: "我在此云盘" }).click();
+    await page.getByRole("menuitem", { name: "云盘内显示名", exact: true }).click();
     const name = page.getByRole("textbox", { name: "我在此云盘的显示名" });
     await name.waitFor(); await page.waitForFunction(() => [...document.querySelectorAll("input")].some(input => input.value === "本机已知名称"));
     await page.getByRole("button", { name: "取消", exact: true }).click();
-    await page.getByRole("button", { name: "打开云盘菜单" }).click(); hold = true; remoteName = true;
-    await page.getByRole("button", { name: "云盘内显示名", exact: true }).click();
+    await page.getByRole("button", { name: "我在此云盘" }).click(); hold = true; remoteName = true;
+    await page.getByRole("menuitem", { name: "云盘内显示名", exact: true }).click();
     assert.equal(await name.inputValue(), "本机已知名称");
     await name.fill("正在编辑的名称");
     await page.screenshot({ path: `${output}/${width}-warm-name.png`, fullPage: true });

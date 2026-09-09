@@ -24,11 +24,11 @@
 .install-suggestion .install-button { margin-top: 10px; padding: 0; min-height: 32px; }
 .install-suggestion > .icon-button { flex-shrink: 0; }
 .hero-actions .install-button { min-height: 44px; }
-@media (max-width: 360px) {
-  .marketing-hero .hero-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .marketing-hero .hero-actions .hero-cta { min-width: 0; white-space: nowrap; }
-  .marketing-hero .hero-actions .hero-invite-hint { top: 48px; }
-  .marketing-hero .hero-actions .hero-preview-link { grid-column: 2; justify-self: center; }
+@media (max-width: 600px) {
+  .marketing-hero .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+  .marketing-hero .hero-actions .hero-cta { flex: 0 0 100%; min-width: 0; box-sizing: border-box; }
+  .marketing-hero .hero-actions .hero-preview-link,
+  .marketing-hero .hero-actions .install-button { flex: 1; min-height: 44px; justify-content: center; text-align: center; }
 }
 .install-advice { background: #f0f7f4; border: 1px solid #d1e3df; border-radius: 12px; padding: 16px; margin: 16px 0; font-size: 14px; line-height: 1.65; }
 .install-advice strong { font-size: 15px; }
