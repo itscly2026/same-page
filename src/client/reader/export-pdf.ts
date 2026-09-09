@@ -1,4 +1,4 @@
-import { inkPaints } from "../annotations/ink-geometry";
+import { inkPaints, inkFillRule } from "../annotations/ink-geometry";
 import { paintExportText } from "./export-text";
 import { PDFDocument, concatTransformationMatrix, popGraphicsState, pushGraphicsState } from "pdf-lib";
 import type { AnnotationLayerSummary, AnnotationPayload } from "../../shared/annotations";
@@ -33,7 +33,7 @@ export async function exportAnnotatedPdf(source: PDFDocumentProxy, annotations: 
             ring.forEach(([x, y], index) => { if (index === 0) context.moveTo(x, y); else context.lineTo(x, y); });
             context.closePath();
           }
-          context.fill("evenodd");
+          context.fill(inkFillRule(payload));
         }
       } else if (payload.kind === "shape") {
         context.lineWidth = payload.strokeWidth * viewport.width;

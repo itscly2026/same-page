@@ -4,6 +4,10 @@ import { getStroke } from "perfect-freehand";
 import type { AnnotationPayload } from "../../shared/annotations";
 
 type Ink = Extract<AnnotationPayload, { kind: "ink" }>;
+// Freehand outlines can self-intersect; even-odd would punch out crossings.
+// Clipped highlighter polygons explicitly contain holes and use even-odd.
+export const inkFillRule = (ink: Pick<Ink, "brush">): CanvasFillRule => ink.brush === "pen" ? "nonzero" : "evenodd";
+
 // Compute in page coordinates, never in a stretched square: width is relative
 // to the page width, while points have independent normalized x/y axes.
 export function inkOutline(ink: Ink, width: number, height: number): number[][] {
@@ -26,22 +30,28 @@ export function inkSvgPaths(ink: Ink, aspectRatio: number): string[] {
 export function inkHit(ink: Ink, width: number, height: number, x: number, y: number, radius: number): boolean {
   return inkPaints(ink, width, height).some(paint => paint.some(polygon => {
     let inside = false;
+    let winding = 0;
     for (const ring of polygon) {
       const hit = ringHit(ring, x, y, radius);
       if (hit.edge) return true;
       if (hit.inside) inside = !inside;
+      winding += hit.winding;
     }
-    return inside;
+    return inkFillRule(ink) === "nonzero" ? winding !== 0 : inside;
   }));
 }
 function ringHit(polygon: Pair[], x: number, y: number, radius: number) {
   let inside = false;
+  let winding = 0;
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
     const [ax, ay] = polygon[j]!, [bx, by] = polygon[i]!;
     if ((ay! > y) !== (by! > y) && x < (bx! - ax!) * (y - ay!) / (by! - ay!) + ax!) inside = !inside;
+    const side = (bx - ax) * (y - ay) - (x - ax) * (by - ay);
+    if (ay <= y && by > y && side > 0) winding++;
+    else if (ay > y && by <= y && side < 0) winding--;
     const dx = bx! - ax!, dy = by! - ay!;
     const t = Math.max(0, Math.min(1, ((x - ax!) * dx + (y - ay!) * dy) / (dx * dx + dy * dy || 1)));
-    if (Math.hypot(x - ax! - t * dx, y - ay! - t * dy) <= radius) return { inside, edge: true };
+    if (Math.hypot(x - ax! - t * dx, y - ay! - t * dy) <= radius) return { inside, winding, edge: true };
   }
-  return { inside, edge: false };
+  return { inside, winding, edge: false };
 }

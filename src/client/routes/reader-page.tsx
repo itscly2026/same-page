@@ -639,8 +639,10 @@ function ReaderPageContent() {
 
       {editing && editor && annotationInteraction === "idle" ? (
         <Suspense fallback={<p role="status">正在准备笔记工具…</p>}>
+          {/* Normal checkpoints and history are serialized by the editor;
+              toggling disabled here makes the toolbar flash on every save. */}
           <ReaderEditingControls
-            isDisabled={persistence !== "idle"}
+            isDisabled={persistence === "failed"}
             editor={editor}
             layers={layers}
             tool={tool}

@@ -205,7 +205,7 @@
 .annotation-style-slider .react-aria-SliderThumb { width: 22px; height: 22px; top: 16px; border-radius: 50%; border: 2px solid #17665f; background: white; box-shadow: 0 2px 4px #0002; }
 .annotation-style-slider .react-aria-SliderThumb[data-focus-visible] { outline: 3px solid #bba751; outline-offset: 3px; }
 .annotation-pressure-options { display: flex; gap: 6px; }
-.annotation-pressure-options button { flex: 1; min-height: 38px; border-radius: 8px; border: 1px solid #cdd9d4; background: transparent; color: #203b3b; }
+.annotation-pressure-options button { flex: 1; min-height: 44px; border-radius: 8px; border: 1px solid #cdd9d4; background: transparent; color: #203b3b; }
 .annotation-pressure-options button[aria-pressed="true"] { background: #e3efe9; border-color: #17665f; }
 .annotation-style-sample { width: 100%; height: 52px; border-radius: 8px; background: #f4f3ec; }
 .annotation-object-properties { position: fixed; z-index: 45; top: 82px; right: 18px; max-height: calc(100dvh - 220px); overflow: auto; }
@@ -224,5 +224,3 @@
 }
 
 @media (max-width: 640px) { .reader-shell .annotation-history-controls { grid-column: 4; } .reader-shell .annotation-drawing-tools .annotation-tool-button { min-width: 0; padding-inline: 5px; } }
-
-.annotation-hover-tool { position: absolute; transform: translate(14px, 14px); padding: 3px 7px; background: #203b3bed; color: white; border-radius: 5px; font-size: 11px; white-space: nowrap; pointer-events: none; }
