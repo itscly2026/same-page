@@ -159,7 +159,7 @@ vi.mock("../reader/pdf-page", async () => {
           lease?.cancel();
         };
       }, [onRenderStart, pageNumber]);
-      useEffect(() => { leaseRef.current?.ready(); recoveryRef.current?.ready(pageNumber); }, [onRenderStart, pageNumber]);
+      useEffect(() => { leaseRef.current?.ready(); recoveryRef.current?.ready(pageNumber); }, [onRenderStart, pageNumber, recovery?.currentPage]);
       return <div aria-label={`渲染第 ${pageNumber} 页`} />;
     },
   };
