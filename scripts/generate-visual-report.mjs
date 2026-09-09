@@ -207,7 +207,7 @@ function ensureSafeOutputPath(target) {
 async function runActions(page, actions, fixture) {
   for (const action of actions) {
     if (action.type === "armFailures") { fixture.armFailures(); continue; }
-    if (action.type === "waitPreferences") { await page.waitForFunction(async () => { const { localDatabase } = await import("/src/client/platform/local-database.ts"); const rows = await localDatabase.readingPreferences.toArray(); return rows.length > 0 && rows.every(row => !row.pending); }); continue; }
+    if (action.type === "waitPreferences") { await page.waitForFunction(async () => { const { localDatabase } = await import("/src/client/platform/local-database.ts"); const { currentReadingIntent } = await import("/src/client/reader/reading-preference-intents.ts"); const rows = await localDatabase.readingPreferences.toArray(); return rows.length > 0 && rows.every(row => { const intent = currentReadingIntent(row.key); return !row.pending && (!intent || (intent.localState === "saved" && intent.version === row.version)); }); }); continue; }
     if (action.type === "reload") { await page.reload({ waitUntil: "domcontentloaded" }); continue; }
     if (action.type === "waitText") { await page.getByText(action.text, { exact: true }).waitFor({ state: "visible" }); continue; }
     if (action.type === "scrollIntoView") { await page.locator(action.selector).scrollIntoViewIfNeeded(); continue; }

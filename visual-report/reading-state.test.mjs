@@ -59,6 +59,13 @@ test("desktop and narrow readers preserve local intent and warm display name dra
       await second.getByRole("button", { name: "看哪些笔记", exact: true }).click();
       const other = second.getByRole("checkbox", { name: "显示 Ensemble", exact: true });
       await other.waitFor(); await other.click();
+      // The scenario requires a newer durable intent while the first tab owns
+      // the lock. A checked input only proves optimistic display, not IDB commit.
+      await second.waitForFunction(async expected => {
+        const { localDatabase } = await import("/src/client/platform/local-database.ts");
+        return (await localDatabase.readingPreferences.toArray()).some(row =>
+          row.kind === "shared" && row.id === "E" && row.pending && row.subscribed === expected);
+      }, !initial);
       assert.equal(puts, before + 1, "second tab waits for the first tab's preference lock");
       hold = false; releases.splice(0).forEach(release => release());
       await waitForPreferences(second);
@@ -90,8 +97,12 @@ test("desktop and narrow readers preserve local intent and warm display name dra
 async function waitForPreferences(page) {
   await page.waitForFunction(async () => {
     const { localDatabase } = await import("/src/client/platform/local-database.ts");
+    const { currentReadingIntent } = await import("/src/client/reader/reading-preference-intents.ts");
     const rows = await localDatabase.readingPreferences.toArray();
-    return rows.length > 0 && rows.every(row => !row.pending);
+    return rows.length > 0 && rows.every(row => {
+      const intent = currentReadingIntent(row.key);
+      return !row.pending && (!intent || (intent.localState === "saved" && intent.version === row.version));
+    });
   });
   assert.equal(await page.getByText(/正在保存到本机|等待同步。|已同步。/).count(), 0);
 }
