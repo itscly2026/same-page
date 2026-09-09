@@ -18,6 +18,7 @@ try {
     await context.addInitScript(() => { localStorage.setItem('reader-gesture-hint-seen', 'true'); navigator.serviceWorker.getRegistration = async () => ({ active: {} }); });
     await page.route('**/api/**', route => {
       const pathname = new URL(route.request().url()).pathname;
+      if (pathname === '/api/choirs/visual-choir/settings') return route.fulfill({ json: { name: '示例云盘', nameRevision: 0, displayName: '林老师', membershipRevision: 0, canEditDriveInfo: true } });
       const response = fixture.resolve({ pathname, method: route.request().method(), identity: 'admin', cookie: '' });
       if (pathname.endsWith('/layers')) { const data = JSON.parse(response.body); data.layers = data.layers.map(layer => layer.kind === 'personal' ? { ...layer, canShare: true, sharing: false } : layer); response.body = JSON.stringify(data); }
       return route.fulfill(response);
@@ -38,6 +39,7 @@ try {
     await page.keyboard.press('Escape');
     await expect(page.getByRole('button', { name: '打开云盘菜单' })).toBeFocused();
     await page.getByRole('button', { name: phase === 'before' ? '我的' : '我在此云盘', exact: true }).click();
+    if (phase === 'after') await expect(page.getByRole('menuitem', { name: '林老师', exact: true })).toBeVisible();
     await capture('personal-menu');
     await page.keyboard.press('Escape');
     await page.goto(`${app.origin}/choirs/visual-choir/memberships`);
@@ -50,6 +52,7 @@ try {
     await expect(page.getByText('此云盘尚无本机谱面文件。')).toBeVisible();
     await capture('storage-empty');
     await page.goto(`${app.origin}/choirs/visual-choir/scores/visual-score`);
+    await page.waitForFunction(() => document.querySelector('[data-pdf-canvas-active]')?.width > 100);
     await page.locator('.page-reader__viewport').click();
     await page.getByRole('button', { name: '看哪些笔记', exact: true }).click();
     await expect(page.getByRole('checkbox', { name: '显示 Ensemble' })).toBeVisible();
