@@ -9,15 +9,21 @@ import { startStorageFixture } from "./storage-fixture.mjs";
 import { withBrowserEvidence } from "./browser-evidence.mjs";
 
 for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]]) {
-  test(`${engineName}: verified local score access`, { timeout: 120_000 }, async t => {
+  test(`${engineName}: verified local score access`, async t => {
     const fixture = await startStorageFixture({ authenticated: true, previewEntry: false });
     t.after(() => fixture.stop());
     const drive = `${fixture.origin}/choirs/${fixture.choirId}`;
     const options = { headless: true, serviceWorkers: "allow", viewport: { width: 390, height: 844 } };
     async function scenario(label, run) {
-      await t.test(label, async () => {
+      await t.test(label, { timeout: 120_000 }, async scenarioTest => {
         const profile = await mkdtemp(path.join(tmpdir(), "same-page-offline-entry-"));
         let context;
+        // A timed-out recovery must close its browser and allow revocation to run.
+        const cleanup = async () => {
+          try { await context?.close(); }
+          finally { await rm(profile, { recursive: true, force: true }); }
+        };
+        scenarioTest.after(cleanup);
         try {
           context = await engine.launchPersistentContext(profile, options);
           const account = fixture.accounts[1];
@@ -40,10 +46,7 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
             context = await engine.launchPersistentContext(profile, options);
             return context;
           } });
-        } finally {
-          try { await context?.close(); }
-          finally { await rm(profile, { recursive: true, force: true }); }
-        }
+        } finally { await cleanup(); }
       });
     }
     await scenario(engineName === "chromium" ? "offline-browser-restart" : "api-outage-new-page", async ({ page, context, output, restart }) => {

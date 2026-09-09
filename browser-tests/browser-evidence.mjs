@@ -9,13 +9,18 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 // the action trace plus a masked failure screenshot is sufficient for these flows.
 export async function withBrowserEvidence(context, directory, run) {
   const errors = [];
-  const observe = page => page.on("pageerror", error => errors.push({
-    name: error.name,
-    // Keep source locations, never arbitrary exception text (which may echo user input).
-    locations: [...(error.stack ?? "").matchAll(/https?:\/\/[^\s)]+/g)].map(([value]) => {
-      const url = new URL(value); return `${url.origin}${url.pathname}`;
-    }),
-  }));
+  const listeners = new Map();
+  const observe = page => {
+    const listener = error => errors.push({
+      name: error.name,
+      // Keep source locations, never arbitrary exception text (which may echo user input).
+      locations: [...(error.stack ?? "").matchAll(/https?:\/\/[^\s)]+/g)].map(([value]) => {
+        const url = new URL(value); return `${url.origin}${url.pathname}`;
+      }),
+    });
+    listeners.set(page, listener);
+    page.on("pageerror", listener);
+  };
   context.pages().forEach(observe);
   context.on("page", observe);
   await context.tracing.start({ screenshots: false, snapshots: false, sources: false });
@@ -41,6 +46,7 @@ export async function withBrowserEvidence(context, directory, run) {
     throw error;
   } finally {
     context.off("page", observe);
+    for (const [page, listener] of listeners) page.off("pageerror", listener);
     await context.tracing.stop().catch(() => {});
   }
 }
