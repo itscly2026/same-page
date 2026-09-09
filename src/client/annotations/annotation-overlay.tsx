@@ -1,6 +1,7 @@
 import {
   type PointerEvent as ReactPointerEvent,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -20,7 +21,7 @@ import type { AnnotationEditor } from "./annotation-editor";
 import { useEditorPersistence } from "./use-annotation-editor";
 import { calculateTextEditorLayout } from "./text-editor-layout";
 
-import { inkSvgPaths, inkHit } from "./ink-geometry";
+import { inkSvgPaths, inkHit, inkFillRule } from "./ink-geometry";
 import { defaultToolStyle, type ToolStyle } from "./tool-style";
 import { highlighterNibPath } from "./highlighter-geometry";
 import { ObjectProperties } from "./object-properties";
@@ -106,6 +107,7 @@ export function AnnotationOverlay({
   onInteractionChange?(interaction: AnnotationOverlayInteraction): void;
 }) {
   const persistence = useEditorPersistence(editor);
+  const eraserGradientId = useId();
   const [pageWidth, setPageWidth] = useState(1000);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [aspectRatio, setAspectRatio] = useState(1);
@@ -752,7 +754,7 @@ export function AnnotationOverlay({
                   vectorEffect="non-scaling-stroke"
                 />
               ) : null}
-              {inkSvgPaths(payload, aspectRatio).map((path, index) => <path key={index} data-ink-stroke d={path} fill={color} fillRule="evenodd" opacity={payload.opacity ?? 1} />)}
+              {inkSvgPaths(payload, aspectRatio).map((path, index) => <path key={index} data-ink-stroke d={path} fill={color} fillRule={inkFillRule(payload)} opacity={payload.opacity ?? 1} />)}
               {selectedId === annotation.id && tool === "select" && <path d={inkSvgPaths(payload, aspectRatio).join("")} fill="none" stroke="#014653" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray="4 3" />}
 
             </g>
@@ -760,13 +762,26 @@ export function AnnotationOverlay({
         })}
         {editing && draftShape ? <ShapePreview payload={draftShape} color={activeLayerColor} /> : null}
         {editing && draftStroke ? (
-          <g>{inkSvgPaths(draftStroke, aspectRatio).map((path, index) => <path key={index} data-ink-draft d={path} fill={activeLayerColor} fillRule="evenodd" opacity={draftStroke.opacity ?? 1} />)}</g>
+          <g>{inkSvgPaths(draftStroke, aspectRatio).map((path, index) => <path key={index} data-ink-draft d={path} fill={activeLayerColor} fillRule={inkFillRule(draftStroke)} opacity={draftStroke.opacity ?? 1} />)}</g>
         ) : null}
         {hover && canStartEdit && <g pointerEvents="none" aria-label="笔尖预览">
-          {tool === "highlighter" ? <path d={highlighterNibPath({ nib: toolStyle.nib, strokeWidth: toolStyle.strokeWidth }, hover, aspectRatio)} fill={activeLayerColor} fillOpacity={toolStyle.opacity} stroke={activeLayerColor} strokeWidth="1" vectorEffect="non-scaling-stroke" /> : <ellipse cx={hover.x * 1000} cy={hover.y * 1000} rx={tool === "eraser" ? 14 * 1000 / pageWidth : tool === "text" || tool === "select" ? 4 : toolStyle.strokeWidth * 500} ry={(tool === "eraser" ? 14 * 1000 / pageWidth : tool === "text" || tool === "select" ? 4 : toolStyle.strokeWidth * 500) * aspectRatio} fill="none" fillOpacity={toolStyle.opacity} stroke={activeLayerColor} strokeWidth="1" vectorEffect="non-scaling-stroke" />}
+          {tool === "eraser" && <defs>
+            <radialGradient id={eraserGradientId}>
+              <stop offset="0" stopColor="#203b3b" />
+              <stop offset="45%" stopColor="#203b3b" stopOpacity=".45" />
+              <stop offset="75%" stopColor="#203b3b" stopOpacity=".12" />
+              <stop offset="100%" stopColor="#203b3b" stopOpacity="0" />
+            </radialGradient>
+          </defs>}
+          {tool === "highlighter" ? <path d={highlighterNibPath({ nib: toolStyle.nib, strokeWidth: toolStyle.strokeWidth }, hover, aspectRatio)} fill={activeLayerColor} fillOpacity={Math.min(toolStyle.opacity, .3)} /> : <ellipse
+            cx={hover.x * 1000} cy={hover.y * 1000}
+            rx={(tool === "eraser" ? ERASER_HIT_RADIUS_PX : 1.25) * 1000 / pageWidth}
+            ry={(tool === "eraser" ? ERASER_HIT_RADIUS_PX : 1.25) * 1000 / pageWidth * aspectRatio}
+            fill={tool === "eraser" ? `url(#${eraserGradientId})` : activeLayerColor}
+            fillOpacity={tool === "eraser" ? .12 : .35}
+          />}
         </g>}
       </svg>
-      {hover && canStartEdit && <span className="annotation-hover-tool" style={{ left: `${hover.x * 100}%`, top: `${hover.y * 100}%` }}>{({ ink: "画笔", highlighter: "荧光笔", rectangle: "矩形", ellipse: "椭圆", text: "文字", eraser: "整条橡皮", select: "选择" })[tool]}</span>}
 
       {pageAnnotations.map((annotation) => {
         const payload = annotation.payload;

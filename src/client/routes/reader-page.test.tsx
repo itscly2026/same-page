@@ -2305,8 +2305,8 @@ it("keeps a single exit while the PDF never settles", async () => {
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
     expect(await screen.findByText("连续布局退出前保存的文字")).toBeInTheDocument();
 
-    // A slow/failed ink write must retain the selected target from #141,
-    // while #142 prevents changing layers, tools or history before persistence.
+    // Normal checkpoints stay quiet (#242); the editor serializes writes and
+    // history. A failed save still blocks controls and retains the target.
     fireEvent.click(screen.getByRole("button", { name: "画笔" }));
     const inkOverlay = screen.getByLabelText("第 1 页笔记层");
     vi.spyOn(inkOverlay, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, top: 0, left: 0, right: 100, bottom: 100, width: 100, height: 100, toJSON: () => ({}) });
@@ -2318,14 +2318,17 @@ it("keeps a single exit while the PDF never settles", async () => {
     await waitFor(() => expect(write).toHaveBeenCalled());
     const target = screen.getByRole("button", { name: /当前编辑层：Ensemble/ });
     expect(target).toBeVisible();
-    expect(target).toBeDisabled();
+    expect(target).toBeEnabled();
     for (const name of ["文字", "画笔", "整条橡皮", "撤销", "重做"]) {
-      expect(screen.getByRole("button", { name })).toBeDisabled();
+      expect(screen.getByRole("button", { name })).toBeEnabled();
     }
     rejectWrite(new DOMException("full", "QuotaExceededError"));
     await screen.findByRole("button", { name: "重试本机保存" });
     expect(target).toBeVisible();
     expect(target).toBeDisabled();
+    for (const name of ["文字", "画笔", "整条橡皮", "撤销", "重做"]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    }
     write.mockRestore();
     fireEvent.click(screen.getByRole("button", { name: "重试本机保存" }));
     await waitFor(() => expect(target).toBeEnabled());
@@ -2340,8 +2343,8 @@ it("keeps a single exit while the PDF never settles", async () => {
     fireEvent.click(screen.getByRole("button", { name: "撤销" }));
     await waitFor(() => expect(undoWrite).toHaveBeenCalled());
     expect(editButton).toBeEnabled();
-    expect(target).toBeDisabled();
-    expect(screen.getByRole("button", { name: "重做" })).toBeDisabled();
+    expect(target).toBeEnabled();
+    expect(screen.getByRole("button", { name: "重做" })).toBeEnabled();
     rejectWrite(new DOMException("full", "QuotaExceededError"));
     await screen.findByRole("button", { name: "重试本机保存" });
     expect(editButton).toBeEnabled();
