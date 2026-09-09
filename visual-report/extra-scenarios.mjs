@@ -27,7 +27,7 @@ export const extraVisualReportScenarios = [
   scene("settings-permission-denied", "云盘管理 · 权限拒绝", "普通成员访问管理地址得到 403，不显示管理控件。", `${driveRoute}/shared-layers`, text("你没有操作此设置的权限，请联系云盘拥有者。")),
   scene("shared-layer-management-mobile", "云盘管理 · 手机共享层", "共享层、授权人数与默认颜色紧凑排列。", `${driveRoute}/shared-layers`, selector(".settings-layer-row:nth-child(5)"), [], { identity: "admin" }),
   reader("reader-tools-mobile", "阅读器 · 手机笔记工具", "当前层、文本、画笔、橡皮、撤销与重做完整可见。", role("button", "重做"), [showControls, click("button", "编辑")]),
-  reader("reader-layer-save-failure", "阅读器 · 显示设置保存失败", "故意注入 503，保留原值并显示恢复动作。", selector(".reader-layer-feedback"), [showControls, click("button", "看哪些笔记"), click("checkbox", "显示 Ensemble")]),
+  reader("reader-layer-save-failure", "阅读器 · 显示设置保存失败", "故意注入 503，保留本机选择并显示重试动作。", selector(".reader-layer-feedback"), [showControls, click("button", "看哪些笔记"), click("checkbox", "显示 Ensemble")]),
   reader("reader-dense-portrait", "阅读器 · 密集 SATB 与歌词", "原创八页排版样本，以四声部、多系统与音节检验阅读密度。", text("换气"), [], { device: "portrait", dense: true }),
   reader("reader-dense-pages", "阅读器 · 八页定位", "缩略图显示八页及不同纸张比例。", selector(".page-preview-strip"), [showControls, click("button", "页面位置")], { device: "landscape", dense: true }),
   reader("reader-dense-continuous", "阅读器 · 连续阅读", "密集多声部样本按各页尺寸连续呈现。", selector('.continuous-reader__page[data-index="0"] [data-pdf-canvas-active]'), [showControls, click("button", "更多"), click("button", "连续滚动"), click("button", "更多")], { device: "portrait", dense: true }),

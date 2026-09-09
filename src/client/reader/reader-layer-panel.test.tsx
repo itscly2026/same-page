@@ -79,7 +79,7 @@ it("subscribes to a member's notes without offering their layer as an editing ta
   fireEvent.click(toggle);
   await waitFor(() => expect(toggle).toBeChecked());
   await waitFor(() => expect(toggle).not.toBeDisabled());
-  expect(requests).toEqual([{ url: `/api/choirs/drive/scores/score/personal-layers/${published.id}/subscription`, body: { subscribed: true } }]);
+  await waitFor(() => expect(requests).toEqual([{ url: `/api/choirs/drive/scores/score/personal-layers/${published.id}/subscription`, body: { subscribed: true } }]));
   fireEvent.click(screen.getByRole("button", { name: /当前编辑层/ }));
   expect(screen.queryByRole("button", { name: /声部长的笔记/ })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "我的笔记" })).toBeEnabled();
@@ -183,4 +183,38 @@ it("offers guests login with a return to this score instead of an inaccessible p
   const login = screen.getByRole("link", { name: "登录后设置默认显示" });
   expect(login).toHaveAttribute("href", "/login?returnTo=%2Fchoirs%2Fdrive%2Fscores%2Fscore&panel=layers");
   expect(screen.queryByRole("link", { name: "设置此云盘的默认显示" })).not.toBeInTheDocument();
+});
+
+it("updates shared and personal visibility while PUT is delayed without locking other layers or pulling notes", async () => {
+  const shared: AnnotationLayerSummary = { ...own, id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", kind: "shared", sharedSlot: "S", name: "Soprano", subscribed: false, driveSubscribed: false, adminDefaultColor: "#dc2626", subscriptionSource: "drive", colorSource: "admin" };
+  await cacheAnnotationLayers(workspace, [shared, own, published]);
+  const pending: Array<() => void> = [];
+  const fetchMock = vi.fn<typeof fetch>(async () => { await new Promise<void>(resolve => pending.push(resolve)); return Response.json({}); });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<Reader />);
+  const soprano = await screen.findByRole("checkbox", { name: "显示 Soprano" });
+  fireEvent.click(soprano);
+  expect(soprano).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: "显示 我的笔记" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("checkbox", { name: "显示 我的笔记" }));
+  expect(screen.getByRole("checkbox", { name: "显示 我的笔记" })).not.toBeChecked();
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  expect(fetchMock.mock.calls.every(([, init]) => init?.method === "PUT")).toBe(true);
+  for (const release of pending) release();
+  await waitFor(async () => expect((await localDatabase.readingPreferences.toArray()).every(row => !row.pending)).toBe(true));
+});
+
+it("retains the choice but never claims saved when local persistence fails", async () => {
+  const write = vi.spyOn(localDatabase.readingPreferences, "put").mockRejectedValueOnce(new Error("quota"));
+  render(<Reader />);
+  const toggle = await screen.findByRole("checkbox", { name: "显示 我的笔记" });
+  fireEvent.click(toggle);
+  expect(toggle).not.toBeChecked();
+  await screen.findByText("尚未保存到本机，请重试。");
+  expect(toggle).not.toBeChecked();
+  expect(requests).toHaveLength(0);
+  write.mockRestore();
+  fireEvent.click(screen.getByRole("button", { name: "重试" }));
+  await screen.findByText("已同步。");
+  expect((await readAnnotationLayers(workspace)).find(layer => layer.id === own.id)?.subscribed).toBe(false);
 });

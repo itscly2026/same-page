@@ -12,6 +12,7 @@ export function SettingsFeedback({
   if (loadError) {
     return (
       <div className="settings-feedback" role="alert">
+        {message && <p>{message}</p>}
         <p>{loadError}</p>
         <button className="secondary-button" type="button" onClick={retry}>重新加载</button>
       </div>

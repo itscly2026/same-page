@@ -65,6 +65,23 @@ beforeEach(async () => {
 afterEach(() => network.resetHandlers());
 
 describe("annotation layers and object synchronization", () => {
+  it("rejects preference and display name requests captured for a different user", async () => {
+    const fixture = await createFixture();
+    const paths = [
+      `/api/choirs/${fixture.choirId}/shared-layers/E/preference`,
+      `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/shared-layers/E/preference`,
+      `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/personal-layers/${fixture.layerId}/subscription`,
+      `/api/choirs/${fixture.choirId}/display-name`,
+    ];
+    for (const path of paths) {
+      const response = await callWorker(path, { method: path.endsWith("display-name") ? "PATCH" : "PUT",
+        headers: { cookie: fixture.adminCookie, "content-type": "application/json", "x-same-page-owner-user-id": "other-user" },
+        body: JSON.stringify(path.endsWith("display-name") ? { displayName: "wrong user", expectedRevision: 0 } : { subscribed: false }) });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: "identity_changed" });
+    }
+  });
+
   it.for(["E", "custom"] as const)("recycles %s across scores, retaining identity, grants and preferences while rejecting stale actions", { timeout: 15_000 }, async (slotKind, context) => {
     const stage = trackRecycleStages(context, slotKind);
     const fixture = await createFixture(() => stage("first-score"));

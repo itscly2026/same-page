@@ -1,3 +1,4 @@
+import { readReadingPreferences, projectReadingPreferences, readingPreferenceVersion } from "../reader/reading-preferences";
 import { diagnoseLocalOperation } from "../diagnostics/local-operation";
 import { hasValidSnapshotShape, hasCompleteOfflineLayers } from "../offline/offline-score-verification";
 import { annotationLayerSummarySchema, annotationPayloadSchema } from "../../shared/annotations";
@@ -48,9 +49,9 @@ export interface DraftInput {
   deleted?: boolean;
 }
 
-export async function cacheAnnotationLayers(workspace: LocalWorkspace, layers: AnnotationLayerSummary[], sharedLayerRevision?: number) {
+export async function cacheAnnotationLayers(workspace: LocalWorkspace, layers: AnnotationLayerSummary[], sharedLayerRevision?: number, preferenceVersion?: string) {
   return withLocalWorkspaceTransaction(workspace, "rw", [localDatabase.annotationLayers,
-    localDatabase.annotations, localDatabase.annotationSyncCursors, localDatabase.offlineSnapshots], async () => {
+    localDatabase.annotations, localDatabase.annotationSyncCursors, localDatabase.offlineSnapshots, localDatabase.readingPreferences], async () => {
     if (sharedLayerRevision !== undefined && !await acceptSharedLayerAvailability(workspace, {
       sharedLayerRevision, activeSharedSlots: layers.filter(layer => layer.kind === "shared").map(layer => layer.sharedSlot!),
     })) return false;
@@ -61,7 +62,17 @@ export async function cacheAnnotationLayers(workspace: LocalWorkspace, layers: A
         layers = layers.filter(layer => layer.kind !== "shared" || activeSlots.has(layer.sharedSlot!));
       }
     }
+    const preferences = await readReadingPreferences(workspace);
     const previous = await localDatabase.annotationLayers.where("scopeKey").equals(workspace.scopeKey).toArray();
+    const stalePreferences = preferenceVersion === undefined || preferenceVersion !== await readingPreferenceVersion(workspace);
+    layers = layers.map(layer => {
+      const cached = previous.find(entry => entry.id === layer.id);
+      const display = stalePreferences && cached ? { ...layer, subscribed: cached.subscribed, displayColor: cached.displayColor,
+        subscriptionSource: cached.subscriptionSource, colorSource: cached.colorSource, driveSubscribed: cached.driveSubscribed,
+        driveColorOverride: cached.driveColorOverride, scoreSubscriptionOverride: cached.scoreSubscriptionOverride, scoreColorOverride: cached.scoreColorOverride } : layer;
+      return projectReadingPreferences(display, preferences.filter(row => row.pending || stalePreferences && !row.observed));
+    });
+    if (!stalePreferences) for (const row of preferences.filter(row => !row.pending && row.kind !== "drive")) await localDatabase.readingPreferences.update(row.key, { observed: true });
     const ids = new Set(layers.map(layer => layer.id));
     const editable = new Set(layers.filter(layer => layer.canEdit).map(layer => layer.id));
     await localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey)

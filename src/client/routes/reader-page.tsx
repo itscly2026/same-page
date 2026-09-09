@@ -1,3 +1,5 @@
+import { useReadingPreferenceIntents } from "../reader/reading-preference-intents";
+import { projectReadingPreferences } from "../reader/reading-preferences";
 import { loginHref } from "../auth/login-return";
 import { useLocation, useNavigationType } from "react-router-dom";
 import { useReturnState } from "../navigation/navigation-context";
@@ -225,7 +227,8 @@ function ReaderPageContent() {
     [workspace?.scopeKey], null,
   );
   const activeAnnotations = annotationState?.scopeKey === workspace?.scopeKey ? annotationState : null;
-  const layers = [...activeAnnotations?.layers ?? []].sort(compareLayers);
+  const preferenceIntents = useReadingPreferenceIntents(workspace);
+  const layers = [...activeAnnotations?.layers ?? []].map(layer => projectReadingPreferences(layer, preferenceIntents)).sort(compareLayers);
   const annotations = activeAnnotations?.annotations ?? [];
   const pendingCount = activeAnnotations?.pendingCount ?? 0;
   const conflicts = activeAnnotations?.conflicts ?? [];

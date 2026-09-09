@@ -1,3 +1,5 @@
+import { clearReadingIntents } from "../client/reader/reading-preference-intents";
+import { clearReadResources } from "../client/settings/read-resource";
 import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
 
@@ -24,6 +26,8 @@ beforeEach(() => {
 
 afterEach(async () => {
   cleanup();
+  clearReadResources();
+  clearReadingIntents();
   localDatabase.close();
   await localDatabase.delete();
 });

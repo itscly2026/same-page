@@ -1,3 +1,4 @@
+import type { ReadState } from "../settings/read-resource";
 import { localDatabase } from "../platform/local-database";
 import { liveQuery } from "dexie";
 import { readRetainedScores } from "../offline/retained-scores";
@@ -14,6 +15,7 @@ import { readLibraryView, rememberLibraryView, selectLibraryScores, type Library
 import { driveLibraryTransport, type DriveLibraryAccess, type DriveLibraryTransport } from "./drive-library-transport";
 
 export interface DriveLibrarySnapshot {
+  reading: Pick<ReadState<never>, "request" | "authority">;
   access: DriveLibraryAccess;
   view: Pick<LibraryView, "search" | "sort">;
   scores: ScoreSummary[];
@@ -25,7 +27,7 @@ export interface DriveLibrarySnapshot {
 type OpenedAccess = Extract<DriveLibraryAccess, { kind: "opened" }>;
 
 function localAccess(access: OpenedAccess): OpenedAccess {
-  return { ...access, local: true, isMember: false,
+  return { ...access, local: true, isMember: false, rememberedMembership: access.isMember || access.rememberedMembership,
     rememberedCapabilities: access.local ? access.rememberedCapabilities : access.result.permissions.capabilities,
     managementVisible: access.managementVisible || hasManagement(access.result.permissions.capabilities),
     result: { ...access.result, permissions: { capabilities: noCapabilities() } },
@@ -64,6 +66,7 @@ export class DriveLibrary {
   ) {
     this.view = readLibraryView(ownerKey, choirId);
     this.snapshot = {
+      reading: { request: "idle", authority: "unconfirmed" },
       access: { kind: "loading" }, view: { search: this.view.search, sort: this.view.sort }, scores: [],
       refreshMessage: null, joinMessage: null, joining: false,
     };
@@ -86,7 +89,7 @@ export class DriveLibrary {
     const cached = readDriveLibrary(this.ownerKey, this.choirId);
     this.publish({
       access: cached
-        ? localAccess({ kind: "opened", choir: cached.choir, result: cached.result, isMember: false })
+        ? localAccess({ kind: "opened", choir: cached.choir, result: cached.result, isMember: cached.isMember ?? false })
         : { kind: "loading", choir: readDriveSummary(this.ownerKey, this.choirId) ?? undefined },
     });
     this.localController = new AbortController();
@@ -196,6 +199,7 @@ export class DriveLibrary {
     const signal = AbortSignal.any([controller.signal, ownerSignal]);
     const pending = { controller, done: Promise.resolve() };
     this.request = pending;
+    this.publish({ reading: { ...this.snapshot.reading, request: "pending" } });
     pending.done = Promise.resolve().then(() => {
       signal.throwIfAborted();
       if (!authenticated && this.ownerKey.startsWith("user:") && this.snapshot.access.kind === "opened" && this.snapshot.access.retained) return this.snapshot.access;
@@ -218,6 +222,7 @@ export class DriveLibrary {
         } else {
           invalidateDriveLibrary(this.ownerKey, this.choirId);
         }
+        this.publish({ reading: { request: "pending", authority: access.kind === "denied" || access.kind === "not-found" ? "revoked" : access.kind === "opened" && !access.local ? "confirmed" : "unconfirmed" } });
         this.localController?.abort();
         if (access.kind === "denied" || access.kind === "not-found") {
           this.publish({ access: this.retainedAccess([]), refreshMessage: null });
@@ -239,7 +244,7 @@ export class DriveLibrary {
       .catch(async () => {
         if (this.request === pending && !controller.signal.aborted) await this.failed(signal);
       })
-      .finally(() => { if (this.request === pending) this.request = null; });
+      .finally(() => { if (this.request === pending) { this.request = null; this.publish({ reading: { ...this.snapshot.reading, request: "idle" } }); } });
     return pending.done;
   }
 
@@ -280,6 +285,7 @@ export class DriveLibrary {
   }
 
   private async failed(signal: AbortSignal) {
+    this.publish({ reading: { request: "pending", authority: "unconfirmed" } });
     const current = this.snapshot.access;
     if (current.kind === "opened") {
       this.publish({ access: localAccess(current), refreshMessage: refreshFailed });

@@ -1,3 +1,4 @@
+import { useReadResource } from "../settings/use-read-resource";
 import { useUnsavedChanges } from "../settings/use-unsaved-changes";
 import { SettingsFeedback } from "../settings/settings-feedback";
 import { runSettingsMutation, settingsMutationMessage } from "../settings/settings-mutation";
@@ -20,9 +21,9 @@ type Layer = { slot: string; name: string };
 export default function MembershipManagementPage() {
   const { choirId = "" } = useParams();
   const session = authClient.useSession();
-  return <MembershipManagement key={`${session.data?.user.id ?? "guest"}:${choirId}`} choirId={choirId} />;
+  return <MembershipManagement key={`${session.data?.user.id ?? "guest"}:${choirId}`} choirId={choirId} userId={session.data?.user.id ?? "guest"} />;
 }
-function MembershipManagement({ choirId }: { choirId: string }) {
+function MembershipManagement({ choirId, userId }: { choirId: string; userId: string }) {
   const lifetime = useSettingsLifetime();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("active");
@@ -31,43 +32,24 @@ function MembershipManagement({ choirId }: { choirId: string }) {
   const [editingMember, setEditingMember] = useState("");
   const [needsRefresh, setNeedsRefresh] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, { operations: PermissionSet; management: PermissionSet }>>({});
-  const [state, setState] = useState<State | null>(null);
-  const [layers, setLayers] = useState<Layer[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
-  const load = useCallback(async () => {
-    const response = await diagnosticFetch(`/api/choirs/${choirId}/memberships`);
+  const load = useCallback(async (signal: AbortSignal) => {
+    const response = await diagnosticFetch(`/api/choirs/${choirId}/memberships`, { signal });
     if (!response.ok) throw new SettingsRequestError(response.status);
     const next = await parseDiagnosticResponse(response, managedMembershipsSchema);
-    const definitions = await diagnosticFetch(`/api/choirs/${choirId}/permission-layers`);
+    const definitions = await diagnosticFetch(`/api/choirs/${choirId}/permission-layers`, { signal });
     if (!definitions.ok) throw new SettingsRequestError(definitions.status);
     return { next, layers: (await definitions.json()).layers as Layer[] };
   }, [choirId]);
-  useEffect(() => {
-    let active = true;
-    void load().then(({ next, layers }) => { if (active) { setState(next); setLayers(layers); setLoading(false); } })
-      .catch(error => { if (active) { setLoading(false); setNeedsRefresh(true); setMessage(settingsError(error, "成员列表加载失败，请重试。")); } });
-    return () => { active = false; };
-  }, [load]);
-  const reload = async () => {
-    const generation = lifetime.current;
-    setLoading(true);
-    try {
-      const next = await load();
-      if (generation !== lifetime.current) return;
-      setState(next.next); setLayers(next.layers); setNeedsRefresh(false); setMessage(null);
-    } catch (error) {
-      if (generation === lifetime.current) {
-        setNeedsRefresh(true);
-        if (error instanceof SettingsRequestError && [401, 403].includes(error.status)) setState(null);
-      }
-      throw error;
-    } finally { if (generation === lifetime.current) setLoading(false); }
-  };
+  const resource = useReadResource(`${userId}:${choirId}:memberships`, load);
+  const state = resource.data?.next ?? null;
+  const layers = resource.data?.layers ?? [];
+  const loading = resource.request === "pending";
+  const reload = async () => { await resource.refresh(); setNeedsRefresh(false); setMessage(null); };
   const mutate = async (path: string, body: unknown, method = "POST", draftId?: string) => {
-    if (busy || loading || needsRefresh) return false;
+    if (busy || !resource.canMutate || needsRefresh) return false;
     const generation = lifetime.current;
     setBusy(true); setMessage(null);
     const result = await runSettingsMutation(
@@ -79,7 +61,7 @@ function MembershipManagement({ choirId }: { choirId: string }) {
     if (draftId && (result.kind === "saved" || result.kind === "saved-refresh-failed")) setDrafts(current => {
       const next = { ...current }; delete next[draftId]; return next;
     });
-    if (result.kind === "revoked") setState(null);
+    if (result.kind === "revoked") resource.clear();
     if (["unconfirmed", "revoked", "saved-refresh-failed"].includes(result.kind) || (result.kind === "failed" && result.error instanceof SettingsRequestError && result.error.status === 409)) setNeedsRefresh(true);
     setBusy(false);
     return result.kind === "saved";
@@ -107,7 +89,7 @@ function MembershipManagement({ choirId }: { choirId: string }) {
       <PermissionPeople title="可以授权" members={state.memberships.filter(member => member.status === "active" && (member.isOwner || hasPermission(member.management, permission)))} />
       {state.capabilities.isOwner || hasPermission(state.capabilities.management, permission) ? <details className="permission-edit-entry"><summary>调整此项权限</summary><label>选择成员<select value={editingMember} onChange={event => setEditingMember(event.target.value)}><option value="">选择要调整的成员</option>{state.memberships.filter(member => member.status === "active" && (state.capabilities.isOwner || !member.isOwner && !isDelegated(member.management) && member.id !== state.actorId)).map(member => <option key={member.id} value={member.id}>{member.displayName}</option>)}</select></label><p className="settings-copy">受托人只能调整普通成员，不能为自己或其他受托人授权。</p></details> : <p className="settings-copy permission-note">这项权限不在你的授权管理范围内。需要调整时，请联系上方可以授权的成员。</p>}
     </>}
-    {state?.memberships.filter(member => view === "member" ? member.status === status && member.displayName.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) : member.id === editingMember).map(member => <MemberEditor focus={view === "permission" ? permission : undefined} key={`${member.id}:${member.revision}:${state.capabilities.isOwner}`} member={member} state={state} layers={layers} busy={busy || loading || needsRefresh} draft={drafts[member.id]} cancel={() => setDrafts(current => { const next = { ...current }; delete next[member.id]; return next; })} onDraft={draft => setDrafts(current => ({ ...current, [member.id]: draft }))}
+    {state?.memberships.filter(member => view === "member" ? member.status === status && member.displayName.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) : member.id === editingMember).map(member => <MemberEditor focus={view === "permission" ? permission : undefined} key={`${member.id}:${member.revision}:${state.capabilities.isOwner}`} member={member} state={state} layers={layers} busy={busy || !resource.canMutate || needsRefresh} draft={drafts[member.id]} cancel={() => setDrafts(current => { const next = { ...current }; delete next[member.id]; return next; })} onDraft={draft => setDrafts(current => ({ ...current, [member.id]: draft }))}
       save={(operations, management) => void mutate(`memberships/${member.id}/permissions`, { expectedRevision: member.revision, operations, management }, "PUT", member.id)}
       change={action => setConfirmation({ title: action === "restore" ? "恢复成员关系" : "移除成员", action: action === "restore" ? "确认恢复" : "确认移除", destructive: action === "remove", message: action === "restore" ? "恢复成员关系和保留期内的个人层，不恢复旧权限、管理范围或分享。" : "立即撤销成员权限；断网设备已下载的内容无法即时撤回。", onConfirm: async () => { await mutate(`memberships/${member.id}`, { action, expectedRevision: member.revision }); } })}
       transfer={() => {
@@ -115,7 +97,7 @@ function MembershipManagement({ choirId }: { choirId: string }) {
         setConfirmation({ title: "转让拥有权", action: "确认转让", message: `将拥有权转让给「${member.displayName}」？转让后你保留的显式操作权限：${describe(former.operations, layers)}；授权管理范围：${describe(former.management, layers)}。你将不能再转让拥有权或任命受托人。`, onConfirm: async () => { await mutate("ownership", { membershipId: member.id, confirm: true }); } });
       }} />)}
     {state?.capabilities.isOwner && <AuditLog choirId={choirId!} revision={state.memberships.map(m => m.revision).join(":")} />}
-    <SettingsFeedback loading={loading} loadError={null} message={message} retry={() => void reload().catch(() => undefined)} />
+    <SettingsFeedback loading={resource.loading} loadError={resource.error ? settingsError(resource.error, "成员列表更新失败，已有内容已保留。") : null} message={message} retry={() => void reload().catch(() => undefined)} />
     {(!state || needsRefresh) && <Button className="secondary-button" isDisabled={busy || loading} onPress={() => void reload().catch(() => { setMessage("成员列表加载失败，请重试。"); })}>重新读取成员列表</Button>}
     <ConfirmDialog confirmation={confirmation} busy={busy} onClose={() => setConfirmation(null)} />
   </main></div>;

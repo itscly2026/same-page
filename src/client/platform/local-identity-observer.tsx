@@ -1,3 +1,4 @@
+import { ReadingPreferenceRecovery } from "../reader/reading-preference-recovery";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { OutboxRecoveryCoordinator } from "../annotations/outbox-recovery-coordinator";
@@ -68,9 +69,9 @@ export function LocalIdentityObserver() {
   }
 
   return userId && identityState.recoveryOwner ? (
-    <OutboxRecoveryCoordinator
+    <><ReadingPreferenceRecovery key={`preferences:${identityState.activation}`} ownerKey={identityState.recoveryOwner} /><OutboxRecoveryCoordinator
       key={identityState.activation}
       ownerKey={identityState.recoveryOwner}
-    />
+    /></>
   ) : null;
 }
