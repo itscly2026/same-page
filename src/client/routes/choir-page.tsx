@@ -159,13 +159,13 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
 
   return (
     <div className="app-page drive-page">
-      <DriveHeader choirId={choirId} choirName={choir.name} userId={userId} localOnly={Boolean(access.local)} onEditDisplayName={access.isMember && !access.local ? () => setSettingsField("display-name") : undefined} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
-        management={access.isMember || managementVisible ? () => <section className="drive-drawer-management">
+      <DriveHeader choirId={choirId} choirName={choir.name} userId={userId} localOnly={Boolean(access.local)} onEditDisplayName={(access.isMember || access.rememberedMembership) ? () => setSettingsField("display-name") : undefined} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
+        management={access.isMember || access.rememberedMembership || managementVisible ? () => <section className="drive-drawer-management">
           <h3>云盘管理</h3>
           <nav aria-label="云盘管理菜单">{[
             ["settings/info", "基本信息"], ["memberships", "成员与权限"], ["shared-layers", "共享层"], ["settings/admission", "加入方式"], ["settings/trash", "回收站"],
-          ].map(([path, label]) => access.local ? <span key={path} aria-disabled="true">{label}（需联网）</span> : <Link key={path} to={`/choirs/${choirId}/${path}`}>{label}</Link>)}</nav>
-          {access.local && <p role="status">管理操作需联网并确认权限后使用。</p>}
+          ].map(([path, label]) => access.local ? <span key={path} aria-disabled="true">{label}</span> : <Link key={path} to={`/choirs/${choirId}/${path}`}>{label}</Link>)}</nav>
+          {access.local && <p role="status">{!online ? "当前离线，联网后可使用管理操作。" : identity.onlineState === "signed-out" ? "重新登录后可使用管理操作。" : snapshot.reading.request === "pending" ? "正在确认访问权限，已有内容可以继续浏览。" : "访问权限尚未确认，请重试连接。"}</p>}
         </section> : undefined}
       />
       <main className="page-shell file-library">
@@ -255,7 +255,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
         </section>
       </main>
 
-      {settingsField && !access.local && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async () => { await refreshAfterMutation(); setMessage("已保存。"); }} />}
+      {settingsField && !access.local && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} userId={userId!} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async () => { await refreshAfterMutation(); setMessage("已保存。"); }} />}
       {visible("uploadFiles") && <UploadFab disabled={Boolean(access.local)} onPress={() => setUploadOpen(true)} />}
 
 

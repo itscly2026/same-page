@@ -59,9 +59,15 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.reload();
     await page.getByRole("button", { name: "上传 PDF（需联网）", exact: true }).waitFor();
     await page.getByRole("button", { name: "打开云盘菜单" }).click();
-    await page.getByText("成员与权限（需联网）", { exact: true }).waitFor();
+    const management = page.getByRole("navigation", { name: "云盘管理菜单", exact: true });
+    const members = management.getByText("成员与权限", { exact: true });
+    await expect(members).toBeVisible();
     await expect(page.getByRole("dialog", { name: "云盘菜单" })).toContainText("周末排练云盘");
-    await expect(page.getByText("成员与权限（需联网）", { exact: true })).toHaveAttribute("aria-disabled", "true");
+    await expect(members).toHaveAttribute("aria-disabled", "true");
+    await expect(management.getByRole("link")).toHaveCount(0);
+    assert.equal(await page.evaluate(() => navigator.onLine), true);
+    await expect(page.getByText("访问权限尚未确认，请重试连接。", { exact: true })).toBeVisible();
+    await expect(management).not.toContainText("需联网");
     await page.screenshot({ path: `artifacts/verification/issue-170/${name}-renamed-drive.png` });
     await page.getByRole("link", { name: "云盘列表", exact: true }).click();
     await expect(page.getByRole("link", { name: /周末排练云盘/ })).toBeVisible();

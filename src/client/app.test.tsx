@@ -1,3 +1,4 @@
+import { installReadingPreferenceLocks } from "../test/reading-preference-locks";
 import { storeOfflineScore } from "./platform/local-database";
 import { effectiveCapabilities, emptyPermissions, noCapabilities } from "../shared/drive-permissions";
 import { Blob as NodeBlob } from "node:buffer";
@@ -43,6 +44,7 @@ vi.mock("./auth/auth-client", () => ({
 
 describe("AppRoutes", () => {
   beforeEach(async () => {
+    installReadingPreferenceLocks();
     clearReaderScoreCache();
     clearDriveLibraryCache();
     window.sessionStorage.clear();
@@ -129,7 +131,8 @@ describe("AppRoutes", () => {
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
   });
 
-  it("rolls back only the failed layer preference when saves overlap", async () => {
+  it("retains local intent independently when overlapping preference saves fail", async () => {
+    await activateAuthenticatedLocalOwner("user-1");
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "user-1", email: "singer@example.test" } },
       isPending: false,
@@ -174,14 +177,15 @@ describe("AppRoutes", () => {
     releaseSoprano(Response.json({ preference: { subscribed: false } }));
 
     await waitFor(() => {
-      expect(screen.getByRole("checkbox", { name: "Ensemble 默认显示" })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "Ensemble 默认显示" })).not.toBeChecked();
       expect(screen.getByRole("checkbox", { name: "Soprano 默认显示" })).not.toBeChecked();
-      expect(screen.getByRole("alert")).toHaveTextContent("保存失败，修改已保留，请核对后重试。");
+      expect(screen.getByText("云端保存失败，本机选择已保留。")).toBeVisible();
       expect(screen.getByRole("button", { name: "重试 Ensemble" })).toBeInTheDocument();
     });
   });
 
-  it("separates colors from display, retains confirmed colors on failure and retries the exact change", async () => {
+  it("separates colors from display, retains local colors on failure and retries the exact change", async () => {
+    await activateAuthenticatedLocalOwner("user-1");
     vi.mocked(authClient.useSession).mockReturnValue({
       data: { user: { id: "user-1", email: "singer@example.test" } }, isPending: false,
     } as ReturnType<typeof authClient.useSession>);
@@ -205,8 +209,8 @@ describe("AppRoutes", () => {
     const color = screen.getByLabelText("Ensemble 笔记颜色");
     expect(screen.queryByRole("button", { name: /恢复默认颜色/ })).not.toBeInTheDocument();
     fireEvent.change(color, { target: { value: "#123456" } });
-    expect(await screen.findByRole("alert")).toHaveTextContent("保存失败，修改已保留，请核对后重试。");
-    expect(color).toHaveValue("#a12652");
+    expect(await screen.findByText("云端保存失败，本机选择已保留。")).toBeVisible();
+    expect(color).toHaveValue("#123456");
     expect(screen.queryByText("已保存")).not.toBeInTheDocument();
     fail = false;
     fireEvent.click(screen.getByRole("button", { name: "重试 Ensemble" }));

@@ -1,3 +1,4 @@
+import { readingPreferenceVersion } from "../reader/reading-preferences";
 import { untilAborted } from "../platform/abortable";
 import { diagnoseLocalOperation } from "../diagnostics/local-operation";
 import { hasCompleteOfflineLayers } from "../offline/offline-score-verification";
@@ -170,6 +171,7 @@ async function refreshAnnotations(
 }
 
 export async function refreshLayerCapabilities(workspace: LocalWorkspace, signal: AbortSignal, report = diagnosticScope()) {
+  const preferenceVersion = await readingPreferenceVersion(workspace);
   const diagnostics = { report, signal };
   await assertLocalWorkspaceActive(workspace);
   signal.throwIfAborted();
@@ -208,7 +210,7 @@ export async function refreshLayerCapabilities(workspace: LocalWorkspace, signal
   }));
   signal.throwIfAborted();
   await diagnoseLocalOperation("sync-layers-cache", async () => {
-    if (!await cacheAnnotationLayers(workspace, applied, sharedLayerRevision)) throw new Error("shared_layer_state_changed");
+    if (!await cacheAnnotationLayers(workspace, applied, sharedLayerRevision, preferenceVersion)) throw new Error("shared_layer_state_changed");
   }, diagnostics);
   await assertLocalWorkspaceActive(workspace);
   signal.throwIfAborted();

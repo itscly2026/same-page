@@ -104,6 +104,7 @@ annotationRoutes.get("/choirs/:choirId/shared-layer-preferences", async (context
     return context.json({ error: "guest_preferences_are_local" }, 403);
   }
 
+  if (context.req.header("x-same-page-owner-user-id") && context.req.header("x-same-page-owner-user-id") !== principal.userId) return context.json({ error: "identity_changed" }, 403);
   const drive = await readDriveIdentity(context, choirId);
   if (!drive) return context.json({ error: "choir_not_found" }, 404);
   const rows = await context.env.DB.prepare(
@@ -256,6 +257,7 @@ annotationRoutes.put("/choirs/:choirId/shared-layers/:slot/preference", async (c
   const principal = await resolveContextPrincipal(context);
   await requireChoirRead(createDatabase(context.env.DB), principal, choirId);
   if (principal?.kind !== "user") return context.json({ error: "guest_preferences_are_local" }, 403);
+  if (context.req.header("x-same-page-owner-user-id") && context.req.header("x-same-page-owner-user-id") !== principal.userId) return context.json({ error: "identity_changed" }, 403);
   const parsed = driveLayerPreferenceUpdateSchema.safeParse(await context.req.json().catch(() => null));
   if (!slot.success || !parsed.success || Object.keys(parsed.data).length === 0) {
     return context.json({ error: "invalid_preference" }, 400);
@@ -286,6 +288,7 @@ annotationRoutes.put("/choirs/:choirId/scores/:scoreId/shared-layers/:slot/prefe
   if (access instanceof Response) return access;
   const slot = sharedLayerSlotSchema.safeParse(context.req.param("slot"));
   if (access.principal.kind !== "user") return context.json({ error: "guest_preferences_are_local" }, 403);
+  if (context.req.header("x-same-page-owner-user-id") && context.req.header("x-same-page-owner-user-id") !== access.principal.userId) return context.json({ error: "identity_changed" }, 403);
   const parsed = scoreLayerPreferenceUpdateSchema.safeParse(await context.req.json().catch(() => null));
   if (!slot.success || !parsed.success || Object.keys(parsed.data).length === 0) {
     return context.json({ error: "invalid_preference" }, 400);
@@ -379,6 +382,7 @@ annotationRoutes.put("/choirs/:choirId/scores/:scoreId/personal-layers/:layerId/
   const access = await resolveScoreAccess(context);
   if (access instanceof Response) return access;
   if (access.principal.kind !== "user") return context.json({ error: "authentication_required" }, 401);
+  if (context.req.header("x-same-page-owner-user-id") && context.req.header("x-same-page-owner-user-id") !== access.principal.userId) return context.json({ error: "identity_changed" }, 403);
   const body = await context.req.json<{ subscribed?: unknown }>().catch(() => null);
   if (typeof body?.subscribed !== "boolean") return context.json({ error: "invalid_subscription" }, 400);
   const result = await context.env.DB.prepare(`INSERT INTO personal_layer_subscriptions(user_id, layer_id, subscribed)

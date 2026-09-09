@@ -45,6 +45,7 @@ export async function clearPrivateLocalDataAfterLogout() {
     [
       localDatabase.system,
       localDatabase.driveDirectories,
+      localDatabase.readingPreferences,
       localDatabase.annotationLayers,
       localDatabase.annotations,
       localDatabase.annotationOutbox,
@@ -55,6 +56,8 @@ export async function clearPrivateLocalDataAfterLogout() {
       localDatabase.offlineSnapshots,
     ],
     async () => {
+      await localDatabase.system.filter(record => record.key.startsWith(JSON.stringify(["reading-defaults", ownerKey]).slice(0, -1)) || record.key.startsWith(JSON.stringify(["reading-preference-version", ownerKey]).slice(0, -1))).delete();
+      await localDatabase.readingPreferences.where("ownerKey").equals(ownerKey).delete();
       await localDatabase.driveDirectories.where("ownerKey").equals(ownerKey).delete();
       const offlineScores = await localDatabase.offlineScores
         .where("ownerKey")

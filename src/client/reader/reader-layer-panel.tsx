@@ -1,5 +1,7 @@
+import { useReadingPreferenceProjection } from "./reading-preference-intents";
+import { projectReadingPreferences } from "./reading-preferences";
 import { loginHref } from "../auth/login-return";
-import { resolveSharedLayerPreference, annotationLayerListResponseSchema } from "../../shared/annotations";
+import { annotationLayerListResponseSchema } from "../../shared/annotations";
 import { useEffect, useRef, useState } from "react";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { PersonalLayerCard } from "./personal-layer-card";
@@ -8,13 +10,13 @@ import { Button } from "react-aria-components";
 
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import { syncAnnotations } from "../annotations/sync";
-import { updateCachedLayer } from "../annotations/annotation-state";
+import { useReadingPreferences } from "./use-reading-preferences";
 import { assertLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
 import "./reader-ux.css";
 
 type PreferenceChange = { layer: AnnotationLayerSummary; subscribed?: boolean | null; colorOverride?: string | null };
 
-export function ReaderLayerPanel({ workspace, layers, signedIn }: {
+export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: {
   workspace: LocalWorkspace;
   layers: AnnotationLayerSummary[];
   signedIn: boolean;
@@ -26,7 +28,9 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
   const [personalRetry, setPersonalRetry] = useState<(() => Promise<void>) | null>(null);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
-  const [failed, setFailed] = useState<PreferenceChange[]>([]);
+  const preferences = useReadingPreferences(workspace, signedIn);
+  const projectedLayers = useReadingPreferenceProjection(workspace, storedLayers);
+  const layers = projectedLayers.map(layer => projectReadingPreferences(layer, preferences.rows.filter(row => !row.observed)));
   const busy = useRef(false);
   const active = useRef(true);
   useEffect(() => {
@@ -38,44 +42,12 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
   const publishedLayers = layers.filter(layer => layer.kind === "personal" && !layer.canEdit);
   const overriddenLayers = sharedLayers.filter((layer) => layer.scoreSubscriptionOverride !== null || layer.scoreColorOverride != null);
 
-  const save = async (changes: PreferenceChange[]) => {
-    if (busy.current) return;
-    busy.current = true;
-    setPending(true);
-    setMessage("正在保存本谱显示设置…");
-    setFailed([]);
-    setPersonalRetry(null);
-    const results = await Promise.allSettled(changes.map(async ({ layer, subscribed, colorOverride }) => {
-      if (!layer.sharedSlot) return;
-      await assertLocalWorkspaceActive(workspace);
-      if (signedIn) {
-        const response = await diagnosticFetch(
-          `/api/choirs/${workspace.choirId}/scores/${workspace.scoreId}/shared-layers/${layer.sharedSlot}/preference`,
-          {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ subscribed, colorOverride }),
-          },
-        );
-        if (!response.ok) throw new Error("score_preference_update_failed");
-      }
-      const scoreSubscriptionOverride = subscribed === undefined ? layer.scoreSubscriptionOverride : subscribed;
-      const scoreColorOverride = colorOverride === undefined ? layer.scoreColorOverride ?? null : colorOverride;
-      await updateCachedLayer(workspace, layer.id, {
-        scoreSubscriptionOverride, scoreColorOverride,
-        ...resolveSharedLayerPreference({ productDefaultColor: "#dc2626", adminDefaultColor: layer.adminDefaultColor,
-          driveSubscribed: layer.driveSubscribed, driveColorOverride: layer.driveColorOverride,
-          scoreSubscriptionOverride, scoreColorOverride }),
-      });
-    }));
-    if (!active.current) return;
-    const failures = changes.filter((_, index) => results[index]?.status === "rejected");
-    setFailed(failures);
-    setMessage(failures.length
-      ? `${failures.length === changes.length ? "未能保存" : `已保存 ${changes.length - failures.length} 项；未能保存`}：${failures.map(({ layer }) => layer.name).join("、")}。未保存的显示设置保持原样，请重试。`
-      : "");
-    busy.current = false;
-    setPending(false);
+  const save = (changes: PreferenceChange[]) => Promise.all(changes.map(({ layer, ...change }) =>
+    preferences.save({ kind: "shared", id: layer.sharedSlot! }, change)));
+  const preferenceFeedback = (kind: "shared" | "personal", id: string) => {
+    const result = preferences.feedback({ kind, id });
+    return result ? <div className="reader-layer-feedback"><p role="status">{result.message}</p>
+      {result.retry && <Button onPress={result.retry}>重试</Button>}</div> : null;
   };
 
   const refreshDeleted = async () => {
@@ -89,7 +61,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
 
   const personalRequest = async (path: string, method: string, body?: unknown) => {
     if (busy.current) return;
-    busy.current = true; setPending(true); setMessage(""); setFailed([]); setPersonalRetry(null);
+    busy.current = true; setPending(true); setMessage(""); setPersonalRetry(null);
     let confirmed = false;
     let changed = false;
     try {
@@ -115,7 +87,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
       return true;
     } catch {
       if (active.current) {
-        setMessage("未能完成保存或刷新，请检查网络后重试。若内容已改变，请刷新图层后再操作。");
+        setMessage(confirmed ? "修改已保存，内容刷新失败。请重试刷新。" : "修改尚未确认，请检查网络后重试。");
         setPersonalRetry(() => confirmed || changed ? async () => {
           setPending(true);
           try { await syncAnnotations(workspace, { pull: true }); if (managing) await refreshDeleted(); if (active.current) { setMessage(changed ? "图层已刷新，请核对当前状态后重新操作。" : ""); setPersonalRetry(null); } }
@@ -139,7 +111,7 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
           <div className="layer-section__actions">
             <span>显示 {sharedLayers.filter((layer) => layer.subscribed).length} / {sharedLayers.length}</span>
             {overriddenLayers.length > 0 ? (
-              <Button className="layer-section__restore" isDisabled={pending}
+              <Button className="layer-section__restore"
                 aria-description="将这份乐谱的所有共享层恢复为我的云盘默认显示设置"
                 onPress={() => void save(overriddenLayers.map((layer) => ({ layer, subscribed: null, colorOverride: null })))}>
                 使用云盘默认
@@ -147,35 +119,32 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
             ) : null}
           </div>
         </div>
-        {message ? <div className="reader-layer-feedback" data-error={failed.length > 0 || undefined}>
-          <p role={failed.length ? "alert" : "status"}>{message}</p>
-          {personalRetry ? <Button isDisabled={pending} onPress={() => void personalRetry()}>重试</Button> : null}
-          {failed.length > 0 ? <Button isDisabled={pending} onPress={() => void save(failed)}>重试未保存项</Button> : null}
-        </div> : null}
         <div className="layer-card-list">
           {sharedLayers.map((layer) => (
             <article className="layer-card" key={layer.id}>
               <div className="layer-card__main reader-layer-row">
                 <label className="reader-layer-toggle">
                   <input aria-label={`显示 ${layer.name}`}
-                    checked={layer.subscribed} disabled={pending} type="checkbox"
+                    checked={layer.subscribed} type="checkbox"
                     onChange={(event) => void save([{ layer, subscribed: event.target.checked }])} />
                   <span className="layer-card__identity"><strong>
                     {layer.name}
                   </strong></span>
                 </label>
-                <input type="color" aria-label={`${layer.name}颜色`} value={layer.displayColor} disabled={pending}
+                <input type="color" aria-label={`${layer.name}颜色`} value={layer.displayColor}
                   onChange={event => void save([{ layer, colorOverride: event.target.value }])} />
               </div>
+              {preferenceFeedback("shared", layer.sharedSlot!)}
             </article>
           ))}
         </div>
       </div>
       {(personalLayers.length > 0 || signedIn) && <div className="layer-section layer-section--personal">
         <div className="layer-section__heading"><h3>个人层</h3></div>
-        {personalLayers.map(layer => <PersonalLayerCard key={layer.id} layer={layer} workspace={workspace} pending={pending || !signedIn}
+        {message && <div className="reader-layer-feedback"><p role="status">{message}</p>{personalRetry && <Button isDisabled={pending} onPress={() => void personalRetry()}>重试</Button>}</div>}
+        {personalLayers.map(layer => <div key={layer.id}><PersonalLayerCard key={layer.id} layer={layer} workspace={workspace} pending={pending || !signedIn}
           onChange={change => personalRequest(`personal-layers/${layer.id}`, "PUT", { ...change, expectedRevision: layer.revision ?? 0 })}
-          onSubscribe={subscribed => void personalRequest(`personal-layers/${layer.id}/subscription`, "PUT", { subscribed })} />)}
+          onSubscribe={subscribed => void preferences.save({ kind: "personal", id: layer.id }, { subscribed })} />{preferenceFeedback("personal", layer.id)}</div>)}
         {signedIn && <>
           <div className="personal-layer-footer">
             {!creationId && <Button className="personal-layer-create" isDisabled={pending} onPress={() => setCreationId(crypto.randomUUID())}>＋ 新建个人层</Button>}
@@ -195,9 +164,10 @@ export function ReaderLayerPanel({ workspace, layers, signedIn }: {
       {publishedLayers.length ? <div className="layer-section"><h3>成员分享</h3>
         <p className="reader-layer-help">显示作者的最新笔记，仅供阅读。</p>
         {publishedLayers.map(layer => <label className="reader-layer-toggle" key={layer.id}>
-          <input type="checkbox" aria-label={`显示 ${layer.name}`} checked={layer.subscribed} disabled={pending}
-            onChange={event => void personalRequest(`personal-layers/${layer.id}/subscription`, "PUT", { subscribed: event.target.checked })} />
+          <input type="checkbox" aria-label={`显示 ${layer.name}`} checked={layer.subscribed}
+            onChange={event => void preferences.save({ kind: "personal", id: layer.id }, { subscribed: event.target.checked })} />
           <span className="layer-color-preview" style={{ background: layer.displayColor }} />{layer.name}
+          {preferenceFeedback("personal", layer.id)}
         </label>)}
       </div> : null}
     </section>

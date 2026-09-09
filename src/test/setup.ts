@@ -1,5 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
+import { clearReadingIntents } from "../client/reader/reading-preference-intents";
+import { clearReadResources } from "../client/settings/read-resource";
 
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
@@ -24,6 +26,9 @@ beforeEach(() => {
 
 afterEach(async () => {
   cleanup();
+  clearReadResources();
+  clearReadingIntents();
+  Reflect.deleteProperty(navigator, "locks");
   localDatabase.close();
   await localDatabase.delete();
 });

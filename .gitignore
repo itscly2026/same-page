@@ -15,3 +15,4 @@ renderer/**/__pycache__/
 renderer/image.tar
 gha-creds-*.json
 renderer/verified-output.json
+artifacts/issue-225/

@@ -1,3 +1,4 @@
+import type { ReadingPreferenceRecord } from "../reader/reading-preferences";
 import { readLogoutFence } from "../auth/logout-fence";
 import type { DriveCapabilities } from "../../shared/drive-permissions";
 import { offlineFileFenceKeys } from "../offline/offline-file-fence";
@@ -160,6 +161,7 @@ export interface LocalDriveDirectory {
 }
 
 export class SamePageDatabase extends Dexie {
+  readingPreferences!: EntityTable<ReadingPreferenceRecord, "key">;
   driveDirectories!: EntityTable<LocalDriveDirectory, "key">;
   system!: EntityTable<SystemRecord, "key">;
   offlineScores!: EntityTable<OfflineScoreFile, "key">;
@@ -262,6 +264,7 @@ export class SamePageDatabase extends Dexie {
     this.version(8).stores({
       annotationOutbox: "&opId,ownerKey,scopeKey,[ownerKey+scopeKey],[scopeKey+annotationId],createdAt",
     });
+    this.version(12).stores({ readingPreferences: "&key,ownerKey,[ownerKey+choirId]" });
     this.version(11).stores({
       offlineSnapshots: "&key,ownerKey,scopeKey",
     }).upgrade(async transaction => {

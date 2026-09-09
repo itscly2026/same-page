@@ -26,7 +26,7 @@ export function PersonalLayerCard({ layer, workspace, pending, onChange, onSubsc
   };
   return <article className="layer-card">
     <div className="layer-card__main">
-      <label className="reader-layer-toggle"><input type="checkbox" aria-label={`显示 ${layer.name}`} checked={layer.subscribed} disabled={pending}
+      <label className="reader-layer-toggle"><input type="checkbox" aria-label={`显示 ${layer.name}`} checked={layer.subscribed}
         onChange={event => onSubscribe(event.target.checked)} /><strong>{layer.name}</strong></label>
       <Button className="personal-layer-more" aria-label={`管理 ${layer.name}`} aria-expanded={expanded} isDisabled={pending}
         onPress={() => setExpanded(!expanded)}>⋯</Button>

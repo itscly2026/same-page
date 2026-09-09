@@ -1,0 +1,82 @@
+import { installReadingPreferenceLocks } from "../../test/reading-preference-locks";
+import { beforeEach, expect, it, vi } from "vitest";
+import { localDatabase } from "../platform/local-database";
+import { activateAuthenticatedLocalOwner, captureLocalWorkspaceSession, createLocalWorkspace } from "../platform/local-workspace";
+import { cacheAnnotationLayers, readAnnotationLayers } from "../annotations/annotation-state";
+import { saveReadingPreference, flushReadingPreferences } from "./reading-preferences";
+import type { AnnotationLayerSummary } from "../../shared/annotations";
+const layer: AnnotationLayerSummary = { id: "s", kind: "shared", sharedSlot: "S", name: "Soprano", sortOrder: 1, subscribed: false, subscriptionSource: "drive", displayColor: "#dc2626", colorSource: "admin", adminDefaultColor: "#dc2626", driveSubscribed: false, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: false };
+beforeEach(async () => {
+    installReadingPreferenceLocks(); await localDatabase.delete(); await localDatabase.open(); });
+it("durably displays the last intent before PUT resolves and protects it from a stale refresh", async () => {
+  const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(await activateAuthenticatedLocalOwner("reader"), "drive", "score"));
+  await cacheAnnotationLayers(workspace, [layer]);
+  let release!: () => void;
+  const transport = vi.fn<typeof fetch>(async () => { await new Promise<void>(resolve => { release = resolve; }); return new Response(null, { status: 200 }); });
+  await saveReadingPreference(workspace, { kind: "shared", id: "S" }, { subscribed: true });
+  const flushing = flushReadingPreferences(workspace, transport);
+  await vi.waitFor(() => expect(transport).toHaveBeenCalledOnce());
+  expect((await readAnnotationLayers(workspace))[0].subscribed).toBe(true);
+  await saveReadingPreference(workspace, { kind: "shared", id: "S" }, { subscribed: false });
+  await saveReadingPreference(workspace, { kind: "shared", id: "S" }, { subscribed: true, colorOverride: "#123456" });
+  await cacheAnnotationLayers(workspace, [layer]);
+  expect((await readAnnotationLayers(workspace))[0]).toMatchObject({ subscribed: true, displayColor: "#123456" });
+  release();
+  await vi.waitFor(() => expect(transport).toHaveBeenCalledTimes(2));
+  expect(JSON.parse(String(transport.mock.calls[1][1]?.body))).toEqual({ subscribed: true, colorOverride: "#123456" });
+  release(); await flushing;
+});
+it("recovers persisted intent after reopening storage and fences a response after an owner switch", async () => {
+  const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(await activateAuthenticatedLocalOwner("reader"), "drive", "score"));
+  await cacheAnnotationLayers(workspace, [layer]);
+  await saveReadingPreference(workspace, { kind: "shared", id: "S" }, { subscribed: true });
+  await flushReadingPreferences(workspace, async () => new Response(null, { status: 503 }));
+  localDatabase.close(); await localDatabase.open();
+  expect((await readAnnotationLayers(workspace))[0].subscribed).toBe(true);
+  let release!: (response: Response) => void;
+  const send = vi.fn<typeof fetch>(() => new Promise(resolve => { release = resolve; }));
+  const saving = flushReadingPreferences(workspace, send);
+  const rejected = expect(saving).rejects.toThrow("local_workspace_owner_changed");
+  await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+  await activateAuthenticatedLocalOwner("other");
+  release(new Response(null, { status: 200 })); await rejected;
+  expect((await localDatabase.readingPreferences.toArray())[0].pending).toBe(true);
+  const original = await captureLocalWorkspaceSession(createLocalWorkspace(await activateAuthenticatedLocalOwner("reader"), "drive", "score"));
+  await flushReadingPreferences(original, async () => new Response(null, { status: 200 }));
+  expect((await localDatabase.readingPreferences.toArray())[0].pending).toBe(false);
+});
+
+it("updates drive defaults without changing explicit score overrides and restores inheritance", async () => {
+  const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(await activateAuthenticatedLocalOwner("reader"), "drive", "score"));
+  await cacheAnnotationLayers(workspace, [layer]);
+  await saveReadingPreference(workspace, { kind: "shared", id: "S" }, { subscribed: false, colorOverride: "#123456" });
+  await saveReadingPreference(workspace, { kind: "drive", id: "S" }, { subscribed: true, colorOverride: "#abcdef" });
+  expect((await readAnnotationLayers(workspace))[0]).toMatchObject({ subscribed: false, displayColor: "#123456" });
+  await saveReadingPreference(workspace, { kind: "shared", id: "S" }, { subscribed: null, colorOverride: null });
+  expect((await readAnnotationLayers(workspace))[0]).toMatchObject({ subscribed: true, displayColor: "#abcdef", subscriptionSource: "drive" });
+});
+
+it("does not resend an observed obsolete color when only visibility changes", async () => {
+  const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(await activateAuthenticatedLocalOwner("reader"), "drive", "score"));
+  await cacheAnnotationLayers(workspace, [layer]);
+  await saveReadingPreference(workspace, { kind: "shared", id: "S" }, { colorOverride: "#ff0000" });
+  await flushReadingPreferences(workspace, async () => new Response(null, { status: 200 }));
+  const { readingPreferenceVersion } = await import("./reading-preferences");
+  const version = await readingPreferenceVersion(workspace);
+  await cacheAnnotationLayers(workspace, [{ ...layer, scoreColorOverride: "#0000ff", displayColor: "#0000ff", colorSource: "score" }], undefined, version);
+  await saveReadingPreference(workspace, { kind: "shared", id: "S" }, { subscribed: true });
+  const send = vi.fn<typeof fetch>(async () => new Response(null, { status: 200 }));
+  await flushReadingPreferences(workspace, send);
+  expect(JSON.parse(String(send.mock.calls[0][1]?.body))).toEqual({ subscribed: true });
+  expect((await readAnnotationLayers(workspace))[0].displayColor).toBe("#0000ff");
+});
+
+it("keeps durable intent pending without sending when cross-tab locks are unavailable", async () => {
+  Reflect.deleteProperty(navigator, "locks");
+  const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(await activateAuthenticatedLocalOwner("reader"), "drive", "score"));
+  await saveReadingPreference(workspace, { kind: "shared", id: "S" }, { subscribed: true });
+  const send = vi.fn<typeof fetch>();
+  await flushReadingPreferences(workspace, send);
+  expect(send).not.toHaveBeenCalled();
+  expect((await localDatabase.readingPreferences.toArray())[0]).toMatchObject({ pending: true, subscribed: true, error: expect.stringContaining("选择已保存到本机") });
+});

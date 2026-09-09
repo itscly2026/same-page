@@ -8,6 +8,7 @@ export interface DriveLibrarySnapshot {
   choir: ChoirSummary;
   result: ScoreListResponse;
   updatedAt: number;
+  isMember?: boolean;
 }
 
 export interface DriveLibraryCacheDiagnostic {
@@ -66,7 +67,7 @@ export function readDriveLibrary(
 export function rememberDriveLibrary(
   ownerKey: DriveCacheOwnerKey,
   choirId: string,
-  library: Pick<DriveLibrarySnapshot, "choir" | "result">,
+  library: Pick<DriveLibrarySnapshot, "choir" | "result" | "isMember">,
 ) {
   activateOwner(ownerKey);
   libraries.delete(choirId);

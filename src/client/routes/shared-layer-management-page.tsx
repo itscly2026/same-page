@@ -1,3 +1,4 @@
+import { useReadResource } from "../settings/use-read-resource";
 import { driveManagementSchema } from "../../shared/drive-management";
 import { runSettingsMutation, settingsMutationMessage } from "../settings/settings-mutation";
 import { captureLocalWorkspaceSession, resolveLocalWorkspace, type LocalWorkspace } from "../platform/local-workspace";
@@ -22,63 +23,45 @@ export default function SharedLayerManagementPage() {
 }
 
 function SharedLayerAccess({ choirId, userId }: { choirId: string; userId: string | null }) {
-  const [overview, setOverview] = useState<ReturnType<typeof driveManagementSchema.parse> | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    void diagnosticFetch(`/api/choirs/${choirId}/management`, { signal: controller.signal })
-      .then(settingsResponse).then(value => { if (!controller.signal.aborted) setOverview(driveManagementSchema.parse(value)); })
-      .catch(error => { if (!controller.signal.aborted) setError(settingsError(error, "无法读取共享层，请重试。")); });
-    return () => controller.abort();
-  }, [choirId, attempt]);
-  if (overview?.capabilities.operations.operations.includes("configureLayers")) return <SharedLayerManagement choirId={choirId} userId={userId} />;
+  const resource = useReadResource(`${userId}:${choirId}:layer-access`, async signal =>
+    driveManagementSchema.parse(await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/management`, { signal }))));
+  const overview = resource.data;
+  const error = resource.error ? settingsError(resource.error, "无法更新共享层，请重试。") : null;
+  if (overview?.capabilities.operations.operations.includes("configureLayers")) return <SharedLayerManagement choirId={choirId} userId={userId} authorized={resource.canMutate} accessError={error} retryAccess={resource.refresh} />;
   return <div className="app-page"><TaskHeader title="共享层" backTo={`/choirs/${choirId}`} /><main className="page-shell settings-page settings-ux">
     <p>{overview?.name}</p><p>此云盘全部乐谱的共享笔记层。查看配置不授予编辑或管理权限。</p>
-    {overview ? <><ul className="shared-layer-summary">{overview.layers.map(layer => <li key={layer.slot}><strong>{layer.name}</strong><span>{layer.active ? "启用" : "停用"}</span></li>)}</ul><p>需要调整时，可查找有共享层配置或授权权限的人。</p><Link to={`/choirs/${choirId}/memberships`}>查看成员与权限</Link></> : <SettingsFeedback loading={!error} loadError={error} message={null} retry={() => { setError(null); setAttempt(value => value + 1); }} />}
+    {overview ? <><ul className="shared-layer-summary">{overview.layers.map(layer => <li key={layer.slot}><strong>{layer.name}</strong><span>{layer.active ? "启用" : "停用"}</span></li>)}</ul><p>需要调整时，可查找有共享层配置或授权权限的人。</p><Link to={`/choirs/${choirId}/memberships`}>查看成员与权限</Link></> : <SettingsFeedback loading={!error} loadError={error} message={null} retry={() => void resource.refresh().catch(() => undefined)} />}
   </main></div>;
 }
 
-function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: string | null }) {
+function SharedLayerManagement({ choirId, userId, authorized, accessError, retryAccess }: { choirId: string; userId: string | null; authorized: boolean; accessError: string | null; retryAccess: () => Promise<void> }) {
   const workspaceRef = useRef<LocalWorkspace | null>(null);
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const [view, setView] = useState<"current" | "deleted">("current");
   const [deleting, setDeleting] = useState<SharedLayerManagementSummary | null>(null);
   const [newName, setNewName] = useState("");
-  const [driveName, setDriveName] = useState("");
-  const [layers, setLayers] = useState<SharedLayerManagementSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadAttempt, setLoadAttempt] = useState(0);
   const [pending, setPending] = useState(false);
   const busy = useRef(false);
   const [feedback, setFeedback] = useState<{ message: string; failed?: boolean; refreshFailed?: boolean } | null>(null);
   const generation = useSettingsLifetime();
-  const retryLoad = () => { setLoading(true); setLoadError(null); setLoadAttempt(value => value + 1); };
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void (async () => {
-      if (!userId) throw new Error("authentication_required");
-      const workspace = await captureLocalWorkspaceSession(await resolveLocalWorkspace({ choirId, scoreId: "shared-layer-management", authenticatedUserId: userId, signal: controller.signal }));
-      controller.signal.throwIfAborted();
-      workspaceRef.current = workspace;
-      const value = await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/shared-layers?state=${view}`, { signal: controller.signal }));
-      const body = sharedLayerManagementResponseSchema.parse(value);
-      if (controller.signal.aborted) return;
-      if (!await applySharedLayerAvailability(workspace, body)) throw new Error("shared_layer_state_changed");
-      if (controller.signal.aborted) return;
-      setDriveName(body.drive.name); setLayers(body.layers); setLoading(false);
-      setFeedback(current => current?.refreshFailed ? { message: "已保存，已读取最新状态。" } : current);
-    })().catch(error => {
-      if (!controller.signal.aborted) { setFeedback(current => current && !current.failed ? { message: `${current.message}但刷新失败，请重新加载，不必再次提交。`, failed: true, refreshFailed: true } : current); setLoadError(settingsError(error, "暂时无法读取共享层管理设置。")); setLoading(false); }
-    });
-    return () => controller.abort();
-  }, [choirId, loadAttempt, view, userId]);
+  const resource = useReadResource(`${userId}:${choirId}:shared-layers:${view}`, async signal => {
+    if (!userId) throw new Error("authentication_required");
+    const workspace = await captureLocalWorkspaceSession(await resolveLocalWorkspace({ choirId, scoreId: "shared-layer-management", authenticatedUserId: userId, signal }));
+    signal.throwIfAborted(); workspaceRef.current = workspace;
+    const body = sharedLayerManagementResponseSchema.parse(await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/shared-layers?state=${view}`, { signal })));
+    signal.throwIfAborted();
+    if (!await applySharedLayerAvailability(workspace, body)) throw new Error("shared_layer_state_changed");
+    return body;
+  });
+  const layers = resource.data?.layers ?? [];
+  const driveName = resource.data?.drive.name ?? "";
+  const loading = !authorized || !resource.canMutate;
+  const loadError = accessError ?? (resource.error ? settingsError(resource.error, "暂时无法更新共享层，已有内容已保留。") : null);
+  const retryLoad = () => { void Promise.allSettled([retryAccess(), resource.refresh()]); };
 
   const change = async (path: string, method: "POST" | "PUT", body: object, message: string) => {
-    if (busy.current) return;
+    if (busy.current || loading) return;
     const lifetime = generation.current;
     const workspace = workspaceRef.current;
     busy.current = true; setPending(true); setFeedback({ message: "正在保存…" });
@@ -92,13 +75,15 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
           const state = sharedLayerAvailabilitySchema.parse(await response.json());
           if (!workspace || !await applySharedLayerAvailability(workspace, state)) throw new Error("shared_layer_state_changed");
         }
+        await resource.refresh();
       },
     );
     if (lifetime !== generation.current) return;
     setFeedback({ message: settingsMutationMessage(result, message), failed: result.kind !== "saved", refreshFailed: result.kind === "saved-refresh-failed" });
     if ((result.kind === "saved" || result.kind === "saved-refresh-failed") && method === "POST") setNewName("");
     setDeleting(null);
-    retryLoad();
+    if (result.kind === "revoked") resource.clear();
+    else if (result.kind === "unconfirmed" || result.kind === "failed") await resource.refresh().catch(() => undefined);
     busy.current = false; setPending(false);
   };
 
@@ -109,14 +94,14 @@ function SharedLayerManagement({ choirId, userId }: { choirId: string; userId: s
         <p className="eyebrow">云盘设置 · {driveName}</p>
         <p className="settings-copy">适用于此云盘的所有乐谱。选择一个层，修改名称、颜色或启用状态。编辑权限在“成员与权限”设置。</p>
       </header>
-      <SettingsFeedback loading={loading} loadError={loadError} message={null} retry={retryLoad} />
+      <SettingsFeedback loading={resource.loading} loadError={loadError} message={null} retry={retryLoad} />
       {feedback && <p role={feedback.failed ? "alert" : "status"}>{feedback.message}</p>}
       <div className="layer-order-actions">
-        <button className="secondary-button" disabled={pending || view === "current"} onClick={() => { setLayers([]); setLoading(true); setView("current"); }}>当前共享层</button>
-        <button className="secondary-button" disabled={pending || view === "deleted"} onClick={() => { setLayers([]); setLoading(true); setView("deleted"); }}>已删除层</button>
+        <button className="secondary-button" disabled={pending || view === "current"} onClick={() => { setView("current"); }}>当前共享层</button>
+        <button className="secondary-button" disabled={pending || view === "deleted"} onClick={() => { setView("deleted"); }}>已删除层</button>
       </div>
       {view === "deleted" && <p className="settings-copy">删除影响当前云盘全部乐谱。30 天内恢复原层及其笔记、授权和阅读偏好，之后永久清理。恢复不会恢复已终止的成员关系。</p>}
-      {!loadError && <>
+      {resource.data && <>
         <section className="settings-card" aria-label="共享层管理列表" aria-busy={loading || pending}>
           {!loading && !layers.length && <p>{view === "deleted" ? "没有已删除的共享层。" : "没有共享层。"}</p>}
           {layers.map((layer, index) => <article className="settings-layer-row settings-layer-row--management" key={layer.slot}>
