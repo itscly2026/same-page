@@ -266,13 +266,21 @@ export class SamePageDatabase extends Dexie {
       offlineSnapshots: "&key,ownerKey,scopeKey",
     }).upgrade(async transaction => {
       const files = transaction.table<OfflineScoreRecord>("offlineScores");
-      // One atomic upgrade: preserve bytes, all draft/outbox/conflict tables and
-      // the exact saved snapshot. Future metadata writes never touch file Blobs.
-      for (const record of await files.toArray()) {
-        const { annotationSnapshot, ...file } = record;
-        await transaction.table("offlineSnapshots").put({ key: file.key, ownerKey: file.ownerKey,
-          scopeKey: file.scopeKey, choirId: file.choirId, scoreId: file.scoreId, annotationSnapshot });
-        await transaction.table("offlineScores").put(file);
+      // Do not rewrite legacy Blobs just to erase the embedded snapshot field:
+      // that can reproduce the storage failure we are recovering from. Runtime
+      // readers only use offlineSnapshots; new file writes omit the old field.
+      for (const key of await files.toCollection().primaryKeys()) {
+        let record;
+        try { record = await files.get(key); }
+        catch (error) {
+          if (error && typeof error === "object" && "name" in error &&
+              (error.name === "NotFoundError" || error.name === "NotReadableError")) continue;
+          throw error;
+        }
+        if (!record) continue;
+        const { annotationSnapshot } = record;
+        await transaction.table("offlineSnapshots").put({ key: record.key, ownerKey: record.ownerKey,
+          scopeKey: record.scopeKey, choirId: record.choirId, scoreId: record.scoreId, annotationSnapshot });
       }
     });
     this.version(10).stores({ driveDirectories: "&key,ownerKey,[ownerKey+choirId]" });
@@ -418,10 +426,14 @@ export function storeOfflineScore(record: OfflineScoreRecord) {
   });
 }
 
+export function findActiveOfflineFile(ownerKey: LocalWorkspaceOwnerKey, choirId: string, scoreId: string) {
+  return localDatabase.offlineScores.where("[ownerKey+choirId+scoreId]")
+    .equals([ownerKey, choirId, scoreId]).filter(record => record.active === 1).first();
+}
+
 export function findActiveOfflineScore(ownerKey: LocalWorkspaceOwnerKey, choirId: string, scoreId: string) {
   return localDatabase.transaction("r", [localDatabase.offlineScores, localDatabase.offlineSnapshots], async () => {
-    const file = await localDatabase.offlineScores.where("[ownerKey+choirId+scoreId]")
-      .equals([ownerKey, choirId, scoreId]).filter(record => record.active === 1).first();
+    const file = await findActiveOfflineFile(ownerKey, choirId, scoreId);
     if (!file) return undefined;
     const snapshot = await localDatabase.offlineSnapshots.get(file.key);
     if (!snapshot || snapshot.scopeKey !== file.scopeKey || snapshot.ownerKey !== file.ownerKey) return undefined;

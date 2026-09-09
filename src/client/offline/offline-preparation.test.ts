@@ -245,3 +245,31 @@ it('reports annotation preparation separately from verified PDF bytes and never 
   expect(await pending).toEqual({ phase: 'failed', reason: 'annotations' });
   expect(await findVerifiedOfflineScore(f.workspace)).toBeNull();
 });
+
+it('isolates a malformed sibling snapshot and can replace a file whose snapshot is missing', async () => {
+  const f = await fixture();
+  const first = f.client().prepare('explicit');
+  await vi.waitFor(() => expect(f.downloads()).toBe(1));
+  f.finish();
+  expect((await first).phase).toBe('ready');
+  await localDatabase.offlineSnapshots.clear();
+  const sibling = createLocalWorkspace(f.workspace.ownerKey, 'drive', 'other');
+  await localDatabase.offlineSnapshots.put({ ...sibling, key: 'malformed', annotationSnapshot: JSON.parse('{"layers":null,"annotations":null}') });
+  const retry = f.client().prepare('explicit');
+  await vi.waitFor(() => expect(f.downloads()).toBe(2));
+  f.finish();
+  expect((await retry).phase).toBe('ready');
+  expect((await findVerifiedOfflineScore(f.workspace))?.versionId).toBe('v1');
+  expect(await localDatabase.offlineSnapshots.get('malformed')).toBeDefined();
+});
+
+it('cancels an automatic preparation even when the displayed PDF byte provider never resolves', async () => {
+  const f = await fixture();
+  const client = f.client();
+  const provider = vi.fn(() => new Promise<Uint8Array>(() => {}));
+  const pending = client.prepare('automatic', provider);
+  await vi.waitFor(() => expect(provider).toHaveBeenCalled());
+  client.dispose();
+  expect(await pending).toEqual({ phase: 'cancelled' });
+  expect(f.downloads()).toBe(0);
+});

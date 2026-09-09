@@ -4,7 +4,7 @@ import type { DiagnosticStep } from "../../shared/diagnostics";
 import { imageManifestSchema } from "../../shared/score-images";
 import Dexie from "dexie";
 import { annotationLayerSummarySchema, annotationPayloadSchema, type AnnotationLayerSummary } from "../../shared/annotations";
-import { findActiveOfflineScore, type OfflineScoreRecord } from "../platform/local-database";
+import { findActiveOfflineScore, type OfflineScoreRecord, type OfflineSnapshotRecord } from "../platform/local-database";
 import { assertLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
 
 const verificationTasks = new WeakMap<Blob, Map<string, Promise<boolean>>>();
@@ -88,6 +88,16 @@ async function verifyRecord(record: OfflineScoreRecord, report: ReturnType<typeo
     report({ operation: "storage", category: "internal", stage: "decode", step, errorType: diagnosticErrorType(error) });
     throw error;
   }
+}
+
+// Invalid snapshots remain stored for recovery, but never become readable or
+// take part in another score's permissions transaction.
+export function hasValidSnapshotShape(record: OfflineSnapshotRecord): boolean {
+  const snapshot = record.annotationSnapshot;
+  if (!snapshot || !Array.isArray(snapshot.layers) || !Array.isArray(snapshot.annotations)) return false;
+  return snapshot.layers.every(layer => annotationLayerSummarySchema.safeParse(layer).success && layer.scopeKey === record.scopeKey && layer.ownerKey === record.ownerKey)
+    && snapshot.annotations.every(annotation => annotation && annotation.scopeKey === record.scopeKey && annotation.ownerKey === record.ownerKey
+      && (!annotation.payload || annotationPayloadSchema.safeParse(annotation.payload).success));
 }
 
 export function hasCompleteOfflineLayers(layers: AnnotationLayerSummary[], ownerKey: string) {

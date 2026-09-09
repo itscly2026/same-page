@@ -1,3 +1,4 @@
+import { untilAborted } from "../platform/abortable";
 import { diagnoseLocalOperation } from "../diagnostics/local-operation";
 import { hasCompleteOfflineLayers } from "../offline/offline-score-verification";
 import { parseDiagnosticResponse, diagnosticFetch, recordFailure, diagnosticScope } from "../diagnostics/diagnostics";
@@ -190,10 +191,10 @@ export async function refreshLayerCapabilities(workspace: LocalWorkspace, signal
   await assertLocalWorkspaceActive(workspace);
   signal.throwIfAborted();
   await diagnoseLocalOperation("sync-layers-identity", async () => {
-  if (!hasCompleteOfflineLayers(layers, workspace.ownerKey)) {
-    await removeCachedPublications(workspace);
-    throw new Error("annotation_layer_identity_mismatch");
-  }
+    if (!hasCompleteOfflineLayers(layers, workspace.ownerKey)) {
+      await removeCachedPublications(workspace);
+      throw new Error("annotation_layer_identity_mismatch");
+    }
   }, diagnostics);
   const previous = await diagnoseLocalOperation("sync-layers-cache", () => readAnnotationLayers(workspace), diagnostics);
   const applied = workspace.ownerKey.startsWith("user:") ? layers : layers.map(layer => ({
@@ -218,16 +219,6 @@ export async function refreshLayerCapabilities(workspace: LocalWorkspace, signal
 function refreshRequest(url: string, signal: AbortSignal) {
   const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
   return untilAborted(diagnosticFetch(url, { signal: requestSignal }), requestSignal);
-}
-
-// Also detaches promptly from lock waits and transports that cannot cancel.
-function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const cancel = () => reject(signal.reason);
-    signal.addEventListener("abort", cancel, { once: true });
-    void promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", cancel));
-    if (signal.aborted) cancel();
-  });
 }
 
 export class AnnotationPushError extends Error {

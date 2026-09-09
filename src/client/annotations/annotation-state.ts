@@ -1,5 +1,5 @@
 import { diagnoseLocalOperation } from "../diagnostics/local-operation";
-import { hasCompleteOfflineLayers } from "../offline/offline-score-verification";
+import { hasValidSnapshotShape, hasCompleteOfflineLayers } from "../offline/offline-score-verification";
 import { annotationLayerSummarySchema, annotationPayloadSchema } from "../../shared/annotations";
 import type {
   AnnotationLayerSummary,
@@ -70,7 +70,7 @@ export async function cacheAnnotationLayers(workspace: LocalWorkspace, layers: A
     if (layers.some(layer => !previous.some(entry => entry.id === layer.id))) {
       await localDatabase.annotationSyncCursors.delete(workspace.scopeKey);
     }
-    const offlineRecords = await localDatabase.offlineSnapshots.where("scopeKey").equals(workspace.scopeKey).toArray();
+    const offlineRecords = (await localDatabase.offlineSnapshots.where("scopeKey").equals(workspace.scopeKey).toArray()).filter(hasValidSnapshotShape);
     const previousLayers = [...previous, ...offlineRecords.flatMap(record => record.annotationSnapshot.layers)];
     const revoked = new Set(previousLayers.filter(layer => layer.kind === "personal" && !layer.canEdit && !ids.has(layer.id)).map(layer => layer.id));
     await localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey)
@@ -111,12 +111,13 @@ async function acceptSharedLayerAvailability(workspace: LocalWorkspace, state: S
   await localDatabase.annotationLayers.bulkDelete(driveLayers.map(layer => layer.key));
   const records = await localDatabase.offlineSnapshots.where("ownerKey").equals(workspace.ownerKey)
     .filter(record => record.choirId === workspace.choirId).toArray();
-  for (const record of records) {
+  const readableRecords = records.filter(hasValidSnapshotShape);
+  for (const record of readableRecords) {
     record.annotationSnapshot.layers = record.annotationSnapshot.layers.filter(layer => layer.kind !== "shared" || activeSlots.has(layer.sharedSlot!));
     const readable = new Set(record.annotationSnapshot.layers.map(layer => layer.id));
     record.annotationSnapshot.annotations = record.annotationSnapshot.annotations.filter(annotation => readable.has(annotation.layerId));
   }
-  await diagnoseLocalOperation("sync-layers-snapshot", () => localDatabase.offlineSnapshots.bulkPut(records));
+  await diagnoseLocalOperation("sync-layers-snapshot", () => localDatabase.offlineSnapshots.bulkPut(readableRecords));
   return true;
 }
 
@@ -760,8 +761,9 @@ export async function restoreOfflineAnnotationSnapshot(
       localDatabase.annotationSyncCursors,
     ],
     async () => {
-      const snapshot = (await localDatabase.offlineSnapshots.get(record.key))?.annotationSnapshot;
-      if (!snapshot) return;
+      const saved = await localDatabase.offlineSnapshots.get(record.key);
+      if (!saved || !hasValidSnapshotShape(saved)) return;
+      const snapshot = saved.annotationSnapshot;
       for (const layer of snapshot.layers) annotationLayerSummarySchema.parse(layer);
       for (const annotation of snapshot.annotations) {
         if (annotation.payload) annotationPayloadSchema.parse(annotation.payload);
