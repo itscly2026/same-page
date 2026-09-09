@@ -11,7 +11,7 @@ export function highlighterPose(ink: Pick<Ink, "nib" | "strokeWidth">, point: Po
   // a stable diagonal is preferable to inventing rotation from azimuth noise.
   return {
     x: point.x, y: point.y / aspectRatio,
-    angle: ink.nib === "round" ? 0 : -Math.PI / 4 + (point.twist ?? 0) * Math.PI / 180,
+    angle: ink.nib === "round" ? 0 : Math.PI / 4 + (point.twist ?? 0) * Math.PI / 180,
     length: ink.strokeWidth,
     thickness: ink.strokeWidth * (ink.nib === "round" ? 1 : .22),
   };

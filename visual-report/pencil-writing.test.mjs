@@ -108,6 +108,17 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
     const shadow = page.locator('[aria-label="笔尖预览"] ellipse');
     assert.equal(await shadow.getAttribute("stroke"),null);
     assert.ok(Number(await shadow.getAttribute("fill-opacity")) <= .15);
+    await pointer(page,"pointermove",.5,.35,{buttons:0,pressure:0});
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const bounds = await page.locator(".annotation-overlay svg").first().boundingBox();
+    const shot = await page.screenshot({clip:{x:bounds.x+bounds.width*.5-25,y:bounds.y+bounds.height*.35-25,width:50,height:50}});
+    const fade = await page.evaluate(async data => {
+      const image = new Image(); image.src = data; await image.decode();
+      const canvas = document.createElement("canvas"); canvas.width=canvas.height=50;
+      const context = canvas.getContext("2d"); context.drawImage(image,0,0);
+      return [0,7,12,17].map(offset => context.getImageData(25+offset,25,1,1).data[1]);
+    }, `data:image/png;base64,${shot.toString("base64")}`);
+    assert.ok(fade[0] > 220 && fade[0]+5 < fade[1] && fade[1]+3 < fade[2] && fade[3] >= 253, `shadow must fade smoothly into the page: ${fade}`);
     await page.screenshot({path:`artifacts/editor-preview/${name}-eraser-hover.png`});
   });
 }

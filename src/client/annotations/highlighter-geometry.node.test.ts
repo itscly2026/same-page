@@ -24,6 +24,7 @@ describe("highlighter deposition", () => {
   });
   it("uses barrel roll for the chisel footprint with a stable fallback", () => {
     const upright=highlighterPose(base,{x:.5,y:.5},1);
+    expect(upright.angle).toBeCloseTo(Math.PI / 4);
     const tilted=highlighterPose(base,{x:.5,y:.5,tiltX:60,tiltY:0},1);
     expect(tilted.length).toBe(upright.length);
     expect(tilted.thickness).toBe(upright.thickness);

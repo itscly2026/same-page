@@ -1,6 +1,7 @@
 import {
   type PointerEvent as ReactPointerEvent,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -106,6 +107,7 @@ export function AnnotationOverlay({
   onInteractionChange?(interaction: AnnotationOverlayInteraction): void;
 }) {
   const persistence = useEditorPersistence(editor);
+  const eraserGradientId = useId();
   const [pageWidth, setPageWidth] = useState(1000);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [aspectRatio, setAspectRatio] = useState(1);
@@ -763,13 +765,20 @@ export function AnnotationOverlay({
           <g>{inkSvgPaths(draftStroke, aspectRatio).map((path, index) => <path key={index} data-ink-draft d={path} fill={activeLayerColor} fillRule={inkFillRule(draftStroke)} opacity={draftStroke.opacity ?? 1} />)}</g>
         ) : null}
         {hover && canStartEdit && <g pointerEvents="none" aria-label="笔尖预览">
+          {tool === "eraser" && <defs>
+            <radialGradient id={eraserGradientId}>
+              <stop offset="0" stopColor="#203b3b" />
+              <stop offset="45%" stopColor="#203b3b" stopOpacity=".45" />
+              <stop offset="75%" stopColor="#203b3b" stopOpacity=".12" />
+              <stop offset="100%" stopColor="#203b3b" stopOpacity="0" />
+            </radialGradient>
+          </defs>}
           {tool === "highlighter" ? <path d={highlighterNibPath({ nib: toolStyle.nib, strokeWidth: toolStyle.strokeWidth }, hover, aspectRatio)} fill={activeLayerColor} fillOpacity={Math.min(toolStyle.opacity, .3)} /> : <ellipse
             cx={hover.x * 1000} cy={hover.y * 1000}
             rx={(tool === "eraser" ? ERASER_HIT_RADIUS_PX : 1.25) * 1000 / pageWidth}
             ry={(tool === "eraser" ? ERASER_HIT_RADIUS_PX : 1.25) * 1000 / pageWidth * aspectRatio}
-            fill={tool === "eraser" ? "#203b3b" : activeLayerColor}
+            fill={tool === "eraser" ? `url(#${eraserGradientId})` : activeLayerColor}
             fillOpacity={tool === "eraser" ? .12 : .35}
-            style={tool === "eraser" ? { filter: "blur(3px)" } : undefined}
           />}
         </g>}
       </svg>
