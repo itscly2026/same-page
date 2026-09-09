@@ -241,7 +241,7 @@ export function ContinuousLayout({
 }: ReaderLayoutProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const alignedPage = useRef<{ page: number; restorePage: number; geometryReady: boolean } | null>(null);
+  const alignedPage = useRef<{ page: number; geometryReady: boolean } | null>(null);
   const size = useElementSize(scrollRef);
   const pageWidth = Math.max(1, size.width * zoom);
   const ratios = usePageAspectRatios(document);
@@ -263,22 +263,19 @@ export function ContinuousLayout({
     // Initial zero-width measurements cannot establish the saved page position.
     if (size.width <= 0 || size.height <= 0 || annotationProps.editing ||
       (alignedPage.current?.page === currentPage && alignedPage.current.geometryReady === geometryReady)) return;
-    // A short final page can clamp the estimated scroll and temporarily select
-    // its predecessor. Keep the requested page until actual geometry is aligned.
-    const restorePage = geometryReady && alignedPage.current?.geometryReady === false
-      ? alignedPage.current.restorePage : currentPage;
-    alignedPage.current = { page: currentPage, restorePage, geometryReady };
+    // Correct estimated offsets once the real geometry has committed.
+    alignedPage.current = { page: currentPage, geometryReady };
     const scrollElement = scrollRef.current;
     const target = virtualizer
       .getVirtualItems()
-      .find((item) => item.index === restorePage - 1);
+      .find((item) => item.index === currentPage - 1);
     const visible =
       scrollElement &&
       target &&
       target.start >= scrollElement.scrollTop &&
       target.end <= scrollElement.scrollTop + scrollElement.clientHeight;
     if (!visible) {
-      virtualizer.scrollToIndex(restorePage - 1, { align: "start" });
+      virtualizer.scrollToIndex(currentPage - 1, { align: "start" });
     }
   }, [annotationProps.editing, currentPage, virtualizer, size.width, size.height, geometryReady]);
 
@@ -315,15 +312,16 @@ export function ContinuousLayout({
       ref={scrollRef}
       {...gestureHandlers}
       onScroll={() => {
-        if (annotationProps.editing) return;
+        // An estimated scroll event can queue an obsolete page update before
+        // real geometry is aligned. Do not turn that estimate into user intent.
+        if (annotationProps.editing || !geometryReady || !alignedPage.current?.geometryReady) return;
         const scrollTop = scrollRef.current?.scrollTop ?? 0;
         const threshold = scrollTop + 8;
         // Scroll events can precede the virtual window update; use full geometry.
         const first = virtualizer.getVirtualItemForOffset(threshold);
         if (first) {
           const page = first.index + 1;
-          alignedPage.current = { page, restorePage: alignedPage.current?.restorePage ?? currentPage,
-            geometryReady: alignedPage.current?.geometryReady ?? false };
+          alignedPage.current = { page, geometryReady: true };
           onPageChange(page);
         }
       }}
