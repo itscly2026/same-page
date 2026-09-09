@@ -101,7 +101,7 @@ class OfflineAnnotationPreparationError extends Error {}
 export type OfflinePreparationState =
   | { phase: "idle" | "cancelled" }
   | { phase: "preparing"; intent: "automatic" | "explicit" }
-  | { phase: "failed"; reason: "identity" | "download" | "annotations" }
+  | { phase: "failed"; reason: "identity" | "download" | "annotations" | "timeout" }
   | { phase: "ready"; record: OfflineScoreRecord };
 type PreparationTask = {
   controller: AbortController;
@@ -212,7 +212,7 @@ export class OfflinePreparation {
           controller.signal.throwIfAborted();
           const record = await untilAborted(prepareOfflineScore(context.workspace, this.score, this.mode, signal, bytes, context.fence), signal);
           return { phase: "ready", record };
-        } catch (error) { return controller.signal.aborted ? { phase: "cancelled" } : { phase: "failed", reason: error instanceof OfflineAnnotationPreparationError ? "annotations" : "download" }; }
+        } catch (error) { return controller.signal.aborted ? { phase: "cancelled" } : { phase: "failed", reason: error instanceof OfflineAnnotationPreparationError ? "annotations" : error instanceof DOMException && error.name === "TimeoutError" ? "timeout" : "download" }; }
         finally { watcher.unsubscribe(); }
       })().then(state => {
         ownedTask.state = state;

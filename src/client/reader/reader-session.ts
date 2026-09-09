@@ -1,4 +1,4 @@
-import { offlineAnnotationsUnavailable } from "../offline/offline-score-status";
+import { offlinePreparationDescription } from "../offline/offline-score-status";
 import { offlineScoreSummary as scoreFromOffline } from "../offline/retained-scores";
 import { revokeOfflinePreparationIdentity, OfflinePreparation, type OfflinePreparationState } from "../offline/offline-score";
 import { liveQuery } from "dexie";
@@ -347,7 +347,7 @@ export class ReaderSession {
         const state = preparation.getSnapshot();
         this.publish({ preparation: state, downloading: state.phase === "preparing",
           downloadMessage: state.phase === "ready" ? "离线副本已完整校验，可以离线打开。"
-            : state.phase === "failed" ? state.reason === "annotations" ? offlineAnnotationsUnavailable : "离线下载未完成，仍可在线阅读，现有离线版本没有切换。请重试。" : null,
+            : state.phase === "failed" ? offlinePreparationDescription(state, { record: this.state.offline, invalid: false }, this.state.score?.currentVersion.id ?? "", this.state.mode) : null,
           ...(state.phase === "ready" ? { offline: state.record } : {}),
         });
       });

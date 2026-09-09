@@ -273,3 +273,29 @@ it('cancels an automatic preparation even when the displayed PDF byte provider n
   expect(await pending).toEqual({ phase: 'cancelled' });
   expect(f.downloads()).toBe(0);
 });
+
+it('reports a whole-preparation deadline during stalled notes as a timeout, not a PDF download failure', async () => {
+  const f = await fixture();
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const deadlines = vi.spyOn(AbortSignal, 'timeout').mockImplementation(ms => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException('deadline', 'TimeoutError')), ms);
+    return controller.signal;
+  });
+  const originalFetch = fetch;
+  let layersRequested = false;
+  vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+    if (input.endsWith('/layers')) { layersRequested = true; return new Promise<Response>(() => {}); }
+    return originalFetch(input, init);
+  }));
+  try {
+    const pending = f.client().prepare('explicit');
+    await vi.waitFor(() => expect(f.downloads()).toBe(1));
+    await vi.advanceTimersByTimeAsync(150_000);
+    f.finish();
+    await vi.waitFor(() => expect(layersRequested).toBe(true));
+    await vi.advanceTimersByTimeAsync(30_001);
+    expect(await pending).toEqual({ phase: 'failed', reason: 'timeout' });
+    expect(await findVerifiedOfflineScore(f.workspace)).toBeNull();
+  } finally { deadlines.mockRestore(); vi.useRealTimers(); }
+});
