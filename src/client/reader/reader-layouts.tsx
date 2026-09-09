@@ -259,7 +259,8 @@ export function ContinuousLayout({
   });
 
   useEffect(() => {
-    if (annotationProps.editing || alignedPage.current === currentPage) return;
+    // Initial zero-width measurements cannot establish the saved page position.
+    if (size.width <= 0 || size.height <= 0 || annotationProps.editing || alignedPage.current === currentPage) return;
     alignedPage.current = currentPage;
     const scrollElement = scrollRef.current;
     const target = virtualizer
@@ -273,7 +274,7 @@ export function ContinuousLayout({
     if (!visible) {
       virtualizer.scrollToIndex(currentPage - 1, { align: "start" });
     }
-  }, [annotationProps.editing, currentPage, virtualizer]);
+  }, [annotationProps.editing, currentPage, virtualizer, size.width, size.height]);
 
   useReturnViewport(scrollRef, "continuous", size.width > 0);
 
@@ -311,8 +312,8 @@ export function ContinuousLayout({
         if (annotationProps.editing) return;
         const scrollTop = scrollRef.current?.scrollTop ?? 0;
         const threshold = scrollTop + 8;
-        const items = virtualizer.getVirtualItems();
-        const first = items.find((item) => item.end > threshold) ?? items[0];
+        // Scroll events can precede the virtual window update; use full geometry.
+        const first = virtualizer.getVirtualItemForOffset(threshold);
         if (first) {
           const page = first.index + 1;
           alignedPage.current = page;
