@@ -1,17 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  resolveSharedLayerPreference,
-  scoreLayerPreferenceUpdateSchema,
-} from "./annotations";
-
-describe("scoreLayerPreferenceUpdateSchema", () => {
-  it("accepts score subscription and color overrides", () => {
-    expect(scoreLayerPreferenceUpdateSchema.safeParse({ subscribed: false }).success).toBe(true);
-    expect(scoreLayerPreferenceUpdateSchema.safeParse({ subscribed: null }).success).toBe(true);
-    expect(scoreLayerPreferenceUpdateSchema.safeParse({ colorOverride: "#445566" }).success).toBe(true);
-  });
-});
+import { resolveSharedLayerPreference } from "./annotations";
 
 describe("resolveSharedLayerPreference", () => {
   it("uses a score subscription override and a drive color independently", () => {

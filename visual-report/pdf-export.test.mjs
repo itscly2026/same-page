@@ -99,8 +99,10 @@ test("reader export uses reading subscriptions even when opened from editing", a
   page.setDefaultTimeout(15000);
   const fixture = createVisualFixtureSession();
   let revoked = false;
+  const preferenceWrites = [];
   await page.route("**/api/**", route => {
     const pathname = new URL(route.request().url()).pathname;
+    if (pathname.endsWith("/preference") && route.request().method() !== "GET") preferenceWrites.push(pathname);
     const response = fixture.resolve({ pathname, method: route.request().method(), identity: "admin", cookie: "" });
     if (revoked && pathname.endsWith("/layers")) {
       const body = JSON.parse(response.body); body.layers = body.layers.filter(layer => layer.sharedSlot !== "E");
@@ -119,6 +121,11 @@ test("reader export uses reading subscriptions even when opened from editing", a
   assert.equal(await dialog.getByRole("checkbox", { name: "Ensemble", exact: true }).isChecked(), true);
   assert.equal(await dialog.getByRole("checkbox", { name: "Bass", exact: true }).isChecked(), false);
   assert.equal(await dialog.getByRole("checkbox", { name: "我的笔记", exact: true }).isChecked(), true);
+  await dialog.getByRole("button", { name: "取消全部笔记" }).click();
+  assert.equal(await dialog.locator("input:checked").count(), 0);
+  assert.equal(preferenceWrites.length, 0, "export selection must not change reading subscriptions");
+  await dialog.getByRole("checkbox", { name: "Ensemble", exact: true }).check();
+  await dialog.getByRole("checkbox", { name: "我的笔记", exact: true }).check();
   const [download] = await Promise.all([page.waitForEvent("download"), dialog.getByRole("button", { name: "导出 PDF", exact: true }).click()]);
   assert.ok(download.suggestedFilename().endsWith(".pdf"));
   assert.equal(await download.failure(), null);
@@ -132,6 +139,7 @@ test("reader export uses reading subscriptions even when opened from editing", a
   for (const checkbox of await dialog.getByRole("checkbox").all()) await checkbox.uncheck();
   const [original] = await Promise.all([page.waitForEvent("download"), dialog.getByRole("button", { name: "导出 PDF", exact: true }).click()]);
   assert.equal(await original.failure(), null);
+  assert.equal(preferenceWrites.length, 0, "export selection must not change reading subscriptions");
 
 });
 

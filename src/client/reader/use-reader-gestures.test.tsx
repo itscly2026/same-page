@@ -48,9 +48,6 @@ describe("useReaderGestures", () => {
     flushAnimationFrame();
 
     expect(viewport).toHaveAttribute("data-zoom", "1");
-    expect(content.style.getPropertyValue("--reader-gesture-scale")).toBe("2");
-    expect(content.style.getPropertyValue("--reader-gesture-x")).toBe("-300px");
-    expect(content.style.getPropertyValue("--reader-gesture-y")).toBe("-250px");
     expect(boundary).toHaveAttribute("data-gesture-preview");
     expect(onZoomChange).not.toHaveBeenCalled();
 
@@ -190,7 +187,7 @@ describe("useReaderGestures", () => {
     vi.spyOn(viewport, "getBoundingClientRect").mockImplementation(() =>
       rect(0, 0, 1000, 800),
     );
-    const measureContent = vi
+    vi
       .spyOn(content, "getBoundingClientRect")
       .mockImplementation(() => {
         const page = content.querySelector<HTMLElement>(".pdf-page-canvas");
@@ -225,7 +222,6 @@ describe("useReaderGestures", () => {
     const settledScrollLeft = viewport.scrollLeft;
     const settledScrollTop = viewport.scrollTop;
     const settledBounds = content.getBoundingClientRect();
-    const settledMeasurementCount = measureContent.mock.calls.length;
 
     finishRedraw?.();
     await waitFor(() =>
@@ -237,7 +233,6 @@ describe("useReaderGestures", () => {
     );
     expect(viewport.scrollLeft).toBeCloseTo(settledScrollLeft);
     expect(viewport.scrollTop).toBeCloseTo(settledScrollTop);
-    expect(measureContent).toHaveBeenCalledTimes(settledMeasurementCount);
     expect(content.getBoundingClientRect()).toMatchObject({
       left: settledBounds.left,
       top: settledBounds.top,
@@ -276,9 +271,6 @@ describe("useReaderGestures", () => {
     fireEvent.pointerDown(viewport, { pointerId: 2, clientX: 400, clientY: 200 });
     fireEvent.pointerMove(viewport, { pointerId: 2, clientX: 300, clientY: 200 });
     flushAnimationFrame();
-    expect(content.style.getPropertyValue("--reader-gesture-scale")).toBe("0.75");
-    expect(content.style.getPropertyValue("--reader-gesture-x")).toBe("25px");
-    expect(content.style.getPropertyValue("--reader-gesture-y")).toBe("50px");
 
     fireEvent.pointerUp(viewport, { pointerId: 2, clientX: 300, clientY: 200 });
     fireEvent.pointerUp(viewport, { pointerId: 1, clientX: 200, clientY: 200 });

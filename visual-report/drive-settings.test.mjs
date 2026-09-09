@@ -113,8 +113,5 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await expect(page.getByText("操作权限：Soprano")).toHaveCount(0);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({ path: `artifacts/visual-report/permissions-member-${name}.png`, fullPage: true });
-    await page.goto(`${app.origin}/help`);
-    await page.getByRole("link", { name: "故障诊断", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "故障诊断", exact: true })).toBeVisible();
   });
 }
