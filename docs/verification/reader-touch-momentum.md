@@ -23,17 +23,24 @@ changed to produce the failure. The temporary delay was removed.
 
 ## Change and protection
 
-Chromium now schedules one `Input.synthesizeScrollGesture` with explicit touch
-input, speed and fling policy. Passive browser listeners record native release
-and subsequent scroll positions, avoiding a host read between movement and
-release. The test observes at least one second after release and retains the
-original >20px momentum assertion and >50px native scroll assertion. Each new
-scenario has a 30-second bound and its own browser lifecycle.
+The native `Input.dispatchTouchEvent` path uses explicit timestamps at 16ms
+intervals to define velocity independently of host/transport scheduling. A
+150ms transport stall before release is retained as regression pressure; it
+must not change the synthetic input velocity. Passive browser listeners record
+native release and subsequent scroll positions. The test observes at least one
+second after release and retains the original >20px momentum assertion and
+>50px native scroll assertion. Each new scenario has a 30-second bound and its
+own browser lifecycle.
 
-A separate no-fling control uses the same browser input path with
-`preventFling: true` and requires <=20px post-release movement. Pinch zoom is a
-separate scenario; existing Chromium/WebKit anchor tests still cover anchoring.
+A separate stationary-release control uses the same event path but advances the
+input release timestamp by 150ms, requiring <=20px post-release movement. This
+distinguishes a genuine stationary release from a delay in transporting events.
+Pinch zoom is separate; existing Chromium/WebKit tests still cover anchoring.
 Diagnostics contain only synthetic event types, relative times and positions.
+
+An initial `synthesizeScrollGesture` implementation passed locally but failed
+all ten Ubuntu rounds with no touch moves or scrolling. It was replaced by the
+original cross-platform dispatch path; that experiment is not passing evidence.
 
 The existing Browser stability experiment accepts `scenario=reader-touch` to
 run all three scenarios ten times on Ubuntu / Node 24. Its original
@@ -45,12 +52,12 @@ hidden by a successful retry.
 
 - Original scenario: passed; injected 150ms pre-release delay: failed with the
   same `145 -> 145` assertion as main.
-- New positive/control/pinch scenarios: passed. The first positive observation
-  moved from 151px at release to 337px; the no-fling control stayed at 159px.
-- Entire reader-immersive file: 15 passed, including Chromium/WebKit anchor,
-  editing, alignment and shape interactions (Node 24.19.0).
-- Mutation check: forcing the positive scenario to use `preventFling: true`
-  failed with `no momentum: 162 -> 162`; the mutation was removed.
+- Timestamped positive/control scenarios passed, including an additional
+  150ms transport stall before release (now retained as regression pressure).
+- Final timestamped implementation: whole reader-immersive file passed all 15
+  tests on macOS / Node 24.19.0, including Chromium/WebKit anchoring and editing.
+- Removing the explicit input timestamps made the final positive scenario fail
+  with `no momentum: 145 -> 145`; timestamps were restored.
 - CI scope regression tests: 19 passed.
 
 Ubuntu repetition and full PR CI are reported on the PR. These automated tests

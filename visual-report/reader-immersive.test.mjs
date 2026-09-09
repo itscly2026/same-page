@@ -157,19 +157,19 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
  }
 }
 
-for (const preventFling of [false, true]) {
- test(`continuous native touch scroll: ${preventFling ? "no-fling control" : "momentum after release"}`, { timeout: 30_000 }, async context => {
+for (const pausedRelease of [false, true]) {
+ test(`continuous native touch scroll: ${pausedRelease ? "stationary-release control" : "momentum after release"}`, { timeout: 30_000 }, async context => {
   const browser = await chromium.launch({ headless: true });
   context.after(() => browser.close());
   const { reader, cdp } = await openContinuousTouchReader(browser);
-  // Observe in the browser: a host round trip before touchEnd changes release
-  // velocity, and a host round trip after it can miss the entire fling.
+  // Measure from native release in the browser, rather than a host-side
+  // position read before dispatching touchEnd.
   await reader.evaluate(element => {
     const probe = { events: [], release: null, maximumAfterRelease: null };
     element.__touchProbe = probe;
     for (const type of ["touchstart", "touchmove", "touchend", "scroll"]) {
-      element.addEventListener(type, () => {
-        const sample = { type, time: performance.now(), top: element.scrollTop };
+      element.addEventListener(type, event => {
+        const sample = { type, time: performance.now(), inputTime: event.timeStamp, top: element.scrollTop };
         probe.events.push(sample);
         if (type === "touchend") {
           probe.release = sample;
@@ -179,25 +179,35 @@ for (const preventFling of [false, true]) {
       }, { passive: true });
     }
   });
-  // Chromium schedules the entire native touch gesture, independently of Node
-  // timers and CI host scheduling. The control uses the same path without fling.
+  // Explicit input timestamps define velocity; protocol transport and Node
+  // scheduling must not turn a swipe into a stationary release.
   let probe;
   try {
-    await cdp.send("Input.synthesizeScrollGesture", {
-      x: 400, y: 550, yDistance: -160, speed: 1000,
-      gestureSourceType: "touch", preventFling,
+    const started = Date.now() / 1000;
+    const send = (type, y, offset) => cdp.send("Input.dispatchTouchEvent", {
+      type, timestamp: started + offset,
+      touchPoints: type === "touchEnd" ? [] : [{ x: 400, y, id: 1 }],
     });
+    await send("touchStart", 550, 0);
+    for (let step = 1; step <= 8; step++) {
+      await send("touchMove", 550 - step * 20, step * 0.016);
+      await new Promise(resolve => setTimeout(resolve, 16));
+    }
+    // Regression pressure: transport stalls must not change input velocity.
+    // Without explicit timestamps this reproduces the original missing fling.
+    await new Promise(resolve => setTimeout(resolve, 150));
+    await send("touchEnd", 390, 0.144 + (pausedRelease ? 0.15 : 0));
     await expect.poll(() => reader.evaluate(element => {
       const release = element.__touchProbe.release;
       return release !== null && performance.now() - release.time >= 1000;
     }), { timeout: 5000, message: "native gesture must release and finish its observation window" }).toBe(true);
   } finally {
     probe = await reader.evaluate(element => element.__touchProbe);
-    context.diagnostic(JSON.stringify({ preventFling, ...probe }));
+    context.diagnostic(JSON.stringify({ pausedRelease, ...probe }));
   }
   assert.ok(probe.release.top > 50, `native scroll did not move: ${JSON.stringify(probe)}`);
   const momentum = probe.maximumAfterRelease - probe.release.top;
-  if (preventFling) assert.ok(momentum <= 20, `no-fling control moved after release: ${momentum}`);
+  if (pausedRelease) assert.ok(momentum <= 20, `no-fling control moved after release: ${momentum}`);
   else assert.ok(momentum > 20, `no momentum: ${probe.release.top} -> ${probe.maximumAfterRelease}`);
  });
 }
