@@ -12,7 +12,9 @@ export const driveSettingsRoutes = new Hono<AppEnvironment>();
 driveSettingsRoutes.get("/choirs/:choirId/settings", async context => {
   const database = createDatabase(context.env.DB);
   const choirId = context.req.param("choirId");
-  const access = await requireChoirRead(database, await resolveContextPrincipal(context), choirId);
+  const principal = await resolveContextPrincipal(context);
+  if (context.req.header("x-same-page-owner-user-id") && (principal?.kind !== "user" || context.req.header("x-same-page-owner-user-id") !== principal.userId)) return context.json({ error: "identity_changed" }, 403);
+  const access = await requireChoirRead(database, principal, choirId);
   if (access.kind !== "membership") throw new AuthorizationError();
   const choir = await database.query.choirs.findFirst({ where: eq(choirs.id, choirId) });
   return context.json({ name: choir!.name, nameRevision: choir!.nameRevision,

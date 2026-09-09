@@ -72,11 +72,14 @@ describe("annotation layers and object synchronization", () => {
       `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/shared-layers/E/preference`,
       `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/personal-layers/${fixture.layerId}/subscription`,
       `/api/choirs/${fixture.choirId}/display-name`,
+      `/api/choirs/${fixture.choirId}/settings`,
+      `/api/choirs/${fixture.choirId}/shared-layer-preferences`,
     ];
     for (const path of paths) {
-      const response = await callWorker(path, { method: path.endsWith("display-name") ? "PATCH" : "PUT",
+      const read = path.endsWith("/settings") || path.endsWith("/shared-layer-preferences");
+      const response = await callWorker(path, { method: read ? "GET" : path.endsWith("display-name") ? "PATCH" : "PUT",
         headers: { cookie: fixture.adminCookie, "content-type": "application/json", "x-same-page-owner-user-id": "other-user" },
-        body: JSON.stringify(path.endsWith("display-name") ? { displayName: "wrong user", expectedRevision: 0 } : { subscribed: false }) });
+        body: read ? undefined : JSON.stringify(path.endsWith("display-name") ? { displayName: "wrong user", expectedRevision: 0 } : { subscribed: false }) });
       expect(response.status).toBe(403);
       expect(await response.json()).toEqual({ error: "identity_changed" });
     }

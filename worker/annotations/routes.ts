@@ -104,6 +104,7 @@ annotationRoutes.get("/choirs/:choirId/shared-layer-preferences", async (context
     return context.json({ error: "guest_preferences_are_local" }, 403);
   }
 
+  if (context.req.header("x-same-page-owner-user-id") && context.req.header("x-same-page-owner-user-id") !== principal.userId) return context.json({ error: "identity_changed" }, 403);
   const drive = await readDriveIdentity(context, choirId);
   if (!drive) return context.json({ error: "choir_not_found" }, 404);
   const rows = await context.env.DB.prepare(

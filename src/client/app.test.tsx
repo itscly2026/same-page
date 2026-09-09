@@ -1,3 +1,4 @@
+import { installReadingPreferenceLocks } from "../test/reading-preference-locks";
 import { storeOfflineScore } from "./platform/local-database";
 import { effectiveCapabilities, emptyPermissions, noCapabilities } from "../shared/drive-permissions";
 import { Blob as NodeBlob } from "node:buffer";
@@ -43,6 +44,7 @@ vi.mock("./auth/auth-client", () => ({
 
 describe("AppRoutes", () => {
   beforeEach(async () => {
+    installReadingPreferenceLocks();
     clearReaderScoreCache();
     clearDriveLibraryCache();
     window.sessionStorage.clear();

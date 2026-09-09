@@ -27,14 +27,14 @@ function SharedLayerAccess({ choirId, userId }: { choirId: string; userId: strin
     driveManagementSchema.parse(await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/management`, { signal }))));
   const overview = resource.data;
   const error = resource.error ? settingsError(resource.error, "无法更新共享层，请重试。") : null;
-  if (overview?.capabilities.operations.operations.includes("configureLayers")) return <SharedLayerManagement choirId={choirId} userId={userId} authorized={resource.canMutate} />;
+  if (overview?.capabilities.operations.operations.includes("configureLayers")) return <SharedLayerManagement choirId={choirId} userId={userId} authorized={resource.canMutate} accessError={error} retryAccess={resource.refresh} />;
   return <div className="app-page"><TaskHeader title="共享层" backTo={`/choirs/${choirId}`} /><main className="page-shell settings-page settings-ux">
     <p>{overview?.name}</p><p>此云盘全部乐谱的共享笔记层。查看配置不授予编辑或管理权限。</p>
     {overview ? <><ul className="shared-layer-summary">{overview.layers.map(layer => <li key={layer.slot}><strong>{layer.name}</strong><span>{layer.active ? "启用" : "停用"}</span></li>)}</ul><p>需要调整时，可查找有共享层配置或授权权限的人。</p><Link to={`/choirs/${choirId}/memberships`}>查看成员与权限</Link></> : <SettingsFeedback loading={!error} loadError={error} message={null} retry={() => void resource.refresh().catch(() => undefined)} />}
   </main></div>;
 }
 
-function SharedLayerManagement({ choirId, userId, authorized }: { choirId: string; userId: string | null; authorized: boolean }) {
+function SharedLayerManagement({ choirId, userId, authorized, accessError, retryAccess }: { choirId: string; userId: string | null; authorized: boolean; accessError: string | null; retryAccess: () => Promise<void> }) {
   const workspaceRef = useRef<LocalWorkspace | null>(null);
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
@@ -57,8 +57,8 @@ function SharedLayerManagement({ choirId, userId, authorized }: { choirId: strin
   const layers = resource.data?.layers ?? [];
   const driveName = resource.data?.drive.name ?? "";
   const loading = !authorized || !resource.canMutate;
-  const loadError = resource.error ? settingsError(resource.error, "暂时无法更新共享层，已有内容已保留。") : null;
-  const retryLoad = () => { void resource.refresh().catch(() => undefined); };
+  const loadError = accessError ?? (resource.error ? settingsError(resource.error, "暂时无法更新共享层，已有内容已保留。") : null);
+  const retryLoad = () => { void Promise.allSettled([retryAccess(), resource.refresh()]); };
 
   const change = async (path: string, method: "POST" | "PUT", body: object, message: string) => {
     if (busy.current || loading) return;

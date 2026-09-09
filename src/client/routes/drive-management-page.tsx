@@ -37,12 +37,12 @@ function DriveManagement({ choirId, section, userId }: { choirId: string; sectio
   const data = resource.data;
   const error = resource.error ? settingsError(resource.error, "云盘设置更新失败，已有内容已保留。") : null;
   const refresh = () => { setDialog(null); setLocked(null); void resource.refresh().catch(() => undefined); };
-  const can = (operation: Operation) => resource.canMutate && data?.overview.capabilities.operations.operations.includes(operation);
+  const can = (operation: Operation) => data?.overview.capabilities.operations.operations.includes(operation);
   const contacts = (operation: Operation, scope: "operations" | "management" = "operations") => data?.members.memberships.filter(member => member.status === "active" && (member.isOwner || member[scope].operations.includes(operation))).map(member => member.displayName).join("、") || "云盘拥有者";
   function row(title: string, value: string, label: string, operation: Operation, destination: (() => void) | string) {
     const allowed = can(operation);
     return <section className="management-row">
-      <div className="management-row-main"><div><h2>{title}</h2><p>{value}</p></div>{allowed && typeof destination === "string" ? <Link className="secondary-button" to={destination}>{label}</Link> : <Button className="secondary-button" aria-label={`${label}${allowed ? "" : "（权限说明）"}`} onPress={() => { if (allowed && typeof destination === "function") destination(); else setLocked(current => current === operation ? null : operation); }}>{!allowed && <LockKeyhole size={15} aria-hidden="true" />}{label}</Button>}</div>
+      <div className="management-row-main"><div><h2>{title}</h2><p>{value}</p></div>{allowed && typeof destination === "string" ? <Link className="secondary-button" to={destination}>{label}</Link> : <Button className="secondary-button" isDisabled={!resource.canMutate} aria-label={`${label}${allowed ? "" : "（权限说明）"}`} onPress={() => { if (allowed && resource.canMutate && typeof destination === "function") destination(); else setLocked(current => current === operation ? null : operation); }}>{!allowed && <LockKeyhole size={15} aria-hidden="true" />}{label}</Button>}</div>
       {locked === operation && <div className="permission-lock-explanation" role="status"><p>需要“{operationLabels[operation]}”权限。</p><p>处理此项可联系 {contacts(operation)}。</p>{contacts(operation) !== contacts(operation, "management") && <p>申请授权可联系 {contacts(operation, "management")}。</p>}<Link to={`/choirs/${choirId}/memberships`}>查看权限分工</Link></div>}
     </section>;
   }
@@ -54,10 +54,10 @@ function DriveManagement({ choirId, section, userId }: { choirId: string; sectio
       <div className="management-list">
         {section === "info" && row("云盘名称", data.overview.name, "修改云盘名称", "editDriveInfo", () => setDialog("name"))}
         {section === "admission" && (data.overview.guestAdmissionMode === "invite" ? row("访客进入方式", "需要邀请码", "查看与轮换邀请码", "manageInvites", () => setDialog("invite")) : <section className="management-row"><h2>访客进入方式</h2><p>开放进入</p></section>)}
-        {section === "trash" && (can("trashFiles") ? <TrashContents choirId={choirId} onRestored={() => {}} /> : row("回收站", "恢复文件需要删除与恢复文件权限。", "查看权限说明", "trashFiles", () => {}))}
+        {section === "trash" && (resource.canMutate && can("trashFiles") ? <TrashContents choirId={choirId} onRestored={() => {}} /> : row("回收站", "恢复文件需要删除与恢复文件权限。", "查看权限说明", "trashFiles", () => {}))}
       </div>
-      {dialog === "name" && can("editDriveInfo") && <NameSettings choirId={choirId} onClose={() => setDialog(null)} onSaved={refresh} />}
-      {dialog === "invite" && can("manageInvites") && <InviteCodeDialog choirId={choirId} choirName={data.overview.name} onClose={() => setDialog(null)} />}
+      {dialog === "name" && resource.canMutate && can("editDriveInfo") && <NameSettings choirId={choirId} onClose={() => setDialog(null)} onSaved={refresh} />}
+      {dialog === "invite" && resource.canMutate && can("manageInvites") && <InviteCodeDialog choirId={choirId} choirName={data.overview.name} onClose={() => setDialog(null)} />}
     </>}
   </main></div>;
 }

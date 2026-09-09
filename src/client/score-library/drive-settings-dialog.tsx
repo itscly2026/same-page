@@ -12,7 +12,7 @@ export function DriveSettingsDialog({ choirId, userId, field, onClose, onSaved }
   choirId: string; userId: string; field: "name" | "display-name"; onClose: () => void; onSaved: (value: string) => Promise<void>;
 }) {
   const load = async (signal?: AbortSignal) => {
-    const response = await diagnosticFetch(`/api/choirs/${choirId}/settings`, { signal });
+    const response = await diagnosticFetch(`/api/choirs/${choirId}/settings`, { signal, headers: { "x-same-page-owner-user-id": userId } });
     if (!response.ok) throw new SettingsRequestError(response.status);
     return parseDiagnosticResponse(response, driveSettingsSchema);
   };

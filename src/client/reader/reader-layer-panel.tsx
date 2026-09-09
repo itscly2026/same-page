@@ -1,3 +1,4 @@
+import { useReadingPreferenceProjection } from "./reading-preference-intents";
 import { projectReadingPreferences } from "./reading-preferences";
 import { loginHref } from "../auth/login-return";
 import { annotationLayerListResponseSchema } from "../../shared/annotations";
@@ -28,7 +29,8 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const preferences = useReadingPreferences(workspace, signedIn);
-  const layers = storedLayers.map(layer => projectReadingPreferences(layer, preferences.rows.filter(row => !row.observed)));
+  const projectedLayers = useReadingPreferenceProjection(workspace, storedLayers);
+  const layers = projectedLayers.map(layer => projectReadingPreferences(layer, preferences.rows.filter(row => !row.observed)));
   const busy = useRef(false);
   const active = useRef(true);
   useEffect(() => {

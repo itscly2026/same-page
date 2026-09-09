@@ -32,13 +32,14 @@ export function projectReadingPreferences(layer: AnnotationLayerSummary, rows: R
   return { ...layer, ...fields, ...resolveSharedLayerPreference({ ...fields, productDefaultColor: "#dc2626", adminDefaultColor: layer.adminDefaultColor }) };
 }
 
-export async function saveReadingPreference(workspace: LocalWorkspace, target: PreferenceTarget, change: ReadingPreferenceChange) {
+export async function saveReadingPreference(workspace: LocalWorkspace, target: PreferenceTarget, change: ReadingPreferenceChange, version = crypto.randomUUID()) {
   return withLocalWorkspaceTransaction(workspace, "rw", [localDatabase.readingPreferences, localDatabase.annotationLayers], async () => {
     const key = preferenceKey(workspace, target);
-    const previous = await localDatabase.readingPreferences.get(key);
+    const saved = await localDatabase.readingPreferences.get(key);
+    const previous = saved?.observed ? undefined : saved;
     const row: ReadingPreferenceRecord = { ...previous, ...target, ...change, key, ownerKey: workspace.ownerKey,
       choirId: workspace.choirId, scoreId: target.kind === "drive" ? "" : workspace.scoreId,
-      version: crypto.randomUUID(), observed: false, pending: workspace.ownerKey.startsWith("user:"), error: null };
+      version, observed: false, pending: workspace.ownerKey.startsWith("user:"), error: null };
     await localDatabase.readingPreferences.put(row);
     await localDatabase.system.put({ key: readingPreferenceVersionKey(workspace), value: crypto.randomUUID() });
     const layers = await localDatabase.annotationLayers.where("ownerKey").equals(workspace.ownerKey)
@@ -48,22 +49,16 @@ export async function saveReadingPreference(workspace: LocalWorkspace, target: P
   });
 }
 
-const running = new Map<string, Promise<void>>();
 // Each key is serialized independently; IDB holds the latest merged intent,
 // including edits made while an older request is in flight.
-export async function flushReadingPreferences(workspace: LocalWorkspace, transport: typeof fetch = diagnosticFetch, signal?: AbortSignal) {
+export async function flushReadingPreferences(workspace: LocalWorkspace, transport: typeof fetch = diagnosticFetch, signal?: AbortSignal, onlyKey?: string) {
   await assertLocalWorkspaceActive(workspace);
   if (!workspace.ownerKey.startsWith("user:")) return;
   signal?.throwIfAborted();
   if (!navigator.onLine) return;
   const rows = await readReadingPreferences(workspace);
-  await Promise.all(rows.filter(row => row.pending).map(row => {
-    const existing = running.get(row.key);
-    if (existing) return existing;
-    const task = flushKey(workspace, row.key, transport, signal).finally(() => { if (running.get(row.key) === task) running.delete(row.key); });
-    running.set(row.key, task);
-    return task;
-  }));
+  await Promise.all(rows.filter(row => row.pending && (!onlyKey || row.key === onlyKey)).map(row =>
+    withPreferenceLock(workspace, row.key, signal, () => flushKey(workspace, row.key, transport, signal))));
 }
 export const readingPreferenceVersionKey = (workspace: LocalWorkspace) => JSON.stringify(["reading-preference-version", workspace.ownerKey, workspace.choirId]);
 export async function readingPreferenceVersion(workspace: LocalWorkspace) { return (await localDatabase.system.get(readingPreferenceVersionKey(workspace)))?.value ?? ""; }
@@ -97,4 +92,13 @@ async function flushKey(workspace: LocalWorkspace, key: string, transport: typeo
     });
     if (error) return;
   }
+}
+
+// Web Locks serialize tabs as well as mounted components. Without a lock
+// manager, retain durable intent rather than falsely reporting an unsafe sync.
+async function withPreferenceLock(workspace: LocalWorkspace, key: string, signal: AbortSignal | undefined, action: () => Promise<void>) {
+  if (navigator.locks) return navigator.locks.request(`reading-preference:${key}`, { signal }, action);
+  await withLocalWorkspaceTransaction(workspace, "rw", [localDatabase.readingPreferences], async () => {
+    await localDatabase.readingPreferences.update(key, { error: "当前浏览器不支持安全同步，选择已保存到本机。请更新浏览器后重试。" });
+  });
 }

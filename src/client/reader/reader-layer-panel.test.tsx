@@ -1,3 +1,4 @@
+import { installReadingPreferenceLocks } from "../../test/reading-preference-locks";
 import { MemoryRouter } from "react-router-dom";
 import { useAnnotationEditor } from "../annotations/use-annotation-editor";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -30,6 +31,7 @@ function Reader() {
 }
 
 beforeEach(async () => {
+    installReadingPreferenceLocks();
   await localDatabase.open();
   await activateAuthenticatedLocalOwner("reader");
   await localDatabase.annotationOutbox.clear();

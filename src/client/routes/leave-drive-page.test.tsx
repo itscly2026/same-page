@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import LeaveDrivePage from "./leave-drive-page";
 vi.mock("../auth/auth-client", () => ({ authClient: { useSession: () => ({ data: { user: { id: "member" } } }) } }));
-beforeEach(async () => { await activateAuthenticatedLocalOwner("member"); });
+beforeEach(async () => { await localDatabase.open(); await activateAuthenticatedLocalOwner("member"); });
 afterEach(() => vi.unstubAllGlobals());
 function setup(isOwner = 0, isPreviewEntry = 0) {
   const fetch = vi.fn(async (_url: string, init?: RequestInit) => init?.method ? new Response(null, { status: 204 }) : Response.json({ userId: "member", reauthenticated: false, methods: [], deletion: null, memberships: [{ id: "membership", choirId: "drive", name: "排练云盘", displayName: "小林", isPreviewEntry, isOwner, status: "active", revision: 3, removedAt: null }] }));

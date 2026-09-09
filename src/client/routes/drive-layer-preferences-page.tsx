@@ -37,7 +37,7 @@ function DriveLayerPreferences({ workspace, signedIn }: { workspace: LocalWorksp
   const cacheKey = JSON.stringify(["reading-defaults", workspace.ownerKey, choirId]);
   const resource = useReadResource(`${workspace.ownerKey}:${choirId}:reading-defaults`, async signal => {
     const version = await readingPreferenceVersion(workspace);
-    const body = driveLayerPreferencesResponseSchema.parse(await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/shared-layer-preferences`, { signal })));
+    const body = driveLayerPreferencesResponseSchema.parse(await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/shared-layer-preferences`, { signal, headers: { "x-same-page-owner-user-id": workspace.ownerKey.slice(5) } })));
     await withLocalWorkspaceTransaction(workspace, "rw", [localDatabase.readingPreferences], async () => {
       signal.throwIfAborted();
       if (version === await readingPreferenceVersion(workspace)) {
