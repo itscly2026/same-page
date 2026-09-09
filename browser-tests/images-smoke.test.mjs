@@ -86,7 +86,13 @@ for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]])
     await page.getByRole("button", { name: "更多", exact: true }).click();
     await page.getByRole("button", { name: "更多", exact: true }).click();
     await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
-    await page.getByRole("button", { name: "文字", exact: true }).click();
+    const textTool = page.getByRole("button", { name: "文字", exact: true });
+    await expect(textTool).toHaveAttribute("aria-pressed", "true");
+    // Reselecting the active tool opens its settings; close them before writing.
+    await textTool.click();
+    await expect(page.getByRole("dialog", { name: "工具设置", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "工具设置", exact: true })).toBeHidden();
     await page.locator(".annotation-overlay svg").evaluate(element => {
       const bounds = element.getBoundingClientRect();
       const init = { bubbles: true, pointerId: 1, pointerType: "touch", clientX: bounds.left + bounds.width * .35, clientY: bounds.top + bounds.height * .4 };

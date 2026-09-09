@@ -27,7 +27,7 @@ test("export preserves multipage source geometry and overlays text and ink on ro
     const { document: source } = await loaded.promise;
     const annotations = Array.from({ length: 4 }, (_, i) => [
       { layerId: "selected", deleted: false, payload: { kind: "text", pageNumber: i + 1, x: .5, y: .2, fontScale: .04, text: "换气 · Breath\nKeep this long English phrase together when possible and breathe gently" } },
-      { layerId: "selected", deleted: false, payload: { kind: "ink", pageNumber: i + 1, strokeWidth: .003, points: [{ x: .1, y: .7 }, { x: .3, y: .7 }] } },
+      { layerId: "selected", deleted: false, payload: { kind: "ink", brush: "pen", nib: "round", pressureMode: "uniform", pageNumber: i + 1, strokeWidth: .003, points: [{ x: .1, y: .7 }, { x: .3, y: .7 }] } },
       { layerId: "excluded", deleted: false, payload: { kind: "text", pageNumber: i + 1, x: .5, y: .5, fontScale: .08, text: "EXCLUDED" } },
     ]).flat();
     const blob = await exportAnnotatedPdf(source, annotations, [{ id: "selected", kind: "shared", displayColor: "#ff0000" }]);
@@ -158,7 +158,7 @@ test("personal shapes retain object colors and highlighter exports translucent o
     const notes = [
       { kind: "shape", shape: "rectangle", x: .1, y: .1, width: .3, height: .3, strokeWidth: .003, color: "#ff0000", pageNumber: 1 },
       { kind: "shape", shape: "ellipse", x: .5, y: .1, width: .3, height: .3, strokeWidth: .003, color: "#0000ff", pageNumber: 1 },
-      { kind: "ink", points: [{ x: .1, y: .8 }, { x: .9, y: .8 }], strokeWidth: .018, opacity: .3, color: "#ffff00", pageNumber: 1 },
+      { kind: "ink", brush: "highlighter", nib: "round", pressureMode: "uniform", points: [{ x: .1, y: .8 }, { x: .9, y: .8 }], strokeWidth: .018, opacity: .3, color: "#ffff00", pageNumber: 1 },
     ].map(payload => ({ layerId: "personal", payload, deleted: false }));
     const blob = await exportAnnotatedPdf(source, notes, [{ id: "personal", kind: "personal", displayColor: "#00ff00" }]);
     const output = loadPdfDocument(await blob.arrayBuffer()), { document: result } = await output.promise;

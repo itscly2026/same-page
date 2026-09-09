@@ -126,7 +126,6 @@
 .reader-more-menu .reader-display-defaults summary::after { content: "+"; margin-left: auto; }
 .reader-more-menu .reader-display-defaults[open] summary::after { content: "−"; }
 .reader-display-defaults button { width: 100%; justify-content: start; }
-.reader-save-feedback { max-width: 10rem; padding: 0 0.35rem 0.4rem; color: #555; font-size: 0.7rem; text-align: center; }
 
 .reader-leave-dialog { width: min(28rem, calc(100vw - 2rem)); padding: 1rem; color: #111; background: #fff; border-radius: 0.75rem; }
 .reader-leave-dialog h2 { font-size: 1.1rem; }
@@ -193,3 +192,37 @@
 .layer-card__main .reader-layer-toggle { min-width: 0; flex: 1; }
 .layer-card__main strong { overflow-wrap: anywhere; }
 .personal-layer-more { min-width: 44px; min-height: 44px; }
+
+.annotation-style-popover, .annotation-object-properties { width: 288px; max-width: calc(100vw - 24px); padding: 18px; background: #fffefa; color: #203b3b; border: 1px solid #d7dfda; border-radius: 18px; box-shadow: 0 10px 36px #173b3b26; }
+.annotation-style-popover h2, .annotation-object-properties h2 { margin: 0; font-size: 16px; }
+.annotation-style-popover p, .annotation-object-properties p { margin: 8px 0 18px; color: #62716c; font-size: 12px; line-height: 1.6; }
+.annotation-style-fields { display: grid; gap: 16px; }
+.annotation-style-slider { display: grid; grid-template-columns: 1fr auto; gap: 4px; font-size: 13px; color: #203b3b; }
+.annotation-style-slider .react-aria-SliderOutput { font-variant-numeric: tabular-nums; }
+.annotation-style-slider .react-aria-SliderTrack { grid-column: 1 / -1; height: 32px; position: relative; margin: 0 10px; }
+.annotation-style-slider .react-aria-SliderTrack::before, .annotation-style-fill { position: absolute; height: 4px; top: 14px; border-radius: 3px; background: #dfe7e1; width: 100%; content: ''; }
+.annotation-style-fill { background: #17665f; }
+.annotation-style-slider .react-aria-SliderThumb { width: 22px; height: 22px; top: 16px; border-radius: 50%; border: 2px solid #17665f; background: white; box-shadow: 0 2px 4px #0002; }
+.annotation-style-slider .react-aria-SliderThumb[data-focus-visible] { outline: 3px solid #bba751; outline-offset: 3px; }
+.annotation-pressure-options { display: flex; gap: 6px; }
+.annotation-pressure-options button { flex: 1; min-height: 38px; border-radius: 8px; border: 1px solid #cdd9d4; background: transparent; color: #203b3b; }
+.annotation-pressure-options button[aria-pressed="true"] { background: #e3efe9; border-color: #17665f; }
+.annotation-style-sample { width: 100%; height: 52px; border-radius: 8px; background: #f4f3ec; }
+.annotation-object-properties { position: fixed; z-index: 45; top: 82px; right: 18px; max-height: calc(100dvh - 220px); overflow: auto; }
+.annotation-object-properties header, .annotation-object-properties footer, .annotation-object-color { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.annotation-object-properties button { min-height: 40px; border-radius: 8px; padding: 6px 12px; }
+.annotation-object-properties fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.annotation-object-properties footer { margin-top: 16px; flex-wrap: wrap; }
+.annotation-object-color { margin-top: 12px; font-size: 13px; }
+.annotation-object-color input { width: 40px; height: 36px; }
+.annotation-overlay [data-selected] { outline: 2px dashed #17665f; outline-offset: 4px; }
+.annotation-overlay path { pointer-events: none; }
+@media (max-width: 640px) {
+  .reader-shell .annotation-controls { width: 328px; grid-template-columns: minmax(0, 1fr) 44px 44px auto; }
+  .reader-shell .annotation-style-trigger { grid-column: 3; grid-row: 1; }
+  .annotation-object-properties { top: 74px; right: 12px; width: 260px; }
+}
+
+@media (max-width: 640px) { .reader-shell .annotation-history-controls { grid-column: 4; } .reader-shell .annotation-drawing-tools .annotation-tool-button { min-width: 0; padding-inline: 5px; } }
+
+.annotation-hover-tool { position: absolute; transform: translate(14px, 14px); padding: 3px 7px; background: #203b3bed; color: white; border-radius: 5px; font-size: 11px; white-space: nowrap; pointer-events: none; }

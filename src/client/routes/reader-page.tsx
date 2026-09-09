@@ -82,6 +82,8 @@ import { DiagnosticReportDialog, DiagnosticReportModal } from "../diagnostics/di
 
 type ReaderPanel = "layers";
 
+import { useToolStyle } from "../reader/use-tool-style";
+
 const ReaderEditingControls = lazy(() =>
   import("../reader/reader-editing-controls").then((module) => ({
     default: module.ReaderEditingControls,
@@ -122,6 +124,7 @@ function ReaderPageContent() {
   const [annotationInteraction, setAnnotationInteraction] =
     useState<AnnotationOverlayInteraction>("idle");
   const [tool, setTool] = useState<AnnotationTool>("text");
+  const { style: toolStyle, setStyle: setToolStyle } = useToolStyle(resolvedWorkspace?.ownerKey ?? `user:${identity.localUserId ?? "guest"}`, tool);
   const { color: toolColor, setColor: setToolColor } = useToolColor(resolvedWorkspace?.ownerKey ?? `user:${identity.localUserId ?? "guest"}`, tool);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const [syncOutcome, setSyncOutcome] = useState<ReaderSyncOutcome>("none");
@@ -428,6 +431,7 @@ function ReaderPageContent() {
     editing,
     tool,
     toolColor,
+    toolStyle,
     activeLayerId,
     onInteractionChange: setAnnotationInteraction,
     editor,
@@ -521,9 +525,6 @@ function ReaderPageContent() {
                 <Ellipsis aria-hidden="true" size={21} />
               </Button></>}
             </div>
-            {editing && annotationInteraction !== "composing-text" && <span className="reader-save-feedback" role="status">
-              {persistence === "saving" ? "正在保存到本机…" : persistence === "failed" ? "本机保存失败" : annotations.some(annotation => annotation.state === "draft") ? "已保存在本机" : "正在编辑当前页"}
-            </span>}
             {editAvailability !== "ready" && !(editAvailability === "preparing" && readerPanel !== null) ? (
               <p
                 className="reader-edit-status"
@@ -642,6 +643,8 @@ function ReaderPageContent() {
             layers={layers}
             tool={tool}
             toolColor={toolColor}
+            toolStyle={toolStyle}
+            onStyleChange={setToolStyle}
             onColorChange={setToolColor}
             activeLayerId={activeLayerId}
             onToolChange={setTool}

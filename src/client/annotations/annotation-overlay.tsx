@@ -20,7 +20,12 @@ import type { AnnotationEditor } from "./annotation-editor";
 import { useEditorPersistence } from "./use-annotation-editor";
 import { calculateTextEditorLayout } from "./text-editor-layout";
 
-export type AnnotationTool = "text" | "ink" | "highlighter" | "rectangle" | "ellipse" | "eraser";
+import { inkSvgPaths, inkHit } from "./ink-geometry";
+import { defaultToolStyle, type ToolStyle } from "./tool-style";
+import { highlighterNibPath } from "./highlighter-geometry";
+import { ObjectProperties } from "./object-properties";
+
+export type AnnotationTool = "select" | "text" | "ink" | "highlighter" | "rectangle" | "ellipse" | "eraser";
 export type AnnotationOverlayInteraction =
   | "idle"
   | "composing-text"
@@ -86,6 +91,7 @@ export function AnnotationOverlay({
   tool,
   toolColor = tool === "highlighter" ? "#facc15" : "#dc2626",
   activeLayerId,
+  toolStyle = defaultToolStyle(tool),
   onInteractionChange,
 }: {
   editor: AnnotationEditor | null;
@@ -95,14 +101,23 @@ export function AnnotationOverlay({
   editing: boolean;
   tool: AnnotationTool;
   toolColor?: string;
+  toolStyle?: ToolStyle;
   activeLayerId: string | null;
   onInteractionChange?(interaction: AnnotationOverlayInteraction): void;
 }) {
   const persistence = useEditorPersistence(editor);
+  const [pageWidth, setPageWidth] = useState(1000);
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [aspectRatio, setAspectRatio] = useState(1);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hover, setHover] = useState<Extract<AnnotationPayload, { kind: "ink" }>["points"][number] | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [draftShape, setDraftShape] = useState<Extract<AnnotationPayload, { kind: "shape" }> | null>(null);
   const shapeStart = useRef<{ x: number; y: number } | null>(null);
   const [draftStroke, setDraftStroke] = useState<Extract<AnnotationPayload, { kind: "ink" }> | null>(null);
+  const liveStroke = useRef<Extract<AnnotationPayload, { kind: "ink" }> | null>(null);
+  const strokeFrame = useRef<number | null>(null);
+  const lastCheckpoint = useRef(0);
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
   const [editorText, setEditorText] = useState("");
   const [editorFontScale, setEditorFontScale] = useState(DEFAULT_TEXT_FONT_SCALE);
@@ -116,7 +131,6 @@ export function AnnotationOverlay({
   const backdropReleased = useRef(false);
   const textSelection = useRef<TextSelection | null>(null);
   const currentStrokeId = useRef<string | null>(null);
-  const strokeHistoryStarted = useRef(false);
   const eraserPointerId = useRef<number | null>(null);
   const erasedStrokeIds = useRef(new Set<string>());
   const objectTransform = useRef<ObjectTransformState | null>(null);
@@ -131,7 +145,7 @@ export function AnnotationOverlay({
   const deleteTargetRef = useRef<HTMLDivElement>(null);
   const visualViewport = useVisualViewport(editing);
   const canStartEdit = editing && layers.some(layer => layer.id === activeLayerId && layer.canEdit);
-  const canMoveObjects = canStartEdit && ["text", "rectangle", "ellipse"].includes(tool);
+  const canMoveObjects = canStartEdit && ["select", "text", "rectangle", "ellipse"].includes(tool);
   const visibleLayerIds = new Set(
     layers
       .filter((layer) => (editing ? layer.id === activeLayerId : layer.subscribed))
@@ -152,6 +166,40 @@ export function AnnotationOverlay({
       annotation.payload?.pageNumber === pageNumber &&
       visibleLayerIds.has(annotation.layerId),
   );
+
+  const selected = pageAnnotations.find(annotation => annotation.id === selectedId && !annotation.deleted);
+
+  useEffect(() => {
+    const element = overlayRef.current;
+    if (!element) return;
+    const update = () => { const bounds = element.getBoundingClientRect(); if (bounds.height > 0) { setAspectRatio(bounds.width / bounds.height); setPageWidth(bounds.width); } };
+    update();
+    const observer = new ResizeObserver(update); observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => editor?.registerFinishCommit(async () => {
+    if (!liveStroke.current || !currentStrokeId.current || !activeLayerId) return true;
+    const saved = editor.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: liveStroke.current }, true);
+    liveStroke.current = null;
+    currentStrokeId.current = null;
+    drawingPointer.current = null;
+    if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current);
+    strokeFrame.current = null;
+    setDraftStroke(null);
+    setDraftId(null);
+    return saved;
+  }), [editor, activeLayerId]);
+
+  useEffect(() => {
+    const flush = () => {
+      if (liveStroke.current && currentStrokeId.current && activeLayerId) void editor?.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: liveStroke.current }, true);
+    };
+    const hidden = () => { if (document.visibilityState === "hidden") flush(); };
+    document.addEventListener("visibilitychange", hidden);
+    window.addEventListener("pagehide", flush);
+    return () => { flush(); if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current); document.removeEventListener("visibilitychange", hidden); window.removeEventListener("pagehide", flush); };
+  }, [editor, activeLayerId]);
 
   useLayoutEffect(() => {
     const input = textInputRef.current;
@@ -201,6 +249,7 @@ export function AnnotationOverlay({
       x: clamp((event.clientX - bounds.left) / bounds.width),
       y: clamp((event.clientY - bounds.top) / bounds.height),
       ...(event.pressure > 0 ? { pressure: event.pressure } : {}),
+      ...(event.pointerType === "pen" ? { tiltX: event.tiltX || 0, tiltY: event.tiltY || 0, twist: event.twist || 0 } : {}),
     };
   };
 
@@ -217,11 +266,7 @@ export function AnnotationOverlay({
       ) {
         continue;
       }
-      const points = payload.points.map((entry) => ({
-        x: entry.x * bounds.width,
-        y: entry.y * bounds.height,
-      }));
-      if (distanceToPolyline(pointer, points) > ERASER_HIT_RADIUS_PX) continue;
+      if (!inkHit(payload, bounds.width, bounds.height, pointer.x, pointer.y, ERASER_HIT_RADIUS_PX)) continue;
       erasedStrokeIds.current.add(annotation.id);
       void editor?.persist({
         id: annotation.id,
@@ -312,7 +357,7 @@ export function AnnotationOverlay({
     return Boolean(saved);
   };
 
-  useEffect(() => { if (editing && textEditor) return editor?.registerTextCommit(finishTextEditor); });
+  useEffect(() => { if (editing && textEditor) return editor?.registerFinishCommit(finishTextEditor); });
 
   const addTransformPointer = (
     event: ReactPointerEvent<Element>,
@@ -445,6 +490,7 @@ export function AnnotationOverlay({
     const shouldDelete = deleteActiveRef.current;
     deleteActiveRef.current = false;
     if (!transform.moved) {
+      if (tool === "select") { setSelectedId(transform.id); return; }
       if (transform.payload.kind !== "text") return;
       const bounds = overlayRef.current?.getBoundingClientRect();
       openTextEditor({
@@ -478,8 +524,15 @@ export function AnnotationOverlay({
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (!canStartEdit || !activeLayerId) return;
+    setHover(null);
     if (objectTransform.current) {
       addTransformPointer(event, objectTransform.current);
+      return;
+    }
+    if (tool === "select") {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const found = [...pageAnnotations].reverse().find(annotation => annotation.payload?.kind === "ink" && inkHit(annotation.payload, bounds.width, bounds.height, event.clientX - bounds.left, event.clientY - bounds.top, 8));
+      setSelectedId(found?.id ?? null);
       return;
     }
     if (tool === "text") {
@@ -492,7 +545,7 @@ export function AnnotationOverlay({
         x: position.x,
         y: position.y,
         initial: "",
-        fontScale: DEFAULT_TEXT_FONT_SCALE,
+        fontScale: toolStyle.fontScale,
         pageWidth: bounds.width,
         source: "new",
         openingPoint: { x: event.clientX, y: event.clientY },
@@ -526,25 +579,36 @@ export function AnnotationOverlay({
       capturePointer(event.currentTarget, event.pointerId);
       shapeStart.current = point(event);
       currentStrokeId.current = crypto.randomUUID();
-      setDraftShape({ kind: "shape", shape: tool, pageNumber, ...shapeStart.current, width: 0, height: 0, strokeWidth: 0.003, color: toolColor });
+      setDraftShape({ kind: "shape", shape: tool, pageNumber, ...shapeStart.current, width: 0, height: 0, strokeWidth: toolStyle.strokeWidth, color: toolColor });
       return;
     }
     if (tool !== "ink" && tool !== "highlighter") return;
     capturePointer(event.currentTarget, event.pointerId);
     const position = point(event);
     currentStrokeId.current = crypto.randomUUID();
-    strokeHistoryStarted.current = false;
-    setDraftStroke({
+    const initialStroke: Extract<AnnotationPayload, { kind: "ink" }> = {
       kind: "ink",
       pageNumber,
       points: [position, position],
-      strokeWidth: tool === "highlighter" ? 0.018 : 0.003,
-      opacity: tool === "highlighter" ? 0.3 : 1,
+      brush: tool === "highlighter" ? "highlighter" : "pen",
+      nib: tool === "highlighter" ? toolStyle.nib : "round",
+      pressureMode: tool === "ink" ? toolStyle.pressureMode : "uniform",
+      strokeWidth: toolStyle.strokeWidth,
+      opacity: tool === "highlighter" ? toolStyle.opacity : 1,
       color: toolColor,
-    });
+    };
+    setDraftId(currentStrokeId.current);
+    liveStroke.current = initialStroke;
+    setDraftStroke({ ...initialStroke, points: [...initialStroke.points] });
+    void editor?.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: initialStroke });
+    lastCheckpoint.current = event.timeStamp;
   };
 
   const pointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (canStartEdit && event.pointerType === "pen" && event.buttons === 0 && drawingPointer.current === null && !pendingTextPlacement.current && !objectTransform.current && eraserPointerId.current === null) {
+      setHover(point(event)); return;
+    }
+    setHover(null);
     const pendingPlacement = pendingTextPlacement.current;
     if (pendingPlacement?.pointerId === event.pointerId) {
       if (
@@ -577,18 +641,22 @@ export function AnnotationOverlay({
     }
     if (!editing || (tool !== "ink" && tool !== "highlighter") || !currentStrokeId.current || !activeLayerId) return;
     const position = point(event);
-    setDraftStroke((current) => {
-      if (!current) return current;
-      const next = { ...current, points: [...current.points, position] };
-      const input = { id: currentStrokeId.current!, layerId: activeLayerId, payload: next };
-      if (strokeHistoryStarted.current) {
-        void editor?.persist(input, true);
-      } else {
-        strokeHistoryStarted.current = true;
-        void editor?.persist(input);
-      }
-      return next;
+    const current = liveStroke.current;
+    if (!current) return;
+    // The mutable input buffer is independent of React and persisted snapshots.
+    // Keep long gestures writable within the persisted point budget. Retain
+    // both ends while reducing older sample density before accepting new input.
+    if (current.points.length >= 5000) current.points = current.points.filter((_, index, points) => index % 2 === 0 || index === points.length - 1);
+    current.points.push(position);
+    if (strokeFrame.current === null) strokeFrame.current = requestAnimationFrame(() => {
+      strokeFrame.current = null;
+      if (liveStroke.current) setDraftStroke({ ...liveStroke.current, points: [...liveStroke.current.points] });
     });
+    if (event.timeStamp - lastCheckpoint.current >= 120) {
+      lastCheckpoint.current = event.timeStamp;
+      void editor?.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: current }, true);
+    }
+
   };
 
   const pointerUp = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -618,9 +686,19 @@ export function AnnotationOverlay({
       void editor?.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: draftShape });
     }
     setDraftShape(null); shapeStart.current = null;
+    if (liveStroke.current && currentStrokeId.current && activeLayerId) {
+      if (event.type !== "pointercancel" && liveStroke.current.points.length < 5000) {
+        const finalPoint = point(event), last = liveStroke.current.points.at(-1)!;
+        if (finalPoint.x !== last.x || finalPoint.y !== last.y) liveStroke.current.points.push(finalPoint);
+      }
+      void editor?.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: liveStroke.current }, true);
+    }
+    liveStroke.current = null;
+    setDraftId(null);
+    if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current);
+    strokeFrame.current = null;
     setDraftStroke(null);
     currentStrokeId.current = null;
-    strokeHistoryStarted.current = false;
     eraserPointerId.current = null;
     erasedStrokeIds.current.clear();
   };
@@ -639,6 +717,7 @@ export function AnnotationOverlay({
         preserveAspectRatio="none"
         onPointerDown={pointerDown}
         onPointerMove={pointerMove}
+        onPointerLeave={() => setHover(null)}
         onPointerUp={pointerUp}
         onPointerCancel={(event) => {
           if (pendingTextPlacement.current?.pointerId === event.pointerId) {
@@ -657,9 +736,9 @@ export function AnnotationOverlay({
               ? objectTransformPreview.payload : payload;
             return <ShapePreview key={annotation.id} payload={position} color={color} />;
           }
-          if (payload?.kind !== "ink") return null;
+          if (payload?.kind !== "ink" || annotation.id === draftId) return null;
           return (
-            <g key={annotation.id}>
+            <g key={annotation.id} role={canStartEdit && tool === "select" ? "button" : undefined} tabIndex={canStartEdit && tool === "select" ? 0 : undefined} aria-label={canStartEdit && tool === "select" ? payload.brush === "highlighter" ? "荧光笔笔记" : "画笔笔记" : undefined} onKeyDown={event => { if (tool === "select" && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setSelectedId(annotation.id); } }}>
               {editing && tool === "eraser" && annotation.layerId === activeLayerId ? (
                 <polyline
                   aria-hidden="true"
@@ -673,33 +752,21 @@ export function AnnotationOverlay({
                   vectorEffect="non-scaling-stroke"
                 />
               ) : null}
-              <polyline
-                points={payload.points.map((entry) => `${entry.x * 1000},${entry.y * 1000}`).join(" ")}
-                fill="none"
-                stroke={color}
-                opacity={payload.opacity ?? 1}
-                strokeWidth={`${payload.strokeWidth * 100}cqw`}
-                vectorEffect="non-scaling-stroke"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+              {inkSvgPaths(payload, aspectRatio).map((path, index) => <path key={index} data-ink-stroke d={path} fill={color} fillRule="evenodd" opacity={payload.opacity ?? 1} />)}
+              {selectedId === annotation.id && tool === "select" && <path d={inkSvgPaths(payload, aspectRatio).join("")} fill="none" stroke="#014653" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray="4 3" />}
+
             </g>
           );
         })}
         {editing && draftShape ? <ShapePreview payload={draftShape} color={activeLayerColor} /> : null}
         {editing && draftStroke ? (
-          <polyline
-            points={draftStroke.points.map((entry) => `${entry.x * 1000},${entry.y * 1000}`).join(" ")}
-            fill="none"
-            stroke={activeLayerColor}
-            opacity={draftStroke.opacity ?? 1}
-            strokeWidth={`${draftStroke.strokeWidth * 100}cqw`}
-            vectorEffect="non-scaling-stroke"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+          <g>{inkSvgPaths(draftStroke, aspectRatio).map((path, index) => <path key={index} data-ink-draft d={path} fill={activeLayerColor} fillRule="evenodd" opacity={draftStroke.opacity ?? 1} />)}</g>
         ) : null}
+        {hover && canStartEdit && <g pointerEvents="none" aria-label="笔尖预览">
+          {tool === "highlighter" ? <path d={highlighterNibPath({ nib: toolStyle.nib, strokeWidth: toolStyle.strokeWidth }, hover, aspectRatio)} fill={activeLayerColor} fillOpacity={toolStyle.opacity} stroke={activeLayerColor} strokeWidth="1" vectorEffect="non-scaling-stroke" /> : <ellipse cx={hover.x * 1000} cy={hover.y * 1000} rx={tool === "eraser" ? 14 * 1000 / pageWidth : tool === "text" || tool === "select" ? 4 : toolStyle.strokeWidth * 500} ry={(tool === "eraser" ? 14 * 1000 / pageWidth : tool === "text" || tool === "select" ? 4 : toolStyle.strokeWidth * 500) * aspectRatio} fill="none" fillOpacity={toolStyle.opacity} stroke={activeLayerColor} strokeWidth="1" vectorEffect="non-scaling-stroke" />}
+        </g>}
       </svg>
+      {hover && canStartEdit && <span className="annotation-hover-tool" style={{ left: `${hover.x * 100}%`, top: `${hover.y * 100}%` }}>{({ ink: "画笔", highlighter: "荧光笔", rectangle: "矩形", ellipse: "椭圆", text: "文字", eraser: "整条橡皮", select: "选择" })[tool]}</span>}
 
       {pageAnnotations.map((annotation) => {
         const payload = annotation.payload;
@@ -719,6 +786,7 @@ export function AnnotationOverlay({
                 width: `${position.width * 100}%`, height: `${position.height * 100}%`,
               }),
             }}
+            data-selected={selectedId === annotation.id && tool === "select" || undefined}
             key={annotation.id}
             disabled={!canMoveObjects || annotation.layerId !== activeLayerId}
             onPointerDown={(event) => beginObjectTransform(event, annotation, payload)}
@@ -726,6 +794,7 @@ export function AnnotationOverlay({
             onPointerUp={finishObjectTransform}
             onPointerCancel={cancelObjectTransform}
             onKeyDown={(event) => {
+              if (tool === "select" && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setSelectedId(annotation.id); }
               if (event.key === "Delete" || event.key === "Backspace") {
                 void editor?.persist({
                   id: annotation.id,
@@ -744,6 +813,12 @@ export function AnnotationOverlay({
       </div>
       {editing ? createPortal(
         <>
+          {canStartEdit && tool === "select" && selected?.payload && <ObjectProperties key={`${selected.id}:${JSON.stringify(selected.payload)}`} payload={selected.payload} personal={!layerColors.has(selected.layerId)} displayColor={layerColors.get(selected.layerId)} onClose={() => setSelectedId(null)} onApply={payload => editor?.persist({ id: selected.id, layerId: selected.layerId, payload }) ?? Promise.resolve(false)} onDelete={() => { void editor?.persist({ id: selected.id, layerId: selected.layerId, payload: null, deleted: true }); setSelectedId(null); }} onEditText={() => {
+              const payload = selected.payload;
+              if (payload?.kind !== "text") return;
+              setSelectedId(null);
+              openTextEditor({ id: selected.id, x: payload.x, y: payload.y, initial: payload.text, fontScale: payload.fontScale, pageWidth, source: "existing", color: payload.color });
+            }} />}
           {!canStartEdit && <aside className="annotation-storage-error" role="status">
             <strong>此层已停止编辑</strong>
             <p>共享层已停用、删除或权限已改变。当前输入可完成并保存在原层的本机草稿中；不会上传或转写其他层。</p>
@@ -946,34 +1021,6 @@ function clamp(value: number) {
 
 function clampRange(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
-}
-
-function distanceToPolyline(
-  point: { x: number; y: number },
-  points: Array<{ x: number; y: number }>,
-) {
-  let closest = Number.POSITIVE_INFINITY;
-  for (let index = 1; index < points.length; index += 1) {
-    closest = Math.min(closest, distanceToSegment(point, points[index - 1]!, points[index]!));
-  }
-  return closest;
-}
-
-function distanceToSegment(
-  point: { x: number; y: number },
-  start: { x: number; y: number },
-  end: { x: number; y: number },
-) {
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  if (dx === 0 && dy === 0) return Math.hypot(point.x - start.x, point.y - start.y);
-  const ratio = clamp(
-    ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy),
-  );
-  return Math.hypot(
-    point.x - (start.x + ratio * dx),
-    point.y - (start.y + ratio * dy),
-  );
 }
 
 function ShapePreview({ payload, color }: { payload: Extract<AnnotationPayload, { kind: "shape" }>; color: string }) {

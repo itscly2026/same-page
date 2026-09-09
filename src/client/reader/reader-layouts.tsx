@@ -37,12 +37,15 @@ const AnnotationOverlay = lazy(() =>
   })),
 );
 
+import type { ToolStyle } from "../annotations/tool-style";
+
 export interface AnnotationPageProps {
   layers: AnnotationLayerSummary[];
   annotations: LocalAnnotationRecord[];
   editing: boolean;
   tool: AnnotationTool;
   toolColor?: string;
+  toolStyle?: ToolStyle;
   activeLayerId: string | null;
   onInteractionChange(interaction: AnnotationOverlayInteraction): void;
   editor: AnnotationEditor | null;
