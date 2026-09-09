@@ -41,6 +41,7 @@ export function ReaderEditingControls({
   const [showHint, setShowHint] = useState(() => {
     try { return localStorage.getItem("reader-edit-hint-seen") !== "true"; } catch { return true; }
   });
+  const toolHasStyle = tool !== "eraser" && tool !== "select";
   const selectedLayer = layers.find((layer) => layer.id === activeLayerId);
   const chooseLayer = (layerId: string) => {
     onLayerChange(layerId);
@@ -102,8 +103,8 @@ export function ReaderEditingControls({
           ))}
         </div>
       </div>
-      {selectedLayer?.kind === "personal" && tool !== "eraser" && tool !== "select" && <input type="color" aria-label="工具颜色" disabled={isDisabled} value={toolColor} onChange={event => onColorChange(event.target.value)} />}
-      {tool !== "eraser" && tool !== "select" && <DialogTrigger><Button className="annotation-tool-button annotation-style-trigger" aria-label="下一笔样式" isDisabled={isDisabled || !selectedLayer?.canEdit}><SlidersHorizontal size={20} /></Button><Popover className="annotation-style-popover" placement="top" offset={12}><Dialog aria-label="下一笔样式"><h2>{tool === "text" ? "新文字样式" : "下一笔样式"}</h2><p>只影响新建笔记；修改已有笔记请用选择工具。</p><div style={{ color: selectedLayer?.kind === "shared" ? selectedLayer.displayColor : toolColor }}><StyleFields tool={tool} value={toolStyle} onChange={onStyleChange} /></div></Dialog></Popover></DialogTrigger>}
+      {selectedLayer?.kind === "personal" && <input type="color" aria-label="工具颜色" title={toolHasStyle ? "工具颜色" : "当前工具不使用颜色"} disabled={isDisabled || !selectedLayer.canEdit || !toolHasStyle} value={toolHasStyle ? toolColor : "#e5e7e5"} onChange={event => onColorChange(event.target.value)} />}
+      <DialogTrigger><Button className="annotation-tool-button annotation-style-trigger" aria-label="下一笔样式" isDisabled={isDisabled || !selectedLayer?.canEdit || !toolHasStyle}><SlidersHorizontal size={20} /></Button><Popover className="annotation-style-popover" placement="top" offset={12}><Dialog aria-label="下一笔样式"><h2>{tool === "text" ? "新文字样式" : "下一笔样式"}</h2><p>只影响新建笔记；修改已有笔记请用选择工具。</p><div style={{ color: selectedLayer?.kind === "shared" ? selectedLayer.displayColor : toolColor }}><StyleFields tool={tool} value={toolStyle} onChange={onStyleChange} /></div></Dialog></Popover></DialogTrigger>
       <div className="annotation-control-group annotation-history-controls" aria-label="历史">
         <Button
           isDisabled={isDisabled || !selectedLayer?.canEdit}
