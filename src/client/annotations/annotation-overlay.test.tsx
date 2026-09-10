@@ -484,6 +484,16 @@ describe("AnnotationOverlay", () => {
   });
 
   it("discards failed text intent when the user cancels the composer", async () => {
+    // Publishing the editor error can precede the composer's async finally.
+    // Hold that boundary explicitly instead of depending on CI scheduling.
+    const persist = editor.persist.bind(editor);
+    let release!: () => void;
+    const completion = new Promise<void>(resolve => { release = resolve; });
+    vi.spyOn(editor, "persist").mockImplementation(async (...args) => {
+      const result = await persist(...args);
+      await completion;
+      return result;
+    });
     renderOverlay([], "text");
     const overlay = screen.getByLabelText("第 1 页笔记层");
     mockBounds(overlay);
@@ -492,10 +502,14 @@ describe("AnnotationOverlay", () => {
     const write = vi.spyOn(localDatabase.annotations, "put").mockRejectedValue(new DOMException("full", "QuotaExceededError"));
     fireEvent.click(screen.getByRole("button", { name: "完成" }));
     await screen.findByText("本机保存失败");
+    expect(screen.getByRole("button", { name: "取消" })).toBeDisabled();
+    release();
+    await waitFor(() => expect(screen.getByRole("button", { name: "取消" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(screen.queryByText("本机保存失败")).not.toBeInTheDocument();
     expect(screen.queryByRole("form", { name: "文字输入" })).not.toBeInTheDocument();
     write.mockRestore();
+    await act(async () => { await editor.retry(); });
     expect(await localDatabase.annotations.count()).toBe(0);
   });
 
