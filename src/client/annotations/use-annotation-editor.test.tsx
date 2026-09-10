@@ -28,5 +28,5 @@ it("preserves failed intent and the active edit session across an equivalent wor
   expect((await readScoreAnnotationState(workspace)).annotations).toEqual([expect.objectContaining({ payload: expect.objectContaining({ text: "keep this intent" }) })]);
   await act(async () => { expect(await view.result.current.editor!.undo("personal")).toBe(true); });
   expect((await readScoreAnnotationState(workspace)).annotations).toEqual([]);
-  act(() => { expect(view.result.current.editor!.finish()).toBe(true); });
+  await act(async () => { expect(await view.result.current.editor!.finish()).toBe("local-saved"); });
 });

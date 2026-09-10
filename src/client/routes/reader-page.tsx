@@ -334,10 +334,9 @@ function ReaderPageContent() {
 
   const annotationActions = useReaderAnnotationActions(workspace, identity.authenticatedUserId, identity.authenticatedSessionId, online, cloudState === "trashed", identity.session.refetch);
   const finishEditing = async () => {
-    if (!annotationActions || !editor || !await editor.prepareFinish()) return false;
-    const result = await annotationActions.saveDrafts();
+    if (!editor) return false;
+    const result = await editor.finish();
     if (result !== "local-saved") { if (result) setSyncOutcome(result); return false; }
-    if (!editor.finish()) return false;
     setEditingEditor(null);
     setSyncOutcome(result);
     return true;

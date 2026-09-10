@@ -2,7 +2,6 @@ import { syncReader } from "./sync-reader";
 import { diagnosticScope } from "../diagnostics/diagnostics";
 import { diagnoseLocalOperation } from "../diagnostics/local-operation";
 import { discardAnnotationConflict, queueScoreDrafts, readScoreAnnotationState, reapplyAnnotationConflict, retryScoreSyncErrors } from "../annotations/annotation-state";
-import { requestOutboxRecovery } from "../annotations/outbox-recovery";
 import { assertLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
 import type { ReaderSyncOutcome } from "./reader-sync-status";
 
@@ -20,18 +19,6 @@ export class ReaderAnnotationActions {
     signal.throwIfAborted();
     await assertLocalWorkspaceActive(this.workspace);
     signal.throwIfAborted();
-  }
-
-  async saveDrafts(): Promise<ReaderSyncOutcome | null> {
-    const signal = this.controller.signal;
-    const diagnostics = { report: diagnosticScope(), signal };
-    try {
-      await this.check(signal);
-      await diagnoseLocalOperation("draft-save", () => queueScoreDrafts(this.workspace), diagnostics);
-      await this.check(signal);
-      if (this.workspace.ownerKey.startsWith("user:")) requestOutboxRecovery();
-      return "local-saved";
-    } catch { return signal.aborted ? null : "failed"; }
   }
 
   async retry(): Promise<ReaderSyncOutcome | null> {
