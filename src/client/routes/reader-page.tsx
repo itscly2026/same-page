@@ -1,3 +1,4 @@
+import { LocalPdfDownload } from "../reader/local-pdf-download";
 import { useReaderFullscreen } from "../reader/use-reader-fullscreen";
 import { clearGuestNotes, isLocalExperience } from "../annotations/guest-notes";
 import { useReadingPreferenceProjection } from "../reader/reading-preference-intents";
@@ -379,7 +380,7 @@ function ReaderPageContent() {
 
   const originalPdfDownload = online && cloudState === "active" && score ? <a className="secondary-button"
     href={`/api/choirs/${encodeURIComponent(choirId)}/scores/${encodeURIComponent(scoreId)}/versions/${encodeURIComponent(score.currentVersion.id)}/pdf`}
-    download={score.fileName}>下载原 PDF</a> : null;
+    download={score.fileName}>下载原 PDF</a> : offline ? <LocalPdfDownload workspace={workspace} record={offline} /> : null;
   const displayChoices = <><Button className="secondary-button" onPress={() => navigation.afterEditing(reader.retry)}>重试 PDF 阅读</Button>{originalPdfDownload}</>;
   const loadError = reader.snapshot.error;
   if (loadError) {

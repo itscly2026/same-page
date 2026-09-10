@@ -39,7 +39,7 @@ export function loadPdfDocument(
     try { engine = await import("pdfjs-dist/legacy/build/pdf.mjs"); }
     catch (error) {
       // Dynamic-import transport failures must stay retryable network errors.
-      if (error instanceof Error && /fetch|network|loading chunk|module script|load failed|timeout/i.test(error.message)) throw error;
+      if (error instanceof Error && /fetch|network|loading chunk|module script|load failed|timeout/i.test(error.message)) throw Object.assign(error, { status: 0 });
       throw new PdfEngineUnavailableError();
     }
     if (destroyed) throw new DOMException("PDF load cancelled", "AbortError");

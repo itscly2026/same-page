@@ -100,6 +100,7 @@ it("requires confirmed identity before user-owned offline preparation and cancel
 it.each([
   [Object.assign(new Error(), { name: "PdfEngineUnavailableError" }), "请升级浏览器或系统"],
   [new TypeError("Failed to fetch"), "请检查网络后重试"],
+  [Object.assign(new TypeError("Failed to fetch dynamically imported module: https://example.test/pdf.js"), { status: 0 }), "请检查网络后重试"],
   [Object.assign(new Error(), { status: 403 }), "确认登录状态和权限"],
   [Object.assign(new Error(), { name: "InvalidPDFException" }), "PDF 无法解析"],
   [Object.assign(new Error(), { name: "PasswordException" }), "这份 PDF 需要密码"],

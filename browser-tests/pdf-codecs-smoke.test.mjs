@@ -61,15 +61,25 @@ for (const engine of [chromium, webkit]) {
     await assertSquare(page, restoredPage);
     await page.getByRole("button", { name: restoredPage === 1 ? "下一页" : "上一页", exact: true }).press("Enter");
     await assertSquare(page, restoredPage === 1 ? 2 : 1);
+    // An unsupported engine must not strand an already downloaded PDF offline.
+    await context.addInitScript(() => { Promise.withResolvers = undefined; });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("alert")).toContainText("请升级浏览器或系统");
+    const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "下载原 PDF", exact: true }).click()]);
+    assert.deepEqual(await readFile(await download.path()), pdf);
   });
 }
 
 test("missing native Promise.withResolvers exposes engine recovery and an independent PDF download", { timeout: 60000 }, async t => {
-  const fixture = await startStorageFixture();
+  const fixture = await startStorageFixture({ authenticated: true });
   t.after(() => fixture.stop());
   const browser = await chromium.launch();
   t.after(() => browser.close());
   const context = await browser.newContext();
+  const account = fixture.accounts[0];
+  assert.equal((await context.request.post(`${fixture.origin}/api/auth/sign-in/email`, {
+    headers: { origin: fixture.origin }, data: { email: account.email, password: account.password },
+  })).status(), 200);
   await context.addInitScript(() => { Promise.withResolvers = undefined; });
   const page = await context.newPage();
   await page.goto(`${fixture.origin}/choirs/${fixture.choirId}/scores/${fixture.scoreId}`, { waitUntil: "domcontentloaded" });

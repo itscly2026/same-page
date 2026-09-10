@@ -200,7 +200,7 @@ test("documentation mixed with verification changes does not trigger deployment"
 });
 
 // These real review artifacts previously made unrelated reader PRs run PWA,
-// migrations and native packaging. Executable or unknown docs still fail closed.
+// migrations and packaging. Executable or unknown docs still fail closed.
 test("review evidence does not widen a reader PR or deploy an evidence-only push", (t) => {
   const repo = repository(t);
   repo.put("docs/operations/issue-142/390-menu.png");
