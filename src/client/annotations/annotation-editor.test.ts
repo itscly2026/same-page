@@ -135,3 +135,22 @@ it("keeps the newest intent when editing again after several stroke writes faile
   await editor.undo("personal");
   expect(await savedText()).toBeUndefined();
 });
+
+it("canceled checkpoints do not consume undo or resurrect on redo", async () => {
+  await editor.persist(text("A"));
+  await editor.persist(text("checkpoint", "stroke"));
+  await editor.persist({ id: "stroke", layerId: "personal", payload: null, deleted: true }, true);
+  expect(await editor.undo("personal")).toBe(true);
+  expect(await savedText()).toBeUndefined();
+  expect(await editor.redo("personal")).toBe(true);
+  expect(await savedText()).toMatchObject({ text: "A" });
+  expect(await editor.redo("personal")).toBe(false);
+});
+
+it("canceling a failed first checkpoint leaves no phantom undo entry", async () => {
+  const write = vi.spyOn(localDatabase.annotations, "put").mockRejectedValueOnce(new Error("full"));
+  expect(await editor.persist(text("checkpoint", "stroke"))).toBe(false);
+  write.mockRestore();
+  await editor.persist({ id: "stroke", layerId: "personal", payload: null, deleted: true }, true);
+  expect(await editor.undo("personal")).toBe(false);
+});

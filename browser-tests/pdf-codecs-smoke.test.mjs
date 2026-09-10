@@ -19,10 +19,11 @@ for (const engine of [chromium, webkit]) {
       headers: { origin: fixture.origin }, data: { email: account.email, password: account.password },
     })).status(), 200);
     const page = await context.newPage();
-    const scoreUrl = `${fixture.origin}/choirs/${fixture.choirId}/scores/${fixture.scoreId}`;
     await page.goto(`${fixture.origin}/choirs/${fixture.choirId}`, { waitUntil: "domcontentloaded" });
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
     await page.locator(".file-row__open").click();
+    await page.waitForURL(`**/scores/${fixture.scoreId}*`);
+    const scoreUrl = page.url();
     await assertSquare(page, 1);
     await page.getByRole("button", { name: "下一页", exact: true }).press("Enter");
     await assertSquare(page, 2);

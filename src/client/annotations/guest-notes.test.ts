@@ -1,3 +1,4 @@
+import { clearPrivateLocalDataAfterLogout, getLogoutLocalSummary } from "../auth/logout-local-data";
 import { clearLocalFiles, listLocalFiles } from "../offline/local-files";
 import { captureOfflineAnnotationSnapshot } from "./offline-snapshot";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -64,4 +65,18 @@ it("isolates signed-in experience from account notes without changing the active
   expect((await readScoreAnnotationState(experience)).annotations).toHaveLength(1);
   await activateAuthenticatedLocalOwner("other");
   await expect(readScoreAnnotationState(experience)).rejects.toThrow();
+});
+
+it("logout clears account experience notes and snapshots without restoring them on login", async () => {
+  const options = { authenticatedUserId: "member", choirId: "public", scoreId: "score", experience: true };
+  const workspace = await resolveLocalWorkspace(options);
+  await cacheAnnotationLayers(workspace, []);
+  await saveAnnotationDraft(workspace, { id: crypto.randomUUID(), layerId: GUEST_NOTE_LAYER_ID, payload: { kind: "text", pageNumber: 1, x: .2, y: .3, fontScale: .024, text: "体验" } });
+  await activateVerifiedOfflineScore({ ...workspace, key: "logout-experience-pdf", versionId: "v1", fileName: "体验.pdf", pageCount: 1, sha256: "a".repeat(64), blob: new Blob(["pdf"]), annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace) });
+  expect((await getLogoutLocalSummary()).pendingOperations).toBe(1);
+  await clearPrivateLocalDataAfterLogout();
+  expect(await localDatabase.offlineSnapshots.where("ownerKey").equals(workspace.ownerKey).count()).toBe(0);
+  expect(await localDatabase.annotationLayers.where("ownerKey").equals(workspace.ownerKey).count()).toBe(0);
+  await resolveLocalWorkspace(options);
+  expect((await readScoreAnnotationState(workspace)).annotations).toHaveLength(0);
 });
