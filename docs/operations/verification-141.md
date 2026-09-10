@@ -1,7 +1,5 @@
 # #141 批注显示与阅读偏好验证
 
-> 历史记录：本文描述当时的实现与验证。#156 已移除图片显示、专属 renderer 及其部署/测试入口；相关旧命令和路径不再适用。当前决定见 [ADR0013](../adr/0013-provide-independent-image-score-display.md)，资源处置见 [退役步骤](../operations/image-renderer-retirement.md)。原测量不代表当前性能或 Safari 17.5 真机验收。
-
 实现范围：[简化批注显示、编辑目标与云盘阅读偏好](https://github.com/itscly2026/same-page/issues/141)。独立 worktree 分支 `codex/issue-141`，基线 `6de48820dd506a0983462700b936acdd5129009f`。没有迁移、合并或生产部署。
 
 ## 行为与证据
@@ -21,8 +19,8 @@
 
 - `src/client/app.test.tsx` 和 `src/client/routes/reader-page.test.tsx`：70 项通过；包含并发保存隔离、颜色失败重试及恢复、未订阅层编辑且不改变偏好、锁页与退出恢复。
 - `visual-report/layer-preferences.test.mjs`：Chromium / WebKit 均通过。阅读面板、目标面板、默认显示、颜色页覆盖 320×740、740×320、834×1194、1194×834、1440×1000；管理及授权覆盖手机、iPad 横竖屏和桌面。检查文档无水平溢出、整行及按钮至少 44px、滚动后关闭/返回可达；键盘 Space 操作显示复选框。
-- `check:full` 的全部检查阶段已完成：原生 renderer、PWA 更新接管、14 项 CI scope、lint、typecheck、37 项 unit、288 项 client、73 项 Worker、33 项视觉回归、迁移、生产构建 / precache、6 项浏览器 smoke、加载性能。
-- 本地不是一次无重试的串行绿灯：完整运行先暴露新增整行点击测试的错误文本定位，修正后两引擎各自复跑通过，其余 31 项视觉回归通过。续跑时未继承 Python 环境的图像 smoke 已显式指定虚拟环境重跑，2 项通过；IndexedDB 重开 smoke 单独补跑通过。macOS 测试服务清理曾出现 `kill EPERM`，清理后加载性能再次运行以 exit 0 完成。这些环境/测试定位问题没有引入产品绕过逻辑。
+- `check:full` 的全部检查阶段已完成：PWA 更新接管、14 项 CI scope、lint、typecheck、37 项 unit、288 项 client、73 项 Worker、33 项视觉回归、迁移、生产构建 / precache、6 项浏览器 smoke、加载性能。
+- 本地不是一次无重试的串行绿灯：完整运行先暴露新增整行点击测试的错误文本定位，修正后两引擎各自复跑通过，其余 31 项视觉回归通过。IndexedDB 重开 smoke 单独补跑通过。macOS 测试服务清理曾出现 `kill EPERM`，清理后加载性能再次运行以 exit 0 完成。这些环境/测试定位问题没有引入产品绕过逻辑。
 - 视觉报告生成器最终以 exit 0 完成 8 个相关场景，验证独立偏好页面、颜色恢复、默认显示持久化、失败保留原值、未显示层编辑与退出、授权保存；同步移除了脚本中的旧复选框名称。
 
 交互原始记录：[Chromium](evidence-141/chromium-interactions.json)、[WebKit](evidence-141/webkit-interactions.json)。记录仅含合成夹具的 URL、变更体与故意注入失败标记，不含真实用户数据或凭证。
@@ -34,7 +32,7 @@ LAYOUT_CAPTURE_DIR=artifacts/verification/issue-141 node --test visual-report/la
 PATH="/tmp/same-page-141-venv/bin:$PATH" npm run check:full
 ```
 
-本机完整检查使用临时 Python 虚拟环境安装 `renderer/requirements.txt`；没有修改系统依赖或仓库依赖锁文件。完整截图矩阵位于忽略目录 `artifacts/verification/issue-141`，本报告精选截图已随 PR 提交。
+完整截图矩阵位于忽略目录 `artifacts/verification/issue-141`，本报告精选截图已随 PR 提交。
 
 ## 审查与验收边界
 

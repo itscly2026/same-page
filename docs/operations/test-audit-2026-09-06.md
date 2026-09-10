@@ -1,7 +1,5 @@
 # 测试与 CI 审查 · 2026-09-06
 
-> 历史记录：本文描述当时的实现与验证。#156 已移除图片显示、专属 renderer 及其部署/测试入口；相关旧命令和路径不再适用。当前决定见 [ADR0013](../adr/0013-provide-independent-image-score-display.md)，资源处置见 [退役步骤](../operations/image-renderer-retirement.md)。原测量不代表当前性能或 Safari 17.5 真机验收。
-
 审查基线：`4885eba`。目的：缩短 PR 反馈周期，删除低价值测试，保留能发现产品错误的覆盖。TDD 来源不是删除依据，测试数量也不是目标指标。
 
 实现已 rebase 到 `9ec597c`，纳入认证身份引导和扫描 PDF 解码修复。下面的删减数量按审查基线比较，新增主线测试继续保留。
@@ -47,7 +45,7 @@
 | app/home-entry/auth-page/user-lifecycle-page | 深链接意图、公开体验与成员关系分离、草稿隔离、认证完成与恢复顺序需要组件集成覆盖 |
 | upload/offline-score/pdf-version/invite-code dialogs | 串行队列、不确定结果禁止盲重试、仅校验完成才显示离线、候选明确确认、保留码恢复等产品行为 |
 | diagnostics 客户端/Worker/CLI | 凭据与私人内容的脱敏、身份代际、保留期、幂等提交和丢失回执；组件、路由和浏览器分别覆盖自己的边界 |
-| PWA update、browser-tests 全部文件 | 真 Service Worker 交接、生产构建与真实 D1/R2、浏览器关闭重开断网、原生图片转换、两浏览器诊断提交；这些和 mocked visual fixture 证据不同 |
+| PWA update、browser-tests 全部文件 | 真 Service Worker 交接、生产构建与真实 D1/R2、浏览器关闭重开断网、两浏览器诊断提交；这些和 mocked visual fixture 证据不同 |
 | scripts CI/release/deployment/process/migration/precache/provision | 错误放行发布、错误版本被验证、测试误连服务、后代进程遗留、schema 数据损坏、预缓存遗漏和输出凭据；保留防错行为测试 |
 | shared annotations、performance 分类/预算/报告 | 领域优先级、隐私安全的测量记录、基于中位数的统计与预算失败信号；不以零耗时为由删除规则测试 |
 
@@ -56,14 +54,12 @@
 ## 验证记录
 
 - 新工作流通过 actionlint 1.7.12。直接执行 YAML 中的汇总脚本，检查全部成功、选中阶段失败/取消/跳过、scope 失败、纯文档、仅测试改动等 7 种结果，均正确放行或拒绝。
-- 范围测试从 14 项变为 16 项，新增真实截图混合 reader 改动和原生渲染器范围回归。继续覆盖删除、改名、特殊路径、大于 300 文件、共同祖先与缺少历史。
+- 范围测试从 14 项变为 16 项，新增真实截图混合 reader 改动的范围回归。继续覆盖删除、改名、特殊路径、大于 300 文件、共同祖先与缺少历史。
 - 客户端/Node 用例从 355 项变为 342 项，全部通过；Worker 从 83 项变为 82 项，全部通过；视觉从 36 项变为 29 项（均为删除 fixture 自证，实际布局场景另做收敛）。
 - 第一次旧版全套运行在视觉 teardown 出现一次既有 `kill EPERM`，因此没有获得可信的完整成功时间基线。旧视觉阶段约 100 秒；新版独立视觉运行 65.9 秒、全套中的视觉 71.2 秒，均 29/29 通过。不能把一次失败基线与本地波动当成稳定 CI 加速比例。
 - 对保留测试进行了两次临时错误注入：无服务端确认也显示已同步、切换用户后接纳旧诊断，均被对应 Node 测试检出。源码恢复后相关测试再次通过，未保留任何故意错误。
-- 原生 PDF 回归在 macOS/Python 独立虚拟环境执行；Linux Docker 无网络打包证明以实际 PR CI 为准，不能用 macOS 结果代替。
-- 首轮 PR CI 的三个工作 job 正常并行，汇总正确拦住 WebKit 图片离线重开失败。失败截图显示浏览器仍在准备图片显示，测试却因服务端转换完成、旧 PDF canvas 可见而提前断开服务。延迟浏览器显示请求并保留断网后的页面，旧测试复现阅读偏好回退 `pdf`、离线重开无 canvas；增加准备结束、绘制结束和图片模式仍选中的等待后，同样的延迟实验通过。临时注入和诊断脚本均已删除，正式测试不加固定睡眠或重试。
 
-审查基线上的第一次 `npm run check:full` 完整通过，用时 238.02 秒，包含 16 项 CI 范围测试、342 项客户端/Node、82 项 Worker、29 项视觉、7 项浏览器 smoke，以及原生渲染、PWA 交接、迁移、build/precache、加载预算。真实 PR CI 结果在本次交付时补充。自动化浏览器结果始终不是 iPad/iPhone/Pencil/弱网实机验收。
+审查基线上的第一次 `npm run check:full` 完整通过，用时 238.02 秒，包含 16 项 CI 范围测试、342 项客户端/Node、82 项 Worker、29 项视觉、7 项浏览器 smoke，以及 PWA 交接、迁移、build/precache、加载预算。真实 PR CI 结果在本次交付时补充。自动化浏览器结果始终不是 iPad/iPhone/Pencil/弱网实机验收。
 
 ## 后续新增测试标准
 

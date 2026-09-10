@@ -1,7 +1,5 @@
 # #226 云盘导航与设置 UI 验收
 
-> 历史记录：本文描述当时的实现与验证。#156 已移除图片显示、专属 renderer 及其部署/测试入口；相关旧命令和路径不再适用。当前决定见 [ADR0013](../adr/0013-provide-independent-image-score-display.md)，资源处置见 [退役步骤](../operations/image-renderer-retirement.md)。原测量不代表当前性能或 Safari 17.5 真机验收。
-
 本改动在 #225（PR #228，`9a93607`）的读取资源、阅读偏好持久化和修改/刷新结果区分机制上完成 UI 集成。外层个人菜单继续管理账户、帮助、关于和退出登录；云盘内入口只处理云盘显示名、阅读偏好、本机存储和成员身份退出。
 
 ## 行为覆盖
@@ -32,8 +30,8 @@ node scripts/capture-issue-226.mjs after
 - 使用与 CI 一致的 Node 24：lint、typecheck、19 项 CI scope 检查、79 项 Node 测试、502 项客户端测试及 109 项 Worker 测试通过。
 - 全量视觉/交互回归 72 项：71 项直接通过；新合入的慢网用例迁移显示名菜单定位后单独通过，原慢网、跨标签页与输入保护断言保留。
 - 数据库迁移回归、生产构建及 precache 校验通过。
-- Smoke 18 项全部获得通过结果：16 项初次通过；图片转换的 Chromium/WebKit 两项补齐 Python 依赖后通过，覆盖真实转换、图片阅读及校验后的离线重开。
-- 初次本机运行遇到旧导航定位、测试进程清理 `kill EPERM` 和缺少 Python 渲染依赖；分别更新入口、单独复跑，以及通过 `SAME_PAGE_RENDERER_PYTHON` 指向按 `renderer/requirements.txt` 安装的临时 venv。未扩大超时或放宽产品断言。
+- 初次 smoke 中 16 项通过；本条仅保留 PDF 与存储等流程的证据，不将后续补跑视为一次完整绿灯。
+- 初次本机运行遇到旧导航定位及测试进程清理 `kill EPERM`；更新入口并单独复跑，未扩大超时或放宽产品断言。
 
 ## 证据边界
 

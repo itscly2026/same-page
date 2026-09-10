@@ -55,7 +55,7 @@ npm run provision:choir -- \
 Better Auth 定义由官方 CLI 生成。认证模型变化时运行 `npm run auth:schema` 并审查
 `worker/db/auth-schema.generated.ts`；实际 D1 变更仍通过 `migrations/` 执行。
 
-验证命令及浏览器/Python 依赖见 [CI 检查与开发反馈](../operations/ci.md)。
+验证命令及浏览器依赖见 [CI 检查与开发反馈](../operations/ci.md)。
 
 ### 云盘拥有权迁移（0020）
 

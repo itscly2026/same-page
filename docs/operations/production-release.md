@@ -22,7 +22,7 @@
 - Resend key：Same Page 独立、Sending access、只允许 `samepage.clyapps.com`
 - CI Cloudflare token：Same Page 独立，包含 Workers Scripts Write、D1 Write、
   Workers R2 Storage Write、Account Settings Read、Workers Queues Write，以及
-  `clyapps.com` 的 Workers Routes Write。PDF 阅读在浏览器中完成，无专属 Cloud Run 渲染部署。
+  `clyapps.com` 的 Workers Routes Write。PDF 阅读在浏览器中完成。
 
 生产 Secret 只存在于 Resend、Cloudflare Worker 和 GitHub Actions 的 secret store。
 不得写入仓库、Issue、PR、日志、终端历史或发布记录。
@@ -134,13 +134,15 @@ deploy job 在生产锁内核对发布顺序，记录发布尝试，在汇总 ve
 14. 在公开体验中分别使用 Google、邮箱登录，确认无需加入即可在个人层新增、修改、删除批注，重新打开仍可读回；另一用户、管理员与访客均不可读取该个人层，共享层仍按授权编辑。
 15. 管理员打开「管理 → 邀请码」查看当前码，关闭重开仍可查看；旧码仅有校验值时补录原码并确认原码继续有效，主动轮换后确认旧码失效。
 
+PDF.js legacy 仍要求 `Promise.withResolvers`，缺失时须验证 `engine-unavailable` 和原 PDF 下载；具体能力探针见 [运行资源说明](../runbooks/pdf-rendering-assets.md#legacy-支持边界)。Safari 17.5 真机尚未验证。
+
 真实 Safari、PWA 存储驱逐、手写笔和大陆网络表现不能由桌面自动化或 WebKit 模拟替代。
 
 ## 发布失败与显式回滚
 
-发布仅封存和部署 Worker、静态资源、迁移与锁文件，不再构建或部署图片 renderer。
+发布封存和部署 Worker、静态资源、迁移与锁文件。
 历史 Durable Object 创建和删除 migration 保持原 tag 与顺序，供已部署实例继续升级。
-旧图片服务、队列及凭据的退役见 [资源退役步骤](image-renderer-retirement.md)。
+首次发布 #156 前必须在合并前阻止旧图片任务、排空队列并等待在途任务结束；`0025` 将注册派生 key 排入删除队列后 drop 图片表。完整顺序见 [资源退役步骤](image-renderer-retirement.md)。
 恢复使用同一 release artifact 和串行 production admission，禁止重新构建后覆盖旧 SHA。
 
 1. 先在 Actions 确定失败阶段。准入跳过表示已有更新的发布尝试；历史不可达、分叉、GitHub 记录不可用或 artifact 校验失败都在生产写入前停止。不要通过删除发布记录或修改 expected SHA 绕过。
