@@ -236,7 +236,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
                       <Popover className="file-menu-popover">
                         <Menu
                           aria-label={`${scoreDisplayName(score.fileName)} 操作`}
-                          disabledKeys={access.local ? ["rename", "replace", "history", "trash"] : []}
+                          disabledKeys={!online || access.local ? ["rename", "replace", "history", "trash"] : []}
                           onAction={(key) => key === "export" ? setExportScore(score) : openScoreAction(score, key as ScoreAction)}
                         >
                           <MenuItem id="export">导出 PDF</MenuItem>
@@ -261,7 +261,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
 
       {exportScore && <Suspense fallback={<p role="status">正在准备导出…</p>}><LibraryExportDialog key={`${exportScore.id}:${userId}`} score={exportScore} authenticatedUserId={userId ?? null} onClose={() => setExportScore(null)} /></Suspense>}
       {settingsField && !access.local && <DriveSettingsDialog key={`${choirId}:${userId}:${settingsField}`} choirId={choirId} userId={userId!} field={settingsField} onClose={() => setSettingsField(null)} onSaved={async value => { setDisplayName(value); setMessage(null); }} />}
-      {visible("uploadFiles") && <UploadFab disabled={Boolean(access.local)} onPress={() => setUploadOpen(true)} />}
+      {visible("uploadFiles") && <UploadFab disabled={!online || Boolean(access.local)} onPress={() => setUploadOpen(true)} />}
 
 
       {userId && can("uploadFiles") ? <UploadDialog storage={result.storage}

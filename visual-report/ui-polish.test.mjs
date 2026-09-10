@@ -89,6 +89,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     const browser = await engine.launch();
     t.after(async () => { await browser.close(); await app.stop(); });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block', reducedMotion: 'reduce' });
+    await page.clock.setFixedTime(new Date('2026-09-10T00:00:00Z'));
     const fixture = createVisualFixtureSession();
     let holdBootstrap = false;
     let release;
@@ -120,6 +121,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     const bounds = await viewport.boundingBox();
     await viewport.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
     holdBootstrap = true;
+    await page.clock.setFixedTime(new Date('2026-09-10T00:01:01Z'));
     await page.getByRole('button', { name: '返回云盘', exact: true }).click();
     for (const mode of ['return', 'reload']) {
       if (mode === 'reload') {
@@ -132,6 +134,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
       const before = await geometry();
       holdBootstrap = false;
       release();
+      await expect(page.getByRole('button', { name: '刷新乐谱列表' })).toBeEnabled();
       await expect(page.locator('a.file-row__open')).toHaveCount(3);
       assert.deepEqual(await geometry(), before, `${mode}: file geometry and text remain unchanged`);
       assert.deepEqual(await page.evaluate(() => window.rowNotices), []);

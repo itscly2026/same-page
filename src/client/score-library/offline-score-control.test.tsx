@@ -202,9 +202,10 @@ it("reconfirms a same-user reader session without losing the display or acceptin
   } finally { reader.dispose(); }
 });
 
-it("allows inspecting local availability while remote mutations are disabled", async () => {
+it.each(["permission", "network"])("allows inspecting local availability while downloads are blocked by %s", async reason => {
+  if (reason === "network") { Object.defineProperty(navigator, "onLine", { value: false, configurable: true }); }
   vi.mocked(useOfflineScore).mockReturnValue({ scopeKey: workspace.scopeKey, record: null, invalid: false });
-  render(<OfflineScoreControl score={score} authenticatedUserId="user" authenticatedSessionId="session" disabled />);
+  render(<OfflineScoreControl score={score} authenticatedUserId="user" authenticatedSessionId="session" disabled={reason === "permission"} />);
   const button = await screen.findByRole("button", { name: /离线副本/ });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
