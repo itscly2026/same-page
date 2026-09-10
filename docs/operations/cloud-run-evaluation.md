@@ -1,5 +1,7 @@
 # Same Page PDF 图片渲染：Cloud Run 评估
 
+> 历史记录：本文描述当时的实现与验证。#156 已移除图片显示、专属 renderer 及其部署/测试入口；相关旧命令和路径不再适用。当前决定见 [ADR0013](../adr/0013-provide-independent-image-score-display.md)，资源处置见 [退役步骤](../operations/image-renderer-retirement.md)。原测量不代表当前性能或 Safari 17.5 真机验收。
+
 核查时间：2026-09-06 10:48 CST。范围为账号、已部署资源、Monitoring 用量、官方价格及本地渲染实验；没有启用 API、修改 IAM、开通套餐或部署服务。
 
 ## 结论

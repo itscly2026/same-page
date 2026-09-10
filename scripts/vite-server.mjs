@@ -14,7 +14,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
   });
 }
 
-export async function startViteServer({ script, port, cwd = process.cwd(), env = process.env, timeoutMs = 30_000, prepare, rendererOrigin }) {
+export async function startViteServer({ script, port, cwd = process.cwd(), env = process.env, timeoutMs = 30_000, prepare }) {
   const statePath = await mkdtemp(path.join(tmpdir(), "same-page-vite-"));
   const logs = [];
   let child;
@@ -43,10 +43,6 @@ export async function startViteServer({ script, port, cwd = process.cwd(), env =
       delete config.configPath; delete config.userConfigPath;
       for (const db of config.d1_databases ?? []) db.migrations_dir = path.resolve(path.dirname(sourceConfig), db.migrations_dir ?? "migrations");
       config.vars = { ...config.vars, BETTER_AUTH_URL: origin, AUTH_EMAIL_FROM: "Fixture <fixture@example.invalid>", BETTER_AUTH_SECRET: "same-page-local-test-secret-only", INVITE_SECRET: "same-page-local-test-invite-only" };
-      if (rendererOrigin) {
-        config.vars.PDF_RENDERER_URL = rendererOrigin;
-        config.vars.PDF_RENDERER_SECRET = "same-page-native-renderer-test-secret-only";
-      }
       config.routes = []; config.triggers = {}; config.observability = { enabled: false };
       await writeFile(configPath, JSON.stringify(config));
       await writeFile(path.join(statePath, ".dev.vars"), "");

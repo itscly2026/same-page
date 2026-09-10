@@ -72,7 +72,7 @@ test("runtime areas select only their relevant expensive checks", (t) => {
     repo.commit();
     const scope = repo.scope();
     assert.equal(scope.full, true, name);
-    for (const check of ["client", "worker", "visual", "pwa", "performance", "migration", "build", "deploy", "smoke", "renderer"]) {
+    for (const check of ["client", "worker", "visual", "pwa", "performance", "migration", "build", "deploy", "smoke"]) {
       assert.equal(scope[check], enabled.includes(check), `${name}: ${check}`);
     }
   }
@@ -172,7 +172,7 @@ test("the workflow entrypoint emits scope and rejects whitespace errors in docs"
   assert.equal(run().status, 0);
   assert.equal(
     readFileSync(output, "utf8"),
-    "full=false\nclient=false\nworker=false\nvisual=false\npwa=false\nperformance=false\nmigration=false\nbuild=false\ndeploy=false\nsmoke=false\nrenderer=false\nbrowserGroup=all\n",
+    "full=false\nclient=false\nworker=false\nvisual=false\npwa=false\nperformance=false\nmigration=false\nbuild=false\ndeploy=false\nsmoke=false\nbrowserGroup=all\n",
   );
   rmSync(output);
   repo.put("docs/change.md", "bad whitespace \t\n");
@@ -211,16 +211,9 @@ test("review evidence does not widen a reader PR or deploy an evidence-only push
   repo.commit();
   const scope = repo.scope();
   for (const check of ["client", "visual", "build", "smoke"]) assert.equal(scope[check], true, check);
-  for (const check of ["worker", "pwa", "migration", "renderer"]) assert.equal(scope[check], false, check);
+  for (const check of ["worker", "pwa", "migration"]) assert.equal(scope[check], false, check);
 });
 
-test("native changes validate packaging and runtime consumers without unrelated UI suites", (t) => {
-  const repo = repository(t);
-  repo.put("renderer/server.py"); repo.commit();
-  const scope = repo.scope();
-  for (const check of ["renderer", "build", "smoke", "deploy"]) assert.equal(scope[check], true, check);
-  for (const check of ["client", "worker", "visual", "pwa", "migration"]) assert.equal(scope[check], false, check);
-});
 
 
 test("audited library leaves select entry/storage consumers; mixed shared changes widen to all", t => {
@@ -240,7 +233,7 @@ test("audited library leaves select entry/storage consumers; mixed shared change
 test("changes to the selector itself receive full verification", t => {
   const repo = repository(t);
   repo.put("scripts/ci-scope.mjs"); repo.commit();
-  for (const key of ["client", "worker", "visual", "smoke", "renderer", "pwa", "migration", "performance", "build"]) assert.equal(repo.scope()[key], true, key);
+  for (const key of ["client", "worker", "visual", "smoke", "pwa", "migration", "performance", "build"]) assert.equal(repo.scope()[key], true, key);
 });
 
 test("the workflow gate rejects failure, cancellation and unexpected skips of selected jobs", () => {
@@ -257,13 +250,13 @@ test("the workflow gate rejects failure, cancellation and unexpected skips of se
     { full: "false" },
     { full: "true", client: "true" },
     { full: "true", visual: "true", smoke: "true", build: "true", browserGroup: "library" },
-    { full: "true", visual: "true", renderer: "true", pwa: "true", browserGroup: "all" },
+    { full: "true", visual: "true", pwa: "true", browserGroup: "all" },
   ]) {
     const jobs = {
       scope: { result: "success", outputs },
       checks: { result: outputs.full === "true" ? "success" : "skipped" },
       visual: { result: outputs.visual === "true" ? "success" : "skipped" },
-      integration: { result: outputs.smoke || outputs.renderer ? "success" : "skipped" },
+      integration: { result: outputs.smoke || outputs.pwa ? "success" : "skipped" },
     };
     assert.equal(run(jobs), 0);
     for (const [name, job] of Object.entries(jobs)) {

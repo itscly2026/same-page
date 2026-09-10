@@ -1,5 +1,7 @@
 # #221 离线故障隔离与阅读器呈现验证
 
+> 历史记录：#156 已移除图片渲染及其 Python 测试依赖，旧补跑步骤不再适用；PDF codec 校验仍保留。见 [ADR0013](../adr/0013-provide-independent-image-score-display.md)。
+
 ## 证据边界
 
 - 原实现上正式故障注入测试失败：同 owner/云盘另一谱子的文件重写抛出 `NotFoundError`，当前谱子清理后、outbox 为 0，重新准备返回 failed。快照独立存储后该场景通过。

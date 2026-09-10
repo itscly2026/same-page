@@ -1,5 +1,7 @@
 # 测试深度清理 #174
 
+> 历史记录：本文描述当时的实现与验证。#156 已移除图片显示、专属 renderer 及其部署/测试入口；相关旧命令和路径不再适用。当前决定见 [ADR0013](../adr/0013-provide-independent-image-score-display.md)，资源处置见 [退役步骤](../operations/image-renderer-retirement.md)。原测量不代表当前性能或 Safari 17.5 真机验收。
+
 基线：`fc0717b28a2e95d111dd2a55e98bfc344ee1a469`；独立 worktree，PR #175。第一轮 `9257ec4` 没有减少测试数量，反而增加 setup 分组和审计代码；完整 CI 也没有稳定提速。因此第二轮以删除重复保护和无效证明为主，撤回收益不足的环境白名单。
 
 ## 风险去向

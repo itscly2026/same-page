@@ -53,7 +53,7 @@ WebKit 仍是新页面的 API 中断注入，静态资源在线；Chromium 仍�
 这次治理以失败定位和独立风险保障为收益，没有声称总时长下降；最终耗时以 PR 实验结果为准。
 不再常态保存这些测试的截图；失败时共用 `browser-evidence.mjs`。
 已审计 `scripts/run-browser-tests.mjs` 仅启动 visual/smoke，CI 不再为它额外选择 Worker 单测、
-renderer、迁移、PWA 和性能检查；共享证据模块同时选择 visual/smoke/build，未知脚本仍保守兜底。
+迁移、PWA 和性能检查；共享证据模块同时选择 visual/smoke/build，未知脚本仍保守兜底。
 
 ## 失败证据与有界复验
 

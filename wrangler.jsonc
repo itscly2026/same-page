@@ -27,8 +27,7 @@
   ],
   "vars": {
     "BETTER_AUTH_URL": "https://samepage.clyapps.com",
-    "AUTH_EMAIL_FROM": "Same Page <login@samepage.clyapps.com>",
-    "PDF_RENDERER_URL": "https://same-page-renderer-638290534241.us-central1.run.app"
+    "AUTH_EMAIL_FROM": "Same Page <login@samepage.clyapps.com>"
   },
   "assets": {
     "not_found_handling": "single-page-application",
@@ -64,21 +63,5 @@
         "PdfRenderer"
       ]
     }
-  ],
-  "queues": {
-    "producers": [
-      {
-        "binding": "IMAGE_JOBS",
-        "queue": "same-page-images"
-      }
-    ],
-    "consumers": [
-      {
-        "queue": "same-page-images",
-        "max_batch_size": 1,
-        "max_concurrency": 1,
-        "max_retries": 2
-      }
-    ]
-  }
+  ]
 }

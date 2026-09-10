@@ -34,7 +34,6 @@ export default defineConfig({
   test: {
     include: ["worker/**/*.test.ts"],
     exclude: [
-      "worker/images/renderer.test.ts",
       "worker/auth/social-providers.test.ts",
       "worker/email/send-otp.test.ts",
       "worker/performance/server-timing.test.ts",

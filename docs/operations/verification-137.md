@@ -1,5 +1,7 @@
 # Issue 137: independent image display verification
 
+> 历史记录：本文描述当时的实现与验证。#156 已移除图片显示、专属 renderer 及其部署/测试入口；相关旧命令和路径不再适用。当前决定见 [ADR0013](../adr/0013-provide-independent-image-score-display.md)，资源处置见 [退役步骤](../operations/image-renderer-retirement.md)。原测量不代表当前性能或 Safari 17.5 真机验收。
+
 Implementation target: [#137](https://github.com/itscly2026/same-page/issues/137), building on the ReaderSession and offline activation boundaries from #136. This report separates local evidence from release and device acceptance. No production migration, provisioning or deployment has been performed.
 
 ## Architecture and operating limits
