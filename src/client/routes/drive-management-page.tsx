@@ -26,19 +26,20 @@ export default function DriveManagementPage({ section }: { section: "info" | "ad
 function DriveManagement({ choirId, section, userId }: { choirId: string; section: string; userId: string }) {
   const [dialog, setDialog] = useState<"name" | "invite" | null>(null);
   const [locked, setLocked] = useState<Operation | null>(null);
-  const resource = useReadResource<{ overview: Overview; members: Members }>(`${userId}:${choirId}:management`, async signal => {
-    const [overviewResponse, membersResponse] = await Promise.all([
-      diagnosticFetch(`/api/choirs/${choirId}/management`, { signal }),
-      diagnosticFetch(`/api/choirs/${choirId}/memberships`, { signal }),
-    ]);
-    for (const response of [overviewResponse, membersResponse]) if (!response.ok) throw new SettingsRequestError(response.status);
-    return { overview: await parseDiagnosticResponse(overviewResponse, driveManagementSchema), members: await parseDiagnosticResponse(membersResponse, managedMembershipsSchema) };
+  const resource = useReadResource<{ overview: Overview; members: Members | null }>(`${userId}:${choirId}:management`, async signal => {
+    const overviewResponse = await diagnosticFetch(`/api/choirs/${choirId}/management`, { signal });
+    if (!overviewResponse.ok) throw new SettingsRequestError(overviewResponse.status);
+    const overview = await parseDiagnosticResponse(overviewResponse, driveManagementSchema);
+    if (!overview.isMember) return { overview, members: null };
+    const membersResponse = await diagnosticFetch(`/api/choirs/${choirId}/memberships`, { signal });
+    if (!membersResponse.ok) throw new SettingsRequestError(membersResponse.status);
+    return { overview, members: await parseDiagnosticResponse(membersResponse, managedMembershipsSchema) };
   });
   const data = resource.data;
   const error = resource.error ? settingsError(resource.error, "云盘设置更新失败，已有内容已保留。") : null;
   const refresh = () => { setDialog(null); setLocked(null); void resource.refresh().catch(() => undefined); };
   const can = (operation: Operation) => data?.overview.capabilities.operations.operations.includes(operation);
-  const contacts = (operation: Operation, scope: "operations" | "management" = "operations") => data?.members.memberships.filter(member => member.status === "active" && (member.isOwner || member[scope].operations.includes(operation))).map(member => member.displayName).join("、") || "云盘拥有者";
+  const contacts = (operation: Operation, scope: "operations" | "management" = "operations") => data?.members?.memberships.filter(member => member.status === "active" && (member.isOwner || member[scope].operations.includes(operation))).map(member => member.displayName).join("、") || "云盘拥有者";
   function row(title: string, value: string, label: string, operation: Operation, destination: (() => void) | string) {
     const allowed = can(operation);
     return <section className="management-row">
@@ -51,10 +52,11 @@ function DriveManagement({ choirId, section, userId }: { choirId: string; sectio
     {!data && <p role={error ? "alert" : "status"}>{error ?? "正在读取云盘设置…"}</p>}
     {error && data && <p role="alert">{error}</p>}{error && <Button className="secondary-button" onPress={refresh}>重新读取</Button>}
     {data && <>
+      {!data.overview.isMember && <p className="permission-lock-explanation">你正在只读浏览此云盘。可了解功能与公开配置；修改设置需要成为成员并获得相应授权。</p>}
       <div className="management-list">
         {section === "info" && row("云盘名称", data.overview.name, "修改云盘名称", "editDriveInfo", () => setDialog("name"))}
         {section === "admission" && (data.overview.guestAdmissionMode === "invite" ? row("访客进入方式", "需要邀请码", "查看与轮换邀请码", "manageInvites", () => setDialog("invite")) : <section className="management-row"><h2>访客进入方式</h2><p>开放进入</p></section>)}
-        {section === "trash" && (resource.canMutate && can("trashFiles") ? <TrashContents choirId={choirId} onRestored={() => {}} /> : row("回收站", "恢复文件需要删除与恢复文件权限。", "查看权限说明", "trashFiles", () => {}))}
+        {section === "trash" && (resource.canMutate && can("trashFiles") ? <TrashContents choirId={choirId} onRestored={() => {}} /> : row("回收站", "删除的乐谱在此保留 30 天。有删除与恢复文件权限的成员可查看并恢复。", "查看权限说明", "trashFiles", () => {}))}
       </div>
       {dialog === "name" && resource.canMutate && can("editDriveInfo") && <NameSettings choirId={choirId} onClose={() => setDialog(null)} onSaved={refresh} />}
       {dialog === "invite" && resource.canMutate && can("manageInvites") && <InviteCodeDialog choirId={choirId} choirName={data.overview.name} onClose={() => setDialog(null)} />}

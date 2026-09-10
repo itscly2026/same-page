@@ -18,7 +18,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.route("**/api/**", async route => {
       const request = route.request();
       const pathname = new URL(request.url()).pathname;
-      if (pathname.endsWith("/management")) return route.fulfill({ json: { name: driveName, guestAdmissionMode: "invite", capabilities: { isOwner: true, operations: { operations: ["editDriveInfo"], sharedLayers: [] }, management: { operations: [], sharedLayers: [] } }, layers: [] } });
+      if (pathname.endsWith("/management")) return route.fulfill({ json: { isMember: true, name: driveName, guestAdmissionMode: "invite", capabilities: { isOwner: true, operations: { operations: ["editDriveInfo"], sharedLayers: [] }, management: { operations: [], sharedLayers: [] } }, layers: [] } });
       if (pathname.endsWith("/memberships")) return route.fulfill({ json: { actorId: "owner", capabilities: { isOwner: true, operations: { operations: [], sharedLayers: [] }, management: { operations: [], sharedLayers: [] } }, memberships: [] } });
       if (failRefresh && pathname.endsWith("/bootstrap")) return route.fulfill({ status: 503, body: "injected refresh failure" });
       if (pathname.endsWith("/settings")) return route.fulfill({ json: { name: driveName, nameRevision: 0, displayName, membershipRevision: 0, canEditDriveInfo: true } });
@@ -86,7 +86,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     const capabilities = { isOwner: false, operations: empty, management: empty };
     await page.route("**/api/**", async route => {
       const request = route.request(), pathname = new URL(request.url()).pathname;
-      if (pathname.endsWith("/management")) return route.fulfill({ json: { name: "排练云盘", guestAdmissionMode: "invite", capabilities, layers: [{ slot: "S", name: "Soprano", active: 1 }] } });
+      if (pathname.endsWith("/management")) return route.fulfill({ json: { isMember: true, name: "排练云盘", guestAdmissionMode: "invite", capabilities, layers: [{ slot: "S", name: "Soprano", active: 1 }] } });
       if (pathname.endsWith("/memberships")) return route.fulfill({ json: { actorId: "member", capabilities, memberships: [{ id: "owner", displayName: "小林", isOwner: 1, status: "active", revision: 0, operations: empty, management: empty }, { id: "member", displayName: "小花", isOwner: 0, status: "active", revision: 0, operations: { operations: [], sharedLayers: ["S"] }, management: empty }] } });
       if (pathname.endsWith("/permission-layers")) return route.fulfill({ json: { layers: [{ slot: "S", name: "Soprano" }] } });
       const result = fixture.resolve({ pathname, method: request.method(), identity: "admin", cookie: "" });

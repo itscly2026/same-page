@@ -247,7 +247,7 @@ describe("AppRoutes", () => {
         if (lost) { lost = false; throw new TypeError("response_lost"); }
         return Response.json({ action: body.action, revision: layer.revision, sharedLayerRevision: layer.revision, activeSharedSlots: layer.deletedAt === null && layer.active ? ["E"] : [] });
       }
-      if (input.endsWith("/management")) return Response.json({ name: "测试云盘", guestAdmissionMode: "open", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), layers: [] });
+      if (input.endsWith("/management")) return Response.json({ isMember: true, name: "测试云盘", guestAdmissionMode: "open", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), layers: [] });
       if (input.includes("/shared-layers")) return Response.json({ drive: { id: "choir-1", name: "测试云盘" }, sharedLayerRevision: layer.revision, activeSharedSlots: layer.deletedAt === null && layer.active ? ["E"] : [], layers: input.includes("state=deleted") === (layer.deletedAt !== null) ? [layer] : [] });
       return new Response(null, { status: 404 });
     }));
@@ -285,6 +285,7 @@ describe("AppRoutes", () => {
       if (input.endsWith("/permission-layers")) return Response.json({ layers: [{ slot: "S", name: "Soprano" }] });
       if (input.endsWith("/permission-changes")) return Response.json({ changes: [] });
       if (input.endsWith("/permissions") && init?.method === "PUT") return new Response(null, { status: 204 });
+      if (input.endsWith("/management")) return Response.json({ isMember: true, name: "测试云盘", guestAdmissionMode: "open", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), layers: [] });
       if (input.endsWith("/memberships")) return Response.json({ actorId: "owner", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), memberships: [member] });
       return new Response(null, { status: 404 });
     });
@@ -936,7 +937,7 @@ describe("AppRoutes", () => {
     let currentCode = "HGFEDCBA";
     const fetchMock = vi.fn().mockImplementation(
       (input: string, init?: RequestInit) => {
-        if (input.endsWith("/management")) return Promise.resolve(Response.json({ name: "小红花云盘", guestAdmissionMode: "invite", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), layers: [] }));
+        if (input.endsWith("/management")) return Promise.resolve(Response.json({ isMember: true, name: "小红花云盘", guestAdmissionMode: "invite", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), layers: [] }));
         if (input.endsWith("/memberships")) return Promise.resolve(Response.json({ actorId: "owner", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), memberships: [] }));
         if (input.endsWith("/join-code")) {
           return Promise.resolve(Response.json({ joinCode: currentCode }));
@@ -1161,7 +1162,7 @@ describe("AppRoutes", () => {
     fireEvent.change(screen.getByRole("searchbox", { name: /搜索.*中的乐谱/ }), {
       target: { value: "排练" },
     });
-    expect(screen.getByRole("heading", { name: "找到 1 份乐谱" })).toBeInTheDocument();
+    expect(screen.getByText("找到 1 份乐谱", { selector: ".library-title p" })).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("?q="))).toBe(false);
 
     fetchMock.mockImplementationOnce(() =>

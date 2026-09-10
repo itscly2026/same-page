@@ -8,7 +8,7 @@ afterEach(() => vi.unstubAllGlobals());
 it("keeps warm layer rows and retries the failed authority read before reenabling mutations", async () => {
   let failAccess = false;
   vi.stubGlobal("fetch", vi.fn<typeof fetch>(async input => {
-    if (String(input).endsWith("/management")) return failAccess ? new Response(null, { status: 503 }) : Response.json({ name: "云盘", guestAdmissionMode: "open", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), layers: [] });
+    if (String(input).endsWith("/management")) return failAccess ? new Response(null, { status: 503 }) : Response.json({ name: "云盘", isMember: true, guestAdmissionMode: "open", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), layers: [] });
     return Response.json({ drive: { id: "drive", name: "云盘" }, sharedLayerRevision: 0, activeSharedSlots: ["E"], layers: [{ slot: "E", name: "Ensemble", defaultColor: "#dc2626", grantedMemberCount: 0, sortOrder: 0, active: true, revision: 0, deletedAt: null, recoverUntil: null }] });
   }));
   const view = () => <MemoryRouter initialEntries={["/choirs/drive/shared-layers"]}><Routes><Route path="/choirs/:choirId/shared-layers" element={<SharedLayerManagementPage />} /></Routes></MemoryRouter>;

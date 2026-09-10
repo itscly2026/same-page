@@ -1,5 +1,5 @@
 import { useReturnViewport } from "../navigation/use-return-viewport";
-import { Menu as MenuIcon, ArrowLeft } from "lucide-react";
+import { Menu as MenuIcon, List, X } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { Button,  Form, Heading, Input,   Modal, ModalOverlay,  TextField } from "react-aria-components";
 import { useReturnState } from "../navigation/navigation-context";
@@ -30,10 +30,9 @@ export function DriveHeader({ choirId, choirName, userId, search, onSearch, onRe
     </header>
     <ModalOverlay className="drive-drawer-overlay" isOpen={drawerOpen && !loading} onOpenChange={setDrawerOpen} isDismissable>
       <Modal className="drive-drawer"><Dialog preserveOnNavigate aria-label="云盘菜单">{({ close }) => <DrawerBody>
-        <Link className="drive-drawer-switch" to="/drives" ><ArrowLeft size={18} aria-hidden="true" />云盘列表</Link>
-        <div className="dialog-heading"><Heading slot="title">{choirName}</Heading></div>
+        <div className="dialog-heading"><Heading slot="title">{choirName}</Heading><Button className="icon-button" aria-label="关闭云盘菜单" onPress={close}><X size={22} aria-hidden="true" /></Button></div>
         {management?.(close)}
-        <footer className="drive-drawer-footer"><Button className="text-button" onPress={close}>关闭云盘菜单</Button></footer>
+        <footer className="drive-drawer-footer"><Link className="drive-drawer-switch" to="/drives"><List size={18} aria-hidden="true" />云盘列表</Link></footer>
       </DrawerBody>}</Dialog></Modal>
     </ModalOverlay>
   </>;
