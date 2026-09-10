@@ -1,4 +1,5 @@
-import type { ReadState } from "../settings/read-resource";
+import { NAVIGATION_FRESH_MS, onDriveChange } from "../settings/navigation-events";
+import { revokeDriveReadResources, type ReadState } from "../settings/read-resource";
 import { localDatabase } from "../platform/local-database";
 import { liveQuery } from "dexie";
 import { readRetainedScores } from "../offline/retained-scores";
@@ -41,10 +42,16 @@ const refreshFailed = "暂时无法更新乐谱列表，当前内容已保留。
 export class DriveLibrary {
   private retainedSubscription: { unsubscribe(): void } | null = null;
   private authenticated = false;
+  private confirmedAt = -Infinity;
+  private stopObserving: (() => void) | null = null;
   setAuthenticated(value: boolean) {
     if (this.authenticated === value) return;
     this.authenticated = value;
-    if (!value && this.snapshot.access.kind === "opened") this.publish({ access: localAccess(this.snapshot.access) });
+    if (!value) {
+      invalidateDriveLibrary(this.ownerKey, this.choirId);
+      this.confirmedAt = -Infinity;
+      if (this.snapshot.access.kind === "opened") this.publish({ access: localAccess(this.snapshot.access), reading: { request: "idle", authority: "unconfirmed" } });
+    }
     if (this.active) void this.changed();
   }
   private snapshot: DriveLibrarySnapshot;
@@ -81,15 +88,28 @@ export class DriveLibrary {
   start = () => {
     if (this.active) return;
     this.active = true;
+    this.view = readLibraryView(this.ownerKey, this.choirId);
+    this.restorePending = true;
     this.lifetimeController = new AbortController();
     this.ownerSignal = AbortSignal.any([captureDriveLibraryOwner(this.ownerKey), this.lifetimeController.signal]);
     this.workspace = this.ownerKey.startsWith("user:")
       ? captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey(this.ownerKey.slice(5)), this.choirId, "")).catch(() => null)
       : currentLocalOwnerKey().then(owner => owner?.startsWith("guest:") ? captureLocalWorkspaceSession(createLocalWorkspace(owner, this.choirId, "")) : null).catch(() => null);
+    this.stopObserving = onDriveChange((driveId, permissions, resource) => {
+      if ((resource === "display-name" && !permissions) || driveId !== this.choirId) return;
+      this.confirmedAt = -Infinity;
+      this.request?.controller.abort(); this.request = null;
+      this.publish({ reading: { ...this.snapshot.reading, request: "idle" } });
+      if (permissions && this.snapshot.access.kind === "opened") this.publish({ access: localAccess(this.snapshot.access), reading: { request: "idle", authority: "unconfirmed" } });
+    });
     const cached = readDriveLibrary(this.ownerKey, this.choirId);
+    const confirmed = Boolean(cached && (this.authenticated || this.ownerKey.startsWith("guest:")));
+    this.confirmedAt = confirmed ? cached!.updatedAt : -Infinity;
     this.publish({
+      view: { search: this.view.search, sort: this.view.sort },
+      reading: { request: "idle", authority: confirmed ? "confirmed" : "unconfirmed" },
       access: cached
-        ? localAccess({ kind: "opened", choir: cached.choir, result: cached.result, isMember: cached.isMember ?? false })
+        ? (confirmed ? { kind: "opened", choir: cached.choir, result: cached.result, isMember: cached.isMember ?? false } : localAccess({ kind: "opened", choir: cached.choir, result: cached.result, isMember: cached.isMember ?? false }))
         : { kind: "loading", choir: readDriveSummary(this.ownerKey, this.choirId) ?? undefined },
     });
     this.localController = new AbortController();
@@ -98,11 +118,12 @@ export class DriveLibrary {
       if (signal.aborted || !access || !["loading", "failed"].includes(this.snapshot.access.kind)) return;
       this.publish({ access });
     }).catch(() => undefined);
-    void this.load(true);
+    void this.refreshIfStale();
   };
 
   stop = () => {
     this.active = false;
+    this.stopObserving?.(); this.stopObserving = null;
     this.retainedSubscription?.unsubscribe();
     this.retainedSubscription = null;
     this.lifetimeController.abort();
@@ -113,11 +134,16 @@ export class DriveLibrary {
     this.joinController = null;
   };
 
+  whenSettled = () => this.request?.done ?? Promise.resolve();
+
+  refreshIfStale = () => Date.now() - this.confirmedAt < NAVIGATION_FRESH_MS ? Promise.resolve() : this.refresh();
+
   refresh = () => this.load(this.snapshot.access.kind !== "opened");
 
   changed = () => {
     if (!this.isActive()) return Promise.resolve();
     invalidateDriveLibrary(this.ownerKey, this.choirId);
+    this.confirmedAt = -Infinity;
     this.request?.controller.abort();
     this.request = null;
     return this.load(false);
@@ -129,7 +155,7 @@ export class DriveLibrary {
     this.request = null;
     this.localController?.abort();
     const access = { ...this.snapshot.access, result: { ...this.snapshot.access.result, scores: this.snapshot.access.result.scores.filter(score => score.id !== scoreId) } };
-    rememberDriveLibrary(this.ownerKey, this.choirId, access);
+    rememberDriveLibrary(this.ownerKey, this.choirId, access, this.confirmedAt);
     this.publish({ access });
     const signal = this.ownerSignal;
     const workspace = await this.workspace;
@@ -142,7 +168,7 @@ export class DriveLibrary {
     this.request = null;
     this.localController?.abort();
     const access = { ...this.snapshot.access, choir: { ...this.snapshot.access.choir, name } };
-    rememberDriveLibrary(this.ownerKey, this.choirId, access);
+    rememberDriveLibrary(this.ownerKey, this.choirId, access, this.confirmedAt);
     this.publish({ access });
     const signal = this.ownerSignal;
     const workspace = await this.workspace;
@@ -209,7 +235,7 @@ export class DriveLibrary {
       .then(async (access) => {
         if (this.request !== pending || !this.isActive() || controller.signal.aborted) return;
         if (!access || access.kind === "failed") {
-          await this.failed(signal);
+          await this.failed(signal, access?.kind === "failed" && access.authenticationRequired);
           return;
         }
         if (access.kind === "opened" && !access.local) {
@@ -218,13 +244,14 @@ export class DriveLibrary {
         }
         if (this.request !== pending || signal.aborted) return;
         if (access.kind === "opened") {
-          if (!access.local) rememberDriveLibrary(this.ownerKey, this.choirId, access);
+          if (!access.local) { this.confirmedAt = Date.now(); rememberDriveLibrary(this.ownerKey, this.choirId, access, this.confirmedAt); }
         } else {
           invalidateDriveLibrary(this.ownerKey, this.choirId);
         }
         this.publish({ reading: { request: "pending", authority: access.kind === "denied" || access.kind === "not-found" ? "revoked" : access.kind === "opened" && !access.local ? "confirmed" : "unconfirmed" } });
         this.localController?.abort();
         if (access.kind === "denied" || access.kind === "not-found") {
+          revokeDriveReadResources(this.choirId);
           this.publish({ access: this.retainedAccess([]), refreshMessage: null });
           const captured = await workspace;
           if (captured) await rememberDriveAccessRevoked(captured, signal).catch(() => undefined);
@@ -284,11 +311,17 @@ export class DriveLibrary {
     };
   }
 
-  private async failed(signal: AbortSignal) {
-    this.publish({ reading: { request: "pending", authority: "unconfirmed" } });
+  private async failed(signal: AbortSignal, authenticationRequired = false) {
+    this.confirmedAt = -Infinity;
     const current = this.snapshot.access;
     if (current.kind === "opened") {
-      this.publish({ access: localAccess(current), refreshMessage: refreshFailed });
+      if (authenticationRequired) {
+        invalidateDriveLibrary(this.ownerKey, this.choirId);
+        this.publish({ access: localAccess(current), reading: { request: "pending", authority: "signed-out" }, refreshMessage: "登录已失效，请重新登录后再试。" });
+      } else {
+        if (!current.local) rememberDriveLibrary(this.ownerKey, this.choirId, current, -Infinity);
+        this.publish({ refreshMessage: refreshFailed });
+      }
       return;
     }
     const local = await this.readLocal(signal).catch(() => null);

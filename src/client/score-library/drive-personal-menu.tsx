@@ -1,3 +1,4 @@
+import { NAVIGATION_FRESH_MS } from "../settings/navigation-events";
 import { Button, MenuItem, MenuTrigger, Popover } from "react-aria-components";
 import { driveSettingsSchema } from "../../shared/choirs";
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
@@ -13,7 +14,7 @@ export function DrivePersonalMenu(props: Props) {
     const response = await diagnosticFetch(`/api/choirs/${choirId}/settings`, { signal });
     if (!response.ok) throw new SettingsRequestError(response.status);
     return parseDiagnosticResponse(response, driveSettingsSchema);
-  });
+  }, undefined, NAVIGATION_FRESH_MS);
   return <PersonalActions {...props} displayName={props.displayName ?? settings.data?.displayName} />;
 }
 

@@ -88,3 +88,30 @@ it("starts the new owner's library after the identity observer clears previous c
   fireEvent.change(screen.getByRole("textbox", { name: "搜索乐谱" }), { target: { value: "秋日" } });
   expect(readLibraryView("user:one", drive).search).toBe("秋日");
 });
+
+it("shares an unfinished library read across a route handoff and fences a same-user replacement session", async () => {
+  const { act } = await import("@testing-library/react");
+  const { observeNavigationSession } = await import("../settings/navigation-events");
+  observeNavigationSession("one:session-one");
+  let finish!: (response: Response) => void;
+  const fetch = vi.fn(() => new Promise<Response>(resolve => { finish = resolve; }));
+  vi.stubGlobal("fetch", fetch);
+  function Library({ sessionId }: { sessionId: string }) {
+    const { snapshot } = useDriveLibrary("user:one", drive, true, true, sessionId);
+    return <p>{snapshot.access.kind === "opened" && snapshot.access.isMember ? snapshot.access.choir.name : "pending"}</p>;
+  }
+  const one = render(<Library sessionId="session-one" />);
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  one.unmount();
+  const two = render(<Library sessionId="session-one" />);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  const oldResponse = finish;
+  act(() => observeNavigationSession("one:session-two"));
+  two.rerender(<Library sessionId="session-two" />);
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  const payload = (name: string) => Response.json({ choir: { id: drive, name, guestAdmissionMode: "open" }, scores: [], storage: { usedBytes: 0, limitBytes: 1000 }, permissions: { capabilities: noCapabilities(), access: "membership" } });
+  await act(async () => { oldResponse(payload("old session")); });
+  expect(screen.queryByText("old session")).not.toBeInTheDocument();
+  await act(async () => { finish(payload("new session")); });
+  await screen.findByText("new session");
+});

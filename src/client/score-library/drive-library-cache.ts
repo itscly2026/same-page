@@ -1,3 +1,4 @@
+import { onNavigationReset, onDriveChange } from "../settings/navigation-events";
 import type { ChoirSummary } from "../../shared/choirs";
 import type { ScoreListResponse } from "../../shared/scores";
 import { onReaderIdentityChange } from "../reader/reader-cache-events";
@@ -34,6 +35,12 @@ let activeOwner: DriveCacheOwnerKey | null = null;
 let ownerController = new AbortController();
 let returningDrive: { ownerKey: DriveCacheOwnerKey; choirId: string } | null = null;
 
+onNavigationReset(clearDriveLibraryCache);
+onDriveChange((driveId, permissions, resource) => {
+  if (resource === "display-name" && !permissions) return;
+  if (activeOwner) invalidateDriveLibrary(activeOwner, driveId);
+});
+
 onReaderIdentityChange(() => {
   recordDiagnostic("identity-clear");
   clearDriveLibraryCache();
@@ -68,12 +75,13 @@ export function rememberDriveLibrary(
   ownerKey: DriveCacheOwnerKey,
   choirId: string,
   library: Pick<DriveLibrarySnapshot, "choir" | "result" | "isMember">,
+  confirmedAt = Date.now(),
 ) {
   activateOwner(ownerKey);
   libraries.delete(choirId);
   libraries.set(choirId, {
     ...library,
-    updatedAt: Date.now(),
+    updatedAt: confirmedAt,
   });
   rememberSummary(choirId, library.choir);
   evictOverflow();

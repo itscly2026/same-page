@@ -10,7 +10,7 @@ export type DriveLibraryAccess =
   | { kind: "join-required"; choir: ChoirSummary }
   | { kind: "denied"; admissionBlocked?: boolean }
   | { kind: "not-found" }
-  | { kind: "failed" };
+  | { kind: "failed"; authenticationRequired?: boolean };
 
 type LoadedAccess = Exclude<DriveLibraryAccess, { kind: "loading" }>;
 
@@ -22,19 +22,16 @@ export interface DriveLibraryTransport {
 export function driveLibraryTransport(choirId: string): DriveLibraryTransport {
   const bootstrap = async (signal: AbortSignal, authenticated: boolean): Promise<LoadedAccess> => {
     const response = await diagnosticFetch(`/api/choirs/${choirId}/bootstrap`, { signal });
-    if (response.status === 401 && authenticated) return { kind: "failed" };
+    if (response.status === 401 && authenticated) return { kind: "failed", authenticationRequired: true };
     if ([401, 403].includes(response.status)) {
       const body = await response.json().catch(() => null);
-      if (authenticated && body?.error === "authentication_required") return { kind: "failed" };
+      if (authenticated && body?.error === "authentication_required") return { kind: "failed", authenticationRequired: true };
       return { kind: "denied", ...(body?.error === "membership_requires_admin" ? { admissionBlocked: true } : {}) };
     }
     if (response.status === 404) return { kind: "not-found" };
     if (!response.ok) return { kind: "failed" };
     const payload = await parseDiagnosticResponse(response, driveBootstrapResponseSchema);
     signal.throwIfAborted();
-    if (authenticated && payload.permissions.access !== "guest") {
-      void diagnosticFetch("/api/guest/session", { method: "DELETE", signal }).catch(() => null);
-    }
     return {
       kind: "opened", choir: payload.choir, isMember: payload.permissions.access === "membership",
       result: { scores: payload.scores, storage: payload.storage, permissions: { capabilities: payload.permissions.capabilities } },

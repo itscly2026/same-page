@@ -83,7 +83,7 @@ describe("DriveLibrary interface", () => {
     expect(library.getSnapshot().access).toMatchObject({ isMember: true, result: { permissions: { capabilities: opened().result.permissions.capabilities } } });
     transport.load.mockResolvedValueOnce({ kind: "failed" });
     await library.changed();
-    expect(library.getSnapshot()).toMatchObject({ view: { search: "秋日", sort: "updated" }, access: { local: true, isMember: false, result: { permissions: { capabilities: noCapabilities() } } } });
+    expect(library.getSnapshot()).toMatchObject({ view: { search: "秋日", sort: "updated" }, access: { isMember: true, result: { permissions: { capabilities: opened().result.permissions.capabilities } } } });
     expect(library.getSnapshot().scores).toHaveLength(1);
     library.restoreScroll(scroll);
     expect(scroll).toHaveBeenCalledTimes(1);
@@ -182,11 +182,11 @@ describe("DriveLibrary interface", () => {
     expect(library.getSnapshot().scores).toEqual([]);
   });
 
-  it("restores cached content without cached authority, then accepts current membership", async () => {
+  it("reuses a recent confirmation, then applies a forced permission refresh", async () => {
     rememberDriveLibrary(owner, choirId, opened());
     const response = deferred<Opened>();
     const { library } = create(() => response.promise);
-    expect(library.getSnapshot().access).toMatchObject({ kind: "opened", isMember: false, result: { permissions: { capabilities: noCapabilities() } } });
+    expect(library.getSnapshot().access).toMatchObject({ kind: "opened", isMember: true, result: { permissions: { capabilities: opened().result.permissions.capabilities } } });
     response.resolve(opened());
     await library.refresh();
     expect(library.getSnapshot().access).toMatchObject({ isMember: true, result: { permissions: { capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()) } } });
@@ -378,4 +378,30 @@ it("keeps only verified retained copies after confirmed denial, observes corrupt
   expect(offline.getSnapshot().scores.map(score => score.id)).toEqual(["retained-only"]);
   await localDatabase.offlineScores.update(record.key, { blob: new Blob(["corrupt"] ) });
   await vi.waitFor(() => expect(offline.getSnapshot().scores).toEqual([]));
+});
+
+it("returns ten times without reading again, then quietly refreshes expired data and handles authentication loss", async () => {
+  let now = Date.now();
+  vi.spyOn(Date, "now").mockImplementation(() => now);
+  const { library: initial } = create(async () => opened());
+  await initial.refresh(); initial.stop();
+  for (let i = 0; i < 10; i++) {
+    const { library, transport } = create(async () => opened());
+    await library.refreshIfStale();
+    expect(transport.load).not.toHaveBeenCalled();
+    expect(library.getSnapshot()).toMatchObject({ reading: { authority: "confirmed", request: "idle" }, access: { isMember: true } });
+    library.stop(); now += 100;
+  }
+  now += 60_001;
+  const response = deferred<Opened>();
+  const { library, transport } = create(() => response.promise);
+  expect(library.getSnapshot()).toMatchObject({ access: { isMember: true }, reading: { request: "pending" } });
+  const refresh = library.refreshIfStale();
+  expect(library.refresh()).toBe(refresh);
+  response.resolve(opened()); await refresh;
+  expect(transport.load).toHaveBeenCalledTimes(1);
+  transport.load.mockResolvedValueOnce({ kind: "failed", authenticationRequired: true });
+  await library.refresh();
+  expect(library.getSnapshot()).toMatchObject({ access: { local: true, isMember: false }, reading: { authority: "signed-out" } });
+  expect(readDriveLibrary(owner, choirId)).toBeNull();
 });

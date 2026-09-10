@@ -45,6 +45,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
       await route.fulfill(result);
     });
     const page = await context.newPage();
+    await page.clock.setFixedTime(new Date("2026-09-10T00:00:00Z"));
     await page.goto(`${server.origin}/choirs/visual-choir`);
     await expect(page.locator(".file-row")).toHaveCount(60);
     await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).fill("秋日");
@@ -55,22 +56,25 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await score.click();
     await page.locator("[data-pdf-canvas-active]").first().waitFor();
     hold();
+    await page.clock.setFixedTime(new Date("2026-09-10T00:01:01Z"));
     await page.goBack();
     await expect(page.locator(".file-row")).toHaveCount(60);
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(savedTop);
-    await expect(page.getByRole("button", { name: "上传 PDF", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "上传 PDF", exact: true })).toBeAttached();
     await page.screenshot({ path: path.join(evidence, `${name}-cached-return.png`) });
 
     // Scroll again before revalidation finishes. The old return target is spent.
     await page.evaluate(() => window.scrollTo(0, 900));
     const currentTop = await page.evaluate(() => window.scrollY);
     release(); waiting = null;
+    await expect(page.getByRole("button", { name: "刷新乐谱列表" })).not.toHaveAttribute("aria-disabled", "true");
     await expect(page.getByRole("button", { name: "上传 PDF", exact: true })).toBeAttached();
     // WebKit may adjust its scroll anchor by a CSS pixel as management controls return.
     await expect.poll(async () => Math.abs(await page.evaluate(() => window.scrollY) - currentTop)).toBeLessThanOrEqual(2);
 
     hold();
     const before = requests;
+    await page.clock.setFixedTime(new Date("2026-09-10T00:02:02Z"));
     await page.evaluate(() => {
       window.dispatchEvent(new Event("focus"));
       window.dispatchEvent(new Event("online"));
@@ -93,7 +97,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.screenshot({ path: path.join(evidence, `${name}-refreshed.png`) });
     await writeFile(path.join(evidence, `${name}-lifecycle.json`), JSON.stringify({
       engine: name, requests, savedTop, currentTop,
-      checks: ["cached return after DOM commit", "cache does not grant management", "no background scroll jump", "coalesced foreground requests", "failed refresh retains content", "retry preserves search and sort"],
+      checks: ["cached return after DOM commit", "same-session confirmation survives background refresh", "no background scroll jump", "coalesced foreground requests", "failed refresh retains content", "retry preserves search and sort"],
       scope: "local application with synthetic network; desktop browser, no real-device or production claim",
     }, null, 2));
   });
