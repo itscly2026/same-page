@@ -10,8 +10,7 @@ import { scoreDisplayName } from "../../shared/score-display-name";
 import { BackButton } from "../navigation/back-button";
 import { ReaderLoading } from "../navigation/reader-loading";
 import { useAppNavigation, useExitLayer } from "../navigation/navigation-context";
-import { DisplayRecovery } from "../reader/display-recovery";
-import type { ScoreDocument } from "../reader/image-document";
+import { ReaderPresentationContext, useReaderPresentation } from "../reader/use-reader-presentation";
 import "../reader/reader-ux.css";
 import { useReaderSession } from "../reader/use-reader-session";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -210,8 +209,6 @@ function ReaderPageContent() {
   const { editor, persistence } = useAnnotationEditor(workspace);
   const editing = editor !== null && editor === editingEditor;
   const [exportOpen, setExportOpen] = useState(false);
-  const [visibleDisplay, setVisibleDisplay] = useState<ScoreDocument | null>(null);
-  const [failedDisplay, setFailedDisplay] = useState<ScoreDocument | null>(null);
   const reader = useReaderSession(workspace, identity.authenticatedUserId, identity.authenticatedSessionId);
   const { score, document, offline: loadedOffline, cloudState, downloading, downloadMessage, preparation } = reader.snapshot;
   const documentScopeKey = document ? workspace?.scopeKey ?? null : null;
@@ -243,6 +240,7 @@ function ReaderPageContent() {
       choirId,
       scoreId,
     });
+  const presentation = useReaderPresentation(reader.presentation, document, currentPage, editing);
   const pager = usePagedReader({
     currentPage,
     pageCount: document?.numPages ?? 1,
@@ -452,15 +450,7 @@ function ReaderPageContent() {
   const readerTitle = scoreDisplayName(score.fileName);
 
   return (
-    <DisplayRecovery.Provider value={{
-      currentPage,
-      ready: page => { if (page === currentPage) { setVisibleDisplay(document); setFailedDisplay(null); reader.confirmDisplay(document); } },
-      failed: (page, reason) => {
-        if (page !== currentPage) return;
-        setFailedDisplay(document);
-        if (!editing) reader.recoverDisplay(reason);
-      },
-    }}>
+    <ReaderPresentationContext.Provider value={presentation.context}>
     <main className="reader-shell" data-chrome-visible={chromeVisible || undefined}>
       <DiagnosticReportModal
         reader={diagnosticReader}
@@ -478,8 +468,8 @@ function ReaderPageContent() {
           乐谱已移入回收站。本机离线副本和未同步笔记仍保留，恢复后可继续同步。
         </aside>
       ) : null}
-      {visibleDisplay !== document && failedDisplay !== document ? <ReaderLoading choirId={choirId} fileName={score.fileName} /> : null}
-      {failedDisplay === document ? <div className="reader-display-recovery" role="alert">
+      {presentation.status === "pending" ? <ReaderLoading choirId={choirId} fileName={score.fileName} /> : null}
+      {presentation.status === "failed" ? <div className="reader-display-recovery" role="alert">
         <span>页面显示失败，本机草稿仍保留。</span>{displayChoices}{diagnosticDialog}
       </div> : null}
       {reader.snapshot.modeMessage ? <p className="reader-display-notice" role="status">{reader.snapshot.modeMessage}{reader.snapshot.mode === "images" && <Button className="text-button" onPress={() => navigation.afterEditing(reader.retry)}>重试 PDF 阅读</Button>}</p> : null}
@@ -771,7 +761,7 @@ function ReaderPageContent() {
         )}
       </div>
     </main>
-    </DisplayRecovery.Provider>
+    </ReaderPresentationContext.Provider>
   );
 }
 

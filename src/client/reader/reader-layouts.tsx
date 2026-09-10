@@ -464,6 +464,7 @@ function PdfPageThumbnail({
   const aspectRatio = usePdfPageAspectRatio(document, pageNumber);
   return (
     <PdfPageCanvas
+      presentation={false}
       className="pdf-thumbnail"
       document={document}
       pageNumber={pageNumber}

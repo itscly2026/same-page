@@ -1,7 +1,7 @@
 import { pdfFailureCategory, pdfFailureReason, pdfEngineVersion, recordFailure } from "../diagnostics/diagnostics";
 import { acquireRenderSlot, sizeRenderCanvas, releaseRenderCanvas } from "./render-budget";
-import { DisplayRecovery } from "./display-recovery";
-import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { usePagePresentation } from "./use-reader-presentation";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { ScoreDocument } from "./image-document";
 import { completeLoadingJourney } from "../performance/loading-performance";
@@ -13,6 +13,7 @@ export function PdfPageCanvas({
   aspectRatio = 0.707,
   className = "pdf-page-canvas",
   onRenderStart,
+  presentation = true,
 }: {
   document: ScoreDocument;
   pageNumber: number;
@@ -20,10 +21,8 @@ export function PdfPageCanvas({
   aspectRatio?: number;
   className?: string;
   onRenderStart?(pageNumber: number): PdfPageRenderLease;
+  presentation?: boolean;
 }) {
-  const recovery = useContext(DisplayRecovery);
-  const recoveryRef = useRef(recovery);
-  useLayoutEffect(() => { recoveryRef.current = recovery; });
   const [attempt, setAttempt] = useState(0);
   const canvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
   const frontCanvas = useRef(0);
@@ -33,12 +32,7 @@ export function PdfPageCanvas({
   const visibleCanvas = painted?.canvas ?? null;
   const [error, setError] = useState(false);
 
-  useEffect(() => {
-    if (!error && className === "pdf-page-canvas" && painted?.document === document &&
-      painted.pageNumber === pageNumber && recovery?.currentPage === pageNumber) {
-      recoveryRef.current?.ready(pageNumber);
-    }
-  }, [painted, document, pageNumber, recovery?.currentPage, className, error]);
+  const reportFailure = usePagePresentation(document, pageNumber, painted, error, presentation);
 
   useLayoutEffect(() => {
     const lease = onRenderStart?.(pageNumber) ?? null;
@@ -133,7 +127,7 @@ export function PdfPageCanvas({
         if (active && !(reason instanceof Error && reason.name === "RenderingCancelledException")) {
           recordFailure({ operation: "pdf", category: pdfFailureCategory(reason), stage: "decode", pdfReason: pdfFailureReason(reason, true), engineVersion: "kind" in document ? document.manifest.engine : pdfEngineVersion });
           setError(true);
-          if (className === "pdf-page-canvas") recoveryRef.current?.failed(pageNumber, reason instanceof Error && reason.name === "Error" && pdfFailureCategory(reason) === "internal" ? Object.assign(new Error("pdf_page_render_failed"), { name: "PdfPageRenderError" }) : reason);
+          reportFailure(reason instanceof Error && reason.name === "Error" && pdfFailureCategory(reason) === "internal" ? Object.assign(new Error("pdf_page_render_failed"), { name: "PdfPageRenderError" }) : reason);
           lease?.failed?.();
         }
       });
@@ -143,7 +137,7 @@ export function PdfPageCanvas({
       abort.abort();
       cancelRender?.();
     };
-  }, [document, onRenderStart, pageNumber, width, attempt, className]);
+  }, [document, onRenderStart, pageNumber, width, attempt, reportFailure]);
 
   return (
     <div
