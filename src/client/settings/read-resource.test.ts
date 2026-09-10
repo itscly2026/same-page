@@ -15,7 +15,9 @@ it("reuses only successful confirmations; expiry, manual refresh and failure nev
   await resource.read(load, NAVIGATION_FRESH_MS);
   for (let i = 0; i < 10; i++) { now += 1000; await resource.read(load, NAVIGATION_FRESH_MS); }
   expect(load).toHaveBeenCalledTimes(1);
-  now += NAVIGATION_FRESH_MS;
+  resource.update("confirmed");
+  now = 70_001;
+  expect(resource.fresh(NAVIGATION_FRESH_MS)).toBe(false);
   const pending = deferred<string>();
   const refresh = vi.fn(() => pending.promise);
   const one = resource.read(refresh, NAVIGATION_FRESH_MS);

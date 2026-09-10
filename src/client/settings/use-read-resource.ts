@@ -29,5 +29,5 @@ export function useReadResource<T>(key: string, load: (signal: AbortSignal) => P
     // The resource owns its request; one departing consumer cannot cancel others.
     return () => { window.removeEventListener("focus", refreshIfStale); window.removeEventListener("online", refreshIfStale); };
   }, [resource, staleTime]);
-  return { ...state, refresh, confirm: resource.confirm, clear: resource.clear, loading: !state.data && state.request === "pending", canMutate: state.authority === "confirmed" && (staleTime > 0 || (state.request !== "pending" && !state.error)) };
+  return { ...state, refresh, confirm: resource.confirm, update: resource.update, clear: resource.clear, loading: !state.data && state.request === "pending", canMutate: state.authority === "confirmed" && (staleTime > 0 || (state.request !== "pending" && !state.error)) };
 }

@@ -22,10 +22,12 @@ export class ReadResource<T> {
   };
   clear = () => { this.invalidate(true); this.publish({ data: null, request: "idle", authority: "revoked", error: null }); };
   restore(data: T) { if (!this.state.data && this.state.authority === "unconfirmed") this.publish({ ...this.state, data }); }
-  confirm = (data: T) => {
-    this.invalidate(); this.confirmedAt = Date.now();
+  private accept(data: T, confirmedAt: number) {
+    this.invalidate(); this.confirmedAt = confirmedAt;
     this.publish({ data, request: "idle", authority: "confirmed", error: null });
-  };
+  }
+  confirm = (data: T) => this.accept(data, Date.now());
+  update = (data: T) => this.accept(data, this.confirmedAt);
   read(load: (signal: AbortSignal) => Promise<T>, staleTime = 0): Promise<void> {
     if (this.pending) return this.pending.done;
     if (this.fresh(staleTime)) return Promise.resolve();

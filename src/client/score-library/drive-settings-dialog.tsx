@@ -59,7 +59,7 @@ export function DriveSettingsDialog({ choirId, userId, field, onClose, onSaved }
       const result = await response.json(); if (!current()) return;
       const next = field === "name" ? { ...settings, name: parsed.data, nameRevision: result.revision }
         : { ...settings, displayName: parsed.data, membershipRevision: result.revision };
-      resource.confirm(driveSettingsSchema.parse(next));
+      resource.update(driveSettingsSchema.parse(next));
       await finish();
     } catch (error) {
       if (current()) {
