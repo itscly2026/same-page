@@ -3232,3 +3232,7 @@ h1 {
 .manual-contents ol { padding-left: 1.5rem; }
 .privacy-document h2 { scroll-margin-top: 5rem; }
 .manual-back { font-size: .875rem; }
+.manual-topic { margin-top: 1.75rem; }
+.manual-topic h3 { margin: 0 0 .75rem; font-size: 1.05rem; color: var(--ink); }
+.manual-topic p { margin: .75rem 0 0; }
+.manual-topic ol { padding-left: 1.5rem; }

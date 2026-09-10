@@ -18,7 +18,7 @@ for (const width of [390, 1280]) {
   await page.getByRole("link", { name: "使用手册", exact: true }).click();
   await page.getByRole("navigation", { name: "手册目录" }).waitFor();
   await page.screenshot({ path: `artifacts/verification/issue-260/manual-${width}.png` });
-  await page.getByRole("link", { name: "离线使用与联网同步", exact: true }).click();
+  await page.getByRole("link", { name: "准备离线排练与安装合谱", exact: true }).click();
   await page.waitForFunction(() => location.hash === "#offline" && document.querySelector("h2#offline").getBoundingClientRect().top < 200);
   const top = await page.locator("h2#offline").evaluate(el => el.getBoundingClientRect().top);
   if (top < 0 || top > 200) throw new Error(`Anchor target not visible: ${top}`);
