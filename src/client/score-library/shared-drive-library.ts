@@ -31,7 +31,7 @@ export function retainDriveLibrary(library: DriveLibrary) {
   const retained = entry;
   return () => {
     if (--retained.users === 0) void library.whenSettled().finally(() => {
-      if (retained.users === 0) library.stop();
+      if (retained.users === 0 && libraries.get(keys.get(library)!) === retained) library.stop();
     });
   };
 }
