@@ -74,7 +74,7 @@ const productFeatures = [
     title: "替换乐谱，保留笔记",
     illustration: replacePdfIllustration,
     description:
-      "谱子有局部修订时，管理员可以直接替换 PDF；已有笔记仍按原页码和位置显示，不必重新标注。",
+      "谱子有局部修订时，可以直接替换 PDF；已有笔记仍按原页码和位置显示，不必重新标注。",
   },
   {
     title: "离线可用，联网同步",
