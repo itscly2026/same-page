@@ -148,6 +148,7 @@ function checksForPath(file) {
   if (file.startsWith("public/") || file === "index.html") {
     return ["visual", "pwa", "performance", "build", "smoke", "deploy"];
   }
+  if (file === "scripts/retire-image-consumer.mjs") return ["client", "build", "smoke", "deploy"];
   if (file.startsWith("scripts/")) {
     if (file.startsWith("scripts/ci-scope.")) return checkNames.filter(name => name !== "deploy");
     if (file.startsWith("scripts/verify-pwa-update.")) return ["client", "pwa"];

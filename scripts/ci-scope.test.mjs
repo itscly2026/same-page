@@ -266,3 +266,21 @@ test("the workflow gate rejects failure, cancellation and unexpected skips of se
     }
   }
 });
+
+test("retired consumer deployment fix builds and deploys on main", t => {
+  const repo = repository(t);
+  repo.put("scripts/retire-image-consumer.mjs"); repo.commit();
+  const scope = repo.scope("push", { before: repo.base });
+  for (const key of ["client", "build", "smoke", "deploy"]) assert.equal(scope[key], true, key);
+});
+
+test("consumer retirement runs under release admission after artifact validation and before schema removal and publish", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  const names = ["Admit release under production lock", "Verify artifact before production writes", "Detach retired image queue consumer", "Apply production database migrations", "Deploy Worker and assets"];
+  const positions = names.map(name => workflow.indexOf(`- name: ${name}`));
+  assert(positions.every((value, i) => value >= 0 && (i === 0 || value > positions[i - 1])));
+  const step = workflow.slice(positions[2], positions[3]);
+  assert.match(step, /if: steps.admission.outputs.proceed == 'true'/);
+  assert.match(step, /run: node scripts\/retire-image-consumer.mjs/);
+  assert.doesNotMatch(step, /continue-on-error|\|\| true/);
+});
