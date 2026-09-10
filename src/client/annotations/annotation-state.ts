@@ -1,3 +1,4 @@
+import { GUEST_NOTE_LAYER_ID, guestNoteLayer, isLocalExperience } from "./guest-notes";
 import { reconcileAnnotationReadingPreferences } from "../reader/reading-preferences";
 import { diagnoseLocalOperation } from "../diagnostics/local-operation";
 import { hasValidSnapshotShape, hasCompleteOfflineLayers } from "../offline/offline-score-verification";
@@ -50,6 +51,9 @@ export interface DraftInput {
 }
 
 export async function cacheAnnotationLayers(workspace: LocalWorkspace, layers: AnnotationLayerSummary[], sharedLayerRevision?: number, preferenceVersion?: string) {
+  if (isLocalExperience(workspace)) layers = [
+    ...layers.filter(layer => layer.kind === "shared").map(layer => ({ ...layer, canEdit: false })), guestNoteLayer(),
+  ];
   return withLocalWorkspaceTransaction(workspace, "rw", [localDatabase.annotationLayers,
     localDatabase.annotations, localDatabase.annotationSyncCursors, localDatabase.offlineSnapshots, localDatabase.readingPreferences], async () => {
     if (sharedLayerRevision !== undefined && !await acceptSharedLayerAvailability(workspace, {
@@ -152,6 +156,7 @@ export async function saveAnnotationDraft(
   input: DraftInput,
 ) {
   await assertLocalWorkspaceActive(workspace);
+  if (isLocalExperience(workspace) && input.layerId !== GUEST_NOTE_LAYER_ID) throw new Error("guest_notes_are_local_only");
   await localDatabase.transaction(
     "rw",
     [
@@ -277,6 +282,7 @@ export async function cleanupUncreatedDeleteConflicts(
 
 export async function queueScoreDrafts(workspace: LocalWorkspace) {
   await assertLocalWorkspaceActive(workspace);
+  if (isLocalExperience(workspace)) return 0;
   return localDatabase.transaction(
     "rw",
     localDatabase.system,

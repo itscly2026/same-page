@@ -151,7 +151,7 @@ it("clearing files preserves the held document and annotations but fences a late
   await clearLocalFiles({ ownerKey: record.ownerKey, choirId: record.choirId });
   expect(await listLocalFiles()).toEqual([]);
   expect((await held.arrayBuffer()).byteLength).toBe(1024 * 1024);
-  expect(await localDatabase.annotationLayers.where("scopeKey").equals(record.scopeKey).count()).toBe(5);
+  expect(await localDatabase.annotationLayers.where("scopeKey").equals(record.scopeKey).count()).toBe(6);
   await expect(activateVerifiedOfflineScore(record, { activeKey: null, fileFence: fence })).rejects.toThrow("offline_files_cleared");
   // A new explicit open captures the new fence and may download again.
   await activateVerifiedOfflineScore(record, { activeKey: null, fileFence: await captureOfflineFileFence(record) });

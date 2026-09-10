@@ -11,7 +11,6 @@ import {
 import type { PageTurnGesture } from "./use-paged-reader";
 
 const MIN_PINCH_ZOOM = 0.75;
-const MIN_SETTLED_ZOOM = 1;
 const MAX_ZOOM = 3;
 
 type GesturePointer = Pick<ReactPointerEvent<HTMLElement>, "pointerId" | "pointerType" | "clientX" | "clientY" | "timeStamp" | "currentTarget">;
@@ -43,6 +42,8 @@ export function useReaderGestures({
   contentRef,
   previewBoundaryRef,
   disabled,
+  twoFingerOnly = false,
+  minimumZoom = 1,
   zoom,
   onZoomChange,
   onTap,
@@ -51,11 +52,14 @@ export function useReaderGestures({
   pageTurnExtent,
   nativeTouchScroll = false,
   captureAnchor,
+  constrainScroll,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   contentRef: RefObject<HTMLElement | null>;
   previewBoundaryRef?: RefObject<HTMLElement | null>;
   disabled: boolean;
+  twoFingerOnly?: boolean;
+  minimumZoom?: number;
   zoom: number;
   onZoomChange(value: number): void;
   onTap(): void;
@@ -63,8 +67,10 @@ export function useReaderGestures({
   pageTurn?: PageTurnGesture;
   pageTurnExtent?: number;
   nativeTouchScroll?: boolean;
+  constrainScroll?(): void;
   captureAnchor?(center: Point): (zoom: number) => Point;
 }) {
+  const constrain = useEffectEvent(() => constrainScroll?.());
   const points = useRef(new Map<number, Point>());
   const primary = useRef<{
     id: number;
@@ -131,6 +137,7 @@ export function useReaderGestures({
     const targetY = bounds.top + (anchor?.y ?? bounds.height * commit.contentRatio.y);
     container.scrollLeft += targetX - commit.center.x;
     container.scrollTop += targetY - commit.center.y;
+    constrain();
     pendingCommit.current = null;
     preview.current = null;
   }, [clearPreview, containerRef, contentRef, zoom]);
@@ -144,8 +151,8 @@ export function useReaderGestures({
   );
 
   const pointerDown = (event: GesturePointer) => {
-    if (disabled) return;
-    if (!(nativeTouchScroll && event.pointerType === "touch")) event.currentTarget.setPointerCapture?.(event.pointerId);
+    if (disabled || (twoFingerOnly && event.pointerType !== "touch")) return;
+    if (!twoFingerOnly && !(nativeTouchScroll && event.pointerType === "touch")) event.currentTarget.setPointerCapture?.(event.pointerId);
     points.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     const container = containerRef.current;
     if (points.current.size === 1) {
@@ -172,6 +179,7 @@ export function useReaderGestures({
     }
     const content = contentRef.current;
     if (!content) return;
+    if (twoFingerOnly) container?.dispatchEvent(new Event("reader-navigation-start"));
     const [first, second] = [...points.current.values()];
     const center = midpoint(first, second);
     const contentBounds = content.getBoundingClientRect();
@@ -198,7 +206,7 @@ export function useReaderGestures({
       const center = midpoint(first, second);
       const nextZoom = clamp(
         pinch.current.zoom * (distance(first, second) / pinch.current.distance),
-        MIN_PINCH_ZOOM,
+        Math.min(MIN_PINCH_ZOOM, minimumZoom * 0.75),
         MAX_ZOOM,
       );
       const scale = nextZoom / pinch.current.zoom;
@@ -235,6 +243,7 @@ export function useReaderGestures({
       return;
     }
 
+    if (twoFingerOnly || pinched.current) return;
     const start = primary.current;
     const container = containerRef.current;
     if (!start || !container || start.id !== event.pointerId) return;
@@ -256,8 +265,19 @@ export function useReaderGestures({
   const finishPinch = () => {
     cancelPreviewFrame();
     const lastPreview = preview.current;
-    const settledZoom = clamp(latestZoom.current, MIN_SETTLED_ZOOM, MAX_ZOOM);
+    const settledZoom = clamp(latestZoom.current, minimumZoom, MAX_ZOOM);
+    if (lastPreview && Math.abs(settledZoom - zoom) < 0.001) {
+      clearPreview();
+      const container = containerRef.current;
+      const bounds = contentRef.current?.getBoundingClientRect();
+      if (container && bounds) {
+        const anchor = lastPreview.resolveAnchor?.(zoom);
+        container.scrollLeft += bounds.left + (anchor?.x ?? bounds.width * lastPreview.contentRatio.x) - lastPreview.center.x;
+        container.scrollTop += bounds.top + (anchor?.y ?? bounds.height * lastPreview.contentRatio.y) - lastPreview.center.y;
+      }
+    }
     if (!lastPreview || Math.abs(settledZoom - zoom) < 0.001) {
+      constrainScroll?.();
       pendingCommit.current = null;
       preview.current = null;
       clearPreview();
@@ -285,7 +305,7 @@ export function useReaderGestures({
       if (points.current.size === 0) finishPinch();
       return;
     }
-    if (!start || start.id !== event.pointerId) return;
+    if (twoFingerOnly || !start || start.id !== event.pointerId) return;
     primary.current = null;
     if (zoom <= 1 && pageTurn?.end(pageTurnSample(event, pageTurnExtent))) {
       return;
@@ -354,11 +374,24 @@ export function useReaderGestures({
     return () => { for (const type of types) target.removeEventListener(type, listener); };
   }, [containerRef, nativeTouchScroll]);
 
+  const capture = (event: ReactPointerEvent<HTMLElement>, handle: (event: GesturePointer) => void) => {
+    if (!twoFingerOnly || event.pointerType !== "touch" || !event.currentTarget.contains(event.target as Node)) return;
+    const suppress = pinched.current || points.current.size >= 2;
+    handle(event);
+    if (suppress || pinched.current) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
   return {
-    onPointerDown: (event: ReactPointerEvent<HTMLElement>) => { if (!(nativeTouchScroll && event.pointerType === "touch")) pointerDown(event); },
-    onPointerMove: (event: ReactPointerEvent<HTMLElement>) => { if (!(nativeTouchScroll && event.pointerType === "touch")) pointerMove(event); },
-    onPointerUp: (event: ReactPointerEvent<HTMLElement>) => { if (!(nativeTouchScroll && event.pointerType === "touch")) finishPointer(event); },
-    onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => { if (!(nativeTouchScroll && event.pointerType === "touch")) cancelPointer(event); },
+    onPointerDownCapture: (event: ReactPointerEvent<HTMLElement>) => capture(event, pointerDown),
+    onPointerMoveCapture: (event: ReactPointerEvent<HTMLElement>) => capture(event, pointerMove),
+    onPointerUpCapture: (event: ReactPointerEvent<HTMLElement>) => capture(event, finishPointer),
+    onPointerCancelCapture: (event: ReactPointerEvent<HTMLElement>) => capture(event, cancelPointer),
+    onPointerDown: (event: ReactPointerEvent<HTMLElement>) => { if (!twoFingerOnly && !(nativeTouchScroll && event.pointerType === "touch")) pointerDown(event); },
+    onPointerMove: (event: ReactPointerEvent<HTMLElement>) => { if (!twoFingerOnly && !(nativeTouchScroll && event.pointerType === "touch")) pointerMove(event); },
+    onPointerUp: (event: ReactPointerEvent<HTMLElement>) => { if (!twoFingerOnly && !(nativeTouchScroll && event.pointerType === "touch")) finishPointer(event); },
+    onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => { if (!twoFingerOnly && !(nativeTouchScroll && event.pointerType === "touch")) cancelPointer(event); },
   };
 }
 

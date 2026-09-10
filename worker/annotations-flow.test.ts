@@ -65,6 +65,25 @@ beforeEach(async () => {
 afterEach(() => network.resetHandlers());
 
 describe("annotation layers and object synchronization", () => {
+  it("experience reads omit account layers and do not create a member personal layer", async () => {
+    const fixture = await createFixture();
+    const member = await createMember(fixture.joinCode!, "experience@example.test", "体验者");
+    const base = `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}`;
+    const count = () => env.DB.prepare("SELECT COUNT(*) AS count FROM annotation_layers WHERE score_id = ? AND owner_user_id = ?").bind(fixture.scoreId, member.userId).first();
+    expect(await count()).toEqual({ count: 0 });
+    const response = await callWorker(`${base}/layers?experience=1`, { headers: { cookie: member.cookie } });
+    expect(response.status).toBe(200);
+    const body = await response.json() as { layers: { kind: string; canEdit: boolean }[] };
+    expect(body.layers).toHaveLength(5);
+    expect(body.layers.every(layer => layer.kind === "shared" && !layer.canEdit)).toBe(true);
+    expect(await count()).toEqual({ count: 0 });
+    const personal = await env.DB.prepare("SELECT id FROM annotation_layers WHERE score_id = ? AND owner_user_id = ?").bind(fixture.scoreId, fixture.ownerUserId).first<{ id: string }>();
+    await push(fixture, [operation(crypto.randomUUID(), personal!.id, 0, "账号私有笔记"), operation(crypto.randomUUID(), fixture.layerId, 0, "公开共享内容")]);
+    const pulled = await callWorker(`${base}/annotations?experience=1`, { headers: { cookie: fixture.adminCookie } });
+    const notes = await pulled.json() as { objects: { layerId: string }[] };
+    expect(notes.objects.map(note => note.layerId)).toEqual([fixture.layerId]);
+  });
+
   it("rejects preference and display name requests captured for a different user", async () => {
     const fixture = await createFixture();
     const paths = [

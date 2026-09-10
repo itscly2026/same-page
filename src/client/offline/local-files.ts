@@ -11,8 +11,8 @@ export async function listLocalFiles() {
   return localDatabase.transaction("r", [localDatabase.system, localDatabase.offlineScores, localDatabase.driveDirectories], async () => {
     const owner = await currentLocalOwnerKey();
     const directories = await localDatabase.driveDirectories.toArray();
-    const files = (await localDatabase.offlineScores.toArray()).map(file => ({ ...file, driveName: directories.find(drive => drive.ownerKey === file.ownerKey && drive.choirId === file.choirId)?.choir.name ?? "云盘" }));
-    if (owner?.startsWith("user:")) return files.filter(file => file.ownerKey === owner);
+    const files = (await localDatabase.offlineScores.toArray()).map(file => ({ ...file, driveName: directories.find(drive => drive.ownerKey === file.ownerKey.replace(/^experience:/, "") && drive.choirId === file.choirId)?.choir.name ?? "云盘" }));
+    if (owner?.startsWith("user:")) return files.filter(file => file.ownerKey === owner || file.ownerKey === `experience:${owner}`);
     const guests = await localDatabase.system.bulkGet(files.map(file => guestOwnerSystemKey(file.choirId)));
     return files.filter((file, i) => file.ownerKey.startsWith("guest:") && guests[i]?.value === file.ownerKey);
   });
@@ -21,7 +21,8 @@ export type LocalFileScope = { ownerKey: LocalWorkspaceOwnerKey; choirId?: strin
 export async function clearLocalFiles(scope: LocalFileScope) {
   return localDatabase.transaction("rw", [localDatabase.system, localDatabase.offlineScores, localDatabase.offlineSnapshots], async () => {
     const owner = await currentLocalOwnerKey();
-    if (scope.ownerKey.startsWith("user:") ? owner !== scope.ownerKey : owner?.startsWith("user:") || !scope.choirId || (await localDatabase.system.get(guestOwnerSystemKey(scope.choirId)))?.value !== scope.ownerKey) throw new Error("local_workspace_owner_changed");
+    const baseOwnerKey = scope.ownerKey.replace(/^experience:/, "");
+    if (baseOwnerKey.startsWith("user:") ? owner !== baseOwnerKey : owner?.startsWith("user:") || !scope.choirId || (await localDatabase.system.get(guestOwnerSystemKey(scope.choirId)))?.value !== scope.ownerKey) throw new Error("local_workspace_owner_changed");
     const key = JSON.stringify(["offline-files", scope.ownerKey, ...(scope.choirId ? [scope.choirId] : []), ...(scope.scoreId ? [scope.scoreId] : [])]);
     await localDatabase.system.put({ key, value: crypto.randomUUID() });
     const files = await localDatabase.offlineScores.where("ownerKey").equals(scope.ownerKey)

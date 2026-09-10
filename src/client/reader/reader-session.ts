@@ -101,7 +101,7 @@ export class ReaderSession {
   constructor(readonly workspace: LocalWorkspace, private authenticatedUserId: string | null, private authenticatedSessionId: string | null = null) {
     this.fileFence = captureOfflineFileFence(workspace);
     void this.fileFence.catch(() => undefined);
-    this.identity = workspace.ownerKey.startsWith("user:") ? workspace.ownerKey.slice(5) : "guest";
+    this.identity = workspace.ownerKey.startsWith("user:") ? workspace.ownerKey.slice(5) : workspace.ownerKey.startsWith("experience:") ? workspace.ownerKey : "guest";
     const score = peekReaderScore(this.identity, workspace.choirId, workspace.scoreId);
     this.confirmedVersion = score?.currentVersion.id ?? null;
     this.state = { mode: "pdf", modeMessage: null, score, document: null, offline: null, cloudState: "checking", capability: "preparing", status: "loading", error: null, downloading: false, downloadMessage: null, preparation: { phase: "idle" } };

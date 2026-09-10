@@ -27,8 +27,9 @@ export interface ReaderSyncStatus {
 export function deriveReaderSyncStatus({
   outcome, syncing, pendingCount, conflictCount, syncErrorCount,
   loaded = false, draftCount = 0, acceptedCount = 0, online = true,
-  permissionErrorCount = 0,
+  permissionErrorCount = 0, localOnly = false,
 }: {
+  localOnly?: boolean;
   outcome: ReaderSyncOutcome;
   syncing: boolean;
   pendingCount: number;
@@ -42,6 +43,7 @@ export function deriveReaderSyncStatus({
 }): ReaderSyncStatus {
   if (outcome === "trash-preserved") return { kind: "risk", message: "乐谱已移入回收站；本机内容仍保留，恢复后才能继续同步。" };
   if (!loaded) return { kind: "risk", message: "尚未确认本机笔记状态，请稍后重试。" };
+  if (localOnly) return { kind: outcome === "failed" ? "failed" : "quiet", message: outcome === "failed" ? "本机操作未完成，请重试。" : "体验笔记仅保存在此浏览器" };
   if (conflictCount > 0) return { kind: "conflict", message: `仍有 ${conflictCount} 项本机冲突待处理。` };
   if (permissionErrorCount > 0) return { kind: "failed", message: `${permissionErrorCount} 项笔记暂缓同步：层已停用、删除或编辑权已撤销。本机草稿保留；原层恢复且权限允许后重试。到期内容仍保留在本机，不会转写同名新层。其它笔记会继续同步。` };
   if (syncErrorCount > 0 || outcome === "failed") return { kind: "failed", message: "同步未完成；已保存的本机草稿保留，请查看原因或重试。" };

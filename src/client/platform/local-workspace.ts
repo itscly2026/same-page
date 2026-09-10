@@ -54,6 +54,7 @@ export async function activateAuthenticatedLocalOwner(userId: string, signal?: A
 
 export async function resolveLocalWorkspace(options: {
   authenticatedUserId: string | null;
+  experience?: boolean;
   signal?: AbortSignal;
   choirId: string;
   scoreId: string;
@@ -61,7 +62,11 @@ export async function resolveLocalWorkspace(options: {
   const ownerKey = options.authenticatedUserId
     ? await activateAuthenticatedLocalOwner(options.authenticatedUserId, options.signal)
     : await resolveOfflineOwner(options.choirId, options.signal);
-  return createLocalWorkspace(ownerKey, options.choirId, options.scoreId);
+  return createLocalWorkspace(options.experience ? experienceOwnerKey(ownerKey) : ownerKey, options.choirId, options.scoreId);
+}
+
+export function experienceOwnerKey(owner: LocalWorkspaceOwnerKey): LocalWorkspaceOwnerKey {
+  return owner.startsWith("guest:") ? owner : `experience:${owner}` as LocalWorkspaceOwnerKey;
 }
 
 export function createLocalWorkspace(
@@ -101,6 +106,7 @@ export async function assertLocalWorkspaceActive(workspace: LocalWorkspace) {
 
 export async function isLocalWorkspaceActive(workspace: LocalWorkspace) {
   const activeOwner = await currentLocalOwnerKey();
+  if (workspace.ownerKey.startsWith("experience:")) return activeOwner === workspace.ownerKey.slice("experience:".length);
   if (workspace.ownerKey.startsWith("user:")) {
     return activeOwner === workspace.ownerKey;
   }

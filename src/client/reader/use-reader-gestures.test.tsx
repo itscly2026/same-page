@@ -62,6 +62,20 @@ describe("useReaderGestures", () => {
     expect(boundary).not.toHaveAttribute("data-gesture-preview");
   });
 
+  it("commits translation when two fingers move without changing scale", () => {
+    render(<GestureHarness onZoomChange={vi.fn()} />);
+    const viewport = screen.getByTestId("gesture-viewport");
+    mockGeometry(viewport, screen.getByTestId("gesture-content"));
+    viewport.scrollTop = 150;
+    fireEvent.pointerDown(viewport, { pointerId: 1, clientX: 200, clientY: 300 });
+    fireEvent.pointerDown(viewport, { pointerId: 2, clientX: 400, clientY: 300 });
+    fireEvent.pointerMove(viewport, { pointerId: 1, clientX: 200, clientY: 250 });
+    fireEvent.pointerMove(viewport, { pointerId: 2, clientX: 400, clientY: 250 });
+    fireEvent.pointerUp(viewport, { pointerId: 2, clientX: 400, clientY: 250 });
+    fireEvent.pointerUp(viewport, { pointerId: 1, clientX: 200, clientY: 250 });
+    expect(viewport.scrollTop).toBe(200);
+  });
+
   it("does not begin a pinch while an uncancellable page transition is active", () => {
     const pageTurn: PageTurnGesture = {
       begin: vi.fn(),

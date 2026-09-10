@@ -153,8 +153,11 @@ export class AnnotationEditor {
       if (generation !== this.generation) return false;
       const stack = this.undoByLayer.get(input.layerId) ?? [];
       const latest = stack.at(-1);
-      if (edit.replaceHistory && latest?.after.id === input.id) latest.after = input;
-      else stack.push({ before, after: input });
+      if (edit.replaceHistory && latest?.after.id === input.id) {
+        // A canceled new stroke returns to absence, so it is no longer an edit.
+        if (latest.before.deleted && input.deleted) stack.pop();
+        else latest.after = input;
+      } else if (!(before.deleted && input.deleted)) stack.push({ before, after: input });
       this.undoByLayer.set(input.layerId, stack);
       this.redoByLayer.delete(input.layerId);
       return true;

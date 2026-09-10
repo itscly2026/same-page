@@ -77,6 +77,17 @@ beforeEach(async () => {
 });
 
 describe("AnnotationOverlay", () => {
+  it("focuses new text even while a previous annotation is being saved", () => {
+    vi.spyOn(editor, "getSnapshot").mockReturnValue("saving");
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页笔记层");
+    mockBounds(overlay);
+    fireEvent.pointerDown(overlay, { pointerId: 1, pointerType: "touch", clientX: 20, clientY: 30 });
+    fireEvent.pointerUp(overlay, { pointerId: 1, pointerType: "touch", clientX: 20, clientY: 30 });
+    expect(screen.getByLabelText("笔记文本")).toHaveFocus();
+    expect(screen.getByLabelText("笔记文本")).not.toBeDisabled();
+  });
+
   it.each(["ink", "highlighter"] as const)("finishes an active %s stroke before closing without pointerup", async tool => {
     renderOverlay([], tool);
     const overlay = screen.getByLabelText("第 1 页笔记层"); mockBounds(overlay);
@@ -459,7 +470,7 @@ describe("AnnotationOverlay", () => {
     let rejectWrite!: (reason: Error) => void;
     const write = vi.spyOn(localDatabase.annotations, "put").mockImplementation(() => new Dexie.Promise((_resolve, reject) => { rejectWrite = reject; }));
     fireEvent.click(screen.getByRole("button", { name: "完成" }));
-    await waitFor(() => expect(screen.getByLabelText("笔记文本")).toBeDisabled());
+    await waitFor(() => expect(screen.getByLabelText("笔记文本")).toHaveAttribute("readonly"));
     expect(screen.getByRole("slider", { name: "字号" })).toBeDisabled();
     await waitFor(() => expect(write).toHaveBeenCalled());
     rejectWrite(new DOMException("full", "QuotaExceededError"));
@@ -473,6 +484,16 @@ describe("AnnotationOverlay", () => {
   });
 
   it("discards failed text intent when the user cancels the composer", async () => {
+    // Publishing the editor error can precede the composer's async finally.
+    // Hold that boundary explicitly instead of depending on CI scheduling.
+    const persist = editor.persist.bind(editor);
+    let release!: () => void;
+    const completion = new Promise<void>(resolve => { release = resolve; });
+    vi.spyOn(editor, "persist").mockImplementation(async (...args) => {
+      const result = await persist(...args);
+      await completion;
+      return result;
+    });
     renderOverlay([], "text");
     const overlay = screen.getByLabelText("第 1 页笔记层");
     mockBounds(overlay);
@@ -481,10 +502,14 @@ describe("AnnotationOverlay", () => {
     const write = vi.spyOn(localDatabase.annotations, "put").mockRejectedValue(new DOMException("full", "QuotaExceededError"));
     fireEvent.click(screen.getByRole("button", { name: "完成" }));
     await screen.findByText("本机保存失败");
+    expect(screen.getByRole("button", { name: "取消" })).toBeDisabled();
+    release();
+    await waitFor(() => expect(screen.getByRole("button", { name: "取消" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(screen.queryByText("本机保存失败")).not.toBeInTheDocument();
     expect(screen.queryByRole("form", { name: "文字输入" })).not.toBeInTheDocument();
     write.mockRestore();
+    await act(async () => { await editor.retry(); });
     expect(await localDatabase.annotations.count()).toBe(0);
   });
 

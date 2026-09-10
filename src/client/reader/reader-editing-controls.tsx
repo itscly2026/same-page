@@ -91,7 +91,7 @@ export function ReaderEditingControls({
             <div className="annotation-layer-switcher">
               {personalLayers.map(layer => <LayerSlotButton key={layer.id} isDisabled={isDisabled} layer={layer} activeLayerId={activeLayerId} onLayerChange={chooseLayer} />)}
             </div>
-            <p>编辑时只显示所选层，并锁定当前页。</p>
+            <p>编辑时只显示所选层；双指移动或缩放当前页，单指或笔编辑。</p>
           </Dialog>
         </Popover>
       </DialogTrigger>

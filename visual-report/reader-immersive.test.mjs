@@ -93,7 +93,7 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
 }
 
 for (const [engineName, engine] of Object.entries({chromium, webkit})) {
- test(`${engineName}: fitted score respects all four safe area edges`, async (context) => {
+ test(`${engineName}: score viewport fills the screen independently of safe areas`, async (context) => {
   const browser = await engine.launch({headless:true}); context.after(() => browser.close());
   const page = await openMemberReader(browser, {width:1000,height:700});
   await page.locator(".reader-shell").evaluate(element => {
@@ -102,10 +102,10 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
   await page.waitForFunction(() => {
    const box = document.querySelector(".page-reader__viewport").getBoundingClientRect();
    const paper = document.querySelector('[data-page-turn-current] .annotated-pdf-page').getBoundingClientRect();
-   return box.left >= 59 && box.top >= 44 && box.right <= 976 && box.bottom <= 666 && paper.left >= 59 && paper.top >= 43.5 && paper.right <= 976.5 && paper.bottom <= 666.5;
+   return box.left === 0 && box.top === 0 && box.right === 1000 && box.bottom === 700 && paper.left >= 0 && paper.top >= -0.5 && paper.right <= 1000.5 && paper.bottom <= 700.5;
   });
   const box = await page.locator('[data-page-turn-current] .annotated-pdf-page').boundingBox();
-  assert.ok(box.x >= 59 && box.y >= 43.5 && box.x+box.width <= 976.5 && box.y+box.height <= 666.5);
+  assert.ok(box.x >= 0 && box.y >= -0.5 && box.x+box.width <= 1000.5 && box.y+box.height <= 700.5);
  });
 }
 

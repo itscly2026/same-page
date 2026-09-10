@@ -7,12 +7,12 @@ import { Dialog } from "../navigation/overlays";
 import { CircleAlert, HardDriveDownload, LoaderCircle, RefreshCw, HardDrive, Check } from "lucide-react";
 import type { ScoreSummary } from "../../shared/scores";
 import { ACTIVE_LOCAL_OWNER_KEY, guestOwnerSystemKey, localDatabase } from "../platform/local-database";
-import { authenticatedLocalOwnerKey, createLocalWorkspace, resolveLocalWorkspace, type LocalWorkspaceOwnerKey } from "../platform/local-workspace";
+import { experienceOwnerKey, authenticatedLocalOwnerKey, createLocalWorkspace, resolveLocalWorkspace, type LocalWorkspaceOwnerKey } from "../platform/local-workspace";
 import { useOfflineScore, useOfflinePreparation } from "../offline/use-offline-score";
 import "./offline-score-control.css";
 
-export function OfflineScoreControl({ score, authenticatedUserId, authenticatedSessionId, disabled = false }: {
-  score: ScoreSummary; authenticatedUserId: string | null; authenticatedSessionId: string | null; disabled?: boolean;
+export function OfflineScoreControl({ score, authenticatedUserId, authenticatedSessionId, experience = false, disabled = false }: {
+  score: ScoreSummary; authenticatedUserId: string | null; authenticatedSessionId: string | null; disabled?: boolean; experience?: boolean;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -33,7 +33,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, authenticatedS
     void resolveLocalWorkspace({ authenticatedUserId: null, choirId: score.choirId, scoreId: score.id, signal: controller.signal }).catch(() => undefined);
     return () => controller.abort();
   }, [owner, disabled, authenticatedUserId, score.choirId, score.id]);
-  const workspace = owner ? createLocalWorkspace(owner, score.choirId, score.id) : null;
+  const workspace = owner ? createLocalWorkspace(experience ? experienceOwnerKey(owner) : owner, score.choirId, score.id) : null;
   const [inspectionAttempt, setInspectionAttempt] = useState(0);
   const offline = useOfflineScore(workspace, inspectionAttempt);
   const { state: attempt, prepare } = useOfflinePreparation(workspace, score, authenticatedUserId, authenticatedSessionId);

@@ -1,3 +1,4 @@
+import { guestNoteLayer } from "./guest-notes";
 import { storeOfflineScore } from "../platform/local-database";
 import { Blob as NodeBlob } from "node:buffer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -350,7 +351,7 @@ it("retains guest subscriptions but applies authenticated subscriptions from the
   serverLayers = [shared];
   const applied = vi.fn();
   await syncAnnotations(guest, { pull: true, onLayersApplied: applied });
-  expect(applied).toHaveBeenCalledWith([{ ...shared, subscribed: false }]);
+  expect(applied).toHaveBeenCalledWith([{ ...shared, subscribed: false }, guestNoteLayer()]);
 });
 
 it("waits for a cross-tab fallback lease before refreshing and can cancel that wait", async () => {

@@ -213,7 +213,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
             <section className="file-list" aria-label="PDF 文件">
               {visibleScores.map((score) => (
                 <article className="file-row" key={score.id}>
-                  <ScoreLink userId={userId} choirId={choirId} scoreId={score.id} local={localFilesOnly}
+                  <ScoreLink experience={choir.isPreviewEntry === true} userId={userId} choirId={choirId} scoreId={score.id} local={localFilesOnly}
                     onOpen={() =>
                       {
                         startLoadingJourney(
@@ -228,7 +228,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
                     <span className="pdf-file-icon" aria-hidden="true">PDF</span>
                     <span className="file-row__name" title={scoreDisplayName(score.fileName)}>{scoreDisplayName(score.fileName)}</span>
                   </ScoreLink>
-                  <div className="file-row__offline"><OfflineScoreControl score={score} authenticatedUserId={userId ?? null} authenticatedSessionId={identity.authenticatedSessionId} disabled={session.isPending || access.local} /></div>
+                  <div className="file-row__offline"><OfflineScoreControl experience={choir.isPreviewEntry === true} score={score} authenticatedUserId={userId ?? null} authenticatedSessionId={identity.authenticatedSessionId} disabled={session.isPending || access.local} /></div>
                   <MenuTrigger>
                       <Button className="file-menu-button" aria-label={`${scoreDisplayName(score.fileName)} 更多操作`}>
                         ···
