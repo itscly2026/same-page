@@ -41,6 +41,7 @@ export function CreateDrive({ userId }: { userId: string }) {
           <TextField isRequired maxLength={100} value={name} onChange={setName}><Label>云盘名称</Label><Input autoFocus /></TextField>
           <TextField isRequired maxLength={40} value={displayName} onChange={setDisplayName}><Label>你在云盘内的显示名</Label><Input /></TextField>
           <p>你将成为拥有者，通过邀请码邀请其他人加入。</p>
+          <p>为合理利用存储资源，连续超过 30 天无成员联网访问的云盘可能被清理。清理前，我们会至少提前 14 天通过邮件通知云盘拥有者；通知期内任一成员重新联网访问云盘，即取消本次清理。</p>
           {error && <p role="alert">{error}</p>}
           <Button className="primary-button" type="submit" isDisabled={busy || uncertain}>{busy ? "正在创建…" : "免费创建"}</Button>
           <Button className="secondary-button" isDisabled={busy} onPress={() => setOpen(false)}>取消</Button>

@@ -115,7 +115,7 @@ export function resolveFixtureRequest({
   }
 
   if (method === "GET" && pathname === "/api/auth/social-providers") {
-    return json({ providers: ["google", "wechat"] });
+    return json({ providers: ["google"] });
   }
 
   if (method === "GET" && pathname === "/api/auth/get-session") {

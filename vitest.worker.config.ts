@@ -25,8 +25,6 @@ export default defineConfig({
           INVITE_SECRET: "test-invite-secret-with-at-least-32-characters",
           GOOGLE_CLIENT_ID: "test-google-client-id",
           GOOGLE_CLIENT_SECRET: "test-google-client-secret",
-          WECHAT_CLIENT_ID: "test-wechat-client-id",
-          WECHAT_CLIENT_SECRET: "test-wechat-client-secret",
         },
       },
     })),

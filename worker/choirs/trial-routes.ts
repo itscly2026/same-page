@@ -16,9 +16,8 @@ trialRoutes.post("/choirs", async context => {
   const principal = await resolveContextPrincipal(context);
   if (principal?.kind !== "user") return context.json({ error: "unauthorized" }, 401);
   if (context.req.header("x-same-page-owner-user-id") && context.req.header("x-same-page-owner-user-id") !== principal.userId) return context.json({ error: "identity_changed" }, 403);
-  // WeChat verifies a provider identity without a deliverable email.
   const verified = await context.env.DB.prepare(`SELECT id FROM user WHERE id = ? AND
-    (email_verified = 1 OR EXISTS (SELECT 1 FROM account WHERE user_id = user.id AND provider_id = 'wechat'))`)
+    email_verified = 1`)
     .bind(principal.userId).first();
   if (!verified) return context.json({ error: "identity_verification_required" }, 403);
   const parsed = createSchema.safeParse(await context.req.json().catch(() => null));

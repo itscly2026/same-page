@@ -12,7 +12,7 @@ export const authFlowResponseSchema = z.discriminatedUnion("flow", [
   z.object({ flow: z.literal("set-password"), hasGoogle: z.boolean() }),
 ]);
 
-export const socialAuthProviderSchema = z.enum(["google", "wechat"]);
+export const socialAuthProviderSchema = z.enum(["google"]);
 export type SocialAuthProvider = z.infer<typeof socialAuthProviderSchema>;
 
 export const socialAuthProvidersResponseSchema = z.object({
@@ -22,9 +22,3 @@ export const socialAuthProvidersResponseSchema = z.object({
 export const authSessionResponseSchema = z.object({
   user: z.object({ id: z.string().min(1) }),
 });
-
-const INTERNAL_AUTH_EMAIL_SUFFIX = ".placeholder.invalid";
-
-export function isInternalAuthEmail(email: string) {
-  return email.trim().toLowerCase().endsWith(INTERNAL_AUTH_EMAIL_SUFFIX);
-}

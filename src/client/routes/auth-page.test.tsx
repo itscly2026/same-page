@@ -27,7 +27,7 @@ describe("AuthPage", () => {
         }
         if (input === "/api/auth/social-providers") {
           return Promise.resolve(
-            Response.json({ providers: ["google", "wechat"] }),
+            Response.json({ providers: ["google"] }),
           );
         }
         if (input === "/api/auth/email-otp/request-password-reset") {
@@ -62,11 +62,11 @@ describe("AuthPage", () => {
     sessionStorage.clear();
   });
 
-  it.each(["google", "wechat"])("routes a restricted %s recovery session to explicit restoration", async (provider) => {
+  it.each(["google"])("routes a restricted %s recovery session to explicit restoration", async (provider) => {
     vi.stubGlobal("fetch", vi.fn(async (input: string) => {
       if (input === "/api/user/lifecycle") return Response.json({ deletion: { authMethod: provider, deletionId: "deletion", expiresAt: Date.now() + 10000 } });
       if (input === "/api/auth/get-session") return Response.json(null);
-      if (input === "/api/auth/social-providers") return Response.json({ providers: ["google", "wechat"] });
+      if (input === "/api/auth/social-providers") return Response.json({ providers: ["google"] });
       return new Response(null, { status: 404 });
     }));
     renderAuthPage("/login?oauth=complete");
@@ -106,7 +106,6 @@ describe("AuthPage", () => {
     const google = await screen.findByRole("button", {
       name: "使用 Google 继续",
     });
-    expect(screen.getByRole("button", { name: "使用微信继续" })).toBeInTheDocument();
     expect(
       emailSubmit.compareDocumentPosition(google) &
         Node.DOCUMENT_POSITION_FOLLOWING,
@@ -283,7 +282,7 @@ describe("AuthPage", () => {
       target: { value: "singer@example.test" },
     });
     fireEvent.click(
-      await screen.findByRole("button", { name: "使用微信继续" }),
+      await screen.findByRole("button", { name: "使用 Google 继续" }),
     );
 
     expect(await screen.findByRole("status")).toHaveTextContent(
@@ -353,11 +352,11 @@ describe("AuthPage", () => {
       "fetch",
       vi.fn().mockImplementation((input: string) => {
         if (input === "/api/auth/social-providers") {
-          return Promise.resolve(Response.json({ providers: ["wechat"] }));
+          return Promise.resolve(Response.json({ providers: ["google"] }));
         }
         if (input === "/api/auth/get-session") {
           return Promise.resolve(
-            Response.json({ user: { id: "wechat-user" } }),
+            Response.json({ user: { id: "google-user" } }),
           );
         }
         if (input === "/api/guest/session") {
@@ -418,10 +417,10 @@ describe("AuthPage", () => {
     const fetchMock = vi.fn().mockImplementation(
       (input: string, init?: RequestInit) => {
         if (input === "/api/auth/social-providers") {
-          return Promise.resolve(Response.json({ providers: ["wechat"] }));
+          return Promise.resolve(Response.json({ providers: ["google"] }));
         }
         if (input === "/api/auth/get-session") {
-          return Promise.resolve(Response.json({ user: { id: "wechat-user" } }));
+          return Promise.resolve(Response.json({ user: { id: "google-user" } }));
         }
         if (input === "/api/guest/session" && !init?.method) {
           return Promise.resolve(

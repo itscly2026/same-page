@@ -1,6 +1,5 @@
 import { authClient } from "../auth/auth-client";
 import { useLogout } from "../auth/logout-context";
-import { isInternalAuthEmail } from "../../shared/auth";
 import { Link } from "react-router-dom";
 import { TaskHeader } from "../components/task-header";
 
@@ -14,7 +13,7 @@ export default function PersonalSettingsPage() {
       <header className="settings-heading"></header>
       <section className="personal-settings-links">
         <p className="settings-copy">阅读偏好和显示名在各云盘中分别设置。</p>
-        <p>{email && !isInternalAuthEmail(email) ? email : "已登录"}</p><button className="secondary-button" onClick={() => void logout.request()}>退出登录</button>
+        <p>{email || "已登录"}</p><button className="secondary-button" onClick={() => void logout.request()}>退出登录</button>
         <h2>用户与数据</h2><Link className="settings-secondary-link settings-danger-link" to="/user/lifecycle">删除用户<span aria-hidden="true">›</span></Link>
       </section>
     </main>

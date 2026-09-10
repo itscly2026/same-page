@@ -70,7 +70,7 @@ export const visualReportScenarios = [
   {
     id: "auth-email-entry",
     title: "身份 · 登录或注册",
-    description: "邮箱仍为主入口，Google 与微信作为下方次要选项。",
+    description: "邮箱仍为主入口，Google 作为下方次要选项。",
     device: "portrait",
     identity: "guest",
     route: "/login",

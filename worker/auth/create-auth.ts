@@ -52,7 +52,7 @@ export function createAuth(env: Env, executionContext: WaitUntilContext) {
             const method = context?.path === "/sign-in/email" ? "credential"
               : context?.path?.startsWith("/callback/") ? context.params?.id
               : context?.path === "/sign-in/social" ? context.body?.provider : null;
-            if (method === "credential" || method === "google" || method === "wechat") {
+            if (method === "credential" || method === "google") {
               await env.DB.prepare("INSERT INTO session_auth_methods (session_id, method) VALUES (?, ?)")
                 .bind(session.id, method).run();
             }

@@ -10,10 +10,9 @@ describe("social provider configuration", () => {
     expect(
       configuredSocialProviderIds({
         GOOGLE_CLIENT_ID: "google-id",
-        WECHAT_CLIENT_ID: "wechat-id",
-        WECHAT_CLIENT_SECRET: "wechat-secret",
       }),
-    ).toEqual(["wechat"]);
+    ).toEqual([]);
+    expect(configuredSocialProviderIds({ GOOGLE_CLIENT_ID: "google-id", GOOGLE_CLIENT_SECRET: "google-secret" })).toEqual(["google"]);
   });
 
 });

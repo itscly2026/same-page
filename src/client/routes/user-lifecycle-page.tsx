@@ -55,4 +55,4 @@ function UserLifecycle() {
     {message && <Button className="secondary-button" isDisabled={busy || loading} onPress={() => void reload().catch(() => undefined)}>重新读取状态</Button>}
   </main></div>;
 }
-function methodName(method: string) { return method === "credential" ? "邮箱与密码" : method === "google" ? "Google" : "微信"; }
+function methodName(method: string) { return method === "credential" ? "邮箱与密码" : "Google"; }

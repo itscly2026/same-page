@@ -824,17 +824,6 @@ function SocialAuthOptions(props: {
             <GoogleIcon />
           </Button>
         ) : null}
-        {props.providers.includes("wechat") ? (
-          <Button
-            type="button"
-            className="social-auth-button"
-            aria-label="使用微信继续"
-            isDisabled={props.disabled}
-            onPress={() => props.onContinue("wechat")}
-          >
-            <WechatIcon />
-          </Button>
-        ) : null}
       </div>
     </section>
   );
@@ -859,25 +848,6 @@ function GoogleIcon() {
         fill="#ea4335"
         d="M12 5.95c1.47 0 2.79.5 3.82 1.5l2.87-2.87A9.64 9.64 0 0 0 12 2a10 10 0 0 0-8.95 5.45l3.35 2.62A5.98 5.98 0 0 1 12 5.95Z"
       />
-    </svg>
-  );
-}
-
-function WechatIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path
-        fill="#07c160"
-        d="M9.8 3C5 3 1.2 6.1 1.2 9.9c0 2.2 1.3 4.2 3.4 5.5l-.8 2.4 2.8-1.4c1 .3 2.1.5 3.2.5h.5a6.2 6.2 0 0 1-.2-1.5c0-3.7 3.4-6.7 7.7-6.7h.5C17.5 5.5 14.1 3 9.8 3Z"
-      />
-      <path
-        fill="#07c160"
-        d="M22.8 15.4c0-3.1-3-5.6-6.7-5.6s-6.7 2.5-6.7 5.6 3 5.6 6.7 5.6c.9 0 1.8-.2 2.6-.4l2.2 1.1-.6-1.9c1.5-1 2.5-2.6 2.5-4.4Z"
-      />
-      <circle cx="6.8" cy="8.7" r=".8" fill="#fff" />
-      <circle cx="12.2" cy="8.7" r=".8" fill="#fff" />
-      <circle cx="13.8" cy="14.5" r=".7" fill="#fff" />
-      <circle cx="18.3" cy="14.5" r=".7" fill="#fff" />
     </svg>
   );
 }

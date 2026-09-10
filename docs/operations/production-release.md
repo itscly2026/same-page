@@ -35,7 +35,7 @@
 2. 对生产 D1 执行全部 `migrations/`。
 3. 在 Worker Secret 中设置彼此独立的 `BETTER_AUTH_SECRET`、`INVITE_SECRET` 与
    `RESEND_API_KEY_SAMEPAGE`。需要启用第三方登录时，再设置完整的 `GOOGLE_CLIENT_ID` /
-   `GOOGLE_CLIENT_SECRET` 和 `WECHAT_CLIENT_ID` / `WECHAT_CLIENT_SECRET`；缺少任意一项时
+   `GOOGLE_CLIENT_SECRET`；缺少任意一项时
    对应入口会保持隐藏。
 4. 部署前先在 Resend 验证 `samepage.clyapps.com` 的 SPF、DKIM、DMARC 与 Return-Path，
    创建仅允许该子域的 Sending-only key，并先写入尚未被当前版本读取的 Worker
@@ -71,9 +71,6 @@
   `https://samepage.clyapps.com/privacy`，Authorized domain 填根域 `clyapps.com`（不带协议、
   子域或路径），并通过 Google Search Console 验证域名所有权。上线前单独确认 consent
   screen、品牌信息、允许域名和测试/发布状态。
-- 微信只使用开放平台“网站应用”扫码登录，授权回调为
-  `https://samepage.clyapps.com/api/auth/callback/wechat`，scope 必须是 `snsapi_login`；
-  公众号网页授权不能替代该资质和配置。
 - Client ID 与 Client Secret 都以 Worker Secret 管理。不得把 Secret 放入 `wrangler.jsonc`、
   `.dev.vars.example` 的实际值、GitHub Issue、PR 或发布日志。
 - 部署代码、平台审核通过、生产 Secret 完整、真实账号授权成功是四个独立门槛。只有最后一项
@@ -86,10 +83,9 @@ authorization code、token、完整 profile 或 Secret。
 
 | 症状 | 检查 |
 | --- | --- |
-| Google 或微信图标未出现 | 请求 `/api/auth/social-providers`，确认响应仍为 `no-store`；用 `wrangler secret list` 只核对对应 Client ID / Secret 的名称是否成对存在，不读取或打印值。缺一项时隐藏入口是预期行为。 |
+| Google图标未出现 | 请求 `/api/auth/social-providers`，确认响应仍为 `no-store`；用 `wrangler secret list` 只核对对应 Client ID / Secret 的名称是否成对存在，不读取或打印值。缺一项时隐藏入口是预期行为。 |
 | Google 报 redirect URI 不匹配 | 核对 Web application client 的精确回调是 `https://samepage.clyapps.com/api/auth/callback/google`，协议、域名、路径和尾部斜杠必须一致。 |
 | Google 只允许测试用户或显示 consent 错误 | 核对 consent screen 的测试/发布状态、测试用户、品牌域名和已验证域名；平台未发布不能记为生产可用。 |
-| 微信提示 AppID、scope 或回调域错误 | 确认使用已审核的开放平台“网站应用”，scope 为 `snsapi_login`，AppID 属于该应用，授权回调域为 `samepage.clyapps.com`；公众号网页授权配置不能替代。 |
 | 提供方确认后回到登录页并提示失败 | 先确认 `/api/health` 和邮箱登录正常，再按时间查 Worker 的非敏感状态日志；不要在日志或 Issue 中粘贴 callback URL。state 失效或重复回调应安全返回登录页，不能绕过重试。 |
 | 中国大陆网络下 Google 超时 | 记录网络、设备和时间，将 Google 判为该场景不可用；确认邮箱入口始终可见可用。不要通过放宽 OAuth 校验或增加代理回调规避。 |
 
@@ -108,7 +104,7 @@ deploy job 在生产锁内核对发布顺序，记录发布尝试，在汇总 ve
 | CI | verify 与 deploy job 的 workflow URL 和结论、artifact ID/digest、release.json SHA 与文件摘要 |
 | Cloudflare | Worker deployment ID、D1 migration 状态、R2 绑定 |
 | 生产 URL | 显式 expected SHA；Worker、build.json、HTML 与脚本身份一致；HTTPS、manifest、Service Worker、未登录 401 |
-| 第三方登录 | 提供方审核状态、回调配置、入口可见性、真实 Google/微信各一次成功与取消返回 |
+| 第三方登录 | 提供方审核状态、回调配置、入口可见性、真实 Google 一次成功与取消返回 |
 | DNS | `samepage.clyapps.com` 的解析与证书；不得改动根域邮件记录 |
 | 邮件 | QQ、163、Gmail、Outlook 各一次真实 OTP 到达与延迟；不记录 OTP |
 | 人工验收 | iPad Safari、Android 平板、大陆真实网络的设备、浏览器版本与结论 |
@@ -129,7 +125,7 @@ deploy job 在生产锁内核对发布顺序，记录发布尝试，在汇总 ve
 10. 分别验证访客进入注册用户、同一用户多标签页和主动退出后的路径；确认工作区不互相提升，主动退出后仅保留只读共享离线内容。
 11. 在乐谱 A、B 分别离线编辑并退出阅读器；恢复网络或把应用切回前台，不重新打开 A、B，确认两份待上传内容都到达云端。随后让 A 暂时不可用并重复，确认 A 的原 `opId` 与 payload 留在本机、B 仍可完成同步，且没有自动 pull 未打开乐谱的新批注。
 12. 发布新版本后保留旧页面，确认出现明确更新提示，用户确认后才刷新。
-13. 在认证首屏确认邮箱表单仍在上方；分别完成 Google 与微信登录，并各取消一次；确认成功后续接原访客云盘流程，取消后邮箱草稿和原入口上下文仍保留。
+13. 在认证首屏确认邮箱表单仍在上方；完成 Google 登录，并取消一次；确认成功后续接原访客云盘流程，取消后邮箱草稿和原入口上下文仍保留。
 
 14. 在公开体验中分别使用 Google、邮箱登录，确认无需加入即可在个人层新增、修改、删除批注，重新打开仍可读回；另一用户、管理员与访客均不可读取该个人层，共享层仍按授权编辑。
 15. 管理员打开「管理 → 邀请码」查看当前码，关闭重开仍可查看；旧码仅有校验值时补录原码并确认原码继续有效，主动轮换后确认旧码失效。
