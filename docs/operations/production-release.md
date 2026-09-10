@@ -94,7 +94,7 @@ authorization code、token、完整 profile 或 Secret。
 | 中国大陆网络下 Google 超时 | 记录网络、设备和时间，将 Google 判为该场景不可用；确认邮箱入口始终可见可用。不要通过放宽 OAuth 校验或增加代理回调规避。 |
 
 后续 `main` 发布必须先通过 CI 根据变更范围选择的门禁；无法识别范围时运行完整门禁，只有影响生产产物或 migration 的变更才进入 deploy job。正式发布或 migration 前，本地运行全量超集 `npm run check:full`；先运行 `npm ci` 和 `npx playwright install chromium webkit`（Linux/CI 使用 `--with-deps`）。`npm run check` 不包含 PWA 更新交接及加载性能，不能作为发布前的完整集合。
-deploy job 在生产锁内核对发布顺序，记录发布尝试，在汇总 verify 通过后，下载 integration 封存的原始产物并校验完整清单，再执行 D1 恢复点记录、migrations、迁移后聚合/结构核查、Wrangler deploy 与线上机器验证。迁移或验证失败时 workflow 失败，不能记为发布成功。部署阶段不重新构建。
+deploy job 在生产锁内核对发布顺序，记录发布尝试，在汇总 verify 通过后，下载 integration 封存的原始产物并校验完整清单，再执行 D1 恢复点记录、旧图片 Queue consumer 定向解绑（见 [退役顺序](image-renderer-retirement.md#生产退役顺序)）、migrations、迁移后聚合/结构核查、Wrangler deploy 与线上机器验证。迁移或验证失败时 workflow 失败，不能记为发布成功。部署阶段不重新构建。
 
 构建身份、HTML meta、Worker 须匹配显式 expected SHA；实际脚本逐个核对已验证发布包 `dist/client/build.json` 中的 SHA256（包括入口、共享与延迟加载脚本及 PDF Worker）。独立验收需下载对应 artifact；CLI 第三个参数可指定该清单路径，不能使用另一版本的本地构建。全部返回同一个旧版本仍失败。验收最多 12 次、每次请求超时 15 秒、间隔 3 秒，超过传播窗口则保留失败。成功记录只能在这些检查全部完成后写入。迁移后的失败尝试仍推进发布边界；旧作业不能在它之后部署旧 Worker。
 

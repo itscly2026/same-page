@@ -23,6 +23,7 @@ import {
 
 import worker from "./index";
 import { provisionChoir } from "./choirs/provision";
+import { createScoreVersion } from "./scores/storage";
 import { createDatabase } from "./db/database";
 import { memberships, user } from "./db/schema";
 import { cookieFrom, registerWithPassword } from "./test/auth";
@@ -65,9 +66,12 @@ beforeEach(async () => {
 afterEach(() => network.resetHandlers());
 
 describe("annotation layers and object synchronization", () => {
-  it("experience reads omit account layers and do not create a member personal layer", async () => {
-    const fixture = await createFixture();
+  it("experience reads omit account layers and do not create a member personal layer", async (context) => {
+    const stage = trackAnnotationStages(context, "experience");
+    const fixture = await createFixture(() => stage("first-score"));
+    stage("member-identity");
     const member = await createMember(fixture.joinCode!, "experience@example.test", "体验者");
+    stage("experience-layers");
     const base = `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}`;
     const count = () => env.DB.prepare("SELECT COUNT(*) AS count FROM annotation_layers WHERE score_id = ? AND owner_user_id = ?").bind(fixture.scoreId, member.userId).first();
     expect(await count()).toEqual({ count: 0 });
@@ -77,11 +81,13 @@ describe("annotation layers and object synchronization", () => {
     expect(body.layers).toHaveLength(5);
     expect(body.layers.every(layer => layer.kind === "shared" && !layer.canEdit)).toBe(true);
     expect(await count()).toEqual({ count: 0 });
+    stage("experience-annotations");
     const personal = await env.DB.prepare("SELECT id FROM annotation_layers WHERE score_id = ? AND owner_user_id = ?").bind(fixture.scoreId, fixture.ownerUserId).first<{ id: string }>();
     await push(fixture, [operation(crypto.randomUUID(), personal!.id, 0, "账号私有笔记"), operation(crypto.randomUUID(), fixture.layerId, 0, "公开共享内容")]);
     const pulled = await callWorker(`${base}/annotations?experience=1`, { headers: { cookie: fixture.adminCookie } });
     const notes = await pulled.json() as { objects: { layerId: string }[] };
     expect(notes.objects.map(note => note.layerId)).toEqual([fixture.layerId]);
+    stage(null);
   });
 
   it("rejects preference and display name requests captured for a different user", async () => {
@@ -105,7 +111,7 @@ describe("annotation layers and object synchronization", () => {
   });
 
   it.for(["E", "custom"] as const)("recycles %s across scores, retaining identity, grants and preferences while rejecting stale actions", { timeout: 15_000 }, async (slotKind, context) => {
-    const stage = trackRecycleStages(context, slotKind);
+    const stage = trackAnnotationStages(context, slotKind);
     const fixture = await createFixture(() => stage("first-score"));
     stage("member-identity");
     const member = await createMember(fixture.joinCode!, "recycle@example.test", "成员");
@@ -994,15 +1000,15 @@ describe("annotation layers and object synchronization", () => {
 
 // Fixed labels and durations only: never serialize a fixture, request or error.
 // The test signal captures the active stage at timeout, before teardown runs.
-type RecycleStage = "owner-identity" | "first-score" | "member-identity" | "permissions-and-scores" | "delete" | "restore" | "paused-restore";
-function trackRecycleStages(context: TestContext, variant: "E" | "custom") {
+type AnnotationStage = "owner-identity" | "first-score" | "member-identity" | "permissions-and-scores" | "delete" | "restore" | "paused-restore" | "experience-layers" | "experience-annotations";
+function trackAnnotationStages(context: TestContext, variant: "E" | "custom" | "experience") {
   const startedAt = performance.now();
   let stageStartedAt = startedAt;
-  let current: RecycleStage | null = "owner-identity";
-  const completed: { stage: RecycleStage; durationMs: number }[] = [];
+  let current: AnnotationStage | null = "owner-identity";
+  const completed: { stage: AnnotationStage; durationMs: number }[] = [];
   const snapshot = () => {
     const now = performance.now();
-    return { event: "worker_recycle_stage_timing", variant,
+    return { event: variant === "experience" ? "worker_experience_stage_timing" : "worker_recycle_stage_timing", variant,
       totalMs: Math.round(now - startedAt), completed: [...completed],
       running: current ? { stage: current, durationMs: Math.round(now - stageStartedAt) } : null };
   };
@@ -1011,7 +1017,7 @@ function trackRecycleStages(context: TestContext, variant: "E" | "custom") {
   context.signal.addEventListener("abort", capture, { once: true });
   context.onTestFinished(() => context.signal.removeEventListener("abort", capture));
   context.onTestFailed(() => console.error(JSON.stringify(timedOut ?? snapshot())));
-  return (next: RecycleStage | null) => {
+  return (next: AnnotationStage | null) => {
     if (context.signal.aborted) return;
     const now = performance.now();
     if (current) completed.push({ stage: current, durationMs: Math.round(now - stageStartedAt) });
@@ -1029,11 +1035,17 @@ async function createFixture(onOwnerReady?: () => void) {
     ownerDisplayName: "管理员",
     inviteSecret: env.INVITE_SECRET,
   });
-  const upload = await callWorker(
-    `/api/choirs/${provisioned.choirId}/scores`,
-    uploadRequest(admin.cookie, "排练曲.pdf"),
-  );
-  const scoreId = ((await upload.json()) as { score: { id: string } }).score.id;
+  // This suite tests annotation authorization, not PDF parsing. Use the real
+  // storage module with our known one-page PDF; scores-flow covers uploads and
+  // inspectPdf. Avoid charging the parser's cold start to the first layer test.
+  const owner = await env.DB.prepare("SELECT id FROM memberships WHERE choir_id = ? AND user_id = ?")
+    .bind(provisioned.choirId, admin.userId).first<{ id: string }>();
+  const data = new Uint8Array(createMinimalPdf()).buffer;
+  const { scoreId } = await createScoreVersion({
+    env, choirId: provisioned.choirId, membershipId: owner!.id,
+    fileName: "排练曲.pdf", fileNameKey: "排练曲.pdf",
+    pdf: { data, sizeBytes: data.byteLength, pageCount: 1, sha256: await sha256(data) },
+  });
   const layerResponse = await callWorker(
     `/api/choirs/${provisioned.choirId}/scores/${scoreId}/layers`,
     { headers: { cookie: admin.cookie } },
@@ -1182,10 +1194,10 @@ async function callWorker(path: string, init: RequestInit = {}) {
   return response;
 }
 
-async function sha256(value: string) {
+async function sha256(value: string | ArrayBuffer) {
   const digest = await crypto.subtle.digest(
     "SHA-256",
-    new TextEncoder().encode(value),
+    typeof value === "string" ? new TextEncoder().encode(value) : value,
   );
   return Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, "0"),
