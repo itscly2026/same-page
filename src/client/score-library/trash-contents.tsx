@@ -1,3 +1,4 @@
+import { PurgeDialog } from "../drives/purge-dialog";
 import { scoreDisplayName, scorePdfFileName } from "../../shared/score-display-name";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { type FormEvent, useEffect, useState } from "react";
@@ -17,12 +18,17 @@ import {
 import { uploadMessage } from "./library-format";
 
 export function TrashContents({
+  userId,
   choirId,
+  canPurge = false,
   onRestored,
 }: {
+  userId: string;
   choirId: string;
+  canPurge?: boolean;
   onRestored: () => void | Promise<void>;
 }) {
+  const [purging, setPurging] = useState<TrashedScoreSummary | null>(null);
   const [trash, setTrash] = useState<TrashedScoreSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [attempt, setAttempt] = useState(0);
@@ -66,6 +72,8 @@ export function TrashContents({
         method: "POST",
       });
       if (response.status === 409) {
+        const payload = await response.json().catch(() => null);
+        if (payload?.error !== "filename_conflict") { setMessage(uploadMessage(response.status, payload)); return; }
         setRestoreConflict(score);
         setRestoreName(scoreDisplayName(score.fileName));
         setMessage("当前文件库已有同名文件，请先为恢复的文件换一个名称。");
@@ -97,7 +105,7 @@ export function TrashContents({
   return (
     <section aria-label="回收站文件">
               <p className="dialog-copy">
-                文件保留三十天，到期自动删除。这里不提供手工永久删除。
+                文件保留三十天，到期自动删除。仍占云盘空间；拥有者可提前彻底删除。
               </p>
               {loading ? <p role="status">正在读取回收站…</p> : trash.length > 0 ? (
                 <ul className="trash-list">
@@ -110,12 +118,14 @@ export function TrashContents({
                       <Button isDisabled={busy} onPress={() => void restoreScore(score)}>
                         恢复
                       </Button>
+                      {canPurge && <Button className="primary-button destructive-button" isDisabled={busy} onPress={() => setPurging(score)}>彻底删除</Button>}
                     </li>
                   ))}
                 </ul>
               ) : (
                 message ? <Button onPress={() => { setMessage(null); setLoading(true); setAttempt(value => value + 1); }}>重新读取回收站</Button> : <p className="empty-library">回收站是空的。</p>
               )}
+              {purging && <PurgeDialog userId={userId} path={`/api/choirs/${choirId}/scores/${purging.id}/purge`} title="彻底删除乐谱" description={`“${scoreDisplayName(purging.fileName)}”的全部 PDF 版本和所有成员的笔记都会被删除。`} onClose={() => setPurging(null)} onComplete={async () => { setTrash(current => current.filter(score => score.id !== purging.id)); setPurging(null); await onRestored(); }} />}
               {restoreConflict ? (
                 <Form className="entry-form restore-conflict" onSubmit={submitConflict}>
                   <TextField isRequired value={restoreName} onChange={setRestoreName} maxLength={255}>

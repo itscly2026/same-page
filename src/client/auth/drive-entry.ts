@@ -1,3 +1,4 @@
+import { trialMessage } from "../drives/trial-messages";
 import { guestJoinStateResponseSchema, guestSessionResponseSchema, type ChoirSummary, type GuestAdmissionRequest, type GuestSessionResponse } from "../../shared/choirs";
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
 import { clearGuestSession } from "./preview-guest-session";
@@ -64,6 +65,8 @@ export async function joinDrive(target: { kind: "guest"; choirId: string } | { k
     });
     signal?.throwIfAborted();
     if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      if (payload?.error === "member_limit_reached") return { kind: "failed", restart: false, message: trialMessage(payload.error) };
       const restart = response.status === 401 || response.status === 403;
       if (restart && target.kind === "guest") await clearGuestSession();
       return { kind: "failed", restart, message: response.status === 403 ? removed : "暂时无法加入这个云盘，请稍后再试。" };

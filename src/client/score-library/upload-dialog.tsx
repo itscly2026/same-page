@@ -1,3 +1,4 @@
+import { formatBytes } from "./library-format";
 import { useEffect, useLayoutEffect } from "react";
 import { Button,  Modal, ModalOverlay } from "react-aria-components";
 import { Dialog } from "../navigation/overlays";
@@ -5,8 +6,9 @@ import { Dialog } from "../navigation/overlays";
 import { LibraryDialogHeading } from "./library-dialog-heading";
 import { useUploadQueue } from "./use-upload-queue";
 
-export function UploadDialog({ choirId, isOpen, onOpenChange, onComplete, onQuotaChange, onInspect }: {
+export function UploadDialog({ choirId, storage, isOpen, onOpenChange, onComplete, onQuotaChange, onInspect }: {
   choirId: string;
+  storage?: { usedBytes: number; limitBytes: number };
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onComplete: () => void | Promise<void>;
@@ -36,6 +38,7 @@ export function UploadDialog({ choirId, isOpen, onOpenChange, onComplete, onQuot
   return <ModalOverlay className="modal-overlay" isOpen={isOpen} onOpenChange={changeOpen} isDismissable>
     <Modal className="app-modal"><Dialog className="app-dialog">
       <LibraryDialogHeading title="上传 PDF" close={() => changeOpen(false)} />
+      {storage && <p className="dialog-copy">云盘剩余空间 {formatBytes(Math.max(0, storage.limitBytes - storage.usedBytes))} / {formatBytes(storage.limitBytes)}。回收站、历史版本和待确认 PDF 均占空间。</p>}
       <p className="dialog-copy">可多选或拖入 PDF，按加入顺序逐个上传。</p>
       <p className="dialog-copy">关闭窗口会停止等待项，正在上传的一份会继续完成。</p>
       <details className="upload-help"><summary>离开页面或上传中断时</summary>
@@ -55,7 +58,7 @@ export function UploadDialog({ choirId, isOpen, onOpenChange, onComplete, onQuot
       <p role="status" aria-live="polite">{uploading ? "正在上传 1 份" : "当前没有上传中的文件"} · 等待 {waiting} 份</p>
       {queue.paused ? <p className="library-message" role="alert">
         {queue.paused === "uncertain" ? "队列已暂停，当前文件结果待核对。可继续其余等待项；核对文件库会关闭窗口并停止等待项。"
-          : queue.paused === "quota" ? "队列已暂停，请先释放云盘空间。"
+          : queue.paused === "quota" ? "队列已暂停，请处理下方额度提示后再继续。"
           : queue.paused === "permission" ? "队列已暂停，请先恢复登录或上传权限。" : "队列已暂停，请稍后继续。"}
       </p> : null}
       {queue.refreshFailed ? <p role="alert">文件状态已保留，但列表暂未刷新。请核对文件库，不要重传已完成项。</p> : null}

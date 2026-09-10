@@ -1,3 +1,4 @@
+import { CreateDrive } from "../drives/create-drive";
 import { activateGuestLocalOwner } from "../platform/local-workspace";
 import { FeatureAnimation } from "../components/feature-animation";
 import { enterDrive, joinDrive, cancelDriveEntry, type DriveEntryResult } from "../auth/drive-entry";
@@ -275,6 +276,7 @@ function HomeContent({ identity, startup, linkInvite, finishInvitation }: { iden
         <main className="page-shell my-drives-page">
           <div className="my-drives-heading"><div><h1>我已加入的云盘</h1><p>选择云盘，继续排练。</p></div><Button className="secondary-button" onPress={() => setJoinOpen(true)}>加入新云盘</Button></div>
           {location.state?.missingLastDrive === true && <p role="status">上次使用的云盘已不在可访问列表中，请选择其他云盘。</p>}
+          <CreateDrive key={userId} userId={userId} />
           <MembershipList userId={userId} />
             </main>
       ) : <main className="marketing-content">

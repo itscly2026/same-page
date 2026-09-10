@@ -13,9 +13,13 @@ export async function cleanupScoreStorage(
   env: Env,
   now = Date.now(),
 ): Promise<number> {
+  const retentionCutoff = now - 30 * 24 * 60 * 60_000;
+  await env.DB.prepare("DELETE FROM choirs WHERE purged_at IS NOT NULL AND purged_at <= ?").bind(retentionCutoff).run();
+  await env.DB.prepare("DELETE FROM scores WHERE purged_at IS NOT NULL AND purged_at <= ?").bind(retentionCutoff).run();
+  await env.DB.prepare("DELETE FROM score_versions WHERE purged_at IS NOT NULL AND purged_at <= ?").bind(retentionCutoff).run();
   const expiredScores = await env.DB.prepare(
     `SELECT id FROM scores
-     WHERE trashed_at IS NOT NULL AND trash_expires_at <= ?
+     WHERE purged_at IS NULL AND trashed_at IS NOT NULL AND trash_expires_at <= ?
      ORDER BY trash_expires_at
      LIMIT 100`,
   )
@@ -24,7 +28,7 @@ export async function cleanupScoreStorage(
   let removedScores = 0;
   for (const score of expiredScores.results) {
     const deletion = await env.DB.prepare(
-      "DELETE FROM scores WHERE id = ? AND trashed_at IS NOT NULL AND trash_expires_at <= ?",
+      "DELETE FROM scores WHERE purged_at IS NULL AND id = ? AND trashed_at IS NOT NULL AND trash_expires_at <= ?",
     )
       .bind(score.id, now)
       .run();
@@ -35,7 +39,7 @@ export async function cleanupScoreStorage(
     `SELECT versions.id, versions.score_id, versions.object_key, versions.state
      FROM score_versions AS versions
      INNER JOIN scores ON scores.id = versions.score_id
-     WHERE versions.id <> COALESCE(scores.current_version_id, '')
+     WHERE versions.purged_at IS NULL AND versions.id <> COALESCE(scores.current_version_id, '')
        AND (
          (versions.candidate_expires_at IS NOT NULL AND versions.candidate_expires_at <= ?)
          OR
@@ -54,7 +58,7 @@ export async function cleanupScoreStorage(
   for (const candidate of result.results) {
     const deletion = await env.DB.prepare(
       `DELETE FROM score_versions
-       WHERE id = ?
+       WHERE purged_at IS NULL AND id = ?
          AND id <> COALESCE(
            (SELECT current_version_id FROM scores WHERE id = ?),
            ''

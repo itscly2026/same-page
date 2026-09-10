@@ -1,9 +1,14 @@
+import { notifyReaderIdentityChange } from "../reader/reader-cache-events";
+import { rememberDriveAccessRevoked } from "../score-library/local-drive-directory";
+import { authenticatedLocalOwnerKey, captureLocalWorkspaceSession, createLocalWorkspace } from "../platform/local-workspace";
+import { PurgeDialog } from "../drives/purge-dialog";
+import { DriveUsage } from "../drives/drive-usage";
 import { useReadResource } from "../settings/use-read-resource";
 import { DriveLibrary } from "../score-library/drive-library";
-import { driveCacheOwnerKey } from "../score-library/drive-library-cache";
+import { driveCacheOwnerKey, invalidateDriveLibrary } from "../score-library/drive-library-cache";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Button } from "react-aria-components";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { LockKeyhole } from "lucide-react";
 import { authClient } from "../auth/auth-client";
 import { TaskHeader } from "../components/task-header";
@@ -24,6 +29,8 @@ export default function DriveManagementPage({ section }: { section: "info" | "ad
   return <DriveManagement key={`${session.data?.user.id ?? "guest"}:${choirId}`} choirId={choirId} userId={session.data?.user.id ?? "guest"} section={section} />;
 }
 function DriveManagement({ choirId, section, userId }: { choirId: string; section: string; userId: string }) {
+  const navigate = useNavigate();
+  const [purge, setPurge] = useState(false);
   const [dialog, setDialog] = useState<"name" | null>(null);
   const [locked, setLocked] = useState<Operation | null>(null);
   const resource = useReadResource<{ overview: Overview; members: Members | null }>(`${userId}:${choirId}:management`, async signal => {
@@ -56,8 +63,19 @@ function DriveManagement({ choirId, section, userId }: { choirId: string; sectio
       <div className="management-list">
         {section === "info" && row("云盘名称", data.overview.name, "修改云盘名称", "editDriveInfo", () => setDialog("name"))}
         {section === "admission" && (data.overview.guestAdmissionMode === "invite" ? (resource.canMutate && can("manageInvites") ? <InviteSharing choirId={choirId} choirName={data.overview.name} /> : row("访客进入方式", "需要邀请码", "查看权限说明", "manageInvites", () => {})) : <section className="management-row"><h2>访客进入方式</h2><p>开放进入</p></section>)}
-        {section === "trash" && (resource.canMutate && can("trashFiles") ? <TrashContents choirId={choirId} onRestored={() => {}} /> : row("回收站", "删除的乐谱在此保留 30 天。有删除与恢复文件权限的成员可查看并恢复。", "查看权限说明", "trashFiles", () => {}))}
+        {section === "trash" && (resource.canMutate && can("trashFiles") ? <TrashContents userId={userId} canPurge={data.overview.capabilities.isOwner} choirId={choirId} onRestored={() => {}} /> : row("回收站", "删除的乐谱在此保留 30 天。有删除与恢复文件权限的成员可查看并恢复。", "查看权限说明", "trashFiles", () => {}))}
+        {section === "info" && data.overview.isMember && <DriveUsage choirId={choirId} userId={userId} />}
+        {section === "info" && data.overview.capabilities.isOwner && <section className="management-row"><h2>删除云盘</h2><p>所有成员将失去此云盘及其乐谱和笔记的访问权限。</p><Button className="primary-button destructive-button" isDisabled={!resource.canMutate} onPress={() => setPurge(true)}>彻底删除云盘</Button></section>}
       </div>
+      {purge && resource.canMutate && data.overview.capabilities.isOwner && <PurgeDialog userId={userId} path={`/api/choirs/${choirId}/purge`} title="彻底删除云盘" driveName={data.overview.name} description="云盘内的全部乐谱和所有成员的笔记都会被删除。" onClose={() => setPurge(false)} onComplete={async isCurrent => {
+        const workspace = await captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey(userId), choirId, ""));
+        if (!isCurrent()) return;
+        await rememberDriveAccessRevoked(workspace, new AbortController().signal);
+        if (!isCurrent()) return;
+        invalidateDriveLibrary(driveCacheOwnerKey(userId, choirId), choirId);
+        notifyReaderIdentityChange();
+        navigate("/drives", { replace: true });
+      }} />}
       {dialog === "name" && resource.canMutate && can("editDriveInfo") && <NameSettings choirId={choirId} onClose={() => setDialog(null)} onSaved={refresh} />}
     </>}
   </main></div>;

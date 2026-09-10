@@ -29,10 +29,12 @@ export interface ScoreActionSelection {
 
 export function ScoreActionDialog({
   choirId,
+  canPurge = false,
   selection,
   onClose,
   onComplete,
 }: {
+  canPurge?: boolean;
   choirId: string;
   selection: ScoreActionSelection;
   onClose: () => void;
@@ -58,7 +60,7 @@ export function ScoreActionDialog({
     );
   }
   if (selection.action === "replace" || selection.action === "history") {
-    return <Suspense fallback={<p role="status">正在加载版本工具…</p>}><PdfVersionDialog choirId={choirId} score={selection.score} historyOnly={selection.action === "history"}
+    return <Suspense fallback={<p role="status">正在加载版本工具…</p>}><PdfVersionDialog canPurge={canPurge} choirId={choirId} score={selection.score} historyOnly={selection.action === "history"}
       onClose={onClose} onComplete={onComplete} /></Suspense>;
   }
   return <BasicScoreActionDialog choirId={choirId} selection={selection} onClose={onClose} onComplete={onComplete} />;

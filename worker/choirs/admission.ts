@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import type { GuestAdmissionRequest } from "../../src/shared/choirs";
 import type { Database } from "../db/database";
@@ -15,6 +15,7 @@ export async function findAdmissibleChoir(options: {
       where: and(
         eq(choirs.id, options.request.choirId),
         eq(choirs.guestAdmissionMode, "open"),
+      isNull(choirs.purgedAt),
       ),
     });
   }
@@ -27,6 +28,7 @@ export async function findAdmissibleChoir(options: {
     where: and(
       eq(choirs.joinCodeHash, joinCodeHash),
       eq(choirs.guestAdmissionMode, "invite"),
+      isNull(choirs.purgedAt),
     ),
   });
 }

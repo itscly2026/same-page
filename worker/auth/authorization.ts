@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import type { Database } from "../db/database";
 import { choirs, memberships } from "../db/schema";
@@ -21,6 +21,8 @@ export async function requireChoirRead(
     throw new AuthorizationError();
   }
 
+  const available = await database.query.choirs.findFirst({ where: and(eq(choirs.id, choirId), isNull(choirs.purgedAt)), columns: { id: true } });
+  if (!available) throw new AuthorizationError();
   if (principal.kind === "guest") {
     if (principal.choirId !== choirId) {
       throw new AuthorizationError();

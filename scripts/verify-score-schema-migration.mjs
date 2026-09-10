@@ -176,6 +176,11 @@ try {
     SELECT 'personal-after-209', choir_id, score_id, kind, owner_user_id, '演出提示', sort_order, default_color, 2, 2
     FROM annotation_layers WHERE id = 'personal-before-209';`, targetArgs });
   assert.equal(query("SELECT count(*) AS count FROM annotation_layers WHERE owner_user_id = 'second-user'")[0].count, 2);
+  const beforeTrial = query("SELECT id, storage_limit_bytes, storage_used_bytes FROM choirs ORDER BY id");
+  applyMigrations("0022_annotation_brush_styles.sql", "0023_annotation_nib.sql", "0024_free_trial_drives.sql");
+  assert.deepEqual(query("SELECT id, storage_limit_bytes, storage_used_bytes FROM choirs ORDER BY id"), beforeTrial);
+  assert(query("SELECT plan, score_limit, member_limit, purged_at FROM choirs").every(row => row.plan === "configured" && row.score_limit === null && row.member_limit === null && row.purged_at === null));
+  assert.deepEqual(query("PRAGMA foreign_key_check"), []);
   process.stdout.write("Verified legacy score schema migration.\n");
 } finally {
   rmSync(persistencePath, { recursive: true, force: true });

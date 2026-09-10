@@ -204,7 +204,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           {can("uploadFiles") && (storageRatio >= 0.8 || quotaBlocked) ? (
             <p className="storage-warning" role="status">
               云盘存储已使用 {formatBytes(result.storage.usedBytes)} / {formatBytes(result.storage.limitBytes)}。
-              {quotaBlocked ? " 请先释放空间后再上传。" : " 接近上限，请留意后续上传。"}
+              {quotaBlocked ? " 请根据上传提示释放空间或乐谱名额后再上传。" : " 接近上限，请留意后续上传。"}
             </p>
           ) : null}
           {message ? <p className="library-message" role="status">{message}</p> : null}
@@ -264,7 +264,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
       {visible("uploadFiles") && <UploadFab disabled={Boolean(access.local)} onPress={() => setUploadOpen(true)} />}
 
 
-      {userId && can("uploadFiles") ? <UploadDialog
+      {userId && can("uploadFiles") ? <UploadDialog storage={result.storage}
         key={`upload:${choirId}:${userId}`}
         choirId={choirId}
         isOpen={uploadOpen}
@@ -278,7 +278,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
         }}
       /> : null}
       {scoreAction && (scoreAction.action === "info" || can(scoreAction.action === "trash" ? "trashFiles" : "modifyFiles")) ? (
-        <ScoreActionDialog
+        <ScoreActionDialog canPurge={result.permissions.capabilities.isOwner}
           key={`${scoreAction.score.id}:${scoreAction.action}`}
           choirId={choirId}
           selection={scoreAction}
