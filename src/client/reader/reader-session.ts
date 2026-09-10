@@ -167,9 +167,6 @@ export class ReaderSession {
     else void this.applyCloud({ state: "network-unavailable" });
   }
   private startCloudIfNeeded() {
-    // A verified image copy needs the pending cloud result to choose online PDF
-    // or offline images. Do not start PDF.js merely because local lookup won.
-    if (!this.cloudSettled && this.state.offline?.imageManifest) return;
     if (!this.disposed && !this.source && (!this.cloudSettled || this.lookup?.state === "active" || this.confirmedVersion)) {
       this.openSource({ kind: "cloud", versionId: this.confirmedVersion ?? undefined });
     }

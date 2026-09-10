@@ -107,8 +107,8 @@ it.each([
 ])("keeps PDF failure %s actionable without starting another rendering service", async (error, message) => {
   const workspace = await resolveLocalWorkspace({ authenticatedUserId: null, choirId: "failure-drive", scoreId: "score" });
   vi.mocked(loadPdfDocument).mockImplementationOnce(() => ({ promise: Promise.reject(error), destroy: vi.fn().mockResolvedValue(undefined) }));
-  const fetchMock = vi.fn(async (input: string) => input.endsWith("/bootstrap")
-    ? Response.json({ state: "active", permissions: { capabilities: noCapabilities() }, score: { id: "score", choirId: "failure-drive", fileName: "谱.pdf", updatedAt: 1,
+  const fetchMock = vi.fn(async (input: string) => input.includes("/sync?")
+    ? Response.json({ state: "active", layers: { layers: [], sharedLayerRevision: 0, permissions: { canManageLayers: false } }, annotations: { cursor: 0, objects: [] }, permissions: { capabilities: noCapabilities() }, score: { id: "score", choirId: "failure-drive", fileName: "谱.pdf", updatedAt: 1,
       currentVersion: { id: "version", versionNumber: 1, sizeBytes: 10, sha256: "a".repeat(64), etag: "test", pageCount: 1, createdAt: 1 } } })
     : new Response(null, { status: 503 }));
   vi.stubGlobal("fetch", fetchMock);
@@ -118,7 +118,7 @@ it.each([
     await vi.waitFor(() => expect(session.getSnapshot().status).toBe("error"));
     expect(session.getSnapshot().error).toContain(message);
     expect(session.getSnapshot().document).toBeNull();
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(expect.arrayContaining([expect.stringContaining("/bootstrap")]));
-    expect(fetchMock.mock.calls.map(([url]) => url).filter(url => !/\/(bootstrap|layers|annotations)(\?|$)/.test(url))).toEqual([]);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(expect.arrayContaining([expect.stringContaining("/sync?")]));
+    expect(fetchMock.mock.calls.map(([url]) => url).filter(url => !/\/(sync|layers|annotations)(\?|$)/.test(url))).toEqual([]);
   } finally { session.dispose(); }
 });
