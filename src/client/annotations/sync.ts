@@ -1,3 +1,4 @@
+import { guestNoteLayer, isLocalExperience } from "./guest-notes";
 import { readingPreferenceVersion } from "../reader/reading-preferences";
 import { untilAborted } from "../platform/abortable";
 import { diagnoseLocalOperation } from "../diagnostics/local-operation";
@@ -152,7 +153,7 @@ async function refreshAnnotations(
   let cursor = JSON.stringify(checkpoint?.layerIds) === JSON.stringify(layerIds) ? checkpoint?.cursor ?? 0 : 0;
   let pulled = 0;
   while (true) {
-    const response = await diagnoseLocalOperation("sync-pull", () => refreshRequest(`${base}/annotations?cursor=${cursor}`, signal), diagnostics);
+    const response = await diagnoseLocalOperation("sync-pull", () => refreshRequest(`${base}/annotations?cursor=${cursor}${workspace.ownerKey.startsWith("experience:") ? "&experience=1" : ""}`, signal), diagnostics);
     await assertLocalWorkspaceActive(workspace);
     signal.throwIfAborted();
     if (!response.ok) {
@@ -177,7 +178,7 @@ export async function refreshLayerCapabilities(workspace: LocalWorkspace, signal
   signal.throwIfAborted();
   const base = `/api/choirs/${encodeURIComponent(workspace.choirId)}/scores/${encodeURIComponent(workspace.scoreId)}`;
   const layerResponse = await diagnoseLocalOperation("sync-layers-request", async () => {
-    const response = await refreshRequest(`${base}/layers`, signal);
+    const response = await refreshRequest(`${base}/layers${workspace.ownerKey.startsWith("experience:") ? "?experience=1" : ""}`, signal);
     await assertLocalWorkspaceActive(workspace);
     signal.throwIfAborted();
     if (!response.ok) {
@@ -214,7 +215,7 @@ export async function refreshLayerCapabilities(workspace: LocalWorkspace, signal
   }, diagnostics);
   await assertLocalWorkspaceActive(workspace);
   signal.throwIfAborted();
-  return applied;
+  return isLocalExperience(workspace) ? [...applied.filter(layer => layer.kind === "shared").map(layer => ({ ...layer, canEdit: false })), guestNoteLayer()] : applied;
 
 }
 
@@ -245,6 +246,7 @@ async function drainAnnotationOutbox(
   options: { maxOperations?: number; signal?: AbortSignal; layers?: AnnotationLayerSummary[] } = {},
 ) {
   await assertLocalWorkspaceActive(workspace);
+  if (isLocalExperience(workspace)) return 0;
   const layers = options.layers ?? await refreshLayerCapabilities(workspace,
     options.signal ?? AbortSignal.timeout(30_000));
   const editableLayerIds = new Set(layers.filter(layer => layer.canEdit).map(layer => layer.id));

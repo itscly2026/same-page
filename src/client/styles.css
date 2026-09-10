@@ -1740,10 +1740,7 @@ h1 {
 .reader-stage {
   position: absolute;
   z-index: 1;
-  inset: var(--reader-safe-top, env(safe-area-inset-top))
-    var(--reader-safe-right, env(safe-area-inset-right))
-    var(--reader-safe-bottom, env(safe-area-inset-bottom))
-    var(--reader-safe-left, env(safe-area-inset-left));
+  inset: 0;
 }
 
 .reader-chrome {
@@ -2501,6 +2498,7 @@ h1 {
   overflow: clip;
 }
 
+.page-reader__canvas-stage:has([data-gesture-preview]),
 .page-reader__pager-window[data-gesture-preview] {
   overflow: visible;
 }

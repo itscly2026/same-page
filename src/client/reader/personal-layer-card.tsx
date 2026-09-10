@@ -1,3 +1,4 @@
+import { isLocalExperience } from "../annotations/guest-notes";
 import { useState } from "react";
 import { Button, Switch } from "react-aria-components";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
@@ -26,10 +27,10 @@ export function PersonalLayerCard({ layer, workspace, pending, managementAction,
     <div className="layer-card__main">
       <label className="reader-layer-toggle">{!managementAction && <input type="checkbox" aria-label={`显示 ${layer.name}`} checked={layer.subscribed}
         onChange={event => onSubscribe(event.target.checked)} />}<strong>{layer.name}</strong></label>
-      {!managementAction && <Switch className="personal-layer-share" aria-label={`公开 ${layer.name}`} aria-description="开启后云盘成员可见，关闭后仅自己可见；仅作者可编辑" isSelected={!!layer.sharing} isDisabled={pending || !layer.canShare}
+      {!managementAction && !isLocalExperience(workspace) && <Switch className="personal-layer-share" aria-label={`公开 ${layer.name}`} aria-description="开启后云盘成员可见，关闭后仅自己可见；仅作者可编辑" isSelected={!!layer.sharing} isDisabled={pending || !layer.canShare}
         onChange={sharing => void onChange({ sharing })}><span className="personal-layer-share-track" aria-hidden="true" /><span>公开</span></Switch>}
     </div>
-    {!managementAction && <p className="personal-layer-audience">{layer.sharing ? "云盘成员可见" : "仅自己可见"}</p>}
+    {!managementAction && <p className="personal-layer-audience">{isLocalExperience(workspace) ? "仅保存在此浏览器" : layer.sharing ? "云盘成员可见" : "仅自己可见"}</p>}
     {managementAction === "manage" && <div className="personal-layer-actions" role="group" aria-label={`${layer.name}的操作`}>
       <Button isDisabled={pending} onPress={() => { setName(layer.name); setRenaming(!renaming); setConfirming(false); }}>重命名</Button>
       <Button className="personal-layer-delete" isDisabled={pending} onPress={() => { setConfirming(true); setRenaming(false); }}>删除</Button>

@@ -1,3 +1,4 @@
+import { GUEST_NOTE_LAYER_ID } from "../annotations/guest-notes";
 import { diagnosticScope, diagnosticErrorType } from "../diagnostics/diagnostics";
 import { diagnoseLocalOperation } from "../diagnostics/local-operation";
 import type { DiagnosticStep } from "../../shared/diagnostics";
@@ -105,7 +106,7 @@ export function hasCompleteOfflineLayers(layers: AnnotationLayerSummary[], owner
   const shared = layers.filter(layer => layer.kind === "shared");
   return new Set(shared.map(layer => layer.sharedSlot)).size === shared.length
     && shared.every(layer => !!layer.sharedSlot)
-    && (ownerKey.startsWith("user:") ? ownPersonal.length >= 1 : ownPersonal.length === 0);
+    && (ownerKey.startsWith("user:") ? ownPersonal.length >= 1 : ownPersonal.every(layer => layer.id === GUEST_NOTE_LAYER_ID));
 }
 
 type OfflineInspection = { record: OfflineScoreRecord | null; invalid: boolean };

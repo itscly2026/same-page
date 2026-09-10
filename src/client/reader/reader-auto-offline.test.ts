@@ -65,7 +65,7 @@ it("opening a score automatically verifies an offline copy without waiting to di
   finish();
   await vi.waitFor(() => expect(session.getSnapshot()).toMatchObject({offline:{versionId:"v1"}}));
   expect(session.getSnapshot().downloadMessage).toContain("可以离线打开");
-  expect(session.getSnapshot().offline?.annotationSnapshot.layers).toHaveLength(5);
+  expect(session.getSnapshot().offline?.annotationSnapshot.layers).toHaveLength(6);
   expect(pdfRequests).toBe(1);
 });
 it("reopening uses the verified local PDF and does not download it again", async () => {
@@ -172,7 +172,7 @@ it("keeps the reader usable and its previous copy when refreshed layers succeed 
   score = { ...score, currentVersion: { ...score.currentVersion, id: "v2", versionNumber: 2 } };
   await session.refresh();
   await vi.waitFor(() => expect(session.getSnapshot().downloadMessage).toContain("未完成"));
-  expect(session.getSnapshot()).toMatchObject({ status: "ready", capability: "read-only", offline: { versionId: "v1" } });
+  expect(session.getSnapshot()).toMatchObject({ status: "ready", capability: "ready", offline: { versionId: "v1" } });
   expect((await findVerifiedOfflineScore(session.workspace))?.versionId).toBe("v1");
   failPull = false;
   await session.download();
@@ -190,13 +190,13 @@ it("refreshes layers after preparing bytes instead of activating the opening lay
   }));
   const session = await open();
   await vi.waitFor(() => expect(finish).toBeDefined());
-  await vi.waitFor(() => expect(session.getSnapshot().capability).toBe("read-only"));
+  await vi.waitFor(() => expect(session.getSnapshot().capability).toBe("ready"));
   expect(layerRequests).toBe(1);
   layers = layers.slice(0, 4);
   finish();
   await vi.waitFor(() => expect(session.getSnapshot().offline?.versionId).toBe("v1"));
   expect(layerRequests).toBe(2);
-  expect(session.getSnapshot().offline?.annotationSnapshot.layers).toHaveLength(4);
+  expect(session.getSnapshot().offline?.annotationSnapshot.layers).toHaveLength(5);
 });
 
 it("bounds document-ready opens that never produce a visible page, independently of note sync", async () => {

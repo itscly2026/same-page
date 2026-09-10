@@ -213,7 +213,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
             <section className="file-list" aria-label="PDF 文件">
               {visibleScores.map((score) => (
                 <article className="file-row" key={score.id}>
-                  <ScoreLink userId={userId} choirId={choirId} scoreId={score.id} local={localFilesOnly}
+                  <ScoreLink experience={choir.isPreviewEntry === true} userId={userId} choirId={choirId} scoreId={score.id} local={localFilesOnly}
                     onOpen={() =>
                       {
                         startLoadingJourney(

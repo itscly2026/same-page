@@ -77,6 +77,17 @@ beforeEach(async () => {
 });
 
 describe("AnnotationOverlay", () => {
+  it("focuses new text even while a previous annotation is being saved", () => {
+    vi.spyOn(editor, "getSnapshot").mockReturnValue("saving");
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页笔记层");
+    mockBounds(overlay);
+    fireEvent.pointerDown(overlay, { pointerId: 1, pointerType: "touch", clientX: 20, clientY: 30 });
+    fireEvent.pointerUp(overlay, { pointerId: 1, pointerType: "touch", clientX: 20, clientY: 30 });
+    expect(screen.getByLabelText("笔记文本")).toHaveFocus();
+    expect(screen.getByLabelText("笔记文本")).not.toBeDisabled();
+  });
+
   it.each(["ink", "highlighter"] as const)("finishes an active %s stroke before closing without pointerup", async tool => {
     renderOverlay([], tool);
     const overlay = screen.getByLabelText("第 1 页笔记层"); mockBounds(overlay);
@@ -459,7 +470,7 @@ describe("AnnotationOverlay", () => {
     let rejectWrite!: (reason: Error) => void;
     const write = vi.spyOn(localDatabase.annotations, "put").mockImplementation(() => new Dexie.Promise((_resolve, reject) => { rejectWrite = reject; }));
     fireEvent.click(screen.getByRole("button", { name: "完成" }));
-    await waitFor(() => expect(screen.getByLabelText("笔记文本")).toBeDisabled());
+    await waitFor(() => expect(screen.getByLabelText("笔记文本")).toHaveAttribute("readonly"));
     expect(screen.getByRole("slider", { name: "字号" })).toBeDisabled();
     await waitFor(() => expect(write).toHaveBeenCalled());
     rejectWrite(new DOMException("full", "QuotaExceededError"));

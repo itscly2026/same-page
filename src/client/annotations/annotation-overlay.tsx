@@ -1,6 +1,7 @@
 import {
   type PointerEvent as ReactPointerEvent,
   useEffect,
+  useEffectEvent,
   useId,
   useLayoutEffect,
   useRef,
@@ -121,6 +122,8 @@ export function AnnotationOverlay({
   const strokeFrame = useRef<number | null>(null);
   const lastCheckpoint = useRef(0);
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
+  const textSavingRef = useRef(false);
+  const [textSaving, setTextSaving] = useState(false);
   const [editorText, setEditorText] = useState("");
   const [editorFontScale, setEditorFontScale] = useState(DEFAULT_TEXT_FONT_SCALE);
   const [fontScaleAdjusting, setFontScaleAdjusting] = useState(false);
@@ -135,6 +138,7 @@ export function AnnotationOverlay({
   const currentStrokeId = useRef<string | null>(null);
   const eraserPointerId = useRef<number | null>(null);
   const erasedStrokeIds = useRef(new Set<string>());
+  const [erasedPreview, setErasedPreview] = useState(new Set<string>());
   const objectTransform = useRef<ObjectTransformState | null>(null);
   const [objectTransformPreview, setObjectTransformPreview] = useState<{
     id: string;
@@ -181,6 +185,14 @@ export function AnnotationOverlay({
   }, []);
 
   useEffect(() => editor?.registerFinishCommit(async () => {
+    if (activeLayerId && erasedStrokeIds.current.size) {
+      const ids = [...erasedStrokeIds.current];
+      erasedStrokeIds.current.clear();
+      eraserPointerId.current = null;
+      const saved = await Promise.all(ids.map(id => editor.persist({ id, layerId: activeLayerId, payload: null, deleted: true })));
+      setErasedPreview(new Set());
+      if (!saved.every(Boolean)) return false;
+    }
     if (!liveStroke.current || !currentStrokeId.current || !activeLayerId) return true;
     const saved = editor.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: liveStroke.current }, true);
     liveStroke.current = null;
@@ -270,12 +282,7 @@ export function AnnotationOverlay({
       }
       if (!inkHit(payload, bounds.width, bounds.height, pointer.x, pointer.y, ERASER_HIT_RADIUS_PX)) continue;
       erasedStrokeIds.current.add(annotation.id);
-      void editor?.persist({
-        id: annotation.id,
-        layerId: annotation.layerId,
-        payload: null,
-        deleted: true,
-      }).catch(() => erasedStrokeIds.current.delete(annotation.id));
+      setErasedPreview(new Set(erasedStrokeIds.current));
     }
   };
 
@@ -319,14 +326,14 @@ export function AnnotationOverlay({
   };
 
   const cancelTextEditor = () => {
-    if (persistence === "saving") return;
+    if (textSavingRef.current) return;
     if (textEditor) editor?.discard(textEditor.id);
     closeTextEditor();
   };
 
-  const finishTextEditor = async () => {
+  const commitTextEditor = async () => {
     if (!textEditor) return true;
-    if (!activeLayerId || persistence === "saving") return false;
+    if (!activeLayerId) return false;
     const textDraft = textEditor;
     const text = editorText.trim();
     if (!text) {
@@ -357,6 +364,14 @@ export function AnnotationOverlay({
     });
     if (saved) closeTextEditor();
     return Boolean(saved);
+  };
+
+  const finishTextEditor = async () => {
+    if (textSavingRef.current) return false;
+    textSavingRef.current = true;
+    setTextSaving(true);
+    try { return await commitTextEditor(); }
+    finally { textSavingRef.current = false; setTextSaving(false); }
   };
 
   useEffect(() => { if (editing && textEditor) return editor?.registerFinishCommit(finishTextEditor); });
@@ -702,8 +717,40 @@ export function AnnotationOverlay({
     setDraftStroke(null);
     currentStrokeId.current = null;
     eraserPointerId.current = null;
+    if (activeLayerId && event.type !== "pointercancel") {
+      for (const id of erasedStrokeIds.current) void editor?.persist({ id, layerId: activeLayerId, payload: null, deleted: true });
+    }
     erasedStrokeIds.current.clear();
+    setErasedPreview(new Set());
   };
+
+  const cancelForNavigation = useEffectEvent(() => {
+    pendingTextPlacement.current = null;
+    cancelObjectTransform();
+    const id = currentStrokeId.current;
+    if (id && activeLayerId && liveStroke.current) {
+      // Remove any durable checkpoints from the interrupted stroke too.
+      void editor?.persist({ id, layerId: activeLayerId, payload: null, deleted: true }, true);
+    }
+    currentStrokeId.current = null;
+    drawingPointer.current = null;
+    liveStroke.current = null;
+    shapeStart.current = null;
+    eraserPointerId.current = null;
+    erasedStrokeIds.current.clear();
+    if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current);
+    strokeFrame.current = null;
+    setDraftStroke(null);
+    setDraftId(null);
+    setDraftShape(null);
+    setErasedPreview(new Set());
+  });
+  useEffect(() => {
+    const viewport = overlayRef.current?.closest(".page-reader__viewport, .continuous-reader");
+    const cancel = () => cancelForNavigation();
+    viewport?.addEventListener("reader-navigation-start", cancel);
+    return () => viewport?.removeEventListener("reader-navigation-start", cancel);
+  }, []);
 
   return (
     <>
@@ -731,6 +778,7 @@ export function AnnotationOverlay({
         }}
       >
         {pageAnnotations.map((annotation) => {
+          if (erasedPreview.has(annotation.id)) return null;
           const payload = annotation.payload;
           const color = layerColors.get(annotation.layerId) ?? payload?.color ?? "#dc2626";
           if (payload?.kind === "shape") {
@@ -892,21 +940,22 @@ export function AnnotationOverlay({
           <button
             tabIndex={textEditor ? 0 : -1}
             type="button"
-            disabled={persistence === "saving"}
+            disabled={textSaving}
             onClick={cancelTextEditor}
           >
             取消
           </button>
-          <button tabIndex={textEditor ? 0 : -1} type="submit">完成</button>
+          <button tabIndex={textEditor ? 0 : -1} disabled={textSaving} type="submit">完成</button>
         </header>
         {textEditor ? (
           <textarea
             aria-label="笔记文本"
             autoFocus
             name="text"
-            disabled={persistence === "saving"}
+            readOnly={textSaving}
             ref={textInputRef}
             inputMode="text"
+            placeholder="点按输入文字"
             maxLength={1000}
             rows={2}
             style={{
@@ -944,7 +993,7 @@ export function AnnotationOverlay({
             <input
               aria-label="字号"
               type="range"
-            disabled={persistence === "saving"}
+            disabled={textSaving}
               min={MIN_TEXT_FONT_SCALE}
               max={MAX_TEXT_FONT_SCALE}
               step="0.001"

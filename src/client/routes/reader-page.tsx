@@ -1,3 +1,5 @@
+import { useReaderFullscreen } from "../reader/use-reader-fullscreen";
+import { clearGuestNotes, isLocalExperience } from "../annotations/guest-notes";
 import { useReadingPreferenceProjection } from "../reader/reading-preference-intents";
 import { loginHref } from "../auth/login-return";
 import { useLocation, useNavigationType } from "react-router-dom";
@@ -96,12 +98,15 @@ const ReaderLayerPanel = lazy(() =>
 
 export default function ReaderPage() {
   const { choirId, scoreId } = useParams();
+  const location = useLocation();
   const identity = useApplicationIdentity();
-  return <ReaderPageContent key={`${identity.localUserId ?? "guest"}:${choirId}:${scoreId}`} />;
+  return <ReaderPageContent key={`${identity.localUserId ?? "guest"}:${choirId}:${scoreId}:${location.search}`} />;
 }
 
 function ReaderPageContent() {
+  const fullscreen = useReaderFullscreen();
   const location = useLocation();
+  const experience = new URLSearchParams(location.search).get("experience") === "1";
   const navigationType = useNavigationType();
   const returnedPanel = navigationType !== "POP" && location.state?.readerReturnPanel === "layers";
   const { choirId = "", scoreId = "" } = useParams();
@@ -118,6 +123,7 @@ function ReaderPageContent() {
     false,
   );
   const navigation = useAppNavigation();
+  const [fitRequest, setFitRequest] = useState(0);
   const [zoom, setZoom] = useReturnState("zoom", 1);
   const [editingEditor, setEditingEditor] = useState<AnnotationEditor | null>(null);
   const [annotationInteraction, setAnnotationInteraction] =
@@ -175,6 +181,7 @@ function ReaderPageContent() {
     if (waitingForIdentity) return () => { active = false; clearTimeout(timer); };
     void resolveLocalWorkspace({
       authenticatedUserId: identity.localUserId,
+      experience,
       signal: controller.signal,
       choirId,
       scoreId,
@@ -196,11 +203,11 @@ function ReaderPageContent() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [choirId, scoreId, identity.localUserId, waitingForIdentity, workspaceAttempt, workspaceError]);
+  }, [choirId, scoreId, identity.localUserId, waitingForIdentity, workspaceAttempt, workspaceError, experience]);
 
   const workspace =
     resolvedWorkspace &&
-    (!identity.localUserId || resolvedWorkspace.ownerKey === `user:${identity.localUserId}`) &&
+    (!identity.localUserId || resolvedWorkspace.ownerKey === `${experience ? "experience:" : ""}user:${identity.localUserId}`) &&
     workspaceIsActive &&
     resolvedWorkspace.choirId === choirId &&
     resolvedWorkspace.scoreId === scoreId
@@ -434,8 +441,10 @@ function ReaderPageContent() {
     onInteractionChange: setAnnotationInteraction,
     editor,
   };
+  const guestExperience = workspace ? isLocalExperience(workspace) : false;
   const syncStatus = deriveReaderSyncStatus({
-    outcome: cloudState === "trashed" ? "trash-preserved" : syncActivity === "failed" && online ? "failed" : syncOutcome,
+    localOnly: guestExperience,
+    outcome: guestExperience ? syncOutcome : cloudState === "trashed" ? "trash-preserved" : syncActivity === "failed" && online ? "failed" : syncOutcome,
     syncing: syncing || syncActivity === "running",
     loaded: activeAnnotations !== null,
     draftCount: annotations.filter(annotation => annotation.state === "draft").length,
@@ -538,9 +547,14 @@ function ReaderPageContent() {
             <Popover triggerRef={moreTrigger} isOpen={moreOpen} onOpenChange={setMoreOpen} isNonModal placement="bottom end" className="reader-more-popover">
             <Dialog className="reader-more-menu" aria-label="更多阅读选项">
               <IdentityNotice identity={identity} />
+              {guestExperience && <section aria-label="本机体验笔记"><h2>本机体验笔记</h2><p>仅保存在此浏览器，不上传、不修改公开内容。</p>
+                <Button onPress={() => { if (workspace) void clearGuestNotes(workspace).then(() => setSyncOutcome("local-saved")).catch(() => setSyncOutcome("failed")); }}>清除本谱体验笔记</Button>
+              </section>}
               <header className="reader-menu-heading"><strong>阅读选项</strong><Button aria-label="关闭更多阅读选项" onPress={() => setMoreOpen(false)}>关闭</Button></header>
               {!editing && <>
               <section aria-label="页面布局与缩放"><h2>页面布局与缩放</h2>
+              {fullscreen.supported && <Button onPress={() => void fullscreen.toggle()}>{fullscreen.active ? "退出全屏" : "全屏阅读"}</Button>}
+              {fullscreen.error && <p role="status">{fullscreen.error}</p>}
               <div className="segmented-control" aria-label="页面布局">
                 <Button
                   aria-pressed={layout === "page"}
@@ -558,13 +572,13 @@ function ReaderPageContent() {
                 </Button>
               </div>
               <div className="reader-more-menu__zoom" aria-label="缩放控制">
-                <Button aria-label="适合页面" onPress={() => setZoom(1)}>
+                <Button aria-label="适合页面" onPress={() => { setZoom(1); setFitRequest(value => value + 1); }}>
                   <Maximize2 aria-hidden="true" size={18} />
                   <span>适合页面</span>
                 </Button>
                 <Button
                   aria-label="缩小"
-                  onPress={() => setZoom((value) => Math.max(1, value - 0.25))}
+                  onPress={() => setZoom((value) => Math.max(layout === "continuous" ? 0.1 : 1, value - 0.25))}
                 >
                   <Minus aria-hidden="true" size={18} />
                 </Button>
@@ -595,7 +609,7 @@ function ReaderPageContent() {
               </section>
               <section aria-label="笔记保存与同步"><h2>笔记保存与同步</h2>
                 <p className="reader-more-menu__status" data-kind={syncStatus.kind} role="status">{syncStatus.message}</p>
-                {(syncStatus.kind === "failed" || syncStatus.kind === "pending") && (
+                {!guestExperience && (syncStatus.kind === "failed" || syncStatus.kind === "pending") && (
                 <Button className="reader-sync-action" isDisabled={syncing || syncActivity === "running" || cloudState === "trashed"} onPress={() => void manualSync()}>
                   <RefreshCw aria-hidden="true" size={18} />
                   {syncing || syncActivity === "running" ? "同步中…" : syncStatus.kind === "failed" ? "重试同步" : "立即同步"}
@@ -607,7 +621,7 @@ function ReaderPageContent() {
               <Button onPress={() => navigation.afterEditing(() => { setMoreOpen(false); setExportOpen(true); })}>导出 PDF</Button>
               </section>
               <details className="reader-help"><summary>阅读帮助</summary>
-                <p className="reader-more-menu__status">轻点中央显示工具；点按两侧或左右滑动翻页。编辑时锁定当前页，点勾号完成后继续翻页。笔记同步与离线副本分别准备。</p>
+                <p className="reader-more-menu__status">轻点中央显示工具；点按两侧或左右滑动翻页。编辑时双指移动或缩放当前页，点勾号完成后继续翻页。笔记同步与离线副本分别准备。</p>
                 <Button onPress={() => { setMoreOpen(false); setDiagnosticOpen(true); }}>故障诊断</Button>
               </details>
             </Dialog>
@@ -677,7 +691,7 @@ function ReaderPageContent() {
                   key={workspace.scopeKey}
                   workspace={workspace}
                   layers={activeAnnotations?.layers ?? []}
-                  signedIn={Boolean(identity.authenticatedUserId)}
+                  signedIn={Boolean(identity.authenticatedUserId) && !guestExperience}
                 />
               </Suspense>
             </Dialog>
@@ -749,6 +763,7 @@ function ReaderPageContent() {
           />
         ) : (
           <ContinuousLayout
+            fitRequest={fitRequest}
             document={document}
             currentPage={currentPage}
             zoom={zoom}

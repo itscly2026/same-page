@@ -29,7 +29,7 @@ export class ReaderAnnotationActions {
       await this.check(signal);
       await diagnoseLocalOperation("draft-save", () => queueScoreDrafts(this.workspace), diagnostics);
       await this.check(signal);
-      requestOutboxRecovery();
+      if (this.workspace.ownerKey.startsWith("user:")) requestOutboxRecovery();
       return "local-saved";
     } catch { return signal.aborted ? null : "failed"; }
   }

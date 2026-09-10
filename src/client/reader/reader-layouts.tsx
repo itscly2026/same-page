@@ -1,5 +1,5 @@
 import { useReturnViewport } from "../navigation/use-return-viewport";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import {
   type CSSProperties,
   lazy,
@@ -55,6 +55,7 @@ interface ReaderLayoutProps {
   document: ScoreDocument;
   currentPage: number;
   zoom: number;
+  fitRequest?: number;
   onZoomChange(value: number): void;
   onPageChange(page: number): void;
   onToggleChrome(): void;
@@ -116,12 +117,13 @@ export function PageLayout({
     containerRef,
     contentRef,
     previewBoundaryRef,
-    disabled: annotationProps.editing,
+    disabled: false,
+    twoFingerOnly: annotationProps.editing,
     zoom,
     onZoomChange,
     onTap: onToggleChrome,
-    onEdgeTap: zoom <= 1 ? requestPage : undefined,
-    pageTurn: zoom <= 1 ? pager.gesture : undefined,
+    onEdgeTap: !annotationProps.editing && zoom <= 1 ? requestPage : undefined,
+    pageTurn: !annotationProps.editing && zoom <= 1 ? pager.gesture : undefined,
     pageTurnExtent: pageTurnDistance,
   });
 
@@ -238,6 +240,7 @@ export function ContinuousLayout({
   document,
   currentPage,
   zoom,
+  fitRequest = 0,
   onZoomChange,
   onPageChange,
   onToggleChrome,
@@ -250,6 +253,19 @@ export function ContinuousLayout({
   const pageWidth = Math.max(1, size.width * zoom);
   const ratios = usePageAspectRatios(document);
   const geometryReady = ratios.length === document.numPages;
+  const fitted = useRef({ request: 0, zoom: 1 });
+  const pendingFit = useRef<{ page: number; zoom: number } | null>(null);
+  useEffect(() => {
+    if (!fitRequest || !geometryReady || size.width <= 0 || size.height <= 0) return;
+    if (fitted.current.request === fitRequest && Math.abs(zoom - fitted.current.zoom) > 0.001) return;
+    const next = calculateFittedPageWidth(size.width, size.height, ratios[currentPage - 1]) / size.width;
+    if (Math.abs(next - zoom) > 0.001 || fitted.current.request !== fitRequest) {
+      alignedPage.current = null;
+      pendingFit.current = { page: currentPage, zoom: next };
+    }
+    fitted.current = { request: fitRequest, zoom: next };
+    onZoomChange(next);
+  }, [fitRequest, geometryReady, size.width, size.height, ratios, currentPage, zoom, onZoomChange]);
   // PDF page geometry is known independently of canvas rendering. Key the
   // virtual measurements by that geometry, so zoom never reuses old heights.
   const getItemKey = useCallback((index: number) => `${index}:${pageWidth}:${ratios[index] ?? 0.707}`, [pageWidth, ratios]);
@@ -261,9 +277,19 @@ export function ContinuousLayout({
     estimateSize: (index) => pageWidth / (ratios[index] ?? 0.707) + 8,
     getItemKey,
     overscan: 2,
+    rangeExtractor: range => annotationProps.editing
+      ? [...new Set([...defaultRangeExtractor(range), currentPage - 1])].sort((a, b) => a - b)
+      : defaultRangeExtractor(range),
   });
 
   useEffect(() => {
+    if (pendingFit.current) {
+      if (Math.abs(zoom - pendingFit.current.zoom) > 0.001) return;
+      virtualizer.scrollToIndex(pendingFit.current.page - 1, { align: "start" });
+      alignedPage.current = { page: pendingFit.current.page, geometryReady };
+      pendingFit.current = null;
+      return;
+    }
     // Initial zero-width measurements cannot establish the saved page position.
     if (size.width <= 0 || size.height <= 0 || annotationProps.editing ||
       (alignedPage.current?.page === currentPage && alignedPage.current.geometryReady === geometryReady)) return;
@@ -281,18 +307,26 @@ export function ContinuousLayout({
     if (!visible) {
       virtualizer.scrollToIndex(currentPage - 1, { align: "start" });
     }
-  }, [annotationProps.editing, currentPage, virtualizer, size.width, size.height, geometryReady]);
+  }, [annotationProps.editing, currentPage, virtualizer, size.width, size.height, geometryReady, pageWidth, fitRequest, zoom]);
 
   useReturnViewport(scrollRef, "continuous", size.width > 0);
 
   const gestureHandlers = useReaderGestures({
     containerRef: scrollRef,
     contentRef,
-    disabled: annotationProps.editing,
+    disabled: false,
+    twoFingerOnly: annotationProps.editing,
     zoom,
     onZoomChange,
     onTap: onToggleChrome,
-    nativeTouchScroll: true,
+    constrainScroll: () => {
+      const element = scrollRef.current;
+      if (!element || !annotationProps.editing) return;
+      const page = virtualizer.getVirtualItems().find(item => item.index === currentPage - 1);
+      if (page) element.scrollTop = Math.max(page.start, Math.min(element.scrollTop, Math.max(page.start, page.end - 8 - element.clientHeight)));
+    },
+    nativeTouchScroll: !annotationProps.editing,
+    minimumZoom: Math.min(1, calculateFittedPageWidth(size.width, size.height, ratios[currentPage - 1] ?? 0.707) / Math.max(1, size.width)),
     captureAnchor: (center) => {
       const bounds = contentRef.current!.getBoundingClientRect();
       const point = { x: center.x - bounds.left, y: center.y - bounds.top };
@@ -318,7 +352,7 @@ export function ContinuousLayout({
       onScroll={() => {
         // An estimated scroll event can queue an obsolete page update before
         // real geometry is aligned. Do not turn that estimate into user intent.
-        if (annotationProps.editing || !geometryReady || !alignedPage.current?.geometryReady) return;
+        if (annotationProps.editing || pendingFit.current || !geometryReady || !alignedPage.current?.geometryReady) return;
         const scrollTop = scrollRef.current?.scrollTop ?? 0;
         // Editing and preview follow the page at the viewport center.
         const threshold = scrollTop + (scrollRef.current?.clientHeight ?? 0) / 2;

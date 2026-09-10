@@ -36,7 +36,7 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
   const access = await resolveScoreAccess(context);
   if (access instanceof Response) return access;
   const { choirId, scoreId, principal } = access;
-  const userId = principal.kind === "user" ? principal.userId : null;
+  const userId = context.req.query("experience") !== "1" && principal.kind === "user" ? principal.userId : null;
 
   if (userId) {
     const now = Date.now();
@@ -86,13 +86,13 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
      ORDER BY CASE layers.kind WHEN 'shared' THEN 0 ELSE 1 END,
               sort_order, layers.created_at`,
   ).bind(userId, userId, userId,
-    access.membership?.id ?? null, userId, choirId, scoreId, userId, context.req.query("state") ?? "current", userId, access.membership?.id ?? null);
+    userId ? access.membership?.id ?? null : null, userId, choirId, scoreId, userId, context.req.query("state") ?? "current", userId, userId ? access.membership?.id ?? null : null);
   const snapshot = await readSharedLayerSnapshot<LayerRow>(context.env.DB, choirId, query);
 
   return context.json({
     sharedLayerRevision: snapshot.sharedLayerRevision,
     layers: snapshot.rows.map(row => ({ ...serializeLayer(row), canShare: row.kind === "personal" && row.can_edit === 1 && !!access.membership })),
-    permissions: { canManageLayers: access.membership ? memberCapabilities(access.membership).operations.operations.includes("configureLayers") : false },
+    permissions: { canManageLayers: userId && access.membership ? memberCapabilities(access.membership).operations.operations.includes("configureLayers") : false },
   });
 });
 
@@ -432,7 +432,7 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/annotations", async (cont
   const access = await resolveScoreAccess(context);
   if (access instanceof Response) return access;
   const cursor = Math.max(0, Number.parseInt(context.req.query("cursor") ?? "0", 10) || 0);
-  const userId = access.principal.kind === "user" ? access.principal.userId : null;
+  const userId = context.req.query("experience") !== "1" && access.principal.kind === "user" ? access.principal.userId : null;
   const rows = await context.env.DB.prepare(
     `SELECT operations.sequence, objects.id, objects.layer_id, objects.version,
             objects.deleted, objects.payload_json,
@@ -464,12 +464,12 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/annotations", async (cont
     .bind(
       userId,
       userId,
-      access.membership?.id ?? null,
+      userId ? access.membership?.id ?? null : null,
       access.scoreId,
       access.choirId,
       cursor,
       userId,
-      access.membership?.id ?? null,
+      userId ? access.membership?.id ?? null : null,
     )
     .all<PullRow>();
   const latestById = new Map<string, AnnotationObjectRecord>();

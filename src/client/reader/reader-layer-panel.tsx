@@ -1,3 +1,4 @@
+import { isLocalExperience } from "../annotations/guest-notes";
 import { useReadingPreferenceProjection } from "./reading-preference-intents";
 import { loginHref } from "../auth/login-return";
 import { annotationLayerListResponseSchema } from "../../shared/annotations";
@@ -122,7 +123,7 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
 
   return (
     <section className="reader-layer-panel" aria-label="看哪些笔记" aria-busy={pending}>
-      <p className="reader-layer-help">仅影响你在这份谱上的显示，更改自动保存。</p><div className="reader-layer-preferences">{signedIn ? <Link to={`/choirs/${workspace.choirId}/preferences`}>设置此云盘的默认显示</Link> : <Link to={loginHref(`/choirs/${workspace.choirId}/scores/${workspace.scoreId}`, "layers")}>登录后设置默认显示</Link>}</div>
+      <p className="reader-layer-help">仅影响你在这份谱上的显示，更改自动保存。</p><div className="reader-layer-preferences">{isLocalExperience(workspace) ? <span>体验显示仅保存在此浏览器</span> : signedIn ? <Link to={`/choirs/${workspace.choirId}/preferences`}>设置此云盘的默认显示</Link> : <Link to={loginHref(`/choirs/${workspace.choirId}/scores/${workspace.scoreId}`, "layers")}>登录后设置默认显示</Link>}</div>
       <div className="layer-section">
         <div className="layer-section__heading">
           <div><h3>共享层</h3></div>
