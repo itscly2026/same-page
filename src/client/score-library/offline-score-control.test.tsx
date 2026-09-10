@@ -44,7 +44,7 @@ beforeEach(async () => {
   downloadPdf.mockResolvedValue(new Response(bytes));
   vi.mocked(loadPdfDocument).mockReturnValue({ promise: Promise.resolve({ document: { numPages: 1 } as Awaited<ReturnType<typeof loadPdfDocument>["promise"]>["document"], versionId: "v2" }), destroy: vi.fn().mockResolvedValue(undefined) });
   vi.stubGlobal("fetch", vi.fn(async (input: string) => {
-    if (input.endsWith("/bootstrap")) return Response.json({ state: "active", score, permissions: { capabilities: noCapabilities() } });
+    if (input.includes("/sync?")) return Response.json({ state: "active", score, permissions: { capabilities: noCapabilities() }, layers: { layers: [{ id: "00000000-0000-4000-8000-000000000001", kind: "personal", sharedSlot: null, name: "我的笔记", sortOrder: 0, subscribed: true, subscriptionSource: "product", displayColor: "#a12652", colorSource: "product", adminDefaultColor: "#a12652", driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }], sharedLayerRevision: 0, permissions: { canManageLayers: false } }, annotations: { cursor: 0, objects: [] } });
     if (input.endsWith("/pdf")) return downloadPdf();
     if (input.endsWith("/layers")) return Response.json({ layers: [{ id: "00000000-0000-4000-8000-000000000001", kind: "personal", sharedSlot: null, name: "我的笔记", sortOrder: 0, subscribed: true, subscriptionSource: "product", displayColor: "#a12652", colorSource: "product", adminDefaultColor: "#a12652", driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }], sharedLayerRevision: 0, permissions: { canManageLayers: false } });
     if (input.includes("/annotations?")) return Response.json({ cursor: 0, objects: [] });

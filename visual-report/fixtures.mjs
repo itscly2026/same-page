@@ -224,12 +224,14 @@ export function resolveFixtureRequest({
 
   if (
     method === "GET" &&
-    pathname === `/api/choirs/${choir.id}/scores/${score.id}/bootstrap`
+    pathname === `/api/choirs/${choir.id}/scores/${score.id}/sync`
   ) {
     return json({
       state: "active",
       score,
       permissions: { capabilities: capabilities(identity === "admin") },
+      layers: JSON.parse(resolveFixtureRequest({ pathname: pathname.replace(/\/sync$/, "/layers"), method, identity, scenarioId, cookie, pdf, selectedScore }).body),
+      annotations: { cursor: 2, objects: annotations },
     });
   }
 
@@ -264,9 +266,11 @@ export function resolveFixtureRequest({
     };
   }
 
+  if (method === "GET" && pathname === `/api/choirs/${choir.id}/scores/${score.id}/status`) return json({ state: "active" });
+
   if (method === "GET" && pathname === `/api/choirs/${choir.id}/scores/${score.id}/layers`) {
     return json({
-      layers: layers.map((entry) => ({
+      layers: layers.filter(entry => identity !== "guest" || entry.kind === "shared").map((entry) => ({
         ...entry,
         ...(entry.sharedSlot === "B"
           ? {
@@ -572,7 +576,8 @@ export function createVisualFixtureSession(scenario = {}) {
       });
       if (pathname.endsWith("/shared-layers") && payload.layers) payload.layers = payload.layers.map((entry) => ({ ...entry, ...definitions.get(entry.slot), sortOrder: order.indexOf(entry.slot), defaultColor: colors.get(entry.slot) ?? entry.defaultColor })).sort((a, b) => a.sortOrder - b.sortOrder);
       if (pathname.endsWith("/grants") && payload.members) payload.members = payload.members.map((member) => ({ ...member, granted: grants.get(`${slot}:${member.id}`) ?? member.granted }));
-      if (pathname.endsWith("/layers") && payload.layers) payload.layers = payload.layers.map((entry) => {
+      const readerLayers = pathname.endsWith("/sync") ? payload.layers : payload;
+      if ((pathname.endsWith("/layers") || pathname.endsWith("/sync")) && readerLayers?.layers) readerLayers.layers = readerLayers.layers.map((entry) => {
         if (entry.kind === "personal") return entry;
         const drivePreference = preferences.get(entry.sharedSlot);
         const preference = scorePreferences.get(entry.sharedSlot);

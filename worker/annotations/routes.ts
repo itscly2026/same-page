@@ -35,6 +35,10 @@ export const annotationRoutes = new Hono<AppEnvironment>();
 annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) => {
   const access = await resolveScoreAccess(context);
   if (access instanceof Response) return access;
+  return context.json(await readScoreLayers(context, access));
+});
+
+export async function readScoreLayers(context: Context<AppEnvironment>, access: ResolvedScoreAccess) {
   const { choirId, scoreId, principal } = access;
   const userId = context.req.query("experience") !== "1" && principal.kind === "user" ? principal.userId : null;
 
@@ -89,12 +93,12 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/layers", async (context) 
     userId ? access.membership?.id ?? null : null, userId, choirId, scoreId, userId, context.req.query("state") ?? "current", userId, userId ? access.membership?.id ?? null : null);
   const snapshot = await readSharedLayerSnapshot<LayerRow>(context.env.DB, choirId, query);
 
-  return context.json({
+  return {
     sharedLayerRevision: snapshot.sharedLayerRevision,
     layers: snapshot.rows.map(row => ({ ...serializeLayer(row), canShare: row.kind === "personal" && row.can_edit === 1 && !!access.membership })),
     permissions: { canManageLayers: userId && access.membership ? memberCapabilities(access.membership).operations.operations.includes("configureLayers") : false },
-  });
-});
+  };
+}
 
 annotationRoutes.get("/choirs/:choirId/shared-layer-preferences", async (context) => {
   const choirId = context.req.param("choirId");
@@ -432,6 +436,10 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/annotations", async (cont
   const access = await resolveScoreAccess(context);
   if (access instanceof Response) return access;
   const cursor = Math.max(0, Number.parseInt(context.req.query("cursor") ?? "0", 10) || 0);
+  return context.json(await readScoreAnnotations(context, access, cursor));
+});
+
+export async function readScoreAnnotations(context: Context<AppEnvironment>, access: ResolvedScoreAccess, cursor: number) {
   const userId = context.req.query("experience") !== "1" && access.principal.kind === "user" ? access.principal.userId : null;
   const rows = await context.env.DB.prepare(
     `SELECT operations.sequence, objects.id, objects.layer_id, objects.version,
@@ -478,8 +486,8 @@ annotationRoutes.get("/choirs/:choirId/scores/:scoreId/annotations", async (cont
     nextCursor = Math.max(nextCursor, row.sequence);
     latestById.set(row.id, serializeObject(row));
   }
-  return context.json({ hasMore: rows.results.length === 500, cursor: nextCursor, objects: [...latestById.values()] });
-});
+  return { hasMore: rows.results.length === 500, cursor: nextCursor, objects: [...latestById.values()] };
+}
 
 async function resolveScoreAccess(
   context: Context<AppEnvironment>,
@@ -584,7 +592,7 @@ function serializeObject(row: ObjectRow): AnnotationObjectRecord {
   };
 }
 
-interface ResolvedScoreAccess {
+export interface ResolvedScoreAccess {
   choirId: string;
   scoreId: string;
   principal: Principal;

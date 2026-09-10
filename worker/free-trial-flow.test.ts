@@ -87,7 +87,7 @@ it("enforces file count on uploads and restores, releases capacity once and reta
   expect((await call(`${path}/purge`, json(a.cookie, { confirm: true }))).status).toBe(204);
   expect((await env.DB.prepare("SELECT storage_used_bytes AS n FROM choirs WHERE id = ?").bind(drive).first())?.n).toBe(100);
   const purged = await env.DB.prepare("SELECT purged_at AS at FROM scores WHERE id = ?").bind(score).first<{ at: number }>();
-  for (const suffix of ["/pdf", "/bootstrap", "/status", "/versions", "/layers", "/restore", "/purge"]) {
+  for (const suffix of ["/pdf", "/sync", "/status", "/versions", "/layers", "/restore", "/purge"]) {
     expect((await call(path+suffix, suffix === "/restore" || suffix === "/purge" ? json(a.cookie,{confirm:true}) : { headers: {cookie:a.cookie} })).status).toBe(404);
   }
   await cleanupScoreStorage(env, purged!.at + 29 * 86400000);

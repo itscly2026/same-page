@@ -2,7 +2,7 @@ export function classifyPerformanceRequest(pathname) {
   if (pathname === "/api/auth/get-session") return "auth-session";
   if (pathname === "/api/choirs") return "drive-memberships";
   if (/\/api\/choirs\/[^/]+\/bootstrap$/.test(pathname)) return "drive-bootstrap";
-  if (pathname.endsWith("/bootstrap")) return "score-bootstrap";
+  if (pathname.endsWith("/sync")) return "reader-sync";
   if (pathname.endsWith("/pdf")) return "pdf";
   if (pathname.endsWith("/layers")) return "layers";
   if (pathname.endsWith("/annotations")) return "annotations";

@@ -39,7 +39,7 @@ beforeEach(async () => {
     destroy:vi.fn().mockResolvedValue(undefined),
   }));
   vi.stubGlobal("fetch", vi.fn(async (input: string) => {
-    if (input.endsWith("/bootstrap")) return Response.json({state:"active",score,permissions:{capabilities:noCapabilities()}});
+    if (input.includes("/sync?")) return Response.json({state:"active",score,permissions:{capabilities:noCapabilities()},layers:{layers,sharedLayerRevision:0,permissions:{canManageLayers:false}},annotations:{cursor:0,objects:[]}});
     if (input.endsWith("/layers")) return Response.json({layers,sharedLayerRevision: 0, permissions:{canManageLayers:false}});
     if (input.includes("/annotations?")) return Response.json({cursor:0,objects:[]});
     if (input.endsWith("/pdf")) { pdfRequests++; return failDownload ? new Response(null,{status:503}) : new Response(bytes); }
@@ -184,7 +184,7 @@ it("refreshes layers after preparing bytes instead of activating the opening lay
   let finish!: () => void;
   let layerRequests = 0;
   vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
-    if (input.endsWith("/layers")) layerRequests++;
+    if (input.endsWith("/layers") || input.includes("/sync?")) layerRequests++;
     if (input.endsWith("/pdf")) await new Promise<void>(resolve => { finish = resolve; });
     return originalFetch(input, init);
   }));

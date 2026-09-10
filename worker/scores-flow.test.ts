@@ -227,7 +227,7 @@ describe("PDF file library and delivery", () => {
     });
 
     const bootstrap = await callWorker(
-      `/api/choirs/${choirId}/scores/${tenUpload.id}/bootstrap`,
+      `/api/choirs/${choirId}/scores/${tenUpload.id}/sync`,
       { headers: { cookie: guestCookie } },
     );
     expect(await bootstrap.json()).toMatchObject({
@@ -236,7 +236,7 @@ describe("PDF file library and delivery", () => {
       permissions: { capabilities: noCapabilities() },
     });
     const adminBootstrap = await callWorker(
-      `/api/choirs/${choirId}/scores/${tenUpload.id}/bootstrap`,
+      `/api/choirs/${choirId}/scores/${tenUpload.id}/sync`,
       { headers: { cookie: adminCookie } },
     );
     expect(await adminBootstrap.json()).toMatchObject({
@@ -244,7 +244,7 @@ describe("PDF file library and delivery", () => {
       permissions: { capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()) },
     });
     const missingBootstrap = await callWorker(
-      `/api/choirs/${choirId}/scores/missing/bootstrap`,
+      `/api/choirs/${choirId}/scores/missing/sync`,
       { headers: { cookie: guestCookie } },
     );
     expect(missingBootstrap.status).toBe(404);
@@ -559,7 +559,7 @@ trailer << /Root 1 0 R >>
     );
     expect(await status.json()).toMatchObject({ state: "trashed" });
     const bootstrap = await callWorker(
-      `/api/choirs/${choirId}/scores/${original.id}/bootstrap`,
+      `/api/choirs/${choirId}/scores/${original.id}/sync`,
       { headers: { cookie: guestCookie } },
     );
     expect(await bootstrap.json()).toMatchObject({ state: "trashed" });

@@ -1,8 +1,8 @@
+import { syncReader } from "./sync-reader";
 import { diagnosticScope } from "../diagnostics/diagnostics";
 import { diagnoseLocalOperation } from "../diagnostics/local-operation";
 import { discardAnnotationConflict, queueScoreDrafts, readScoreAnnotationState, reapplyAnnotationConflict, retryScoreSyncErrors } from "../annotations/annotation-state";
 import { requestOutboxRecovery } from "../annotations/outbox-recovery";
-import { syncAnnotations } from "../annotations/sync";
 import { assertLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
 import type { ReaderSyncOutcome } from "./reader-sync-status";
 
@@ -43,14 +43,14 @@ export class ReaderAnnotationActions {
       if (!this.access.authenticated) {
         await this.access.confirmIdentity();
         await this.check(signal);
-        return "local-saved";
+        await syncReader(this.workspace, { signal, push: false });
+        return "synced";
       }
-      requestOutboxRecovery();
       await diagnoseLocalOperation("sync-retry", () => retryScoreSyncErrors(this.workspace), diagnostics);
       await this.check(signal);
       await diagnoseLocalOperation("draft-save", () => queueScoreDrafts(this.workspace), diagnostics);
       await this.check(signal);
-      await syncAnnotations(this.workspace, { pull: true });
+      await syncReader(this.workspace, { signal });
       await this.check(signal);
       const state = await diagnoseLocalOperation("sync-retry", () => readScoreAnnotationState(this.workspace), diagnostics);
       await this.check(signal);
@@ -75,7 +75,7 @@ export class ReaderAnnotationActions {
       saved = true;
       await this.check(signal);
       if (!this.access.online || !this.access.authenticated || this.access.trashed) return "local-saved";
-      await syncAnnotations(this.workspace, { pull: false });
+      await syncReader(this.workspace, { signal });
       await this.check(signal);
       return "conflict-reapplied";
     } catch { return signal.aborted ? null : saved ? "local-saved" : "failed"; }

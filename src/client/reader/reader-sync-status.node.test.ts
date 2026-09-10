@@ -20,9 +20,9 @@ const quiet = {
 };
 
 describe("reader sync status", () => {
-  it("requires loaded, accepted records before claiming synced", () => {
+  it("distinguishes an explicit completed sync from untouched local state", () => {
     expect(deriveReaderSyncStatus({ ...quiet, loaded: false }).message).toContain("尚未确认");
-    expect(deriveReaderSyncStatus({ ...quiet, outcome: "synced" }).message).toBe("尚无笔记修改");
+    expect(deriveReaderSyncStatus({ ...quiet, outcome: "synced" }).message).toBe("已同步");
     expect(deriveReaderSyncStatus({ ...quiet, acceptedCount: 2 }).message).toBe("已同步");
   });
 

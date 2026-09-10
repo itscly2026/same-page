@@ -1,3 +1,4 @@
+import { noCapabilities } from "../../shared/drive-permissions";
 import { installReadingPreferenceLocks } from "../../test/reading-preference-locks";
 import { MemoryRouter } from "react-router-dom";
 import { useAnnotationEditor } from "../annotations/use-annotation-editor";
@@ -55,6 +56,7 @@ beforeEach(async () => {
       return Response.json(body);
     }
     if (url.endsWith("/layers?state=deleted")) return Response.json({ layers: [], sharedLayerRevision: 0, permissions: { canManageLayers: false } });
+    if (url.includes("/sync?")) return Response.json({ state: "active", score: { id: "score", choirId: "drive", fileName: "谱.pdf", updatedAt: 1, currentVersion: { id: "version", versionNumber: 1, sizeBytes: 10, sha256: "a".repeat(64), etag: "v", pageCount: 1, createdAt: 1 } }, permissions: { capabilities: noCapabilities() }, layers: { layers: serverLayers, sharedLayerRevision: 0, permissions: { canManageLayers: false } }, annotations: { cursor: 0, objects: [] } });
     if (url.endsWith("/layers")) return Response.json({ layers: serverLayers, sharedLayerRevision: 0, permissions: { canManageLayers: false } });
     return Response.json({ cursor: 0, objects: [] });
   }));
@@ -136,7 +138,7 @@ it("closes a confirmed creation even when refreshing fails and retries only the 
   const originalFetch = fetch;
   let failRefresh = true;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (String(input).endsWith("/layers") && failRefresh) throw new Error("offline");
+    if (String(input).includes("/sync?") && failRefresh) throw new Error("offline");
     return originalFetch(input, init);
   }));
   render(<Reader />);

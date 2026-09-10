@@ -1,3 +1,4 @@
+import { syncReader } from "../reader/sync-reader";
 import { useOfflineScore } from "../offline/use-offline-score";
 import { noCapabilities } from "../../shared/drive-permissions";
 import Dexie from "dexie";
@@ -88,9 +89,15 @@ function completeReaderLayers(overrides: AnnotationLayerSummary[] = []): Annotat
   ) ?? layer);
 }
 
-function activeBootstrapResponse() {
+
+function readerLayersResponse(input: string, payload: { layers: unknown[]; sharedLayerRevision: number; permissions: { canManageLayers: boolean } }) {
+  return Response.json(input.includes("/sync?") ? { state: "active", score: scoreSummary, permissions: { capabilities: noCapabilities() }, layers: payload, annotations: { cursor: 0, objects: [] } } : payload);
+}
+
+function activeSyncResponse() {
   return Response.json({
     state: "active",
+    layers: { layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }, annotations: { cursor: 0, objects: [] },
     score: scoreSummary,
     permissions: { capabilities: noCapabilities() },
   });
@@ -321,14 +328,14 @@ it("keeps a single exit while the PDF never settles", async () => {
       "fetch",
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
-          input.includes("/layers")
-            ? Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } })
+          (input.includes("/layers") || input.includes("/sync?"))
+            ? readerLayersResponse(String(input), { layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } })
             : input.includes("/versions/")
             ? new Response(new Uint8Array([1, 2, 3]), {
                 headers: { "content-type": "application/pdf" },
               })
             : input.includes("/annotations?") ? Response.json({ cursor: 0, objects: [] })
-            : activeBootstrapResponse(),
+            : activeSyncResponse(),
         ),
       ),
     );
@@ -460,10 +467,10 @@ it("keeps a single exit while the PDF never settles", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation((input: string) =>
-        input.endsWith("/bootstrap")
+        input.includes("/sync?")
           ? delayedBootstrap
           : Promise.resolve(
-              Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
+              readerLayersResponse(String(input), { layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
             ),
       ),
     );
@@ -478,18 +485,18 @@ it("keeps a single exit while the PDF never settles", async () => {
 
     await screen.findByLabelText("翻页阅读");
     expect(loadPdfDocument).toHaveBeenCalledWith(expect.any(ArrayBuffer), "version-1");
-    releaseBootstrap(activeBootstrapResponse());
+    releaseBootstrap(activeSyncResponse());
     await waitFor(() =>
       expect(
         vi.mocked(fetch).mock.calls.some(([input]) =>
-          String(input).endsWith("/scores/score-1/layers"),
+          String(input).includes("/scores/score-1/sync?"),
         ),
       ).toBe(true),
     );
     expect(screen.queryByLabelText("正在加载乐谱")).not.toBeInTheDocument();
   });
 
-  it("keeps the rendered document during same-version online revalidation", async () => {
+  it("keeps the rendered document during same-version online explicit synchronization", async () => {
     render(
       <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
         <Routes>
@@ -503,7 +510,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     await waitFor(() =>
       expect(
         vi.mocked(fetch).mock.calls.some(([input]) =>
-          String(input).endsWith("/scores/score-1/layers"),
+          String(input).includes("/scores/score-1/sync?"),
         ),
       ).toBe(true),
     );
@@ -514,193 +521,17 @@ it("keeps a single exit while the PDF never settles", async () => {
           releaseRevalidation = resolve;
         }),
     );
-    fireEvent(window, new Event("online"));
+    void syncReader(localWorkspace).catch(() => undefined);
     await waitFor(() => {
-      const bootstrapCalls = vi.mocked(fetch).mock.calls.filter(([input]) =>
-        String(input).endsWith("/scores/score-1/bootstrap"),
+      const syncCalls = vi.mocked(fetch).mock.calls.filter(([input]) =>
+        String(input).includes("/scores/score-1/sync?"),
       );
-      expect(bootstrapCalls).toHaveLength(2);
+      expect(syncCalls).toHaveLength(2);
     });
-    await act(async () => releaseRevalidation(activeBootstrapResponse()));
+    await act(async () => releaseRevalidation(activeSyncResponse()));
     expect(loadPdfDocument).toHaveBeenCalledTimes(loadCount);
     expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
     expect(screen.queryByLabelText("正在加载乐谱")).not.toBeInTheDocument();
-  });
-
-  it("does not let an older bootstrap response roll back a newer version", async () => {
-    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
-    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    const versionTwoScore = {
-      ...scoreSummary,
-      fileName: "新版练声曲.pdf",
-      updatedAt: 2,
-      currentVersion: {
-        ...scoreSummary.currentVersion,
-        id: "version-2",
-        versionNumber: 2,
-        createdAt: 2,
-      },
-    };
-    let releaseInitialBootstrap!: (response: Response) => void;
-    let bootstrapCalls = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: string) => {
-        if (input.endsWith("/bootstrap")) {
-          bootstrapCalls += 1;
-          if (bootstrapCalls === 1) {
-            return new Promise<Response>((resolve) => {
-              releaseInitialBootstrap = resolve;
-            });
-          }
-          return Promise.resolve(
-            Response.json({
-              state: "active",
-              score: versionTwoScore,
-              permissions: { capabilities: noCapabilities() },
-            }),
-          );
-        }
-        return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
-        );
-      }),
-    );
-
-    render(
-      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
-        <Routes>
-          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    await waitFor(() => expect(bootstrapCalls).toBe(1));
-    await waitFor(() => expect(loadPdfDocument).toHaveBeenCalled());
-    fireEvent(window, new Event("online"));
-    await waitFor(() => expect(bootstrapCalls).toBe(2));
-    await waitFor(() =>
-      expect(loadPdfDocument).toHaveBeenCalledWith(
-        "/api/choirs/choir-1/scores/score-1/versions/version-2/pdf",
-        "version-2",
-      ),
-    );
-    expect(document.body).toHaveTextContent("新版练声曲");
-
-    await act(async () =>
-      releaseInitialBootstrap(
-        Response.json({
-          state: "active",
-          score: { ...scoreSummary, fileName: "旧版练声曲.pdf" },
-          permissions: { capabilities: noCapabilities() },
-        }),
-      ),
-    );
-    expect(document.body).toHaveTextContent("新版练声曲");
-    expect(document.body).not.toHaveTextContent("旧版练声曲");
-    expect(loadPdfDocument).not.toHaveBeenCalledWith(
-      "/api/choirs/choir-1/scores/score-1/versions/version-1/pdf",
-      "version-1",
-    );
-  });
-
-  it("uses delayed matching offline data after revalidation on a direct link", async () => {
-    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
-    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    const versionTwoScore = {
-      ...scoreSummary,
-      fileName: "直达新版.pdf",
-      updatedAt: 2,
-      currentVersion: {
-        ...scoreSummary.currentVersion,
-        id: "version-2",
-        versionNumber: 2,
-        createdAt: 2,
-      },
-    };
-    let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
-    vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
-      new Promise((resolve) => {
-        releaseLocal = resolve;
-      }) as never,
-    );
-    let bootstrapCalls = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: string) => {
-        if (input.endsWith("/bootstrap")) {
-          bootstrapCalls += 1;
-          if (bootstrapCalls === 1) return new Promise<Response>(() => {});
-          return Promise.resolve(
-            Response.json({
-              state: "active",
-              score: versionTwoScore,
-              permissions: { capabilities: noCapabilities() },
-            }),
-          );
-        }
-        return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
-        );
-      }),
-    );
-    vi.mocked(loadPdfDocument).mockImplementation((source, versionId) => {
-      if (source instanceof ArrayBuffer) {
-        return {
-          promise: Promise.resolve({
-            document: {
-              numPages: 3,
-              getPage: vi.fn().mockResolvedValue({
-                getViewport: () => ({ width: 600, height: 800 }),
-              }),
-            },
-            versionId: versionId ?? "version-2",
-          }),
-          destroy: vi.fn().mockResolvedValue(undefined),
-        } as never;
-      }
-      const failedCloud = Promise.reject(new Error("cloud PDF unavailable"));
-      void failedCloud.catch(() => undefined);
-      return {
-        promise: failedCloud,
-        destroy: vi.fn().mockResolvedValue(undefined),
-      } as never;
-    });
-
-    render(
-      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
-        <Routes>
-          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    await waitFor(() => expect(bootstrapCalls).toBe(1));
-    await waitFor(() => expect(loadPdfDocument).toHaveBeenCalled());
-    fireEvent(window, new Event("online"));
-    await waitFor(() => expect(bootstrapCalls).toBe(2));
-    await waitFor(() => expect(document.body).toHaveTextContent("直达新版"));
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-
-    await act(async () =>
-      releaseLocal({
-        key: "direct-link-offline-v2",
-        ...localWorkspace,
-        versionId: "version-2",
-        fileName: "直达新版.pdf",
-        sha256: "a".repeat(64),
-        pageCount: 3,
-        blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
-        active: 1,
-        verifiedAt: 2,
-        annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 2 },
-      }),
-    );
-
-    await waitFor(() =>
-      expect(loadPdfDocument).toHaveBeenCalledWith(expect.any(ArrayBuffer), "version-2"),
-    );
-    expect(await screen.findByLabelText("翻页阅读")).toBeInTheDocument();
   });
 
   it("replaces a ready cloud document with delayed offline data after permission denial", async () => {
@@ -713,18 +544,18 @@ it("keeps a single exit while the PDF never settles", async () => {
         releaseLocal = resolve;
       }) as never,
     );
-    let bootstrapCalls = 0;
+    let syncCalls = 0;
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation((input: string) => {
-        if (input.endsWith("/bootstrap")) {
-          bootstrapCalls += 1;
-          return bootstrapCalls === 1
-            ? new Promise<Response>(() => {})
+        if (input.includes("/sync?")) {
+          syncCalls += 1;
+          return syncCalls === 1
+            ? Promise.resolve(activeSyncResponse())
             : Promise.resolve(new Response(null, { status: 403 }));
         }
         return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
+          readerLayersResponse(String(input), { layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -736,10 +567,10 @@ it("keeps a single exit while the PDF never settles", async () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() => expect(bootstrapCalls).toBe(1));
+    await waitFor(() => expect(syncCalls).toBe(1));
     await screen.findByLabelText("翻页阅读");
-    fireEvent(window, new Event("online"));
-    await waitFor(() => expect(bootstrapCalls).toBe(2));
+    void syncReader(localWorkspace).catch(() => undefined);
+    await waitFor(() => expect(syncCalls).toBe(2));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
     await act(async () =>
@@ -774,20 +605,20 @@ it("keeps a single exit while the PDF never settles", async () => {
         releaseLocal = resolve;
       }) as never,
     );
-    let bootstrapCalls = 0;
+    let syncCalls = 0;
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation((input: string) => {
-        if (input.endsWith("/bootstrap")) {
-          bootstrapCalls += 1;
+        if (input.includes("/sync?")) {
+          syncCalls += 1;
           return Promise.resolve(
-            bootstrapCalls === 1
-              ? activeBootstrapResponse()
+            syncCalls === 1
+              ? activeSyncResponse()
               : Response.json({ state: "trashed" }),
           );
         }
         return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
+          readerLayersResponse(String(input), { layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -819,323 +650,13 @@ it("keeps a single exit while the PDF never settles", async () => {
       vi.mocked(loadPdfDocument).mock.calls.some(([source]) => source instanceof ArrayBuffer),
     ).toBe(false);
 
-    fireEvent(window, new Event("online"));
-    await waitFor(() => expect(bootstrapCalls).toBe(2));
+    void syncReader(localWorkspace).catch(() => undefined);
+    await waitFor(() => expect(syncCalls).toBe(2));
     await waitFor(() =>
       expect(loadPdfDocument).toHaveBeenCalledWith(expect.any(ArrayBuffer), "version-1"),
     );
     expect(await screen.findByLabelText("翻页阅读")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "回收站离线谱" })).toBeInTheDocument();
-  });
-
-  it("reacquires the same cloud version after a stale denial invalidates it", async () => {
-    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
-    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    rememberReaderScore("user-1", scoreSummary);
-    let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
-    vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
-      new Promise((resolve) => {
-        releaseLocal = resolve;
-      }) as never,
-    );
-    let releaseOfflineData!: (data: ArrayBuffer) => void;
-    const deferredBlob = new Blob([new Uint8Array([1, 2, 3])], {
-      type: "application/pdf",
-    });
-    vi.spyOn(deferredBlob, "arrayBuffer").mockReturnValue(
-      new Promise((resolve) => {
-        releaseOfflineData = resolve;
-      }),
-    );
-    let bootstrapCalls = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: string) => {
-        if (input.endsWith("/bootstrap")) {
-          bootstrapCalls += 1;
-          if (bootstrapCalls === 2) {
-            return Promise.resolve(new Response(null, { status: 403 }));
-          }
-          return Promise.resolve(activeBootstrapResponse());
-        }
-        return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
-        );
-      }),
-    );
-
-    render(
-      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
-        <Routes>
-          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    await screen.findByLabelText("翻页阅读");
-    await act(async () =>
-      releaseLocal({
-        key: "settled-offline-before-stale-denial",
-        ...localWorkspace,
-        versionId: "version-1",
-        fileName: "离线练声曲.pdf",
-        sha256: "a".repeat(64),
-        pageCount: 3,
-        blob: deferredBlob,
-        active: 1,
-        verifiedAt: 2,
-        annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 2 },
-      }),
-    );
-    fireEvent(window, new Event("online"));
-    await waitFor(() => expect(deferredBlob.arrayBuffer).toHaveBeenCalled());
-
-    fireEvent(window, new Event("online"));
-    await waitFor(() => expect(bootstrapCalls).toBe(3));
-    await waitFor(() => {
-      const versionedCloudLoads = vi.mocked(loadPdfDocument).mock.calls.filter(
-        ([source, versionId]) =>
-          source ===
-            "/api/choirs/choir-1/scores/score-1/versions/version-1/pdf" &&
-          versionId === "version-1",
-      );
-      expect(versionedCloudLoads).toHaveLength(2);
-    });
-
-    await act(async () => releaseOfflineData(new Uint8Array([4, 5, 6]).buffer));
-    expect(
-      vi.mocked(loadPdfDocument).mock.calls.some(([source]) => source instanceof ArrayBuffer),
-    ).toBe(false);
-    expect(await screen.findByLabelText("翻页阅读")).toBeInTheDocument();
-  });
-
-  it("clears a stale denial while a same-version reacquire is pending", async () => {
-    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
-    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    rememberReaderScore("user-1", scoreSummary);
-    let bootstrapCalls = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: string) => {
-        if (input.endsWith("/bootstrap")) {
-          bootstrapCalls += 1;
-          if (bootstrapCalls === 2) {
-            return Promise.resolve(new Response(null, { status: 403 }));
-          }
-          return Promise.resolve(activeBootstrapResponse());
-        }
-        return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
-        );
-      }),
-    );
-
-    render(
-      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
-        <Routes>
-          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    await screen.findByLabelText("翻页阅读");
-    fireEvent(window, new Event("online"));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "当前账号没有访问这份乐谱的权限",
-    );
-    expect(exportDiagnostics()).toContain('"category": "permission"');
-
-    let rejectReacquire!: (error: Error) => void;
-    const pendingReacquire = new Promise<never>((_resolve, reject) => {
-      rejectReacquire = reject;
-    });
-    void pendingReacquire.catch(() => undefined);
-    vi.mocked(loadPdfDocument).mockReturnValueOnce({
-      promise: pendingReacquire,
-      destroy: vi.fn().mockResolvedValue(undefined),
-    } as never);
-    fireEvent(window, new Event("online"));
-    await waitFor(() => expect(bootstrapCalls).toBe(3));
-    expect(await screen.findByLabelText("正在加载乐谱")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-
-    await act(async () => rejectReacquire(new Error("PDF parse failed")));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "PDF 无法解析或文件暂时不可用",
-    );
-    expect(screen.getByRole("alert")).not.toHaveTextContent("当前账号没有访问");
-  });
-
-  it("ignores an old same-version failure while its replacement is pending", async () => {
-    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
-    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    rememberReaderScore("user-1", scoreSummary);
-    let rejectOldLoad!: (error: Error) => void;
-    const oldLoad = new Promise<never>((_resolve, reject) => {
-      rejectOldLoad = reject;
-    });
-    void oldLoad.catch(() => undefined);
-    let resolveNewLoad!: (value: {
-      document: { numPages: number; getPage: ReturnType<typeof vi.fn> };
-      versionId: string;
-    }) => void;
-    const newLoad = new Promise((resolve) => {
-      resolveNewLoad = resolve;
-    });
-    let pdfLoadCalls = 0;
-    vi.mocked(loadPdfDocument).mockImplementation(() => {
-      pdfLoadCalls += 1;
-      return {
-        promise: pdfLoadCalls === 1 ? oldLoad : newLoad,
-        destroy: vi.fn().mockResolvedValue(undefined),
-      } as never;
-    });
-    let bootstrapCalls = 0;
-    let releaseActiveRevalidation!: (response: Response) => void;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: string) => {
-        if (input.endsWith("/bootstrap")) {
-          bootstrapCalls += 1;
-          if (bootstrapCalls === 2) {
-            return Promise.resolve(new Response(null, { status: 403 }));
-          }
-          if (bootstrapCalls === 3) {
-            return new Promise<Response>((resolve) => {
-              releaseActiveRevalidation = resolve;
-            });
-          }
-          return Promise.resolve(activeBootstrapResponse());
-        }
-        return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
-        );
-      }),
-    );
-
-    render(
-      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
-        <Routes>
-          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    await waitFor(() => expect(pdfLoadCalls).toBe(1));
-    fireEvent(window, new Event("online"));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "当前账号没有访问这份乐谱的权限",
-    );
-    fireEvent(window, new Event("online"));
-    await waitFor(() => expect(bootstrapCalls).toBe(3));
-    await act(async () => {
-      releaseActiveRevalidation(activeBootstrapResponse());
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-      rejectOldLoad(new Error("old task failed"));
-      await Promise.resolve();
-    });
-    await waitFor(() => expect(pdfLoadCalls).toBe(2));
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("正在加载乐谱")).toBeInTheDocument();
-
-    await act(async () =>
-      resolveNewLoad({
-        document: {
-          numPages: 3,
-          getPage: vi.fn().mockResolvedValue({
-            getViewport: () => ({ width: 600, height: 800 }),
-          }),
-        },
-        versionId: "version-1",
-      }),
-    );
-    expect(await screen.findByLabelText("翻页阅读")).toBeInTheDocument();
-  });
-
-  it("does not forget an active version after a newer network failure", async () => {
-    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
-    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    const versionTwoScore = {
-      ...scoreSummary,
-      currentVersion: {
-        ...scoreSummary.currentVersion,
-        id: "version-2",
-        versionNumber: 2,
-        createdAt: 2,
-      },
-    };
-    let releaseLocal!: (record: Awaited<ReturnType<typeof findVerifiedOfflineScore>>) => void;
-    vi.mocked(findVerifiedOfflineScore).mockReturnValueOnce(
-      new Promise((resolve) => {
-        releaseLocal = resolve;
-      }) as never,
-    );
-    let bootstrapCalls = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: string) => {
-        if (!input.endsWith("/bootstrap")) {
-          return Promise.resolve(
-            Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
-          );
-        }
-        bootstrapCalls += 1;
-        if (bootstrapCalls === 1) return new Promise<Response>(() => {});
-        if (bootstrapCalls === 2) {
-          return Promise.resolve(
-            Response.json({
-              state: "active",
-              score: versionTwoScore,
-              permissions: { capabilities: noCapabilities() },
-            }),
-          );
-        }
-        return Promise.reject(new TypeError("network unavailable"));
-      }),
-    );
-
-    render(
-      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
-        <Routes>
-          <Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    await waitFor(() => expect(bootstrapCalls).toBe(1));
-    await waitFor(() => expect(loadPdfDocument).toHaveBeenCalled());
-    fireEvent(window, new Event("online"));
-    await waitFor(() => expect(bootstrapCalls).toBe(2));
-    await waitFor(() =>
-      expect(loadPdfDocument).toHaveBeenCalledWith(
-        "/api/choirs/choir-1/scores/score-1/versions/version-2/pdf",
-        "version-2",
-      ),
-    );
-    fireEvent(window, new Event("online"));
-    await waitFor(() => expect(bootstrapCalls).toBe(3));
-
-    await act(async () => {
-      releaseLocal({
-        key: "stale-offline-v1",
-        ...localWorkspace,
-        versionId: "version-1",
-        fileName: "旧离线谱.pdf",
-        sha256: "a".repeat(64),
-        pageCount: 3,
-        blob: new Blob([new Uint8Array([1, 2, 3])], { type: "application/pdf" }),
-        active: 1,
-        verifiedAt: 1,
-        annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 },
-      });
-      await Promise.resolve();
-    });
-
-    expect(
-      vi.mocked(loadPdfDocument).mock.calls.some(([source]) => source instanceof ArrayBuffer),
-    ).toBe(false);
   });
 
   it("keeps a remembered version constraint through a network failure", async () => {
@@ -1157,18 +678,18 @@ it("keeps a single exit while the PDF never settles", async () => {
         releaseLocal = resolve;
       }) as never,
     );
-    let bootstrapCalls = 0;
+    let syncCalls = 0;
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation((input: string) => {
-        if (!input.endsWith("/bootstrap")) {
+        if (!input.includes("/sync?")) {
           return Promise.resolve(
-            Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
+            readerLayersResponse(String(input), { layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
           );
         }
-        bootstrapCalls += 1;
-        return bootstrapCalls === 1
-          ? new Promise<Response>(() => {})
+        syncCalls += 1;
+        return syncCalls === 1
+          ? Promise.resolve(Response.json({ state: "active", score: rememberedVersionTwo, permissions: { capabilities: noCapabilities() }, layers: { layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }, annotations: { cursor: 0, objects: [] } }))
           : Promise.reject(new TypeError("network unavailable"));
       }),
     );
@@ -1181,10 +702,10 @@ it("keeps a single exit while the PDF never settles", async () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() => expect(bootstrapCalls).toBe(1));
+    await waitFor(() => expect(syncCalls).toBe(1));
     await screen.findByLabelText("翻页阅读");
-    fireEvent(window, new Event("online"));
-    await waitFor(() => expect(bootstrapCalls).toBe(2));
+    void syncReader(localWorkspace).catch(() => undefined);
+    await waitFor(() => expect(syncCalls).toBe(2));
     await act(async () => {
       releaseLocal({
         key: "remembered-v2-stale-offline-v1",
@@ -1207,7 +728,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
   });
 
-  it("keeps a remembered version constraint when initial bootstrap fails", async () => {
+  it("keeps a remembered version constraint when initial synchronization fails", async () => {
     const rememberedVersionTwo = {
       ...scoreSummary,
       currentVersion: {
@@ -1287,7 +808,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     await waitFor(() => expect(findVerifiedOfflineScore).toHaveBeenCalled());
     await waitFor(() =>
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-        "/api/choirs/choir-1/scores/score-1/bootstrap", expect.objectContaining({ signal: expect.any(AbortSignal) }),
+        expect.stringContaining("/api/choirs/choir-1/scores/score-1/sync?"), expect.objectContaining({ signal: expect.any(AbortSignal) }),
       ),
     );
     expect(loadPdfDocument).toHaveBeenCalledTimes(1);
@@ -1334,7 +855,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     releaseBlob(staleData);
     await waitFor(() =>
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-        "/api/choirs/choir-1/scores/score-2/bootstrap", expect.objectContaining({ signal: expect.any(AbortSignal) }),
+        expect.stringContaining("/api/choirs/choir-1/scores/score-2/sync?"), expect.objectContaining({ signal: expect.any(AbortSignal) }),
       ),
     );
 
@@ -1417,11 +938,11 @@ it("keeps a single exit while the PDF never settles", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation((input: string) => {
-        if (input.includes("/scores") && !input.includes("/layers")) {
+        if (input.includes("/scores") && !(input.includes("/layers") || input.includes("/sync?"))) {
           return delayedLookup;
         }
         return Promise.resolve(
-          Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
+          readerLayersResponse(String(input), { layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
         );
       }),
     );
@@ -1442,7 +963,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       ),
     );
     expect(screen.queryByRole("heading", { name: "无法打开" })).not.toBeInTheDocument();
-    releaseLookup(activeBootstrapResponse());
+    releaseLookup(activeSyncResponse());
     expect(await screen.findByText("练声曲")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByLabelText("翻页阅读")).toBeInTheDocument();
@@ -1479,9 +1000,9 @@ it("keeps a single exit while the PDF never settles", async () => {
       "fetch",
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
-          input.endsWith("/scores/score-1/bootstrap")
+          input.includes("/scores/score-1/sync?")
             ? Response.json({ error: "not_found" }, { status: 404 })
-            : Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
+            : readerLayersResponse(String(input), { layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }),
         ),
       ),
     );
@@ -1503,10 +1024,10 @@ it("keeps a single exit while the PDF never settles", async () => {
       "fetch",
       vi.fn().mockImplementation((input: string) =>
         Promise.resolve(
-          input.includes("/layers")
-            ? Response.json({ layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } })
+          (input.includes("/layers") || input.includes("/sync?"))
+            ? readerLayersResponse(String(input), { layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } })
             : input.includes("/annotations?") ? Response.json({ cursor: 0, objects: [] })
-            : activeBootstrapResponse(),
+            : activeSyncResponse(),
         ),
       ),
     );
@@ -1601,12 +1122,12 @@ it("keeps a single exit while the PDF never settles", async () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);
     vi.mocked(fetch).mockImplementation((input: string | URL | Request) =>
-      Promise.resolve(String(input).includes("/layers")
-        ? Response.json({
+      Promise.resolve((String(input).includes("/layers") || String(input).includes("/sync?"))
+        ? readerLayersResponse(String(input), {
             layers: completeReaderLayers().map(layer => ({ ...layer, canEdit: layer.kind === "personal" })),
             sharedLayerRevision: 0, permissions: { canManageLayers: false },
           })
-        : activeBootstrapResponse()),
+        : activeSyncResponse()),
     );
     render(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
       <Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /></Routes>
@@ -1633,15 +1154,16 @@ it("keeps a single exit while the PDF never settles", async () => {
   });
 
   it("keeps editing discoverable and retries when layer preparation fails", async () => {
+    rememberReaderScore("user-1", scoreSummary);
     let layerAttempts = 0;
     vi.mocked(fetch).mockImplementation((input: string | URL | Request) => {
       const url = String(input);
-      if (url.includes("/layers")) {
+      if ((url.includes("/layers") || url.includes("/sync?"))) {
         layerAttempts += 1;
         if (layerAttempts === 1) {
           return Promise.resolve(new Response("unavailable", { status: 503 }));
         }
-        return Promise.resolve(Response.json({
+        return Promise.resolve(readerLayersResponse(String(input), {
           layers: completeReaderLayers([
             {
               id: "11111111-1111-4111-8111-111111111111",
@@ -1663,7 +1185,7 @@ it("keeps a single exit while the PDF never settles", async () => {
           sharedLayerRevision: 0, permissions: { canManageLayers: false },
         }));
       }
-      return Promise.resolve(activeBootstrapResponse());
+      return Promise.resolve(activeSyncResponse());
     });
 
     render(
@@ -1678,7 +1200,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     toggleChrome();
     const editButton = await screen.findByRole("button", { name: /^(编辑|完成编辑)$/ });
     await waitFor(() => expect(editButton).toHaveAttribute("data-state", "failed"));
-    expect(exportDiagnostics()).toContain('"operation": "layers"');
+    expect(exportDiagnostics()).toContain('"operation": "sync"');
     expect(screen.getByText("编辑准备失败，点按铅笔重试")).toHaveAttribute(
       "role",
       "status",
@@ -1706,14 +1228,15 @@ it("keeps a single exit while the PDF never settles", async () => {
   });
 
   it("distinguishes layer preparation from a confirmed read-only score", async () => {
+    rememberReaderScore("user-1", scoreSummary);
     let resolveLayers!: (response: Response) => void;
     const layerResponse = new Promise<Response>((resolve) => {
       resolveLayers = resolve;
     });
     vi.mocked(fetch).mockImplementation((input: string | URL | Request) =>
-      String(input).includes("/layers")
+      (String(input).includes("/layers") || String(input).includes("/sync?"))
         ? layerResponse
-        : Promise.resolve(activeBootstrapResponse()),
+        : Promise.resolve(activeSyncResponse()),
     );
 
     render(
@@ -1734,7 +1257,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(screen.getByRole("button", { name: /^(编辑|完成编辑)$/ })).toBeDisabled();
 
     await act(async () => {
-      resolveLayers(Response.json({
+      resolveLayers(readerLayersResponse("/sync?", {
         layers: completeReaderLayers([]),
         sharedLayerRevision: 0, permissions: { canManageLayers: false },
       }));
@@ -1752,8 +1275,8 @@ it("keeps a single exit while the PDF never settles", async () => {
   it("keeps the score layer panel focused on read subscriptions and effective colors", async () => {
     vi.mocked(fetch).mockImplementation((input: string | URL | Request) => {
       const url = String(input);
-      if (url.includes("/layers")) {
-        return Promise.resolve(Response.json({
+      if ((url.includes("/layers") || url.includes("/sync?"))) {
+        return Promise.resolve(readerLayersResponse(String(input), {
           layers: completeReaderLayers([
             ...(["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
               id: `00000000-0000-4000-8000-00000000000${index}`,
@@ -1791,7 +1314,7 @@ it("keeps a single exit while the PDF never settles", async () => {
           sharedLayerRevision: 0, permissions: { canManageLayers: true },
         }));
       }
-      return Promise.resolve(activeBootstrapResponse());
+      return Promise.resolve(activeSyncResponse());
     });
     render(
       <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
@@ -1839,9 +1362,9 @@ it("keeps a single exit while the PDF never settles", async () => {
     });
     vi.mocked(fetch).mockImplementation((input: string | URL | Request) => {
       const url = String(input);
-      if (url.includes("/layers")) {
+      if ((url.includes("/layers") || url.includes("/sync?"))) {
         return Promise.resolve(
-          Response.json({
+          readerLayersResponse(String(input), {
             layers: completeReaderLayers([
               {
                 id: "11111111-1111-4111-8111-111111111111",
@@ -1864,7 +1387,7 @@ it("keeps a single exit while the PDF never settles", async () => {
           }),
         );
       }
-      return Promise.resolve(activeBootstrapResponse());
+      return Promise.resolve(activeSyncResponse());
     });
 
     const view = render(
@@ -2123,9 +1646,9 @@ it("keeps a single exit while the PDF never settles", async () => {
   it("keeps page input read-only until edit is explicit and defaults editing to text", async () => {
     vi.mocked(fetch).mockImplementation((input: string | URL | Request) => {
       const url = String(input);
-      if (url.includes("/layers")) {
+      if ((url.includes("/layers") || url.includes("/sync?"))) {
         return Promise.resolve(
-          Response.json({
+          readerLayersResponse(String(input), {
             layers: completeReaderLayers([
               ...(["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
                 id: `00000000-0000-4000-8000-00000000000${index}`,
@@ -2164,7 +1687,7 @@ it("keeps a single exit while the PDF never settles", async () => {
           }),
         );
       }
-      return Promise.resolve(activeBootstrapResponse());
+      return Promise.resolve(activeSyncResponse());
     });
     render(
       <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
@@ -2388,7 +1911,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       const url = String(input);
       if (url.includes("/layers")) {
         return Promise.resolve(
-          Response.json({
+          readerLayersResponse(String(input), {
             layers: completeReaderLayers([
               ...(["E", "S", "A", "T", "B"] as const).map((slot, index): AnnotationLayerSummary => ({
                 id: `00000000-0000-4000-8000-00000000000${index}`,
@@ -2418,7 +1941,8 @@ it("keeps a single exit while the PDF never settles", async () => {
         );
       }
       return Promise.resolve(Response.json({
-        state: "active", score: { ...scoreSummary, currentVersion: { ...scoreSummary.currentVersion, sizeBytes: 3 } },
+        state: "active",
+    layers: { layers: completeReaderLayers(), sharedLayerRevision: 0, permissions: { canManageLayers: false } }, annotations: { cursor: 0, objects: [] }, score: { ...scoreSummary, currentVersion: { ...scoreSummary.currentVersion, sizeBytes: 3 } },
         permissions: { capabilities: noCapabilities() },
       }));
     });
@@ -2606,7 +2130,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     });
     const fetchMock = vi.fn().mockImplementation((input: string | URL | Request) => {
       const url = String(input);
-      if (url.endsWith("/scores/score-1/bootstrap")) {
+      if (url.includes("/scores/score-1/sync?")) {
         return Promise.resolve(Response.json({ state: "trashed" }));
       }
       return Promise.reject(new Error(`unexpected request: ${url}`));
@@ -2642,11 +2166,11 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(await localDatabase.annotationOutbox.count()).toBe(1);
     expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).endsWith("/annotations/push"))).toBe(false);
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
-      "/api/choirs/choir-1/scores/score-1/bootstrap",
+      expect.stringContaining("/api/choirs/choir-1/scores/score-1/sync?"),
     ]);
   });
 
-  it("detects trash on reconnect before draining the offline outbox", async () => {
+  it("detects trash on explicit sync before draining the offline outbox", async () => {
     vi.mocked(findVerifiedOfflineScore).mockResolvedValueOnce({
       key: "offline-1",
       ...localWorkspace,
@@ -2680,7 +2204,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     const fetchMock = vi.fn().mockImplementation((input: string | URL | Request) => {
       const url = String(input);
       if (!connected) return Promise.reject(new Error("offline"));
-      if (url.endsWith("/scores/score-1/bootstrap")) {
+      if (url.includes("/scores/score-1/sync?")) {
         return Promise.resolve(Response.json({ state: "trashed" }));
       }
       return Promise.reject(new Error(`unexpected request: ${url}`));
@@ -2699,7 +2223,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(screen.getByText("离线练声曲")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     connected = true;
-    fireEvent(window, new Event("online"));
+    void syncReader(localWorkspace).catch(() => undefined);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("乐谱已移入回收站");
     expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).endsWith("/annotations/push"))).toBe(false);

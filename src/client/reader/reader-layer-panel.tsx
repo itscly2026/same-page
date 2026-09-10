@@ -10,7 +10,7 @@ import { MoreHorizontal } from "lucide-react";
 import { Button } from "react-aria-components";
 
 import type { AnnotationLayerSummary } from "../../shared/annotations";
-import { syncAnnotations } from "../annotations/sync";
+import { syncReader } from "./sync-reader";
 import { useReadingPreferences } from "./use-reading-preferences";
 import { assertLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
 import "./reader-ux.css";
@@ -92,7 +92,7 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
         }
       } else {
         if (active.current && method === "POST" && path === "personal-layers") { setCreationId(null); setNewName(""); }
-        await syncAnnotations(workspace, { pull: true });
+        await syncReader(workspace, { fresh: true });
         if (managing) await refreshDeleted();
       }
       return true;
@@ -102,7 +102,7 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
         setMessage(method === "GET" ? "个人层列表读取失败，请重试。" : confirmed ? "修改已保存，内容刷新失败。请重试刷新。" : "修改尚未确认，请检查网络后重试。");
         setPersonalRetry(() => confirmed || changed ? async () => {
           setPending(true);
-          try { await syncAnnotations(workspace, { pull: true }); if (managing) await refreshDeleted(); if (active.current) { setMessage(changed ? "图层已刷新，请核对当前状态后重新操作。" : ""); setPersonalRetry(null); setNeedsRefresh(false); } }
+          try { await syncReader(workspace, { fresh: true }); if (managing) await refreshDeleted(); if (active.current) { setMessage(changed ? "图层已刷新，请核对当前状态后重新操作。" : ""); setPersonalRetry(null); setNeedsRefresh(false); } }
           catch { if (active.current) setMessage("图层刷新失败，请重试。"); }
           finally { if (active.current) setPending(false); }
         } : async () => { await personalRequest(path, method, body, inManagement); });
