@@ -201,3 +201,13 @@ it("reconfirms a same-user reader session without losing the display or acceptin
     expect(reader.getSnapshot().document).toBe(document);
   } finally { reader.dispose(); }
 });
+
+it("allows inspecting local availability while remote mutations are disabled", async () => {
+  vi.mocked(useOfflineScore).mockReturnValue({ scopeKey: workspace.scopeKey, record: null, invalid: false });
+  render(<OfflineScoreControl score={score} authenticatedUserId="user" authenticatedSessionId="session" disabled />);
+  const button = await screen.findByRole("button", { name: /离线副本/ });
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "保存供离线使用" })).toBeDisabled();
+});

@@ -12,11 +12,6 @@
 .reader-edit-layer-popover .annotation-layer-slot { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.5rem; text-align: left; min-width: 44px; min-height: 44px; padding: 0.5rem; }
 .reader-edit-layer-popover .annotation-layer-slot__lock { position: static; }
 .reader-layer-help { margin: 0 0 0.75rem; color: #5d5d5d; font-size: 0.78rem; line-height: 1.5; }
-.reader-layer-panel .reader-layer-row { display: flex; gap: 0.4rem; }
-.reader-layer-toggle { display: flex; flex: 1; align-items: center; gap: 0.5rem; min-width: 0; min-height: 44px; cursor: pointer; }
-.reader-layer-toggle .layer-card__identity { flex: 1; }
-.reader-layer-toggle input { flex: 0 0 auto; }
-.reader-layer-toggle:focus-within { outline: 2px solid #111; outline-offset: 3px; border-radius: 0.3rem; }
 .reader-layer-panel .layer-section__restore { min-height: 44px; min-width: 44px; }
 .reader-layer-panel .layer-card__main { padding-top: 0.35rem; padding-bottom: 0.35rem; }
 .reader-layer-feedback { margin: 0 0 0.75rem; color: #444; font-size: 0.8rem; line-height: 1.5; }
@@ -38,7 +33,6 @@
 .reader-layers-content { display: contents; }
 
 .reader-layer-panel .layer-section--personal .reader-layer-help { margin: 0; }
-.reader-layer-toggle input { width: 18px; height: 18px; accent-color: #171717; }
 
 .layer-permission-popover { z-index: 80; }
 
@@ -79,10 +73,6 @@
 .reader-edit-layer-popover .annotation-layer-slot i { position: static; width: 10px; height: 10px; border-radius: 50%; }
 .reader-edit-layer-popover .annotation-layer-slot small { grid-column: 2 / -1; color: #666; font-size: .75rem; font-weight: 400; }
 .reader-layers-dialog .reader-panel__header { position: sticky; top: 0; background: #fff; z-index: 1; }
-.reader-layer-panel .layer-card__main:has(.reader-layer-toggle) { padding: 0; }
-.reader-layer-toggle { padding: .5rem .75rem; }
-.reader-layer-toggle input { order: 2; }
-.reader-layer-toggle .layer-card__identity { min-width: 0; }
 .reader-layer-panel .layer-card__identity strong { flex-wrap: wrap; }
 
 
@@ -90,7 +80,14 @@
 .reader-shell .reader-chrome__actions-stack { background: rgb(255 255 255 / 96%); border-radius: 0.65rem; }
 .reader-shell .reader-chrome__back,
 .reader-shell .reader-chrome__actions { border: 0; box-shadow: none; backdrop-filter: none; border-radius: 0.65rem; }
-.reader-shell .annotation-controls { box-shadow: 0 2px 10px #0001; backdrop-filter: none; }
+.reader-shell .reader-chrome__actions-stack,
+.reader-shell .reader-chrome__back,
+.reader-shell .reader-chrome__export,
+.reader-shell .annotation-controls {
+  border: 1px solid rgb(0 0 0 / 10%);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 8%);
+  backdrop-filter: none;
+}
 .reader-shell::before { height: 7rem; background: linear-gradient(to bottom, #ffffff90, transparent 100%); }
 .reader-more-popover { z-index: 60; width: min(24rem, calc(100vw - 1.5rem)); }
 .reader-more-popover .reader-more-menu { position: static; width: 100%; max-height: min(42rem, calc(100dvh - 8rem)); overflow-y: auto; overscroll-behavior: contain; box-shadow: 0 3px 16px #0002; backdrop-filter: none; gap: 0; }
@@ -146,16 +143,11 @@
 
 .reader-layer-panel form { display: flex; flex-wrap: wrap; gap: .5rem; margin: .6rem 0; }
 .reader-layer-panel input[type="color"], .annotation-controls input[type="color"] { width: 36px; height: 36px; padding: 2px; border-radius: 8px; border: 1px solid #ddd; background: transparent; }
-.reader-layer-panel .layer-section--personal .layer-card__main { display: flex; flex-wrap: wrap; gap: .5rem; padding: .5rem .75rem; }
-.reader-layer-panel .layer-section--personal .reader-layer-toggle { flex: 1 1 140px; padding: 0; }
 .reader-layer-panel form input { min-width: 0; max-width: 100%; border: 1px solid #ddd; border-radius: .5rem; padding: .5rem .75rem; }
 
 .reader-layer-help a { color: inherit; text-decoration-color: #aaa; text-underline-offset: 3px; }
-.reader-layer-panel .personal-layer-more { width: 44px; min-height: 44px; padding: 0; font-size: 1.4rem; background: transparent; }
-.reader-layer-panel .personal-layer-actions { display: flex; flex-wrap: wrap; gap: .25rem; padding: .35rem .5rem; border-top: 1px solid #eee; }
-.reader-layer-panel .personal-layer-actions button { width: auto; padding: .5rem .65rem; font-size: .8rem; background: transparent; }
-.reader-layer-panel .personal-layer-actions .personal-layer-delete { color: #a12a2a; margin-left: auto; }
-.personal-layer-audience { margin: 0 .75rem .5rem; color: #737373; font-size: .75rem; }
+.reader-layer-panel .personal-layer-more { width: auto; min-height: 44px; padding: 0; font-size: .8rem; background: transparent; }
+.personal-layer-audience { margin: 0; color: #737373; font-size: .75rem; }
 .personal-layer-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .25rem; margin-top: .5rem; }
 .reader-layer-panel .personal-layer-footer button { width: auto; min-height: 44px; border: 0; background: transparent; padding: .5rem .35rem; box-shadow: none; }
 .reader-layer-panel .personal-layer-create { color: #444; }
@@ -172,8 +164,6 @@
   .reader-shell .annotation-drawing-tools .annotation-tool-button { flex: 1; }
 }
 
-.reader-layer-panel .layer-section--personal .reader-layer-toggle input { margin-left: auto; flex-shrink: 0; }
-.reader-layer-panel .layer-section--personal .reader-layer-toggle strong { overflow-wrap: anywhere; }
 
 .reader-layer-preferences { margin: -.25rem 0 1rem; }
 .reader-layer-preferences a { display: flex; align-items: center; min-height: 44px; color: inherit; font-size: .85rem; text-underline-offset: 3px; }
@@ -189,7 +179,6 @@
 .personal-layer-share[data-focus-visible] { outline: 3px solid #3157a4; outline-offset: 2px; }
 .personal-layer-share[data-disabled] { opacity: .55; cursor: default; }
 .personal-layer-management { padding: 12px; border: 1px solid #cbd8d9; border-radius: 12px; margin-top: 12px; }
-.layer-card__main .reader-layer-toggle { min-width: 0; flex: 1; }
 .layer-card__main strong { overflow-wrap: anywhere; }
 .personal-layer-more { min-width: 44px; min-height: 44px; }
 
@@ -224,3 +213,21 @@
 }
 
 @media (max-width: 640px) { .reader-shell .annotation-history-controls { grid-column: 4; } .reader-shell .annotation-drawing-tools .annotation-tool-button { min-width: 0; padding-inline: 5px; } }
+
+/* Every layer reserves the same final columns, including member-shared notes. */
+.reader-layer-panel .layer-card__main.reader-layer-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) 86px 44px;
+  align-items: center; gap: .25rem; padding: .4rem .5rem .4rem .75rem;
+}
+.layer-row__name { min-width: 0; overflow-wrap: anywhere; }
+.layer-row__accessory { grid-column: 2; justify-self: center; }
+.layer-row__visibility { grid-column: 3; display: grid; place-items: center; min-width: 44px; min-height: 44px; cursor: pointer; }
+.layer-row__visibility input { width: 18px; height: 18px; accent-color: #171717; }
+.reader-layer-panel .personal-layer-details { display: flex; align-items: center; justify-content: space-between; gap: .25rem; padding: 0 .75rem .25rem; }
+.reader-layer-panel .personal-layer-rename { padding: 0 .75rem .5rem; }
+.reader-layer-panel .personal-layer-rename input { flex: 1 1 140px; min-width: 0; }
+
+.layer-row__visibility:focus-within { outline: 2px solid #111; outline-offset: -2px; border-radius: .3rem; }
+
+.reader-layer-panel .personal-layer-row-action { width: 100%; min-width: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; font-size: .8rem; }
+.reader-layer-panel .personal-layer-row-action--delete { color: #a32525; }

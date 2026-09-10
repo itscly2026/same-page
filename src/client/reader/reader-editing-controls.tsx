@@ -1,3 +1,4 @@
+import { useInteractOutside } from "react-aria";
 import { useId, useRef, useState } from "react";
 import { MousePointer2, SlidersHorizontal, ChevronDown, Eraser, Highlighter, Square, Circle, Lock, Pencil, Redo2, Type, Undo2, X } from "lucide-react";
 import { Button,  DialogTrigger, Popover } from "react-aria-components";
@@ -39,11 +40,19 @@ export function ReaderEditingControls({
 }) {
   const styleAnchor = useRef<Element | null>(null);
   const styleDialogId = useId();
+  const stylePopover = useRef<HTMLDivElement>(null);
   const [styleSource, setStyleSource] = useState<AnnotationTool | "settings" | null>(null);
   const openStyle = (source: AnnotationTool | "settings", anchor: Element) => {
     styleAnchor.current = anchor;
-    setStyleSource(source);
+    setStyleSource(current => current === source ? null : source);
   };
+  const closeStyleOutside = (event: Event) => {
+    if (!styleAnchor.current || !event.composedPath().includes(styleAnchor.current)) setStyleSource(null);
+  };
+  // Drawing gestures need not produce a click. Close at pointerdown while allowing
+  // that same event to reach the score and begin the first stroke.
+  useInteractOutside({ ref: stylePopover, isDisabled: styleSource === null,
+    onInteractOutsideStart: closeStyleOutside, onInteractOutside: closeStyleOutside });
   const [choosingLayer, setChoosingLayer] = useState(false);
   const [showHint, setShowHint] = useState(() => {
     try { return localStorage.getItem("reader-edit-hint-seen") !== "true"; } catch { return true; }
@@ -129,6 +138,8 @@ export function ReaderEditingControls({
       ><SlidersHorizontal size={20} /></Button>
       <Popover
         className="annotation-style-popover"
+        ref={stylePopover}
+        isNonModal
         triggerRef={styleAnchor}
         isOpen={styleSource !== null && !isDisabled && !!selectedLayer?.canEdit && toolHasStyle}
         onOpenChange={open => { if (!open) setStyleSource(null); }}

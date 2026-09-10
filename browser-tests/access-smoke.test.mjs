@@ -41,7 +41,10 @@ test("literal search, verified offline read and failed/successful immutable PDF 
   await expect(page.locator(".offline-score-control[data-state=stale]")).toBeVisible();
   await expect(page.locator(".offline-score-label")).toHaveCount(0);
   await context.setOffline(true);
-  await expect(page.getByRole("button", { name: /^离线副本：/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /^离线副本：/ })).toBeEnabled();
+  await page.getByRole("button", { name: /^离线副本：/ }).click();
+  await expect(page.getByRole("button", { name: "更新离线副本", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "关闭", exact: true }).click();
   await context.setOffline(false);
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(page.getByRole("button", { name: /^离线副本：/ })).toBeEnabled();

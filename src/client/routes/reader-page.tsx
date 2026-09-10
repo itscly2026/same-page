@@ -617,9 +617,6 @@ function ReaderPageContent() {
                 )}
               </section>
               </>}
-              <section aria-label="导出"><h2>导出</h2>
-              <Button onPress={() => navigation.afterEditing(() => { setMoreOpen(false); setExportOpen(true); })}>导出 PDF</Button>
-              </section>
               <details className="reader-help"><summary>阅读帮助</summary>
                 <p className="reader-more-menu__status">轻点中央显示工具；点按两侧或左右滑动翻页。编辑时双指移动或缩放当前页，点勾号完成后继续翻页。笔记同步与离线副本分别准备。</p>
                 <Button onPress={() => { setMoreOpen(false); setDiagnosticOpen(true); }}>故障诊断</Button>

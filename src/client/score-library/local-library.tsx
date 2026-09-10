@@ -33,7 +33,7 @@ export function LocalLibrary({ userId, choirId }: { userId: string; choirId?: st
       <h2>{choirId ? drive.name : <Link className="local-drive-link" to={`/choirs/${drive.id}`}>{drive.name}</Link>}</h2>
       <div className="membership-list">{drive.scores.map(score => score.saved
         ? <Link className="membership-row" key={score.id} to={`/choirs/${drive.id}/scores/${score.id}`}><span>{scoreDisplayName(score.fileName)}</span><small>本机已保存 · 打开时校验</small></Link>
-        : <div className="membership-row" key={score.id}><span>{scoreDisplayName(score.fileName)}</span><small>需联网打开</small></div>)}</div>
+        : <div className="membership-row" key={score.id} aria-disabled="true" title="此设备没有可用的离线副本"><span>{scoreDisplayName(score.fileName)}</span></div>)}</div>
     </section>)}
   </section>;
 }

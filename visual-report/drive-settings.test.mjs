@@ -94,7 +94,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     });
     await page.goto(`${app.origin}/choirs/choir-1/settings/admission`);
     await expect(page.getByText("需要邀请码", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: /查看与轮换邀请码/ }).click();
+    await page.getByRole("button", { name: /查看权限说明/ }).click();
     await expect(page.getByText("处理此项可联系 小林。")).toBeVisible();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await mkdir("artifacts/visual-report", { recursive: true });

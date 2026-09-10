@@ -115,8 +115,7 @@ test("reader export uses reading subscriptions even when opened from editing", a
   await sheet.click();
   await page.getByRole("button", { name: "编辑", exact: true }).click();
   await page.getByRole("button", { name: "完成编辑", exact: true }).click();
-  await page.getByRole("button", { name: "更多", exact: true }).click();
-  await page.getByRole("dialog", { name: "更多阅读选项" }).getByRole("button", { name: "导出 PDF", exact: true }).click();
+  await page.getByRole("button", { name: "导出 PDF", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "导出 PDF" }); await dialog.waitFor();
   assert.equal(await dialog.getByRole("checkbox", { name: "Ensemble", exact: true }).isChecked(), true);
   assert.equal(await dialog.getByRole("checkbox", { name: "Bass", exact: true }).isChecked(), false);

@@ -1,4 +1,4 @@
-export async function saveInviteCard(svg: SVGSVGElement) {
+export async function createInviteCardFile(svg: SVGSVGElement) {
   const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml;charset=utf-8" }));
   try {
     const image = new Image();
@@ -11,13 +11,27 @@ export async function saveInviteCard(svg: SVGSVGElement) {
     if (!context) throw new Error("canvas_unavailable");
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("export_failed")), "image/png"));
-    const downloadUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = downloadUrl;
-    anchor.download = "Same-Page-邀请卡.png";
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 60_000);
+    return new File([blob], "Same-Page-邀请卡.png", { type: "image/png" });
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+export async function deliverInviteCard(file: File, share: boolean): Promise<"shared" | "saved" | "cancelled"> {
+  if (share && navigator.canShare?.({ files: [file] }) && navigator.share) {
+    try {
+      await navigator.share({ files: [file] });
+      return "shared";
+    } catch (error) {
+      if ((error instanceof DOMException || error instanceof Error) && error.name === "AbortError") return "cancelled";
+      // File sharing can be blocked by the host browser; downloading remains available.
+    }
+  }
+  const url = URL.createObjectURL(file);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = file.name;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return "saved";
 }

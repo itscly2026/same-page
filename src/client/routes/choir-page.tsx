@@ -213,7 +213,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
             <section className="file-list" aria-label="PDF 文件">
               {visibleScores.map((score) => (
                 <article className="file-row" key={score.id}>
-                  <ScoreLink experience={choir.isPreviewEntry === true} userId={userId} choirId={choirId} scoreId={score.id} local={localFilesOnly}
+                  <ScoreLink experience={choir.isPreviewEntry === true} label={scoreDisplayName(score.fileName)} description={`文件大小 ${formatFileSize(score.currentVersion.sizeBytes)}`} userId={userId} choirId={choirId} scoreId={score.id} local={localFilesOnly}
                     onOpen={() =>
                       {
                         startLoadingJourney(
@@ -226,7 +226,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
                     }
                   >
                     <span className="pdf-file-icon" aria-hidden="true">PDF</span>
-                    <span className="file-row__name" title={scoreDisplayName(score.fileName)}>{scoreDisplayName(score.fileName)}</span>
+                    <span className="file-row__info"><span className="file-row__name" title={scoreDisplayName(score.fileName)}>{scoreDisplayName(score.fileName)}</span><span className="file-row__size">{formatFileSize(score.currentVersion.sizeBytes)}</span></span>
                   </ScoreLink>
                   <div className="file-row__offline"><OfflineScoreControl experience={choir.isPreviewEntry === true} score={score} authenticatedUserId={userId ?? null} authenticatedSessionId={identity.authenticatedSessionId} disabled={session.isPending || access.local} /></div>
                   <MenuTrigger>
@@ -293,4 +293,10 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
       ) : null}
     </div>
   );
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${Math.round(bytes / (1024 * 1024))} MB`;
 }
