@@ -1,6 +1,7 @@
+import { clearLocalFiles, listLocalFiles } from "../offline/local-files";
 import { captureOfflineAnnotationSnapshot } from "./offline-snapshot";
 import { beforeEach, expect, it, vi } from "vitest";
-import { localDatabase } from "../platform/local-database";
+import { activateVerifiedOfflineScore, localDatabase } from "../platform/local-database";
 import { activateAuthenticatedLocalOwner, resolveLocalWorkspace } from "../platform/local-workspace";
 import { cacheAnnotationLayers, queueScoreDrafts, readScoreAnnotationState, saveAnnotationDraft } from "./annotation-state";
 import { clearGuestNotes, GUEST_NOTE_LAYER_ID } from "./guest-notes";
@@ -56,6 +57,11 @@ it("isolates signed-in experience from account notes without changing the active
   expect(await queueScoreDrafts(experience)).toBe(0);
   expect((await readScoreAnnotationState(account)).annotations).toHaveLength(0);
   expect((await readScoreAnnotationState(experience)).layersReady).toBe(true);
+  await activateVerifiedOfflineScore({ ...experience, key: "experience-pdf", versionId: "v1", fileName: "体验.pdf", pageCount: 1, sha256: "a".repeat(64), blob: new Blob(["pdf"]), annotationSnapshot: await captureOfflineAnnotationSnapshot(experience) });
+  expect((await listLocalFiles()).map(file => file.key)).toEqual(["experience-pdf"]);
+  await clearLocalFiles(experience);
+  expect(await listLocalFiles()).toEqual([]);
+  expect((await readScoreAnnotationState(experience)).annotations).toHaveLength(1);
   await activateAuthenticatedLocalOwner("other");
   await expect(readScoreAnnotationState(experience)).rejects.toThrow();
 });

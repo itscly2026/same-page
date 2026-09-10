@@ -371,15 +371,16 @@ export async function activateVerifiedOfflineScore(
     [localDatabase.system, localDatabase.offlineScores, localDatabase.offlineSnapshots, localDatabase.annotationLayers, localDatabase.annotations, localDatabase.annotationSyncCursors],
     async () => {
       const activeOwner = await localDatabase.system.get(ACTIVE_LOCAL_OWNER_KEY);
-      const guestOwner = record.ownerKey.startsWith("guest:")
+      const baseOwnerKey = record.ownerKey.replace(/^experience:/, "");
+      const guestOwner = baseOwnerKey.startsWith("guest:")
         ? await localDatabase.system.get(guestOwnerSystemKey(record.choirId))
         : null;
-      const ownerIsActive = record.ownerKey.startsWith("user:")
-        ? activeOwner?.value === record.ownerKey
+      const ownerIsActive = baseOwnerKey.startsWith("user:")
+        ? activeOwner?.value === baseOwnerKey
         : !activeOwner?.value.startsWith("user:") &&
-          guestOwner?.value === record.ownerKey;
+          guestOwner?.value === baseOwnerKey;
       const logout = await readLogoutFence();
-      if (logout && record.ownerKey === `user:${logout.userId}`) throw new Error("local_workspace_owner_changed");
+      if (logout && baseOwnerKey === `user:${logout.userId}`) throw new Error("local_workspace_owner_changed");
       const epoch = (await localDatabase.system.get("local-workspace:epoch"))?.value ?? "";
       if (!ownerIsActive || (record.sessionEpoch !== undefined && record.sessionEpoch !== epoch)) throw new Error("local_workspace_owner_changed");
       if (expected?.fileFence !== undefined) {
