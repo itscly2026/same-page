@@ -67,11 +67,11 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
       await trigger.click();
       await expect(page.getByRole("menuitem", { name: "阅读偏好", exact: true })).toBeVisible();
       await expect(page.getByRole("menuitem", { name: "本机存储", exact: true })).toBeVisible();
-      for (const name of ["账户", "帮助", "关于合谱", "退出登录"]) await expect(page.getByRole("menuitem", { name, exact: true })).toHaveCount(0);
+      for (const name of ["账户", "使用手册", "关于合谱", "退出登录"]) await expect(page.getByRole("menuitem", { name, exact: true })).toHaveCount(0);
       await page.keyboard.press("Escape");
       await expect(trigger).toBeFocused();
       await page.getByRole("button", { name: "打开云盘菜单" }).click();
-      for (const name of ["阅读偏好", "本机存储", "帮助"]) await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
+      for (const name of ["阅读偏好", "本机存储", "使用手册"]) await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
       await page.getByRole("button", { name: "关闭云盘菜单", exact: true }).click();
       await expect(page.getByRole("button", { name: "打开云盘菜单" })).toBeFocused();
     });
