@@ -94,8 +94,7 @@ describe("AnnotationOverlay", () => {
     fireEvent.pointerDown(overlay, { pointerId: 41, clientX: 20, clientY: 30 });
     fireEvent.pointerMove(overlay, { pointerId: 41, clientX: 80, clientY: 30 });
     await act(async () => {
-      expect(await editor.prepareFinish()).toBe(true);
-      expect(editor.finish()).toBe(true);
+      expect(await editor.finish()).toBe("local-saved");
     });
     const note = (await localDatabase.annotations.toArray())[0]!;
     expect(note.payload?.kind).toBe("ink");
@@ -110,7 +109,7 @@ describe("AnnotationOverlay", () => {
     fireEvent.pointerMove(overlay, { pointerId: 41, clientX: 70, clientY: 80 });
     fireEvent.pointerUp(overlay, { pointerId: 41, clientX: 70, clientY: 80 });
     await waitFor(async () => expect(await localDatabase.annotations.count()).toBe(1));
-    await act(async () => { await editor.prepareFinish(); });
+    await waitFor(() => expect(editor.getSnapshot()).toBe("idle"));
     const note = (await localDatabase.annotations.toArray())[0]!;
     expect(note.payload).toMatchObject(tool === "highlighter"
       ? { kind: "ink", brush: "highlighter", nib: "chisel", pressureMode: "uniform", color: "#facc15", opacity: 0.3, strokeWidth: 0.018, points: [{ x: .2, y: .3 }, { x: .2, y: .3 }, { x: .7, y: .8 }] }

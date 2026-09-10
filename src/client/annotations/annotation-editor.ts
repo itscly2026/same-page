@@ -1,7 +1,11 @@
 import { annotationRecordKey, localDatabase } from "../platform/local-database";
-import { captureLocalWorkspaceSession, withLocalWorkspaceTransaction, type LocalWorkspace } from "../platform/local-workspace";
-import { saveAnnotationDraft, type DraftInput } from "./annotation-state";
+import { assertLocalWorkspaceActive, captureLocalWorkspaceSession, withLocalWorkspaceTransaction, type LocalWorkspace } from "../platform/local-workspace";
+import { queueScoreDrafts, saveAnnotationDraft, type DraftInput } from "./annotation-state";
+import { untilAborted } from "../platform/abortable";
+import { diagnoseLocalOperation } from "../diagnostics/local-operation";
+import { requestOutboxRecovery } from "./outbox-recovery";
 
+export type EditingCompletion = "local-saved" | "failed" | null;
 export type PersistenceState = "idle" | "saving" | "failed";
 type HistoryEntry = { before: DraftInput; after: DraftInput };
 type Edit = { kind: "write"; input: DraftInput; replaceHistory: boolean }
@@ -20,6 +24,9 @@ export class AnnotationEditor {
   private active = false;
   private running = false;
   private state: PersistenceState = "idle";
+  private completion: Promise<EditingCompletion> | null = null;
+  private lifetime = new AbortController();
+  private editRevision = 0;
 
   constructor(workspace: LocalWorkspace) {
     this.workspace = captureLocalWorkspaceSession(workspace);
@@ -35,6 +42,7 @@ export class AnnotationEditor {
 
   begin() {
     if (this.active || this.state !== "idle") return false;
+    this.lifetime = new AbortController();
     this.active = true;
     return true;
   }
@@ -44,26 +52,66 @@ export class AnnotationEditor {
     this.finishCommits.add(commit);
     return () => { this.finishCommits.delete(commit); };
   }
-  async prepareFinish() {
-    if (this.state === "saving") await new Promise<void>(resolve => {
-      const unsubscribe = this.subscribe(() => { if (this.state !== "saving") { unsubscribe(); resolve(); } });
-    });
-    for (const commit of [...this.finishCommits]) {
-      if (!await commit()) return false;
-    }
-    if (this.state === "failed" && !await this.retry()) return false;
-    return this.active && this.state === "idle";
+  // Callers request completion; input commits, durable drafts and retirement
+  // are one protocol. Concurrent toolbar/navigation requests share its result.
+  finish(): Promise<EditingCompletion> {
+    if (this.completion) return this.completion;
+    if (!this.active) return Promise.resolve(null);
+    const signal = this.lifetime.signal;
+    const task = this.completeEditing(signal);
+    this.completion = task;
+    void task.then(() => { if (this.completion === task) this.completion = null; });
+    return task;
   }
 
-  finish() {
-    if (!this.active || this.state !== "idle") return false;
-    this.cancel();
-    return true;
+  private async completeEditing(signal: AbortSignal): Promise<EditingCompletion> {
+    const check = async () => {
+      signal.throwIfAborted();
+      const workspace = await this.workspace;
+      await assertLocalWorkspaceActive(workspace);
+      signal.throwIfAborted();
+      return workspace;
+    };
+    const settle = async () => {
+      if (this.state === "saving") await new Promise<void>(resolve => {
+        const unsubscribe = this.subscribe(() => {
+          if (this.state !== "saving") { unsubscribe(); resolve(); }
+        });
+      });
+      await check();
+      if (this.state === "failed" && !await this.retry()) return false;
+      await check();
+      return true;
+    };
+    try {
+      await check();
+      if (!await settle()) return "failed";
+      for (const commit of [...this.finishCommits]) {
+        if (!await untilAborted(commit(), signal)) { await check(); return "failed"; }
+        await check();
+      }
+      // Edits admitted during storage must also reach the outbox before exit.
+      // Keep the revision check and retirement synchronous with each other.
+      while (true) {
+        if (!await settle()) return "failed";
+        const workspace = await check();
+        if (this.state !== "idle") continue;
+        const revision = this.editRevision;
+        await untilAborted(diagnoseLocalOperation("draft-save", () => queueScoreDrafts(workspace), { signal }), signal);
+        await check();
+        if (revision !== this.editRevision || this.state !== "idle") continue;
+        this.cancel();
+        if (workspace.ownerKey.startsWith("user:")) requestOutboxRecovery();
+        return "local-saved";
+      }
+    } catch { return signal.aborted ? null : "failed"; }
   }
 
   // Unmount/identity change retires queued intent. Already admitted transactions
   // retain their workspace fence, but their completion cannot alter this session.
   cancel() {
+    this.lifetime.abort();
+    this.completion = null;
     this.generation++;
     this.active = false;
     this.running = false;
@@ -99,6 +147,7 @@ export class AnnotationEditor {
 
   private enqueue(edit: Edit) {
     if (!this.active) return Promise.resolve(false);
+    this.editRevision++;
     const completion = new Promise<boolean>(resolve => {
       // Editing a failed text again replaces that unwritten intent, without
       // erasing the history mode needed by a partially persisted stroke.
