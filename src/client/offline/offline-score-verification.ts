@@ -2,7 +2,6 @@ import { GUEST_NOTE_LAYER_ID } from "../annotations/guest-notes";
 import { diagnosticScope, diagnosticErrorType } from "../diagnostics/diagnostics";
 import { diagnoseLocalOperation } from "../diagnostics/local-operation";
 import type { DiagnosticStep } from "../../shared/diagnostics";
-import { imageManifestSchema } from "../../shared/score-images";
 import Dexie from "dexie";
 import { annotationLayerSummarySchema, annotationPayloadSchema, type AnnotationLayerSummary } from "../../shared/annotations";
 import { findActiveOfflineScore, type OfflineScoreRecord, type OfflineSnapshotRecord } from "../platform/local-database";
@@ -22,7 +21,7 @@ function verifyOfflineScoreWithDiagnostics(record: OfflineScoreRecord, report: R
     report({ operation: "storage", category: "validation", stage: "decode", step: "offline-file", errorType: "ValidationError" });
     return Promise.resolve(false);
   }
-  const identity = JSON.stringify([record.key, record.verifiedAt, record.sha256, record.blob.size, record.annotationSnapshot, record.imageManifest]);
+  const identity = JSON.stringify([record.key, record.verifiedAt, record.sha256, record.blob.size, record.annotationSnapshot]);
   let tasks = verificationTasks.get(record.blob);
   if (!tasks) { tasks = new Map(); verificationTasks.set(record.blob, tasks); }
   let task = tasks.get(identity);
@@ -52,22 +51,6 @@ async function verifyRecord(record: OfflineScoreRecord, report: ReturnType<typeo
   try {
     if (!record.blob.size || !record.verifiedAt) return invalid();
     if (await sha256Hex(await readOfflineFileBytes(record.blob)) !== record.sha256) return invalid();
-    if (record.imageManifest) {
-      step = "offline-manifest";
-      const manifest = imageManifestSchema.parse(record.imageManifest);
-      if (manifest.versionId !== record.versionId || manifest.pages.length !== record.pageCount) return invalid();
-      let offset = 0;
-      for (const page of manifest.pages) {
-        const asset = page.assets[0];
-        const bytes = await readOfflineFileBytes(record.blob.slice(offset, offset + asset.sizeBytes));
-        if (bytes.byteLength !== asset.sizeBytes || await sha256Hex(bytes) !== asset.sha256) return invalid();
-        if (bytes.byteLength < 24) return invalid();
-        const header = new DataView(bytes);
-        if (header.getUint32(0) !== 0x89504e47 || header.getUint32(4) !== 0x0d0a1a0a || header.getUint32(16) !== asset.width || header.getUint32(20) !== asset.height) return invalid();
-        offset += asset.sizeBytes;
-      }
-      if (offset !== record.blob.size) return invalid();
-    }
     step = "offline-snapshot";
     if (!record.annotationSnapshot?.verifiedAt) return invalid();
     const layers = record.annotationSnapshot.layers;

@@ -35,7 +35,7 @@ export function useOfflinePreparation(workspace: LocalWorkspace | null, score: S
   const [observed, setObserved] = useState<{ key: string; state: OfflinePreparationState } | null>(null);
   useEffect(() => {
     if (!ownerKey) return;
-    const preparation = new OfflinePreparation(createLocalWorkspace(ownerKey, score.choirId, score.id), score, "pdf", authenticatedUserId);
+    const preparation = new OfflinePreparation(createLocalWorkspace(ownerKey, score.choirId, score.id), score, authenticatedUserId);
     current.current = preparation;
     const unsubscribe = preparation.subscribe(() => setObserved({ key, state: preparation.getSnapshot() }));
     return () => { unsubscribe(); preparation.dispose(); current.current = null; };

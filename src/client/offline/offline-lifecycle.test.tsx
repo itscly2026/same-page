@@ -2,8 +2,6 @@ import React from "react";
 import { cacheAnnotationLayers } from "../annotations/annotation-state";
 /// <reference types="node" />
 
-import { readFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
 import { Blob as NodeBlob } from "node:buffer";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
@@ -121,26 +119,6 @@ it("a late older download cannot replace a newer activation from another reader"
   expect((await findVerifiedOfflineScore(record))?.versionId).toBe("v2");
 });
 
-
-it("an image bundle is usable only when its whole manifest and every page hash match", async () => {
-  const record = await recordFor("image-copy");
-  const bytes = await readFile("renderer/fixtures/specimen-1-2048.png");
-  const blob = new Blob([bytes]);
-  const hash = createHash("sha256").update(bytes).digest("hex");
-  const imageManifest: NonNullable<OfflineScoreRecord["imageManifest"]> = {
-    versionId: record.versionId, generation: "11111111-1111-4111-8111-111111111111", sourceSha256: "a".repeat(64), spec: "png-rgb-v1", engine: "pdfium-153.0.7999.0",
-    pages: [{ pageNumber: 1, width: 600, height: 800, rotation: 0, crop: [0, 0, 600, 800], assets: [
-      { edge: 2048, width: 1583, height: 2048, sizeBytes: bytes.length, sha256: hash },
-      { edge: 3072, width: 2304, height: 3072, sizeBytes: 4, sha256: "b".repeat(64) },
-    ] }],
-  };
-  const imageCopy = { ...record, blob, sha256: hash, imageManifest };
-  expect(await verifyOfflineScore(imageCopy)).toBe(true);
-  const changedManifest = { ...imageManifest, pages: imageManifest.pages.map(page => ({ ...page, assets: page.assets.map(asset => ({ ...asset, sha256: "c".repeat(64) })) })) };
-  expect(await verifyOfflineScore({ ...imageCopy, imageManifest: changedManifest })).toBe(false);
-  expect(await verifyOfflineScore({ ...imageCopy, pageCount: 2 })).toBe(false);
-  expect(await verifyOfflineScore({ ...imageCopy, versionId: "another-version" })).toBe(false);
-});
 
 it("clearing files preserves the held document and annotations but fences a late download even with no active copy", async () => {
   const { captureOfflineFileFence, clearLocalFiles, listLocalFiles } = await import("./local-files");

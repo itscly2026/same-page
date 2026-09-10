@@ -38,9 +38,8 @@ export interface OfflineScoreRecord {
   fileName: string;
   sha256: string;
   pageCount: number;
-  // PDF bytes, or the ordered lossless offline page bundle described by imageManifest.
+  // Original PDF bytes.
   blob: Blob;
-  imageManifest?: import("../../shared/score-images").ImageManifest;
   active: 0 | 1;
   verifiedAt: number;
   annotationSnapshot: OfflineAnnotationSnapshot;
@@ -264,6 +263,31 @@ export class SamePageDatabase extends Dexie {
       .upgrade(clearSupersededLayerModelData);
     this.version(8).stores({
       annotationOutbox: "&opId,ownerKey,scopeKey,[ownerKey+scopeKey],[scopeKey+annotationId],createdAt",
+    });
+    this.version(15).stores({}).upgrade(async transaction => {
+      const files = transaction.table("offlineScores");
+      // Inspect without modifying retained PDF records: rewriting their Blobs can
+      // fail on storage engines with damaged external Blob backing files.
+      for (const key of await files.toCollection().primaryKeys()) {
+        // Historical bundle keys identify even an unreadable external Blob.
+        let parts: unknown;
+        try { parts = JSON.parse(String(key)); } catch { parts = null; }
+        if (Array.isArray(parts) && parts.length === 2 &&
+            typeof parts[1] === "string" && parts[1].endsWith(":images")) {
+          await files.delete(key);
+          continue;
+        }
+        let record;
+        try { record = await files.get(key); }
+        catch (error) {
+          if (error && typeof error === "object" && "name" in error &&
+              (error.name === "NotFoundError" || error.name === "NotReadableError")) continue;
+          throw error;
+        }
+        // The obsolete manifest and bundle share one record. Keep the independent
+        // annotation snapshot, including snapshots belonging to removed bundles.
+        if (record && "imageManifest" in record) await files.delete(key);
+      }
     });
     this.version(14).stores({}).upgrade(migrateBrushStyles);
     this.version(13).stores({}).upgrade(migrateBrushStyles);

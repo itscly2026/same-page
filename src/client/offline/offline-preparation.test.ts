@@ -25,7 +25,7 @@ async function fixture(userId: string | null = null) {
     if (input.includes('/annotations?')) return Response.json({ cursor: 0, objects: [] });
     return new Response(null, { status: 404 });
   }));
-  const client = (target = score, scope = workspace, identity = userId) => { const value = new OfflinePreparation(scope, target, 'pdf', identity); clients.push(value); return value; };
+  const client = (target = score, scope = workspace, identity = userId) => { const value = new OfflinePreparation(scope, target, identity); clients.push(value); return value; };
   return { workspace, score, client, finish: () => finish(), takeFinish: () => finish, signal: () => signal, downloads: () => downloads };
 }
 it('shares an automatic preparation with explicit intent and completes after both callers leave', async () => {
@@ -140,7 +140,7 @@ it('another score waiting to capture its fence cannot retain an unowned automati
   await vi.waitFor(() => expect(f.downloads()).toBe(1));
   const scope = createLocalWorkspace(f.workspace.ownerKey, 'drive', 'other');
   let release!: (value: string) => void;
-  const other = new OfflinePreparation(scope, { ...f.score, id: 'other' }, 'pdf', null, new Promise(resolve => { release = resolve; }));
+  const other = new OfflinePreparation(scope, { ...f.score, id: 'other' }, null, new Promise(resolve => { release = resolve; }));
   clients.push(other);
   const otherPending = other.prepare('automatic');
   reader.dispose();
@@ -168,20 +168,6 @@ it('different versions download independently and a late old version cannot repl
   expect((await findVerifiedOfflineScore(f.workspace))?.versionId).toBe('v2');
 });
 
-it('image preparation cannot join an in-progress PDF preparation of the same version', async () => {
-  const f = await fixture();
-  const pdf = f.client().prepare('explicit');
-  await vi.waitFor(() => expect(f.downloads()).toBe(1));
-  const images = new OfflinePreparation(f.workspace, f.score, 'images', null);
-  clients.push(images);
-  // The fixture has no image manifest: this independent attempt must fail,
-  // rather than inherit the successful PDF result.
-  expect((await images.prepare('explicit')).phase).toBe('failed');
-  f.finish();
-  expect((await pdf).phase).toBe('ready');
-  expect(images.getSnapshot().phase).toBe('failed');
-});
-
 it('an explicit download survives the displayed PDF byte provider becoming unavailable on exit', async () => {
   const f = await fixture();
   const pending = f.client().prepare('explicit', () => Promise.reject(new Error('document destroyed')));
@@ -195,7 +181,7 @@ it('cleanup also fences an explicit request still waiting for its initial contex
   const f = await fixture();
   const initialFence = await captureOfflineFileFence(f.workspace);
   let release!: (value: string) => void;
-  const client = new OfflinePreparation(f.workspace, f.score, 'pdf', null, new Promise(resolve => { release = resolve; }));
+  const client = new OfflinePreparation(f.workspace, f.score, null, new Promise(resolve => { release = resolve; }));
   clients.push(client);
   const pending = client.prepare('explicit');
   await clearLocalFiles({ ownerKey: f.workspace.ownerKey, choirId: 'drive', scoreId: 'score' });

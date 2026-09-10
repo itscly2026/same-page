@@ -144,3 +144,66 @@ it("upgrades version 10 without losing file bytes, snapshots, drafts, outbox or 
     expect(await upgraded.annotationConflicts.get("conflict")).toBeDefined();
   } finally { reads.mockRestore(); writes.mockRestore(); upgraded.close(); await Dexie.delete(name); }
 });
+
+
+it.each([10, 14])("upgrades version %s to PDF-only without rewriting PDFs or losing annotation data", async version => {
+  const name = `pdf-only-${crypto.randomUUID()}`;
+  const old = new Dexie(name);
+  old.version(version).stores({ ...versionFiveStores,
+    annotationOutbox: "&opId,ownerKey,scopeKey,[ownerKey+scopeKey],[scopeKey+annotationId],createdAt",
+    driveDirectories: "&key,ownerKey,[ownerKey+choirId]",
+    ...(version >= 11 ? { offlineSnapshots: "&key,ownerKey,scopeKey" } : {}),
+    ...(version >= 12 ? { readingPreferences: "&key,ownerKey,[ownerKey+choirId]" } : {}),
+  });
+  await old.open();
+  const scope = { ownerKey: "user:a", scopeKey: "scope", choirId: "drive", scoreId: "score" };
+  const snapshot = { layers: [], annotations: [], cursor: 12, verifiedAt: 42 };
+  const pdfKey = JSON.stringify([scope.scopeKey, "v1:pdf"]);
+  const imageKey = JSON.stringify([scope.scopeKey, "v1:images"]);
+  const files = [
+    { ...scope, key: pdfKey, blob: new NodeBlob(["%PDF-1.7 retained"]), active: 0 },
+    { ...scope, key: imageKey, blob: new NodeBlob(["image bundle"]), imageManifest: { pages: [] }, active: 1 },
+    { ...scope, key: "inactive-image", blob: new NodeBlob(["older bundle"]), imageManifest: { pages: [] }, active: 0 },
+  ];
+  for (const file of files) {
+    await old.table("offlineScores").put({ ...file, ...(version < 11 ? { annotationSnapshot: snapshot } : {}) });
+    if (version >= 11) await old.table("offlineSnapshots").put({ ...scope, key: file.key, annotationSnapshot: snapshot });
+  }
+  const draft = { ...scope, key: "draft", state: "draft", payload: { text: "preserve draft" } };
+  const pending = { ...scope, opId: "pending", payload: { text: "pending edit" } };
+  const conflict = { ...scope, opId: "conflict", localPayload: { text: "conflicting edit" } };
+  await old.table("annotations").put(draft);
+  await old.table("annotationOutbox").put(pending);
+  await old.table("annotationConflicts").put(conflict);
+  old.close();
+  const originalPut = IDBObjectStore.prototype.put;
+  const writes = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, ...args) {
+    if (this.name === "offlineScores") throw new Error("must not rewrite retained PDF Blobs");
+    return originalPut.apply(this, args);
+  });
+  const updates = vi.spyOn(IDBCursor.prototype, "update").mockImplementation(() => {
+    throw new Error("must not rewrite file records using cursors");
+  });
+  // Version 14 already has a separate snapshot. Its broken bundle must be
+  // deletable using the historical key without trying to deserialize the Blob.
+  const originalGet = IDBObjectStore.prototype.get;
+  const reads = vi.spyOn(IDBObjectStore.prototype, "get").mockImplementation(function (this: IDBObjectStore, ...args) {
+    if (version === 14 && this.name === "offlineScores" && args[0] === imageKey) throw new DOMException("unreadable bundle", "NotReadableError");
+    return originalGet.apply(this, args);
+  });
+  const upgraded = new SamePageDatabase(name);
+  try {
+    await upgraded.open();
+    expect(await upgraded.offlineScores.toCollection().primaryKeys()).toEqual([pdfKey]);
+    const pdf = await upgraded.offlineScores.get(pdfKey);
+    expect(await pdf?.blob.text()).toBe("%PDF-1.7 retained");
+    expect(pdf?.active).toBe(0);
+    for (const file of files) expect((await upgraded.offlineSnapshots.get(file.key))?.annotationSnapshot).toEqual(snapshot);
+    expect(await upgraded.annotations.get("draft")).toEqual(draft);
+    expect(await upgraded.annotationOutbox.get("pending")).toEqual(pending);
+    expect(await upgraded.annotationConflicts.get("conflict")).toEqual(conflict);
+  } finally {
+    reads.mockRestore(); updates.mockRestore(); writes.mockRestore();
+    upgraded.close(); await Dexie.delete(name);
+  }
+});
