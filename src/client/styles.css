@@ -403,9 +403,9 @@ h1 {
   align-items: center;
   gap: 2rem;
   width: min(76rem, calc(100% - 2.5rem));
-  min-height: min(46rem, calc(100svh - 5rem));
+  min-height: min(38rem, calc(100svh - 12rem));
   margin: 0 auto;
-  padding: clamp(3rem, 6vw, 5rem) 0 clamp(4rem, 8vw, 7rem);
+  padding: clamp(3rem, 6vw, 5rem) 0 1.5rem;
 }
 
 .marketing-hero__content {
@@ -463,6 +463,10 @@ h1 {
   align-items: stretch;
   gap: 1.5rem;
   padding: 4rem 0;
+}
+
+.marketing-feature:first-child {
+  padding-top: 1.5rem;
 }
 
 .marketing-feature + .marketing-feature {
@@ -663,26 +667,27 @@ h1 {
 }
 
 .marketing-hero h1 {
-  max-width: 14ch;
-  font-size: clamp(2.9rem, 6vw, 5.15rem);
-  line-height: 0.95;
-  letter-spacing: -0.045em;
+  max-width: 24ch;
+  font-size: clamp(2rem, 3.8vw, 3.4rem);
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
 }
 
 .hero-zh {
-  margin: 1.6rem 0 0;
+  margin: 1.25rem 0 0;
   color: var(--brand);
-  font-size: clamp(1.65rem, 3vw, 2.4rem);
+  font-size: clamp(2rem, 4.1vw, 3.6rem);
   font-weight: 650;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   white-space: nowrap;
 }
 
 .hero-description {
   display: grid;
-  gap: 0.15rem;
-  max-width: 42rem;
-  margin: 1.1rem 0 0;
+  gap: 0.35rem;
+  max-width: 38rem;
+  margin: 1.5rem 0 0;
   color: var(--muted);
   font-size: 1rem;
   line-height: 1.7;
@@ -720,6 +725,7 @@ h1 {
 
 .hero-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 1rem;
   margin-top: 2.25rem;
@@ -2975,8 +2981,8 @@ h1 {
   }
 
   .marketing-hero h1 {
-    max-width: 11ch;
-    font-size: clamp(2.5rem, 11vw, 3.25rem);
+    max-width: 24ch;
+    font-size: clamp(1.65rem, 6vw, 2.25rem);
   }
 
   .hero-zh {
@@ -3173,7 +3179,7 @@ h1 {
 .invite-sharing-dialog > .drive-management-copy { margin: 0; font-size: 12px; }
 @media (max-width: 380px) { .invite-share-actions { grid-template-columns: 1fr; } }
 
-.hero-description p[lang="zh-CN"] { order: -1; color: var(--ink); font-size: 1.1rem; }
+.hero-description p[lang="zh-CN"] { order: -1; font-size: 1rem; }
 .hero-description p[lang="en"] { font-size: .85rem; }
 @media (max-width: 60rem) {
   .marketing-hero { grid-template-columns: 1fr; gap: 1.5rem; min-height: auto; padding-block: 2.5rem; }
@@ -3182,10 +3188,11 @@ h1 {
 
 @media (max-width: 40rem) {
   .marketing-hero { padding-block: 1.5rem; gap: 2rem; }
-  .marketing-hero h1 { font-size: clamp(2.25rem, 9vw, 2.75rem); }
-  .hero-zh { margin-top: .75rem; font-size: 1.5rem; }
+  .marketing-hero h1 { font-size: clamp(1.65rem, 6vw, 2.25rem); }
+  .hero-zh { margin-top: 1rem; font-size: clamp(1.8rem, 7.5vw, 2.6rem); }
   .hero-actions { position: relative; flex-direction: row; align-items: center; margin-top: 1.25rem; gap: 1rem; }
   .hero-cta { width: auto; min-width: 8rem; }
+  .marketing-feature:first-child .marketing-animation { order: -1; }
 }
 
 .drive-picker-join { display: flex; align-items: center; justify-content: center; min-height: 44px; width: 100%; margin-top: 1rem; text-decoration: none; box-sizing: border-box; }
