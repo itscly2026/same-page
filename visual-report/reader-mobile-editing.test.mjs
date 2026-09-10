@@ -46,7 +46,17 @@ test(`${engineName}: reader controls remain reachable without overlap across vie
   await page.getByRole("button", { name: "完成编辑", exact: true }).click();
   await page.locator(".page-preview-strip").waitFor({ state: "visible" });
   const preview = await page.getByRole("slider", { name: "跳转页码" }).boundingBox();
-  assert.ok(preview.width >= 44 && preview.height >= 44);
+  assert.ok(preview.width >= 44 && preview.height >= 44, `scrubber hit area: ${preview.width} × ${preview.height}`);
+  const strip = await page.locator(".page-preview-strip").boundingBox();
+  assert.ok(strip.height < 32, "the visible strip stays compact independently of its hit area");
+  assert.ok(strip.width < 80, "the two-page fixture stays tightly packed");
+  // A finger can land above the miniature strip and still select the last page.
+  const hit = { x: preview.x + preview.width - 2, y: strip.y - 2 };
+  assert.equal(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.getAttribute("aria-label"), hit), "跳转页码");
+  await page.mouse.click(hit.x, hit.y);
+  await page.locator('.page-reader__sheet[data-page-turn-current][data-page-number="2"]').waitFor();
+  await page.getByRole("slider", { name: "跳转页码" }).press("Home");
+  await page.locator('.page-reader__sheet[data-page-turn-current][data-page-number="1"]').waitFor();
   assert.equal(await page.locator(".reader-chrome .reader-page-indicator").count(), 0);
   const positionBadge = await page.locator(".reader-page-indicator").boundingBox();
   assert.ok(positionBadge.height < 32, "the page position is a compact status badge");
