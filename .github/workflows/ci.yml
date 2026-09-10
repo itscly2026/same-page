@@ -29,7 +29,6 @@ jobs:
       build: ${{ steps.scope.outputs.build }}
       deploy: ${{ steps.scope.outputs.deploy }}
       smoke: ${{ steps.scope.outputs.smoke }}
-      renderer: ${{ steps.scope.outputs.renderer }}
       browserGroup: ${{ steps.scope.outputs.browserGroup }}
     steps:
       - name: Checkout
@@ -107,8 +106,7 @@ jobs:
       needs.scope.outputs.build == 'true' ||
       needs.scope.outputs.pwa == 'true' ||
       needs.scope.outputs.performance == 'true' ||
-      needs.scope.outputs.smoke == 'true' ||
-      needs.scope.outputs.renderer == 'true'
+      needs.scope.outputs.smoke == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -121,35 +119,6 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit --no-fund
-      - name: Use Python for native PDF runtime
-        if: needs.scope.outputs.smoke == 'true' || needs.scope.outputs.renderer == 'true'
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.14'
-          cache: pip
-          cache-dependency-path: renderer/requirements.txt
-      - name: Install native PDF runtime
-        if: needs.scope.outputs.smoke == 'true' || needs.scope.outputs.renderer == 'true'
-        run: python -m pip install -r renderer/requirements.txt
-      - name: Verify native renderer
-        if: needs.scope.outputs.renderer == 'true'
-        run: |
-          python renderer/verify.py
-          python renderer/test_transport.py
-      - name: Verify and package the Linux renderer
-        if: needs.scope.outputs.renderer == 'true' || needs.scope.outputs.deploy == 'true'
-        run: |
-          docker build --tag same-page-renderer:verify renderer
-          docker run --rm --network none --memory 1g --cpus 1 \
-            --mount type=bind,src="$PWD/renderer/fixtures",dst=/app/fixtures,readonly \
-            --mount type=bind,src="$PWD/renderer/verify.py",dst=/app/verify.py,readonly \
-            --tmpfs /artifacts:uid=10001,gid=10001,size=64m \
-            same-page-renderer:verify python /app/verify.py > renderer/verified-output.json
-          docker run --rm --network none --memory 1g --cpus 1 \
-            --mount type=bind,src="$PWD/renderer/fixtures",dst=/app/fixtures,readonly \
-            --mount type=bind,src="$PWD/renderer/test_transport.py",dst=/app/test_transport.py,readonly \
-            same-page-renderer:verify python /app/test_transport.py
-          docker save --output renderer/image.tar same-page-renderer:verify
       - name: Install Playwright Chromium and WebKit
         if: >-
           needs.scope.outputs.pwa == 'true' ||
@@ -176,7 +145,7 @@ jobs:
         if: github.event_name == 'push' && needs.scope.outputs.deploy == 'true'
         run: |
           node scripts/release-artifact.mjs seal "$GITHUB_SHA"
-          tar -cf release.tar dist migrations renderer wrangler.jsonc package-lock.json release.json
+          tar -cf release.tar dist migrations wrangler.jsonc package-lock.json release.json
       - name: Upload verified release
         if: github.event_name == 'push' && needs.scope.outputs.deploy == 'true'
         id: artifact
@@ -225,7 +194,7 @@ jobs:
           const expected = {
             checks: scope.full === 'true',
             visual: scope.visual === 'true',
-            integration: ['build', 'pwa', 'performance', 'smoke', 'renderer'].some(key => scope[key] === 'true'),
+            integration: ['build', 'pwa', 'performance', 'smoke'].some(key => scope[key] === 'true'),
           };
           for (const [name, selected] of Object.entries(expected)) {
             assert.equal(jobs[name].result, selected ? 'success' : 'skipped', name);
@@ -244,7 +213,6 @@ jobs:
     permissions:
       contents: read
       deployments: write
-      id-token: write
     env:
       GITHUB_TOKEN: ${{ github.token }}
     steps:
@@ -279,24 +247,6 @@ jobs:
       - name: Install dependencies
         if: steps.admission.outputs.proceed == 'true'
         run: npm ci --prefer-offline --no-audit --no-fund
-
-      - name: Authenticate Google Cloud deployment
-        if: steps.admission.outputs.proceed == 'true'
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          project_id: same-page-clyapps
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
-
-      - name: Use Google Cloud SDK
-        if: steps.admission.outputs.proceed == 'true'
-        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
-
-      - name: Deploy and verify the sealed renderer image
-        if: steps.admission.outputs.proceed == 'true'
-        run: bash renderer/deploy.sh
-        env:
-          PDF_RENDERER_SECRET: ${{ secrets.PDF_RENDERER_SECRET }}
 
       - name: Record production recovery point and aggregate state
         if: steps.admission.outputs.proceed == 'true'

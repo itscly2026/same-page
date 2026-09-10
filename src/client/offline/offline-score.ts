@@ -3,8 +3,6 @@ import { readLogoutFence } from "../auth/logout-fence";
 import { liveQuery } from "dexie";
 import type { OfflineScoreRecord } from "../platform/local-database";
 import { captureOfflineFileFence } from "./local-files";
-import { imageManifestSchema, pageImagePath, scoreImagesPath, type ScoreDisplayMode, type ImageManifest } from "../../shared/score-images";
-import { prepareImageManifest } from "../reader/image-document";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import type { ScoreSummary } from "../../shared/scores";
 import { captureOfflineAnnotationSnapshot, ensureOfflineAppShell } from "../annotations/offline-snapshot";
@@ -17,45 +15,24 @@ import { findVerifiedOfflineScore, sha256Hex, verifyOfflineScore } from "./offli
 // Both entry points use the same verified replacement path. A failed attempt never
 // activates the new PDF or removes the previous copy or local drafts. Confirmed
 // publication revocations still scrub inaccessible notes, even on failure.
-async function prepareOfflineScore(workspace: LocalWorkspace, score: ScoreSummary, mode: ScoreDisplayMode = "pdf", signal = new AbortController().signal, pdfData?: Uint8Array, fileFence?: string) {
+async function prepareOfflineScore(workspace: LocalWorkspace, score: ScoreSummary, signal = new AbortController().signal, pdfData?: Uint8Array, fileFence?: string) {
   signal.throwIfAborted();
   fileFence ??= await captureOfflineFileFence(workspace);
   workspace = await captureLocalWorkspaceSession(workspace);
   if (workspace.choirId !== score.choirId || workspace.scoreId !== score.id) throw new Error("offline_score_scope_mismatch");
   const previous = await findActiveOfflineFile(workspace.ownerKey, workspace.choirId, workspace.scoreId);
   const base = `/api/choirs/${encodeURIComponent(score.choirId)}/scores/${encodeURIComponent(score.id)}`;
-  let blob: Blob, hash: string, imageManifest: ImageManifest | undefined;
-  if (mode === "images") {
-    imageManifest = await prepareImageManifest(workspace, score.currentVersion.id, score.currentVersion.sha256, signal);
-    if (imageManifest.pages.reduce((sum, page) => sum + page.assets[0].sizeBytes, 0) > 64 * 1024 * 1024) throw new Error("offline_image_memory_limit");
-    const pieces: ArrayBuffer[] = [];
-    const imageBase = scoreImagesPath(score.choirId, score.id, score.currentVersion.id);
-    for (const page of imageManifest.pages) {
-      signal.throwIfAborted();
-      await assertLocalWorkspaceActive(workspace);
-      const asset = page.assets[0];
-      const response = await diagnosticFetch(pageImagePath(imageBase, imageManifest, page.pageNumber, asset.edge), { signal });
-      if (!response.ok) throw new Error("offline_image_download_failed");
-      const bytes = await response.arrayBuffer();
-      if (bytes.byteLength !== asset.sizeBytes || await sha256Hex(bytes) !== asset.sha256) throw new Error("offline_image_checksum_mismatch");
-      await verifyImageDecode(new Blob([bytes], { type: "image/png" }), asset.width, asset.height);
-      pieces.push(bytes);
-    }
-    blob = new Blob(pieces, { type: "application/octet-stream" });
-    hash = await sha256Hex(await blob.arrayBuffer());
+  let data: ArrayBuffer;
+  if (pdfData) {
+    data = pdfData.slice().buffer;
   } else {
-    let data: ArrayBuffer;
-    if (pdfData) {
-      data = pdfData.slice().buffer;
-    } else {
-      const response = await diagnosticFetch(`${base}/versions/${encodeURIComponent(score.currentVersion.id)}/pdf`, { signal });
-      if (!response.ok) throw new Error("offline_pdf_download_failed");
-      data = await response.arrayBuffer();
-    }
-    if (data.byteLength !== score.currentVersion.sizeBytes || await sha256Hex(data) !== score.currentVersion.sha256) throw new Error("offline_pdf_checksum_mismatch");
-    blob = new Blob([data], { type: "application/pdf" });
-    hash = score.currentVersion.sha256;
+    const response = await diagnosticFetch(`${base}/versions/${encodeURIComponent(score.currentVersion.id)}/pdf`, { signal });
+    if (!response.ok) throw new Error("offline_pdf_download_failed");
+    data = await response.arrayBuffer();
   }
+  if (data.byteLength !== score.currentVersion.sizeBytes || await sha256Hex(data) !== score.currentVersion.sha256) throw new Error("offline_pdf_checksum_mismatch");
+  const blob = new Blob([data], { type: "application/pdf" });
+  const hash = score.currentVersion.sha256;
   signal.throwIfAborted();
   await ensureOfflineAppShell();
   signal.throwIfAborted();
@@ -69,32 +46,18 @@ async function prepareOfflineScore(workspace: LocalWorkspace, score: ScoreSummar
     annotationSnapshot = await captureOfflineAnnotationSnapshot(workspace);
   } catch (cause) { throw new OfflineAnnotationPreparationError("offline_annotations_unavailable", { cause }); }
   const record = {
-    key: localWorkspaceRecordKey(workspace, `${score.currentVersion.id}:${mode}`), ...workspace,
+    key: localWorkspaceRecordKey(workspace, score.currentVersion.id), ...workspace,
     versionId: score.currentVersion.id, fileName: score.fileName,
     sha256: hash, pageCount: score.currentVersion.pageCount,
-    blob, ...(imageManifest ? { imageManifest: imageManifestSchema.parse(imageManifest) } : {}), annotationSnapshot,
+    blob, annotationSnapshot,
   };
   if (!(await verifyOfflineScore({ ...record, active: 1, verifiedAt: Date.now() }))) throw new Error("offline_annotation_snapshot_incomplete");
   signal.throwIfAborted();
   await activateVerifiedOfflineScore(record, { activeKey: previous?.key ?? null, fileFence, signal });
   const verified = await findVerifiedOfflineScore(workspace);
-  if (!verified || verified.versionId !== score.currentVersion.id || (verified.imageManifest ? "images" : "pdf") !== mode) throw new Error("offline_copy_unavailable");
+  if (!verified || verified.versionId !== score.currentVersion.id) throw new Error("offline_copy_unavailable");
   return verified;
 }
-
-async function verifyImageDecode(blob: Blob, width: number, height: number) {
-  const url = URL.createObjectURL(blob), image = new Image();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("offline_image_decode_timeout")), 20_000);
-      image.onload = () => { clearTimeout(timer); resolve(); };
-      image.onerror = () => { clearTimeout(timer); reject(new Error("offline_image_corrupt")); };
-      image.src = url;
-    });
-    if (image.naturalWidth !== width || image.naturalHeight !== height) throw new Error("offline_image_dimensions_mismatch");
-  } finally { image.src = ""; URL.revokeObjectURL(url); }
-}
-
 
 class OfflineAnnotationPreparationError extends Error {}
 
@@ -141,14 +104,14 @@ export class OfflinePreparation {
   private identityGeneration = 0;
   private context: Promise<{ workspace: LocalWorkspace; fence: string }>;
 
-  constructor(private readonly workspace: LocalWorkspace, readonly score: ScoreSummary, readonly mode: ScoreDisplayMode, authenticatedUserId: string | null, fileFence?: Promise<string>) {
-    this.targetKey = JSON.stringify([workspace.scopeKey, score.currentVersion.id, mode]);
+  constructor(private readonly workspace: LocalWorkspace, readonly score: ScoreSummary, authenticatedUserId: string | null, fileFence?: Promise<string>) {
+    this.targetKey = JSON.stringify([workspace.scopeKey, score.currentVersion.id]);
     this.identityGeneration = identityGenerations.get(workspace.ownerKey) ?? 0;
     this.context = (async () => {
       if (workspace.ownerKey.startsWith("user:") && workspace.ownerKey !== `user:${authenticatedUserId ?? ""}`) throw new Error("offline_identity_unconfirmed");
       const session = await captureLocalWorkspaceSession(workspace);
       const fence = await (fileFence ?? captureOfflineFileFence(session));
-      this.key = JSON.stringify([session.scopeKey, session.sessionEpoch, this.identityGeneration, fence, score.currentVersion.id, mode]);
+      this.key = JSON.stringify([session.scopeKey, session.sessionEpoch, this.identityGeneration, fence, score.currentVersion.id]);
       if (!this.disposed) {
         observers.add(this);
         this.observe();
@@ -185,7 +148,7 @@ export class OfflinePreparation {
       const logout = await readLogoutFence();
       if (logout && context.workspace.ownerKey === `user:${logout.userId}`) throw new Error("offline_identity_changed");
       if (requestFence) context = { ...context, fence: await requestFence };
-      this.key = JSON.stringify([context.workspace.scopeKey, context.workspace.sessionEpoch, this.identityGeneration, context.fence, this.score.currentVersion.id, this.mode]);
+      this.key = JSON.stringify([context.workspace.scopeKey, context.workspace.sessionEpoch, this.identityGeneration, context.fence, this.score.currentVersion.id]);
     }
     catch { pendingRequests.delete(this); cancelUnownedPreparations(); const state: OfflinePreparationState = { phase: "failed", reason: "identity" }; this.publish(state); return state; }
     // Explicit requests survive disposal even while capturing the session/fence.
@@ -207,10 +170,10 @@ export class OfflinePreparation {
       }).subscribe({ next: valid => { if (!valid) controller.abort(); }, error: () => controller.abort() });
       task.result = (async (): Promise<OfflinePreparationState> => {
         try {
-          const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(this.mode === "images" ? 240_000 : 180_000)]);
+          const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(180_000)]);
           const bytes = pdfData ? await untilAborted(pdfData().catch(() => undefined), signal) : undefined;
           controller.signal.throwIfAborted();
-          const record = await untilAborted(prepareOfflineScore(context.workspace, this.score, this.mode, signal, bytes, context.fence), signal);
+          const record = await untilAborted(prepareOfflineScore(context.workspace, this.score, signal, bytes, context.fence), signal);
           return { phase: "ready", record };
         } catch (error) { return controller.signal.aborted ? { phase: "cancelled" } : { phase: "failed", reason: error instanceof OfflineAnnotationPreparationError ? "annotations" : error instanceof DOMException && error.name === "TimeoutError" ? "timeout" : "download" }; }
         finally { watcher.unsubscribe(); }

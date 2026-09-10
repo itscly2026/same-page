@@ -21,7 +21,7 @@ import type {
 } from "../annotations/annotation-overlay";
 import type { LocalAnnotationRecord } from "../platform/local-database";
 import type { AnnotationEditor } from "../annotations/annotation-editor";
-import type { ScoreDocument } from "./image-document";
+import type { PDFDocumentProxy } from "./pdf-document";
 import { PdfPageCanvas, type PdfPageRenderLease } from "./pdf-page";
 import {
   calculateFittedPageWidth,
@@ -52,7 +52,7 @@ export interface AnnotationPageProps {
 }
 
 interface ReaderLayoutProps {
-  document: ScoreDocument;
+  document: PDFDocumentProxy;
   currentPage: number;
   zoom: number;
   fitRequest?: number;
@@ -402,7 +402,7 @@ export function PageNavigatorPanel({
   currentPage,
   onSelect,
 }: {
-  document: ScoreDocument;
+  document: PDFDocumentProxy;
   currentPage: number;
   onSelect(page: number): void;
 }) {
@@ -492,7 +492,7 @@ function PdfPageThumbnail({
   document,
   pageNumber,
 }: {
-  document: ScoreDocument;
+  document: PDFDocumentProxy;
   pageNumber: number;
 }) {
   const aspectRatio = usePdfPageAspectRatio(document, pageNumber);
@@ -516,7 +516,7 @@ function AnnotatedPdfPage({
   annotationProps,
   onPageRenderStart,
 }: {
-  document: ScoreDocument;
+  document: PDFDocumentProxy;
   pageNumber: number;
   width: number;
   aspectRatio?: number;
@@ -570,7 +570,7 @@ function useElementSize(ref: RefObject<HTMLElement | null>) {
 }
 
 function usePdfPageAspectRatio(
-  document: ScoreDocument,
+  document: PDFDocumentProxy,
   pageNumber: number,
   knownRatio?: number,
 ) {
@@ -596,8 +596,8 @@ function usePdfPageAspectRatio(
   return knownRatio ?? ratio;
 }
 
-function usePageAspectRatios(document: ScoreDocument) {
-  const [geometry, setGeometry] = useState<{ document: ScoreDocument; ratios: number[] } | null>(null);
+function usePageAspectRatios(document: PDFDocumentProxy) {
+  const [geometry, setGeometry] = useState<{ document: PDFDocumentProxy; ratios: number[] } | null>(null);
   useEffect(() => {
     let active = true;
     // Metadata only: this does not render or retain canvases for offscreen pages.

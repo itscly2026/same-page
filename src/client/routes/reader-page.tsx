@@ -1,3 +1,4 @@
+import { LocalPdfDownload } from "../reader/local-pdf-download";
 import { useReaderFullscreen } from "../reader/use-reader-fullscreen";
 import { clearGuestNotes, isLocalExperience } from "../annotations/guest-notes";
 import { useReadingPreferenceProjection } from "../reader/reading-preference-intents";
@@ -358,7 +359,6 @@ function ReaderPageContent() {
   };
 
   const diagnosticReader: DiagnosticReader = {
-    displayMode: reader.snapshot.mode,
     interactionMode: editing ? "editing" : "reading",
     pendingCount: activeAnnotations ? Math.min(9999, pendingCount) : null,
     conflictCount: activeAnnotations ? Math.min(9999, conflicts.length) : null,
@@ -378,7 +378,10 @@ function ReaderPageContent() {
     </main>;
   }
 
-  const displayChoices = <Button className="secondary-button" onPress={() => navigation.afterEditing(reader.retry)}>重试 PDF 阅读</Button>;
+  const originalPdfDownload = online && cloudState === "active" && score ? <a className="secondary-button"
+    href={`/api/choirs/${encodeURIComponent(choirId)}/scores/${encodeURIComponent(scoreId)}/versions/${encodeURIComponent(score.currentVersion.id)}/pdf`}
+    download={score.fileName}>下载原 PDF</a> : offline ? <LocalPdfDownload workspace={workspace} record={offline} /> : null;
+  const displayChoices = <><Button className="secondary-button" onPress={() => navigation.afterEditing(reader.retry)}>重试 PDF 阅读</Button>{originalPdfDownload}</>;
   const loadError = reader.snapshot.error;
   if (loadError) {
     return (
@@ -390,7 +393,8 @@ function ReaderPageContent() {
         </p>
         <BackButton className="primary-link" to={`/choirs/${choirId}`}>返回云盘</BackButton>
         <Button className="secondary-button" onPress={() => navigation.afterEditing(reader.retry)}>重试加载</Button>
-        <details><summary>更多帮助</summary>{displayChoices}{diagnosticDialog}</details>
+        {originalPdfDownload}
+        <details><summary>更多帮助</summary>{diagnosticDialog}</details>
       </main>
     );
   }
@@ -481,7 +485,7 @@ function ReaderPageContent() {
       {presentation.status === "failed" ? <div className="reader-display-recovery" role="alert">
         <span>页面显示失败，本机草稿仍保留。</span>{displayChoices}{diagnosticDialog}
       </div> : null}
-      {reader.snapshot.modeMessage ? <p className="reader-display-notice" role="status">{reader.snapshot.modeMessage}{reader.snapshot.mode === "images" && <Button className="text-button" onPress={() => navigation.afterEditing(reader.retry)}>重试 PDF 阅读</Button>}</p> : null}
+      {reader.snapshot.displayMessage ? <p className="reader-display-notice" role="status">{reader.snapshot.displayMessage}</p> : null}
       {chromeVisible ? (
       <header className="reader-chrome" aria-label="阅读器控制">
           {!editing && <div className="reader-chrome__leading"><Button aria-label="返回云盘" className="reader-chrome__back reader-icon-button" onPress={() => { startLoadingJourney("exit-score", "warm"); navigation.back(`/choirs/${choirId}`); }}>
@@ -593,10 +597,10 @@ function ReaderPageContent() {
               </section>
               <section aria-label="本机离线副本"><h2>离线使用</h2>
               <p className="reader-more-menu__status" role="status">
-                {offlinePreparationDescription(preparation, offlineStatus ? { record: offline, invalid: offlineStatus.invalid, readFailed: offlineStatus.readFailed } : null, score.currentVersion.id, reader.snapshot.mode)}
+                {offlinePreparationDescription(preparation, offlineStatus ? { record: offline, invalid: offlineStatus.invalid, readFailed: offlineStatus.readFailed } : null, score.currentVersion.id)}
               </p>
               {offlineStatus?.readFailed && <Button className="secondary-button" onPress={() => setInspectionAttempt(value => value + 1)}>重试校验</Button>}
-              {!offlineStatus?.readFailed && (!offlineStatus || !offline || offlineStatus.invalid || hasNewOfflineVersion || preparation.phase === "failed" || downloading || (offline.imageManifest ? "images" : "pdf") !== reader.snapshot.mode) && (
+              {!offlineStatus?.readFailed && (!offlineStatus || !offline || offlineStatus.invalid || hasNewOfflineVersion || preparation.phase === "failed" || downloading) && (
               <Button
                 isDisabled={(preparation.phase === "preparing" && preparation.intent === "explicit") || cloudState === "trashed"}
                 onPress={() => void downloadOffline()}

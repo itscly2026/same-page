@@ -7,7 +7,6 @@ const build = z.string().regex(/^(?:[0-9a-f]{7,40}|development)$/).nullable();
 const version = z.string().regex(/^\d{1,4}(?:\.\d{1,6}){0,3}$/).nullable();
 const count = z.number().int().min(0).max(9999);
 export const diagnosticReaderSchema = z.object({
-  displayMode: z.enum(["pdf", "images"]),
   interactionMode: z.enum(["reading", "editing"]),
   pendingCount: count.nullable(),
   conflictCount: count.nullable(),
@@ -44,7 +43,7 @@ export const diagnosticReportSchema = z.object({
     requestId: z.uuidv4().nullable(),
     retryable: z.boolean(),
     count: count.min(1),
-    engineVersion: z.string().regex(/^(pdfjs|pdfium)-[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$/).max(64).optional(),
+    engineVersion: z.string().regex(/^pdfjs-[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$/).max(64).optional(),
     pdfReason: z.enum(["encrypted", "corrupt-pdf", "engine-unavailable", "version-mismatch", "timeout", "render-failed", "document-failed"]).optional(),
   }).strict()).max(50),
 }).strict();

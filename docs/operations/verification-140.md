@@ -9,13 +9,13 @@
 - 身份未确认时不显示成员列表；身份变化重建首页状态，成员请求有用户标记与取消保护。失败显示重试，并可打开同一活跃本机 owner 保存的文件；这些恢复链接不表示成员授权或已校验可离线，阅读器仍执行原有完整校验。
 - 文件名保持乐谱的主要名称。列表名称最多两行，完整名称通过原有链接可访问名称、悬停提示和“更多操作 → 文件信息”可达。所有读者都能查看文件大小、页数、PDF 版本；管理动作仍仅管理员可见。
 - 搜索可访问名称和占位文案均为“搜索乐谱”，仍匹配文件名。保留名称、最近更新、本机最近打开排序及从阅读器返回后的搜索/排序恢复，不增加阅读页码展示。
-- 每行只有一个离线状态与操作入口。下载和校验期间显示进行中状态，失败可重试；只在已验证的当前版本及当前谱面显示方式有副本时显示就绪标记。
+- 每行只有一个离线状态与操作入口。下载和校验期间显示进行中状态，失败可重试；只在已验证的当前 PDF 版本有副本时显示就绪标记。
 
 ## 自动化与交互证据
 
 - `home-entry.test.tsx` 覆盖零/一/多成员、缓存体验摘要不参与计数、替换历史、邀请码弹窗、主动切换、显式云盘链接、失败重试、未确认身份、已加载旧用户列表隔离、迟到旧响应及邮箱登录到单云盘。
 - 现有 `app.test.tsx`、`auth-page.test.tsx` 保留公开体验直接访问、邀请认证续接和阅读器深链接覆盖；补充非管理员文件信息及搜索文案验证。
-- `saved-score-links.test.tsx` 验证本机恢复链接的 owner 隔离；`offline-score-control.test.tsx` 验证下载中、不提前声称可离线、校验后就绪、失败重试、旧版/损坏副本，以及谱面显示方式不匹配。
+- `saved-score-links.test.tsx` 验证本机恢复链接的 owner 隔离；`offline-score-control.test.tsx` 验证下载中、不提前声称可离线、校验后就绪、失败重试、旧版/损坏副本。
 - `visual-report/drive-entry-library.test.mjs` 在 Chromium、WebKit 的持久浏览器档案中，实际执行默认入口 → 搜索/排序 → 键盘打开文件信息 → 注入下载失败 → 重试成功 → 打开渲染 PDF → 返回保留搜索/排序 → 清除无结果搜索。另检查 100 个超长文件名、空库、零/多成员和 390×844、834×1194、1194×834、1440×1000 视口的无溢出与至少 44px 操作目标。
 - [Chromium 交互记录](evidence-140/chromium-interactions.json) / [WebKit 交互记录](evidence-140/webkit-interactions.json)。记录使用合成成员和乐谱数据；下载字节、SHA-256 校验、IndexedDB 和 PDF 渲染在真实浏览器引擎中执行。新增交互测试仅模拟已安装应用壳的检查，不以此证明断网冷启动；独立 `test:pwa-update` 承担应用壳及更新切换验证。
 
@@ -40,6 +40,6 @@
 
 ## 全量检查入口
 
-本地以 `VITEST_MAX_WORKERS=2 npm run check:full` 运行完整检查，降低并发以避免开发机资源竞争造成导航等待超时；Python 使用按 `renderer/requirements.txt` 安装的独立虚拟环境。检查包含原生渲染、PWA 更新、lint/typecheck、全部单元/客户端/Worker 测试、浏览器布局、迁移、生产构建、浏览器 Worker smoke 和加载性能预算。最终结果记录于 [PR #144](https://github.com/itscly2026/same-page/pull/144) 的验证说明及 CI；这份文档不代表已经发布。
+本地以 `VITEST_MAX_WORKERS=2 npm run check:full` 运行完整检查，降低并发以避免开发机资源竞争造成导航等待超时。检查包含PWA 更新、lint/typecheck、全部单元/客户端/Worker 测试、浏览器布局、迁移、生产构建、浏览器 Worker smoke 和加载性能预算。最终结果记录于 [PR #144](https://github.com/itscly2026/same-page/pull/144) 的验证说明及 CI；这份文档不代表已经发布。
 
-本轮结果：CI 范围测试、lint、typecheck、37 项单元测试、298 项客户端测试、7 项 Worker 单元测试、66 项 Worker 集成测试、33 项浏览器/视觉测试、迁移、构建及 precache 审计通过；原生渲染与 PWA 更新检查通过。本地 Node 25 的并发 smoke 进程异常后，用与 CI 相同的 Node 24、`--test-concurrency=1` 完整复跑 6 项 smoke，全部通过。`measure-loading-performance.mjs` 已同步单成员自动直达行为，原有单 bootstrap、无重复列表请求、缓存返回、冷打开/重开及性能预算断言全部通过。首轮 CI 暴露的是该性能脚本仍点击旧入口的遗漏，修正后提交重新运行 CI。
+本轮结果：CI 范围测试、lint、typecheck、37 项单元测试、298 项客户端测试、7 项 Worker 单元测试、66 项 Worker 集成测试、33 项浏览器/视觉测试、迁移、构建及 precache 审计通过；PWA 更新检查通过。本地 Node 25 的并发 smoke 进程异常后，用与 CI 相同的 Node 24、`--test-concurrency=1` 完整复跑 6 项 smoke，全部通过。`measure-loading-performance.mjs` 已同步单成员自动直达行为，原有单 bootstrap、无重复列表请求、缓存返回、冷打开/重开及性能预算断言全部通过。首轮 CI 暴露的是该性能脚本仍点击旧入口的遗漏，修正后提交重新运行 CI。

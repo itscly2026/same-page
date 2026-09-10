@@ -3,8 +3,6 @@ import { excludeDeletedResources } from "./choirs/deleted-access";
 import { permissionRoutes } from "./permissions/routes";
 import { cleanupAnnotationLayers } from "./annotations/cleanup";
 import { driveSettingsRoutes } from "./choirs/settings";
-import { convertScoreImages } from "./images/conversion";
-import { imageRoutes } from "./images/routes";
 import { cleanupLifecycles } from "./lifecycle/cleanup";
 import { lifecycleRoutes } from "./lifecycle/routes";
 import { Hono } from "hono";
@@ -55,7 +53,6 @@ app.route("/api", lifecycleRoutes);
 app.route("/api", choirRoutes);
 app.route("/api", driveSettingsRoutes);
 app.route("/api", scoreRoutes);
-app.route("/api", imageRoutes);
 app.route("/api", annotationRoutes);
 
 app.notFound((context) => context.json({ error: "not_found" }, 404));
@@ -80,13 +77,6 @@ app.onError((error, context) => {
 
 export default {
   fetch: app.fetch,
-  async queue(batch, env) {
-    for (const message of batch.messages) {
-      const job = message.body as { versionId: string; generation: string };
-      await convertScoreImages(env, job);
-      message.ack();
-    }
-  },
   scheduled(_controller, env, context) {
     context.waitUntil(cleanupAnnotationLayers(env.DB).catch(() => {
       logFailure("storage", "cleanup", 500, crypto.randomUUID());

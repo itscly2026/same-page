@@ -36,3 +36,9 @@ CCITT / JBIG2 图片，使用 `openjpeg.wasm` 解码 JPEG2000，并使用
 
 测试检查像素是因为已知这个样本一定有图形。产品不应对任意 PDF 使用“白页即
 错误”的规则；合法 PDF 可以包含真正的空白页。
+
+## legacy 支持边界
+
+阅读器主模块与 PDF Worker 统一使用同版本 legacy，决定见 [ADR0013](../adr/0013-use-legacy-pdf-display.md)。实际安装的 6.3.289 包仍要求 `Promise.withResolvers`，没有内置它的 polyfill；其中 `Iterator`、`Promise.try`、Map upsert 的补充不能推导为任意旧浏览器兼容。
+
+能力验证分开执行并记录结果：保留 `Promise.withResolvers`、移除 legacy 已补充的 API 后检查实际谱面绘制；另行移除 `Promise.withResolvers` 后检查明确的 `engine-unavailable`，并验证仍能下载原 PDF。不能把“移除全部 API”后的失败当作受支持环境的绘制结果，也不能以 canvas 存在替代非空内容。两个探针都不能替代 Safari 17.5 真机验收；当前该真机尚未验证，不附带 legacy 性能结论。

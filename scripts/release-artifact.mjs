@@ -10,7 +10,6 @@ async function releaseFiles(cwd) {
   async function walk(directory) {
     for (const entry of await readdir(path.join(cwd, directory), { withFileTypes: true })) {
       const name = `${directory}/${entry.name}`;
-      if (entry.name === "__pycache__" || entry.name.endsWith(".pyc")) continue;
       if (entry.isDirectory()) await walk(name);
       else {
         assert.ok(entry.isFile(), `release cannot contain links: ${name}`);
@@ -20,7 +19,6 @@ async function releaseFiles(cwd) {
   }
   await walk("dist");
   await walk("migrations");
-  await walk("renderer");
   return Object.fromEntries(await Promise.all(files.sort().map(async (file) => [
     file, createHash("sha256").update(await readFile(path.join(cwd, file))).digest("hex"),
   ])));

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useSyncExternalStore } from "react";
-import type { ScoreDocument } from "./image-document";
+import type { PDFDocumentProxy } from "./pdf-document";
 import type { ReaderPresentation, PresentationSnapshot } from "./reader-presentation";
 
 export const ReaderPresentationContext = createContext<{
@@ -11,7 +11,7 @@ const subscribeNone = () => () => {};
 const empty: PresentationSnapshot = { document: null, status: "pending" };
 const pending = () => empty;
 
-export function useReaderPresentation(presentation: ReaderPresentation | null, document: ScoreDocument | null, currentPage: number, editing: boolean) {
+export function useReaderPresentation(presentation: ReaderPresentation | null, document: PDFDocumentProxy | null, currentPage: number, editing: boolean) {
   useLayoutEffect(() => presentation?.select({ document, page: currentPage, editing }), [presentation, document, currentPage, editing]);
   const snapshot = useSyncExternalStore(presentation?.subscribe ?? subscribeNone, presentation?.getSnapshot ?? pending);
   return { status: snapshot.document === document ? snapshot.status : "pending", context: { presentation, currentPage, snapshot } };
@@ -19,8 +19,8 @@ export function useReaderPresentation(presentation: ReaderPresentation | null, d
 
 // Canvas adapters report bitmap identity, not document-load completion. Changing
 // the current page rechecks an already painted bitmap without redrawing it.
-export function usePagePresentation(document: ScoreDocument, pageNumber: number,
-  painted: { document: ScoreDocument; pageNumber: number } | null, error: boolean, enabled: boolean) {
+export function usePagePresentation(document: PDFDocumentProxy, pageNumber: number,
+  painted: { document: PDFDocumentProxy; pageNumber: number } | null, error: boolean, enabled: boolean) {
   const context = useContext(ReaderPresentationContext);
   const presentation = enabled ? context?.presentation : null;
   const currentPage = context?.currentPage;

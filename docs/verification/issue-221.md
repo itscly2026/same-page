@@ -22,5 +22,5 @@
 - Worker 单元 5 文件 / 10 项通过；集成首跑 9 文件 / 95 项通过，依赖安装切换时一文件加载失败，独立依赖就绪后相关两个诊断文件 / 14 项补跑通过。
 - CI 范围测试 19 项通过；生产 build 与 precache 校验通过。
 - Chromium/WebKit 阅读器与诊断界面：14 项通过。
-- 完整 smoke 曾出现图片渲染依赖缺失、清理子进程 `kill EPERM`、存储场景首页 500/超时。设置 renderer Python 后图片补跑仍因清理 `kill EPERM` 失败，不能记为全套 smoke 通过。邀请入口补跑通过；存储场景单独补跑通过，证明真实 D1/R2 → IndexedDB → 关闭后端/浏览器重启 → 断网谱面内容。完整 smoke 中的 Chromium/WebKit CCITT/JPEG2000 在线及停服后内容校验通过。
+- 完整 smoke 曾出现清理子进程 `kill EPERM`、存储场景首页 500/超时，不能记为全套 smoke 通过。邀请入口补跑通过；存储场景单独补跑通过，证明真实 D1/R2 → IndexedDB → 关闭后端/浏览器重启 → 断网谱面内容。完整 smoke 中的 Chromium/WebKit CCITT/JPEG2000 在线及停服后内容校验通过。
 - Standards / Spec 两轴审查后已修复升级故障传播、异常快照隔离及准备超时分类，最终无未解决发现。

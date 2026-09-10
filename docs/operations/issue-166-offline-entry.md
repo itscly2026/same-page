@@ -30,4 +30,3 @@ iOS 与 Android 需分别在浏览器和已安装 PWA 上验证：登录并保�
 - WebKit：完成真实下载后注销测试 Service Worker（否则 Playwright 无法拦截其请求），新页面注入 API 网络失败；本机入口、PDF 与身份恢复，通过。静态资源仍在线。
 - 浏览器网络模拟恢复后显式派发 `online` 事件以验证产品事件处理；真实系统联网通知仍属于设备验收。手动“立即同步”会主动重查身份，以覆盖漏收通知的情况。
 - 阅读器与身份相关 56 项回归通过；独立 code-review 的 Standards / Spec 阻塞项已修复并复审通过。
-- 本地图片渲染测试须先在独立 Python 环境安装 `renderer/requirements.txt`，再设置 `SAME_PAGE_RENDERER_PYTHON`。未安装依赖的默认 Python 会导致转换阶段失败，与此次前端改动无关。

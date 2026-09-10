@@ -38,7 +38,7 @@ it("does not start PDF loading after the user closes during preparation", async 
   expect(io.load).not.toHaveBeenCalled();
 });
 
-it.each([null, { versionId: "old" }, { versionId: "v", imageManifest: {} }])("refuses missing, stale or image-only offline data", async copy => {
+it.each([null, { versionId: "old" }])("refuses missing or stale offline data", async copy => {
   vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
   io.verify.mockResolvedValue(copy);
   await expect(prepareExport(workspace, "v").promise).rejects.toThrow("完整 PDF");

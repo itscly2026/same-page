@@ -153,7 +153,7 @@ vi.mock("../reader/pdf-page", async () => {
       pageNumber,
       onRenderStart,
     }: {
-      document: import("../reader/image-document").ScoreDocument;
+      document: import("../reader/pdf-document").PDFDocumentProxy;
       presentation?: boolean;
       pageNumber: number;
       onRenderStart?(page: number): { ready(): void; cancel(): void };
@@ -231,7 +231,6 @@ it("keeps a single exit while the PDF never settles", async () => {
   vi.mocked(loadPdfDocument).mockReturnValue({ promise: new Promise(() => {}), destroy: vi.fn().mockResolvedValue(undefined) });
   render(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}><Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /><Route path="/choirs/:choirId" element={<h1>乐谱列表</h1>} /></Routes></MemoryRouter>);
   expect(screen.queryByRole("button", { name: "取消加载" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "图片兼容模式" })).not.toBeInTheDocument();
   fireEvent.click(await screen.findByRole("button", { name: "返回云盘" }));
   expect(await screen.findByRole("heading", { name: "乐谱列表" })).toBeVisible();
 });

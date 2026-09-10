@@ -114,26 +114,28 @@ it("thumbnail paint cannot acknowledge the current page even with the normal can
   expect(session.presentation.hasPresented(source.document)).toBe(false);
 });
 
-it("editing shows a drawing failure without changing display mode, and a page retry clears it", async () => {
+it("editing preserves the document on drawing failure, and a page retry clears it", async () => {
   const source = pdf();
   source.renderPage.mockImplementationOnce(() => ({ promise: Promise.reject(new Error("draw failed")), cancel: vi.fn() }))
     .mockImplementationOnce(() => ({ promise: Promise.reject(new Error("draw failed")), cancel: vi.fn() }));
   const session = await open(source.document);
   render(<Scene session={session} editing />);
   await waitFor(() => expect(status()).toHaveTextContent("failed"));
-  expect(session.getSnapshot().mode).toBe("pdf");
+  expect(session.getSnapshot().document).toBe(source.document);
   act(() => screen.getByRole("button", { name: "重试本页" }).click());
   await waitFor(() => expect(source.finishes).toHaveLength(1));
   await act(async () => source.finishes[0]());
   await waitFor(() => expect(status()).toHaveTextContent("visible"));
 });
 
-it("a classified current-page drawing failure uses the existing one-shot image recovery", async () => {
+it("a current-page drawing failure leaves the PDF available for page retry", async () => {
   const source = pdf();
   source.renderPage.mockImplementation(() => ({ promise: Promise.reject(new Error("draw failed")), cancel: vi.fn() }));
   const session = await open(source.document);
   render(<Scene session={session} />);
-  await waitFor(() => expect(session.getSnapshot().mode).toBe("images"));
+  await waitFor(() => expect(status()).toHaveTextContent("failed"));
+  expect(session.getSnapshot().document).toBe(source.document);
+  expect(screen.getByRole("button", { name: "重试本页" })).toBeVisible();
   expect(session.presentation.hasPresented(source.document)).toBe(false);
 });
 
@@ -145,7 +147,7 @@ it("unmount and disposal reject late display events", async () => {
   session.presentation.ready(source.document, 1);
   session.presentation.failed(source.document, 1, Object.assign(new Error(), { name: "PdfPageRenderError" }));
   expect(session.presentation.hasPresented(source.document)).toBe(false);
-  expect(session.getSnapshot().mode).toBe("pdf");
+  expect(session.getSnapshot().document).toBe(source.document);
   session.dispose();
   session.presentation.select({ document: source.document, page: 1, editing: false });
   session.presentation.ready(source.document, 1);
@@ -165,7 +167,7 @@ it("a failed replacement restores the previously presented document and its visi
   supply(replacement.document);
   await act(async () => { await session.refresh(); });
   await waitFor(() => expect(replacement.renderPage).toHaveBeenCalled());
-  await waitFor(() => expect(session.getSnapshot()).toMatchObject({ document: previous.document, mode: "pdf", modeMessage: "显示恢复未完成，已保留原谱面。" }));
+  await waitFor(() => expect(session.getSnapshot()).toMatchObject({ document: previous.document, displayMessage: "显示恢复未完成，已保留原谱面。" }));
   expect(status()).toHaveTextContent("visible");
   expect(session.presentation.hasPresented(replacement.document)).toBe(false);
 });

@@ -12,7 +12,7 @@
 
 ## 审查方法和范围
 
-清点基线上所有 `*.test.ts/tsx/js/mjs`，核对用例目标、断言模式与运行配置。对删改项读取原测试、相应实现和替代覆盖；对保留项按其独立风险和执行层判断。以下逐文件结论是本基线的覆盖责任清单，不宣称每个保留用例均已做故障注入。另检查原生 renderer、迁移、PWA、加载和发布验证入口。#228/#229/#230 在审查期间合并，其 4 个新增测试文件和既有测试变更已补查：持久化选择、跨标签串行、读取权限未确认时禁止修改、晚到刷新不覆盖草稿、权限表单恢复均保留。其中 #230 的真实认证监听器清理防止 jsdom 销毁后延迟异常，属于测试资源隔离而非重复测试认证库。合并冲突保留新版“我在此云盘”入口及云盘列表返回路径；个人层开关行为继续由 reader-layer-panel 与真实 Worker 保护。
+清点基线上所有 `*.test.ts/tsx/js/mjs`，核对用例目标、断言模式与运行配置。对删改项读取原测试、相应实现和替代覆盖；对保留项按其独立风险和执行层判断。以下逐文件结论是本基线的覆盖责任清单，不宣称每个保留用例均已做故障注入。另检查迁移、PWA、加载和发布验证入口。#228/#229/#230 在审查期间合并，其 4 个新增测试文件和既有测试变更已补查：持久化选择、跨标签串行、读取权限未确认时禁止修改、晚到刷新不覆盖草稿、权限表单恢复均保留。其中 #230 的真实认证监听器清理防止 jsdom 销毁后延迟异常，属于测试资源隔离而非重复测试认证库。合并冲突保留新版“我在此云盘”入口及云盘列表返回路径；个人层开关行为继续由 reader-layer-panel 与真实 Worker 保护。
 
 ## 删除后的风险去向
 
@@ -42,7 +42,6 @@
 | [browser-tests/access-smoke.test.mjs](../../browser-tests/access-smoke.test.mjs) | 保留 | 真实不可变 PDF 替换、旧离线版在失败时保留、过期回收项不可恢复 |
 | [browser-tests/annotations-smoke.test.mjs](../../browser-tests/annotations-smoke.test.mjs) | 保留 | 生产 API/真实 D1 与 IndexedDB 之间的离线和在途笔记保存 |
 | [browser-tests/diagnostic-reports.test.mjs](../../browser-tests/diagnostic-reports.test.mjs) | 保留 | 真实页面提交到 Worker 的回执、隐私和受控报告内容 |
-| [browser-tests/images-smoke.test.mjs](../../browser-tests/images-smoke.test.mjs) | 保留 | 原生转换到浏览器图片显示及完整离线重开，不以服务端 ready 代替客户端可用 |
 | [browser-tests/invite-entry-smoke.test.mjs](../../browser-tests/invite-entry-smoke.test.mjs) | 保留 | 真实邀请自动准入与用户/访客/已加入成员路径 |
 | [browser-tests/offline-entry-smoke.test.mjs](../../browser-tests/offline-entry-smoke.test.mjs) | 收敛 | 保留真实成员离线重启/失权本机文件可达；删除失权场景搜索排序及离线返回链中掩盖导航失败的额外 goto |
 | [browser-tests/outbox-browser.test.mjs](../../browser-tests/outbox-browser.test.mjs) | 保留 | 原生 IndexedDB 中去重、身份隔离与有界扫描；曾有 WebKit 特定索引风险 |
@@ -156,12 +155,11 @@
 | [worker/diagnostic-reports.test.ts](../../worker/diagnostic-reports.test.ts) | 保留 | 报告隐私、幂等/配额/保留期与失败时不假确认 |
 | [worker/diagnostics.test.ts](../../worker/diagnostics.test.ts) | 保留 | 错误日志安全字段和日志失败不得影响请求 |
 | [worker/email/send-otp.test.ts](../../worker/email/send-otp.test.ts) | 保留 | 真实邮件服务响应契约；发送未确认时不能误报送达 |
-| [worker/images/renderer.test.ts](../../worker/images/renderer.test.ts) | 保留 | 应用自有流式协议长度上限、截断、终止帧与 EOF |
 | [worker/index.test.ts](../../worker/index.test.ts) | 保留 | health 发布身份与未知 API 不落到 HTML 壳 |
 | [worker/lifecycle-flow.test.ts](../../worker/lifecycle-flow.test.ts) | 保留 | 拥有权唯一性、授权和提交间竞态、用户删除与恢复、草稿服务端边界 |
 | [worker/performance/server-timing.test.ts](../../worker/performance/server-timing.test.ts) | 保留 | 应用诊断 header 固定阶段名与计时格式；稳定假时钟，保留低成本契约 |
 | [worker/scheduled-cleanup.test.ts](../../worker/scheduled-cleanup.test.ts) | 保留 | 某清理失败不得阻断其他清理 |
-| [worker/scores-flow.test.ts](../../worker/scores-flow.test.ts) | 保留 | PDF 上传/版本/回滚/回收/图片准备和独立操作权限 |
+| [worker/scores-flow.test.ts](../../worker/scores-flow.test.ts) | 保留 | PDF 上传/版本/回滚/回收和独立操作权限 |
 | [worker/security/rate-limit-cleanup.test.ts](../../worker/security/rate-limit-cleanup.test.ts) | 保留 | 真实 D1 过期边界、并发续期、批量清理有界及安全日志 |
 | [worker/security/security.test.ts](../../worker/security/security.test.ts) | 保留 | 应用邀请码采样无偏及签名访客 token 篡改/过期拒绝 |
 
@@ -169,7 +167,6 @@
 
 | 入口 | 决定与原因 |
 | --- | --- |
-| renderer/verify.py、renderer/test_transport.py | 保留。实际产物谱面保真、签名/摘要/到期验证和 Linux 解析隔离；属于自有服务接入与部署保证 |
 | scripts/verify-score-schema-migration.mjs | 保留。真实历史数据库升级、外键、身份映射、文件及同步高水位；不是仅对 SQL 文本做快照 |
 | scripts/verify-pwa-update.mjs | 保留。真实两个构建与 Service Worker 交接，防止草稿/旧页面在更新时损失 |
 | scripts/verify-precache.mjs、verify-deployment.mjs、verify-lifecycle-migration.mjs | 保留。产物可离线运行、正确版本发布及迁移安全 |
@@ -178,7 +175,7 @@
 
 ## 验证记录
 
-- 使用 Node 24 和临时安装的 renderer Python 依赖。初始 #227 基线上，renderer、真实两个构建的 PWA 更新、`npm run check` 全链路及加载测量通过：Node 77、客户端 486、Worker 108、visual 73、smoke 18 项；lint、typecheck、迁移、构建和 precache 通过。
+- 使用 Node 24。初始 #227 基线上，真实两个构建的 PWA 更新、`npm run check` 全链路及加载测量通过：Node 77、客户端 486、Worker 108、visual 73、smoke 18 项；lint、typecheck、迁移、构建和 precache 通过。
 - 首次 `check:full` 在未修改的 offline-entry 首项等待本机文件链接时失败；该文件独跑 9/9、后续完整客户端 486/486 通过。失败时页面仍在加载，尚未证明根因；没有删除该测试或加大超时，不能把重跑通过称为已修复。
 - 原生滚动故障注入：临时给真实 `.continuous-reader` 设置 `touch-action: none !important`，精简后的触摸用例明确失败于 `native touch must move the displayed score`（0 未大于 0）。实验结束还出现独立的 macOS 进程清理 `kill EPERM`，不把这个退出错误冒充断言检出。生产 CSS 随后恢复，完整 visual 正向通过。
 - 接到 #228/#229 后，lint、typecheck 和受影响的菜单/权限/返回/首页/PDF 导出浏览器测试 26/26 通过。上述全量计数属于最初基线，移动触摸 viewport 补查 2/2 通过；最终包含 #230 的完整客户端用本机 2 workers 运行，58 文件 / 502 项通过，无未捕获异常；完整组合由 PR CI 再验证。未做真实 iPad 手感验收，也不以删减行数宣称已降低 CI 故障率或生产延迟。

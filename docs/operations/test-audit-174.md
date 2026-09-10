@@ -24,7 +24,7 @@
 | 每个迁移文件单独启动 Wrangler | 同一数据检查点之间合并执行；真实 D1、旧数据、外键、文件名 backfill 幂等断言全部保留 |
 | storage/offline-entry 仅 canvas 可见 | 增加实际 PDF 深色谱面与浅色底色像素证明，排除 UI/批注及透明、全白、全黑 |
 
-没有改产品代码，没有新增 skip/todo、重试或加宽超时。身份隔离、个人层、OCC/outbox、版本/会话竞态、真实 D1/R2、codec、图片离线、PWA、发布产物门禁保留。减少测试声明数不等于减少风险覆盖：文字矩阵等仍执行所有有意义的数据边界。
+没有改产品代码，没有新增 skip/todo、重试或加宽超时。身份隔离、个人层、OCC/outbox、版本/会话竞态、真实 D1/R2、codec、PWA、发布产物门禁保留。减少测试声明数不等于减少风险覆盖：文字矩阵等仍执行所有有意义的数据边界。
 
 ## 模块与 CI 选择
 
@@ -32,13 +32,13 @@
 
 - visual：drive-settings、drive-navigation、drive-library-lifecycle、upload-queue、responsive-navigation、ux-refinement。
 - smoke：storage-smoke、offline-entry-smoke，保留真实访客/成员的入口与离线存储消费者。
-- client/build/deploy 保留，performance 不选；renderer/codec 的独立浏览器流程不选。
+- client/build/deploy 保留，performance 不选；codec 的独立浏览器流程不选。
 
 混合任何其他产品路径、共享样式、reader、认证、离线、依赖、公共基础设施或未知路径，都回到 all 浏览器组。认证、offline、platform 与 app 的改动另外明确选择 PWA 交接。缺少历史仍全部验证。选择器自身变更也选择完整验证。新增消费者或改变这些模块职责时必须重新审计本清单。
 
 `scripts/run-browser-tests.mjs` 对未知 suite/group、空集合报错；all 从目录枚举所有用例，新浏览器文件不会漏掉。required verify 测试直接执行 workflow 内的真实门禁脚本，覆盖选中 job 失败、取消、意外跳过，及未选中 job 意外运行。
 
-Linux renderer 继续在每个发布产物封存前实际构建和验证。最新 main 的该步骤为 18 秒；复用需要额外建立源码、基础镜像和封存镜像之间的可信关联，本次没有为省这一步引入跨运行信任路径。浏览器安装缓存尚未采用：当前两个 job 都需要 Chromium/WebKit 及系统依赖，缓存不能省去系统库安装；没有同范围 CI 实测净收益前不增加大二进制 cache 的 restore/save 成本。现有 npm/pip 缓存保留。
+浏览器安装缓存尚未采用：当前两个 job 都需要 Chromium/WebKit 及系统依赖，缓存不能省去系统库安装；没有同范围 CI 实测净收益前不增加大二进制 cache 的 restore/save 成本。现有 npm 缓存保留。
 
 ## 验证与测量
 
@@ -53,7 +53,7 @@ Linux renderer 继续在每个发布产物封存前实际构建和验证。最�
 
 *main 扣除仅 main 执行的 seal/upload/identity 6 秒，排除 deploy。原基线两个 commit 树相同。首轮均值 runner 831 秒对比原 856.5 秒仅约 3%，分布重叠，关键路径没有稳定改善。浏览器安装及 runner 速度有混杂，不将波动归因于清理；不拿 library 子集冒充完整测试收益，也不为凑样本空跑旧 CI。最终第二轮完整 CI 数据放在 PR #175 描述，避免为了记录 CI 而不断触发下一轮 CI。
 
-原基线及第一轮：Node/客户端合计 437，Worker 95，visual 46，smoke 11；scope 从 16 增至 19。第一轮最终本机 check:full 全部通过，visual 78.91 秒；原本机 visual 105.43 秒。第二轮本机统一 Node 24，Python renderer 环境齐备。Node/客户端 427（78+349），Worker 95，visual 38；scope 19 与真实 smoke 11 保留。测试与执行代码相对原 main 净减 591 行，相对首轮最终净减 754 行，均不计文档。
+原基线及第一轮：Node/客户端合计 437，Worker 95，visual 46，smoke 11；scope 从 16 增至 19。第一轮最终本机 check:full 全部通过，visual 78.91 秒；原本机 visual 105.43 秒。第二轮本机统一 Node 24。Node/客户端 427（78+349），Worker 95，visual 38；scope 19 与真实 smoke 11 保留。测试与执行代码相对原 main 净减 591 行，相对首轮最终净减 754 行，均不计文档。
 
 错误注入证明（临时修改已恢复）：library 漏选 smoke 会使范围回归失败；真实 storage smoke 离线重开的 PDF canvas 涂白会使像素证明失败。实际批注层横移 8px 时新对齐断言失败，恢复后 reader-immersive 与 diagnostics 共 8 项通过。Spec 审查要求恢复实际 PDF.js 网络中断分类，已修复复核；两轴无未解决发现。
 
@@ -75,7 +75,6 @@ Linux renderer 继续在每个发布产物封存前实际构建和验证。最�
 | integration job | 327 | 290 | 328 |
 | integration / Install dependencies | 17 | 14 | 18 |
 | integration / Install Playwright Chromium and WebKit | 44 | 42 | 43 |
-| integration / Verify and package the Linux renderer | 18 | 18 | 20 |
 | integration / PWA update handover | 51 | 36 | 46 |
 | integration / Production build | 19 | 15 | 21 |
 | integration / Loading performance feedback loop | 13 | 11 | 13 |
@@ -83,6 +82,6 @@ Linux renderer 继续在每个发布产物封存前实际构建和验证。最�
 
 Scope 完成到 checks/visual/integration 启动间隔：原 PR 4/3/2 秒，原 main 3/3/2 秒，首轮最终 2/3/2 秒；间隔包含调度与启动开销。其余主要测试步骤见上表。
 
-第二轮本机 check:full：renderer、PWA、lint/typecheck、Node/client、Worker、38 项 visual（65.41 秒）、迁移与 build/precache 通过；11 项 smoke 中 10 项通过，图片 Chromium 在 teardown 遇到已有的 kill EPERM，完整命令因此退出 1。图片两引擎原样单独复验 2/2 通过（21.49 秒），后续加载预算及最终 lint 通过。PDF 网络分类恢复后的浏览器复验通过，不把该本机拆分验证描述为一次完整成功运行；最终完整 Linux CI 见 PR。
+第二轮本机 check:full：PWA、lint/typecheck、Node/client、Worker、38 项 visual（65.41 秒）、迁移与 build/precache 通过；完整 smoke 命令在 teardown 遇到 kill EPERM 并退出 1；后续加载预算及最终 lint 通过。PDF 网络分类恢复后的浏览器复验通过，不把该本机拆分验证描述为一次完整成功运行；最终完整 Linux CI 见 PR。
 
 第二轮首次 Linux CI `34044895070`：checks/integration 成功，visual 37/38；WebKit 的 drive-navigation 在 Escape 后立即读取焦点而失败。React Aria FocusScope 实际在卸载后的 requestAnimationFrame 恢复焦点，改用等待 dialog 关闭及按钮 toBeFocused 的行为断言，未增加超时或重试。与 CI 相同 global setup 下两引擎单文件 2/2 通过（9.36 秒），lint 通过；最终 CI 另见 PR，失败运行不纳入成功收益样本。

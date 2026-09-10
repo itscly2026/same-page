@@ -12,13 +12,12 @@ it("promotes the exact verified bytes and rejects modified artifacts or a differ
   const cwd = await mkdtemp(path.join(tmpdir(), "same-page-artifact-"));
   const sha = "a".repeat(40);
   try {
-    for (const dir of ["dist/client/assets", "dist/same_page", "migrations", "renderer"]) await mkdir(path.join(cwd, dir), { recursive: true });
+    for (const dir of ["dist/client/assets", "dist/same_page", "migrations"]) await mkdir(path.join(cwd, dir), { recursive: true });
     for (const [file, body] of Object.entries({
       "dist/client/build.json": JSON.stringify({ buildId: sha, scripts: { "/assets/app.js": createHash("sha256").update("export const value=1;").digest("hex") } }),
       "dist/client/assets/app.js": "export const value=1;",
       "dist/client/index.html": `<meta name="same-page-build-id" content="${sha}">`,
       "dist/same_page/index.js": `const buildId = "${sha}"`,
-      "renderer/Dockerfile": "FROM python:3.14-slim",
       "dist/same_page/wrangler.json": "{}", "wrangler.jsonc": "{}", "package-lock.json": "{}", "migrations/0001.sql": "SELECT 1;",
     })) await writeFile(path.join(cwd, file), body);
     await sealRelease({ cwd, sha, runId: "42" });

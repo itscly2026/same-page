@@ -3,7 +3,7 @@ import { acquireRenderSlot, sizeRenderCanvas, releaseRenderCanvas } from "./rend
 import { usePagePresentation } from "./use-reader-presentation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import type { ScoreDocument } from "./image-document";
+import type { PDFDocumentProxy } from "./pdf-document";
 import { completeLoadingJourney } from "../performance/loading-performance";
 
 export function PdfPageCanvas({
@@ -15,7 +15,7 @@ export function PdfPageCanvas({
   onRenderStart,
   presentation = true,
 }: {
-  document: ScoreDocument;
+  document: PDFDocumentProxy;
   pageNumber: number;
   width: number;
   aspectRatio?: number;
@@ -28,7 +28,7 @@ export function PdfPageCanvas({
   const frontCanvas = useRef(0);
   const source = useRef({ document, pageNumber });
   const renderLease = useRef<PdfPageRenderLease | null>(null);
-  const [painted, setPainted] = useState<{ canvas: number; document: ScoreDocument; pageNumber: number } | null>(null);
+  const [painted, setPainted] = useState<{ canvas: number; document: PDFDocumentProxy; pageNumber: number } | null>(null);
   const visibleCanvas = painted?.canvas ?? null;
   const [error, setError] = useState(false);
 
@@ -88,11 +88,6 @@ export function PdfPageCanvas({
                 sizeRenderCanvas(canvas, pixels, pixels * unscaled.height / unscaled.width);
                 const context = canvas.getContext("2d", { alpha: false });
                 if (!context) throw new Error("canvas_unavailable");
-                if ("kind" in page) {
-                  const imageAbort = new AbortController();
-                  cancelRender = () => imageAbort.abort();
-                  return page.paint(canvas, imageAbort.signal);
-                }
                 const viewport = page.getViewport({ scale: canvas.width / unscaled.width });
                 const task = page.render({ canvas, canvasContext: context, viewport });
                 cancelRender = () => task.cancel();
@@ -125,7 +120,7 @@ export function PdfPageCanvas({
       })
       .catch((reason: unknown) => {
         if (active && !(reason instanceof Error && reason.name === "RenderingCancelledException")) {
-          recordFailure({ operation: "pdf", category: pdfFailureCategory(reason), stage: "decode", pdfReason: pdfFailureReason(reason, true), engineVersion: "kind" in document ? document.manifest.engine : pdfEngineVersion });
+          recordFailure({ operation: "pdf", category: pdfFailureCategory(reason), stage: "decode", pdfReason: pdfFailureReason(reason, true), engineVersion: pdfEngineVersion });
           setError(true);
           reportFailure(reason instanceof Error && reason.name === "Error" && pdfFailureCategory(reason) === "internal" ? Object.assign(new Error("pdf_page_render_failed"), { name: "PdfPageRenderError" }) : reason);
           lease?.failed?.();

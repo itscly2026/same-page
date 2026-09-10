@@ -22,7 +22,7 @@
 - Resend key：Same Page 独立、Sending access、只允许 `samepage.clyapps.com`
 - CI Cloudflare token：Same Page 独立，包含 Workers Scripts Write、D1 Write、
   Workers R2 Storage Write、Account Settings Read、Workers Queues Write，以及
-  `clyapps.com` 的 Workers Routes Write。PDF 渲染运行于 Google Cloud Run，不再需要 Workers Paid / Containers。
+  `clyapps.com` 的 Workers Routes Write。PDF 阅读在浏览器中完成。
 
 生产 Secret 只存在于 Resend、Cloudflare Worker 和 GitHub Actions 的 secret store。
 不得写入仓库、Issue、PR、日志、终端历史或发布记录。
@@ -134,32 +134,16 @@ deploy job 在生产锁内核对发布顺序，记录发布尝试，在汇总 ve
 14. 在公开体验中分别使用 Google、邮箱登录，确认无需加入即可在个人层新增、修改、删除批注，重新打开仍可读回；另一用户、管理员与访客均不可读取该个人层，共享层仍按授权编辑。
 15. 管理员打开「管理 → 邀请码」查看当前码，关闭重开仍可查看；旧码仅有校验值时补录原码并确认原码继续有效，主动轮换后确认旧码失效。
 
+PDF.js legacy 仍要求 `Promise.withResolvers`，缺失时须验证 `engine-unavailable` 和原 PDF 下载；具体能力探针见 [运行资源说明](../runbooks/pdf-rendering-assets.md#legacy-支持边界)。Safari 17.5 真机尚未验证。
+
 真实 Safari、PWA 存储驱逐、手写笔和大陆网络表现不能由桌面自动化或 WebKit 模拟替代。
 
 ## 发布失败与显式回滚
 
-Cloud Run 渲染器使用 Same Page 专属 GCP 项目和运行身份。一次性资源配置见
-`renderer/provision.sh`；GitHub WIF 只允许本仓库 main 分支的 CI 工作流。
-`PDF_RENDERER_SECRET` 分别保存于 GitHub Actions、Worker Secrets 和 Google Secret Manager；
-Google 端固定使用 `same-page-renderer-signing:1`，轮换时应协调两个运行端及 CI 探针。
-密钥只经标准输入或子进程环境传递，不写入仓库、命令参数或输出。
-
-CI 在验证任务中构建、测试并保存 `renderer/image.tar`，随 release artifact 一起封存。
-生产锁内先发布该镜像的不可变 digest，再验证 buildId、未签名请求 403、
-签名测试 PDF 的六张完整 PNG 与已验证 Linux 镜像的输出哈希一致（镜像测试逐像素对照 golden），最后执行 D1 和 Worker 发布。
-源配置中的 `PDF_RENDERER_URL` 是 Same Page 的稳定 Cloud Run 地址。
-
-Cloud Run 和 Worker 发布不具备跨平台事务性；失败时分别核对 Run revision/buildId
-与 Worker `/api/health`、`/build.json`，不能以任一端已成功代表完整发布。
+发布封存和部署 Worker、静态资源、迁移与锁文件。
+历史 Durable Object 创建和删除 migration 保持原 tag 与顺序，供已部署实例继续升级。
+首次发布 #156 前必须在合并前阻止旧图片任务、排空队列并等待在途任务结束；`0025` 将注册派生 key 排入删除队列后 drop 图片表。完整顺序见 [资源退役步骤](image-renderer-retirement.md)。
 恢复使用同一 release artifact 和串行 production admission，禁止重新构建后覆盖旧 SHA。
-原 Durable Object 创建 migration 已在失败发布中上传，因此保留历史 tag，并添加删除类的 migration。
-Cloudflare CI token 仍须具备 Queues Write 以管理现有 Queue consumer。
-
-该服务采用公开 HTTPS 入口及应用签名鉴权；它不是 IAM 私有服务。
-完整 PDF 只上传一次，所有 PNG 流式返回 Worker 并按原授权保存到私有 R2。
-原生解析子进程无凭据，Linux seccomp 禁止网络和跨进程读取。
-成本配置为 1 vCPU / 1 GiB / min 0 / max 1 / concurrency 1；免费额度按结算账号共享，
-互联网出网、镜像存储及日志单独计量，参见 `cloud-run-evaluation.md`。
 
 1. 先在 Actions 确定失败阶段。准入跳过表示已有更新的发布尝试；历史不可达、分叉、GitHub 记录不可用或 artifact 校验失败都在生产写入前停止。不要通过删除发布记录或修改 expected SHA 绕过。
 2. 下载失败或 artifact 过期：重跑包含 integration、verify 和 deploy 的完整工作流。相同 SHA 允许重试；不允许在部署阶段临时构建一份新产物。`npm run deploy` 仅供已获授权的手工恢复，要求 `SAME_PAGE_RELEASE_SHA` 与已校验的 release.json 一致，不构建、不迁移，也不替代完整发布流程；执行时须停止并发 CI 发布并单独记录。

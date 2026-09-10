@@ -52,45 +52,47 @@ beforeEach(async () => {
 afterEach(() => network.resetHandlers());
 
 describe("PDF file library and delivery", () => {
-  it("deduplicates concurrent preparation and allows retry after dispatch fails", async () => {
+  it("retires derived metadata without losing queued keys or PDF reference protection", async () => {
     const { adminCookie, choirId } = await createAdminChoir();
-    const score = await upload(choirId, adminCookie, "队列.pdf", createMinimalPdf(200, 200));
-    const endpoint = `/api/choirs/${choirId}/scores/${score.id}/versions/${score.versionId}/images`;
-    const send = vi.fn().mockRejectedValueOnce(new Error("queue unavailable")).mockResolvedValue(undefined);
-    const runtime = { ...env, IMAGE_JOBS: { send, sendBatch: vi.fn(), metrics: vi.fn() } } satisfies typeof env;
-    expect((await callWorker(endpoint, { method: "POST", headers: { cookie: adminCookie } }, runtime)).status).toBe(503);
-    expect(await (await callWorker(endpoint, { headers: { cookie: adminCookie } }, runtime)).json()).toMatchObject({ state: "failed" });
-    const responses = await Promise.all([1, 2].map(() => callWorker(endpoint, { method: "POST", headers: { cookie: adminCookie } }, runtime)));
-    expect(responses.map(response => response.status)).toEqual([202, 202]);
-    expect(send).toHaveBeenCalledTimes(2);
-    expect(await (await callWorker(endpoint, { headers: { cookie: adminCookie } }, runtime)).json()).toEqual({ state: "preparing" });
+    const score = await upload(choirId, adminCookie, "保留.pdf", createMinimalPdf(200, 200));
+    const version = await env.DB.prepare("SELECT object_key FROM score_versions WHERE id = ?")
+      .bind(score.versionId).first<{ object_key: string }>();
+    expect(version).not.toBeNull();
+    const pdfKey = version!.object_key;
+    const oldSchema = env.TEST_MIGRATIONS.find(migration => migration.name.startsWith("0015_"))!;
+    const removal = env.TEST_MIGRATIONS.find(migration => migration.name.startsWith("0025_"))!;
+    // Recreate the historical schema to exercise upgrading populated metadata.
+    await env.DB.batch(oldSchema.queries.map((query: string) => env.DB.prepare(query)));
+    await env.DB.prepare("INSERT INTO score_image_jobs VALUES (?, 'generation', 'ready', 0, NULL, NULL)")
+      .bind(score.versionId).run();
+    for (const key of ["derived-existing", "derived-new", pdfKey]) {
+      await env.DB.prepare("INSERT INTO score_image_objects VALUES (?, ?, 'generation')").bind(key, score.versionId).run();
+    }
+    for (const key of ["derived-existing", "already-queued"]) {
+      await env.SCORES_BUCKET.put(key, "old derivative");
+      await env.DB.prepare("INSERT INTO score_object_deletions VALUES (?, ?, 1)").bind(key, key).run();
+    }
+    await env.SCORES_BUCKET.put("derived-new", "new derivative");
+    await env.DB.batch(removal.queries.map((query: string) => env.DB.prepare(query)));
+    expect((await env.DB.prepare("SELECT name FROM sqlite_master WHERE name LIKE 'score_image_%'").all()).results).toEqual([]);
+    expect(await env.DB.prepare("SELECT id, created_at FROM score_object_deletions WHERE object_key = 'derived-existing'").first())
+      .toEqual({ id: "derived-existing", created_at: 1 });
+    expect((await env.DB.prepare("SELECT object_key FROM score_object_deletions ORDER BY object_key").all<{ object_key: string }>()).results.map(row => row.object_key))
+      .toEqual(["derived-existing", "derived-new", "already-queued", pdfKey].sort());
+    const deletion = vi.spyOn(env.SCORES_BUCKET, "delete").mockRejectedValueOnce(new Error("storage unavailable"));
+    try {
+      await expect(cleanupScoreStorage(env)).rejects.toThrow("storage unavailable");
+      expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM score_object_deletions").first()).toEqual({ count: 4 });
+    } finally {
+      deletion.mockRestore();
+    }
+    await cleanupScoreStorage(env);
+    for (const key of ["derived-existing", "derived-new", "already-queued"]) expect(await env.SCORES_BUCKET.head(key)).toBeNull();
+    expect(await env.SCORES_BUCKET.head(pdfKey)).not.toBeNull();
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM score_object_deletions").first()).toEqual({ count: 0 });
+    expect((await callWorker(`/api/choirs/${choirId}/scores/${score.id}/pdf`, { headers: { cookie: adminCookie } })).status).toBe(200);
   });
-  it("makes a ready generation with a missing object retryable without changing PDF identity", async () => {
-    const { adminCookie, choirId } = await createAdminChoir();
-    const score = await upload(choirId, adminCookie, "重建.pdf", createMinimalPdf(200, 200));
-    const endpoint = `/api/choirs/${choirId}/scores/${score.id}/versions/${score.versionId}/images`;
-    const generation = crypto.randomUUID();
-    const manifest = { versionId: score.versionId, sourceSha256: "a".repeat(64), generation, spec: "png-rgb-v1", engine: "pdfium-153.0.7999.0",
-      pages: [{ pageNumber: 1, width: 200, height: 200, crop: [0, 0, 200, 200], rotation: 0,
-        assets: [2048, 3072].map(edge => ({ edge, width: edge, height: edge, sizeBytes: 100, sha256: "b".repeat(64) })) }] };
-    await env.DB.prepare("INSERT INTO score_image_jobs(version_id, generation, state, updated_at, manifest) VALUES (?, ?, 'ready', ?, ?)")
-      .bind(score.versionId, generation, Date.now(), JSON.stringify(manifest)).run();
-    expect((await callWorker(`${endpoint}/${generation}/1/2048.png`, { headers: { cookie: adminCookie } })).status).toBe(503);
-    expect(await (await callWorker(endpoint, { headers: { cookie: adminCookie } })).json()).toMatchObject({ state: "failed" });
-    const send = vi.fn().mockResolvedValue(undefined);
-    const runtime = { ...env, IMAGE_JOBS: { send, sendBatch: vi.fn(), metrics: vi.fn() } } satisfies typeof env;
-    expect((await callWorker(endpoint, { method: "POST", headers: { cookie: adminCookie } }, runtime)).status).toBe(202);
-    expect(send).toHaveBeenCalledWith({ versionId: score.versionId, generation: expect.not.stringMatching(generation) });
-  });
-  it("image preparation status inherits PDF version access and starts absent", async () => {
-    const { adminCookie, choirId } = await createAdminChoir();
-    const score = await upload(choirId, adminCookie, "兼容.pdf", createMinimalPdf(200, 200));
-    const endpoint = `/api/choirs/${choirId}/scores/${score.id}/versions/${score.versionId}/images`;
-    const response = await callWorker(endpoint, { headers: { cookie: adminCookie } });
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ state: "absent" });
-    expect((await callWorker(endpoint)).status).toBe(403);
-  });
+
   it("does not truncate literal long filename searches on either library endpoint", async () => {
     const { adminCookie, choirId } = await createAdminChoir();
     const name = "合唱排练".repeat(31) + "%_结尾.pdf";

@@ -6,7 +6,7 @@
 
 ## 开发入口
 
-使用 Node.js 24 与 npm。客户端为 React/TypeScript/Vite；同源 API 使用 Cloudflare Worker/Hono、Better Auth、D1 和 R2。PDF 阅读使用 PDF.js，图片派生由 Cloud Run 渲染器完成；本地草稿与离线副本使用 Dexie/IndexedDB。
+使用 Node.js 24 与 npm。客户端为 React/TypeScript/Vite；同源 API 使用 Cloudflare Worker/Hono、Better Auth、D1 和 R2。PDF 阅读统一使用 PDF.js legacy；本地草稿与离线副本使用 Dexie/IndexedDB。
 
 ```bash
 npm ci
@@ -60,4 +60,4 @@ npm run visual:report    # 当前产品的视觉报告
 
 本项目原创代码采用 [GNU Affero General Public License v3.0](LICENSE)（SPDX：`AGPL-3.0-only`）。允许在遵守许可证的前提下使用、修改和商业运营。分发以及修改后提供网络服务时，应按许可证要求提供对应源码；完整权利和义务以 LICENSE 为准。
 
-第三方代码、字体及素材继续适用各自的许可证，例如 [Bravura 字体许可](renderer/fixtures/Bravura-LICENSE.txt)。代码许可不授予以本项目名称或标识冒充官方服务的权利，也不授予用户上传谱面或其他用户内容的使用权。
+第三方代码、字体及素材继续适用各自的许可证。代码许可不授予以本项目名称或标识冒充官方服务的权利，也不授予用户上传谱面或其他用户内容的使用权。

@@ -181,9 +181,76 @@ try {
   assert.deepEqual(query("SELECT id, storage_limit_bytes, storage_used_bytes FROM choirs ORDER BY id"), beforeTrial);
   assert(query("SELECT plan, score_limit, member_limit, purged_at FROM choirs").every(row => row.plan === "configured" && row.score_limit === null && row.member_limit === null && row.purged_at === null));
   assert.deepEqual(query("PRAGMA foreign_key_check"), []);
-  process.stdout.write("Verified legacy score schema migration.\n");
+  verifyImageRetirement();
+  process.stdout.write("Verified legacy score schema migration, including image retirement.\n");
 } finally {
   rmSync(persistencePath, { recursive: true, force: true });
+}
+
+function verifyImageRetirement() {
+  // Seed the actual 0015 tables after every preceding migration, with an
+  // authorized uploader and a current PDF belonging to the existing note tree.
+  executeD1({ command: `
+    UPDATE choirs SET storage_used_bytes = storage_used_bytes + 100 WHERE id = 'choir';
+    INSERT INTO score_versions
+      (id, choir_id, score_id, version_number, object_key, size_bytes, sha256,
+       etag, page_count, state, uploaded_by_membership_id, created_at, ready_at)
+      VALUES ('preserved-version', 'choir', 'preserved-score', 1,
+        'scores/preserved.pdf', 100, 'preserved-sha256', 'preserved-etag', 1,
+        'ready', 'second-member', 1, 1);
+    UPDATE scores SET current_version_id = 'preserved-version' WHERE id = 'preserved-score';
+    INSERT INTO score_image_jobs (version_id, generation, state, updated_at, manifest)
+      VALUES ('preserved-version', 'generation', 'ready', 123, '{}');
+    INSERT INTO score_image_objects (object_key, version_id, generation) VALUES
+      ('derived/new.png', 'preserved-version', 'generation'),
+      ('derived/already-queued.png', 'preserved-version', 'generation'),
+      ('scores/preserved.pdf', 'preserved-version', 'generation');
+    INSERT INTO score_object_deletions (id, object_key, created_at) VALUES
+      ('original-derivative-deletion', 'derived/already-queued.png', 123),
+      ('original-pdf-deletion', 'scores/preserved.pdf', 456),
+      ('original-unrelated-deletion', 'unrelated/queued.pdf', 789);
+  `, targetArgs });
+  const preservedQueries = {
+    drives: "SELECT * FROM choirs ORDER BY id",
+    scores: "SELECT * FROM scores ORDER BY id",
+    versions: "SELECT * FROM score_versions ORDER BY id",
+    layers: "SELECT * FROM annotation_layers ORDER BY id",
+    objects: "SELECT * FROM annotation_objects ORDER BY id",
+    operations: "SELECT * FROM annotation_sync_operations ORDER BY op_id",
+    drivePreferences: "SELECT * FROM user_drive_layer_preferences ORDER BY user_id, choir_id, slot",
+    scorePreferences: "SELECT * FROM user_score_layer_preferences ORDER BY user_id, choir_id, score_id, slot",
+    sequence: "SELECT seq FROM sqlite_sequence WHERE name = 'annotation_sync_operations'",
+  };
+  const before = queryNamed({
+    ...preservedQueries,
+    foreignKeys: "PRAGMA foreign_key_check",
+    jobs: "SELECT * FROM score_image_jobs",
+    objectsToRetire: "SELECT object_key FROM score_image_objects ORDER BY object_key",
+    deletions: "SELECT * FROM score_object_deletions ORDER BY object_key",
+  });
+  assert.deepEqual(before.foreignKeys, []);
+  assert.equal(before.jobs.length, 1);
+  assert.equal(before.objectsToRetire.length, 3);
+  assert.equal(before.versions.length, 1);
+  assert(before.objects.length > 0 && before.operations.length > 0);
+  const expectedKeys = [...new Set([...before.deletions, ...before.objectsToRetire].map(row => row.object_key))].sort();
+
+  applyMigrations("0025_remove_score_images.sql");
+
+  const after = queryNamed({
+    ...preservedQueries,
+    foreignKeys: "PRAGMA foreign_key_check",
+    retiredSchema: "SELECT name FROM sqlite_master WHERE name GLOB 'score_image_*'",
+    deletions: "SELECT * FROM score_object_deletions ORDER BY object_key",
+  });
+  assert.deepEqual(after.retiredSchema, []);
+  assert.deepEqual(after.foreignKeys, []);
+  assert.deepEqual(after.deletions.map(row => row.object_key), expectedKeys);
+  for (const row of before.deletions) {
+    // Compare the whole record: deduplication must not replace its id or age.
+    assert.deepEqual(after.deletions.find(item => item.object_key === row.object_key), row);
+  }
+  for (const key of Object.keys(preservedQueries)) assert.deepEqual(after[key], before[key], key);
 }
 
 function verifySchema(state) {
