@@ -62,7 +62,7 @@ it("rejects sensitive extra fields at all levels and invalid bounded tokens", as
     { ...value, token: "never-store-this" },
     { ...value, environment: { ...value.environment, url: "private-url" } },
     { ...value, environment: { ...value.environment, browserVersion: "private-email@example.test" } },
-    { ...value, reader: { displayMode: "pdf", interactionMode: "reading", pendingCount: 0, conflictCount: 0, scoreId: "private" } },
+    { ...value, reader: { interactionMode: "reading", pendingCount: 0, conflictCount: 0, scoreId: "private" } },
     { ...value, records: [{ id: crypto.randomUUID(), time: Date.now(), operation: "pdf", category: "internal", stage: "decode", serverBuild: null, requestId: null, retryable: true, count: 1, message: "private-stack" }] },
     { ...value, records: Array(51).fill({}) },
     { ...value, description: "x".repeat(1001) },

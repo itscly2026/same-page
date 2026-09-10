@@ -141,7 +141,7 @@ it("only admits one concurrent join into the last member slot", async () => {
   expect(responses.map(r=>r.status).sort()).toEqual([201,409]);
   expect((await env.DB.prepare("SELECT count(*) AS n FROM memberships WHERE choir_id = ? AND status = 'active'").bind(drive).first())?.n).toBe(2);
 });
-it("keeps purged historical PDF inaccessible to reads, images and publication while preserving current notes", async () => {
+it("keeps purged historical PDF inaccessible to reads and publication while preserving current notes", async () => {
   const a=await identity();const drive=await trial(a.cookie);const score=await upload(drive,1);
   const version=await stageScoreVersion({env,choirId:drive,scoreId:score.scoreId,membershipId:await owner(drive),currentVersionId:score.version.id,expectedRevision:1,
     pdf:{data:new Uint8Array(100).buffer,sizeBytes:100,pageCount:1,sha256:score.version.sha256}});
@@ -149,7 +149,7 @@ it("keeps purged historical PDF inaccessible to reads, images and publication wh
   expect((await call(`${path}/versions/${version.id}/publish`,json(a.cookie,{expectedRevision:1}))).status).toBe(204);
   expect((await call(`${path}/versions/${version.id}/purge`,json(a.cookie,{confirm:true}))).status).toBe(409);
   expect((await call(`${path}/versions/${score.version.id}/purge`,json(a.cookie,{confirm:true}))).status).toBe(204);
-  for(const suffix of ["pdf","images","images/generation/1/2048.png"]) expect((await call(`${path}/versions/${score.version.id}/${suffix}`,{headers:{cookie:a.cookie}})).status).toBe(404);
+  expect((await call(`${path}/versions/${score.version.id}/pdf`,{headers:{cookie:a.cookie}})).status).toBe(404);
   expect((await call(`${path}/versions/${score.version.id}/publish`,json(a.cookie,{expectedRevision:2}))).status).toBe(404);
   expect((await call(`${path}/layers`,{headers:{cookie:a.cookie}})).status).toBe(200);
   expect((await call(`${path}/pdf`,{headers:{cookie:a.cookie}})).status).toBe(200);

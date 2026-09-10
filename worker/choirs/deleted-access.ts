@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 import type { AppEnvironment } from "../env";
 
-// Fence score, image, version, annotation and drive routes before dispatch.
+// Fence score, version, annotation and drive routes before dispatch.
 // Drive bootstrap folds the same tombstone check into its single-snapshot SQL;
 // all other routes (including reader sync) pass through this guard.
 export const excludeDeletedResources: MiddlewareHandler<AppEnvironment> = async (context, next) => {
