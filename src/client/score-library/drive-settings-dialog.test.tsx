@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { DriveSettingsDialog } from "./drive-settings-dialog";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 it("retains the draft after a revision conflict and requires a deliberate resave against refreshed settings", async () => {
   let revision = 0;
   const writes: unknown[] = [];
@@ -40,6 +40,8 @@ it("reopens with the known name and revision while a delayed refresh preserves t
   const props = { choirId: "drive", userId: "reader", field: "display-name" as const, onSaved: async () => {}, onClose: () => {} };
   const first = render(<DriveSettingsDialog {...props} />);
   await screen.findByDisplayValue("旧名"); first.unmount();
+  const now = Date.now();
+  vi.spyOn(Date, "now").mockReturnValue(now + 60_001);
   render(<DriveSettingsDialog {...props} />);
   const input = screen.getByDisplayValue("旧名");
   expect(input).toBeEnabled();

@@ -1,3 +1,4 @@
+import { observeNavigationSession } from "../settings/navigation-events";
 import { ReadingPreferenceRecovery } from "../reader/reading-preference-recovery";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
@@ -14,6 +15,9 @@ export function LocalIdentityObserver() {
   const identity = useApplicationIdentity();
   const userId = identity.authenticatedUserId ?? undefined;
   const refetch = identity.session.refetch;
+  useLayoutEffect(() => {
+    observeNavigationSession(identity.authenticatedUserId ? `${identity.authenticatedUserId}:${identity.authenticatedSessionId ?? ""}` : null);
+  }, [identity.authenticatedUserId, identity.authenticatedSessionId]);
   useEffect(() => {
     let running = false;
     const reconnect = () => {

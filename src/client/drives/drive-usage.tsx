@@ -1,3 +1,5 @@
+import { SettingsRequestError } from "../settings/settings-request";
+import { NAVIGATION_FRESH_MS } from "../settings/navigation-events";
 import { z } from "zod";
 import { Button } from "react-aria-components";
 import { useReadResource } from "../settings/use-read-resource";
@@ -8,9 +10,9 @@ const schema = z.object({ plan: z.enum(["free", "configured"]), usedBytes: z.num
 export function DriveUsage({ choirId, userId }: { choirId: string; userId: string }) {
   const resource = useReadResource(`${userId}:${choirId}:usage`, async signal => {
     const response = await diagnosticFetch(`/api/choirs/${choirId}/usage`, { signal });
-    if (!response.ok) throw new Error("usage_unavailable");
+    if (!response.ok) throw new SettingsRequestError(response.status);
     return parseDiagnosticResponse(response, schema);
-  });
+  }, undefined, NAVIGATION_FRESH_MS);
   const data = resource.data;
   return <section className="management-row"><h2>{data?.plan === "free" ? "免费体验版" : "云盘用量"}</h2>
     {data ? <><p>乐谱 {data.scoreCount}{data.scoreLimit !== null ? `/${data.scoreLimit}` : ""} · 空间 {formatBytes(data.usedBytes)} / {formatBytes(data.limitBytes)} · 成员 {data.memberCount}{data.memberLimit !== null ? `/${data.memberLimit}` : ""}</p>

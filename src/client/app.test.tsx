@@ -1162,12 +1162,12 @@ describe("AppRoutes", () => {
     fetchMock.mockImplementationOnce(() =>
       Promise.resolve(Response.json({ error: "temporary" }, { status: 503 })),
     );
-    fireEvent.submit(screen.getByRole("search"));
+    fireEvent.click(screen.getByRole("button", { name: "刷新乐谱列表" }));
     expect(
       await screen.findByText("暂时无法更新乐谱列表，当前内容已保留。请稍后重试。"),
     ).toBeInTheDocument();
     expect(screen.getByText("排练 10")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /排练 10/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /排练 10/ })).toBeInTheDocument();
 
   });
 
@@ -1215,7 +1215,7 @@ describe("AppRoutes", () => {
 
     finishBootstrap(Response.json(driveBootstrapBody({ access: "membership" })));
     expect(await screen.findByText("这个云盘还没有乐谱。")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith("/api/guest/session", expect.objectContaining({ method: "DELETE" }));
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/guest/session", expect.objectContaining({ method: "DELETE" }));
   });
 
   it("requires explicit confirmation before logout discards pending work", async () => {

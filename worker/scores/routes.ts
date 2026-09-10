@@ -1,3 +1,5 @@
+import { deleteCookie, getCookie } from "hono/cookie";
+import { GUEST_SESSION_COOKIE } from "../security/guest-session";
 import { limitDriveMutation } from "../security/drive-rate-limit";
 import { readScoreLayers, readScoreAnnotations } from "../annotations/routes";
 import { readerSyncQuerySchema } from "../../src/shared/reader-sync";
@@ -109,6 +111,7 @@ scoreRoutes.get("/choirs/:choirId/bootstrap", async (context) => {
   });
   if (!access) return context.json({ error: drive.membership_status === "removed"
     ? "membership_requires_admin" : !userId && !candidates.guest ? "authentication_required" : "forbidden" }, 403);
+  if (userId && access.kind !== "guest" && getCookie(context, GUEST_SESSION_COOKIE)) deleteCookie(context, GUEST_SESSION_COOKIE, { path: "/" });
   const serialized = rows.results
     .filter((row): row is DriveBootstrapScoreRow =>
       row.score_id !== null && row.version_id !== null)

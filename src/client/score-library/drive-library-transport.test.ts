@@ -10,5 +10,5 @@ it("does not turn confirmed removed membership into an open admission form", asy
 });
 it("keeps an expired authenticated session distinct from confirmed access revocation", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "authentication_required" }, { status: 403 })));
-  expect(await driveLibraryTransport("drive").load(new AbortController().signal, true, true)).toEqual({ kind: "failed" });
+  expect(await driveLibraryTransport("drive").load(new AbortController().signal, true, true)).toEqual({ kind: "failed", authenticationRequired: true });
 });

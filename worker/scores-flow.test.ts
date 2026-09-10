@@ -1,3 +1,4 @@
+import { measureD1 } from "./test/measure-d1";
 import { effectiveCapabilities, emptyPermissions, noCapabilities } from "../src/shared/drive-permissions";
 import { setupNetwork } from "@msw/cloudflare";
 import { env } from "cloudflare:workers";
@@ -30,7 +31,6 @@ beforeEach(async () => {
   );
   await env.DB.batch(
     [
-      "DELETE FROM score_object_deletions",
       "DELETE FROM annotation_sync_operations",
       "DELETE FROM annotation_objects",
       "DELETE FROM user_score_layer_preferences",
@@ -44,6 +44,8 @@ beforeEach(async () => {
       "DELETE FROM account",
       "DELETE FROM verification",
       "DELETE FROM user",
+      // Deleting scores/versions queues object cleanup; clear after those triggers.
+      "DELETE FROM score_object_deletions",
     ].map((query) => env.DB.prepare(query)),
   );
   await clearBucket();
@@ -52,6 +54,29 @@ beforeEach(async () => {
 afterEach(() => network.resetHandlers());
 
 describe("PDF file library and delivery", () => {
+  it("measures navigation reads against real local D1", async ({ annotate }) => {
+    const { adminCookie, choirId } = await createAdminChoir();
+    await upload(choirId, adminCookie, "排练.pdf", createMinimalPdf(200, 200));
+    const measurements: Record<string, { requests: number; sql: number; rowsRead: number; rowsWritten: number }> = {};
+    for (const endpoint of ["bootstrap", "settings", "management", "memberships", "usage", "get-session", "guest-cleanup"]) {
+      const measured = measureD1(env.DB);
+      const execution = createExecutionContext();
+      const path = endpoint === "get-session" ? "/api/auth/get-session" : endpoint === "guest-cleanup" ? "/api/guest/session" : `/api/choirs/${choirId}/${endpoint}`;
+      const response = await worker.fetch(new Request(`https://same-page.test${path}`, { headers: { cookie: adminCookie }, method: endpoint === "guest-cleanup" ? "DELETE" : "GET" }), { ...env, DB: measured.DB }, execution);
+      await waitOnExecutionContext(execution);
+      expect(response.ok).toBe(true);
+      measurements[endpoint] = { requests: 1, ...measured.totals };
+    }
+    // One initial library entry and ten information -> library returns. Request
+    // schedules are validated separately in the browser navigation test.
+    const total = (schedule: Record<string, number>) => Object.fromEntries(["requests", "sql", "rowsRead", "rowsWritten"].map(metric => [metric, Object.entries(schedule).reduce((sum, [endpoint, count]) => sum + measurements[endpoint][metric as keyof typeof measurements[string]] * count, 0)]));
+    const before = total({ bootstrap: 11, settings: 11, management: 10, memberships: 10, usage: 10, "guest-cleanup": 11, "get-session": 1 });
+    const after = total({ bootstrap: 1, settings: 1, management: 1, usage: 1, "get-session": 1 });
+    await annotate(JSON.stringify({ measurements, before, after }), "navigation-d1");
+    expect(after.requests).toBeLessThan(before.requests);
+    expect(after.rowsRead).toBeLessThan(before.rowsRead);
+  });
+
   it("retires derived metadata without losing queued keys or PDF reference protection", async () => {
     const { adminCookie, choirId } = await createAdminChoir();
     const score = await upload(choirId, adminCookie, "保留.pdf", createMinimalPdf(200, 200));
@@ -434,6 +459,7 @@ trailer << /Root 1 0 R >>
     const memberPriority = await callWorker(`/api/choirs/${choirId}/bootstrap`, {
       headers: { cookie: `${adminCookie}; ${guestCookie}` },
     });
+    expect(memberPriority.headers.get("set-cookie")).toContain("same_page_guest=;");
     expect(await memberPriority.json()).toMatchObject({
       permissions: { capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), access: "membership" },
     });
@@ -441,6 +467,7 @@ trailer << /Root 1 0 R >>
     const guestFallback = await callWorker(`/api/choirs/${choirId}/bootstrap`, {
       headers: { cookie: `${nonmember.cookie}; ${guestCookie}` },
     });
+    expect(guestFallback.headers.get("set-cookie")).toBeNull();
     expect(await guestFallback.json()).toMatchObject({
       permissions: { capabilities: noCapabilities(), access: "guest" },
     });

@@ -1,27 +1,33 @@
-import { useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
-import { DriveLibrary } from "./drive-library";
+import { useEffect, useLayoutEffect, useSyncExternalStore } from "react";
+import { sharedDriveLibrary, retainDriveLibrary } from "./shared-drive-library";
 import { type DriveCacheOwnerKey } from "./drive-library-cache";
 
-export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, signedIn: boolean, identityReady: boolean) {
-  const library = useMemo(() => new DriveLibrary(ownerKey, choirId), [ownerKey, choirId]);
+export function useDriveLibraryResource(ownerKey: DriveCacheOwnerKey, choirId: string, signedIn: boolean, identityReady: boolean, sessionId: string | null = null) {
+  const library = sharedDriveLibrary(ownerKey, choirId, sessionId);
   const snapshot = useSyncExternalStore(library.subscribe, library.getSnapshot);
 
   useEffect(() => library.setAuthenticated(signedIn), [library, signedIn]);
 
   useEffect(() => {
     if (!identityReady) return;
-    library.start();
+    const release = retainDriveLibrary(library);
     const refresh = () => {
-      if (document.visibilityState === "visible") void library.refresh();
+      if (document.visibilityState === "visible" && navigator.onLine) void library.refreshIfStale();
     };
     window.addEventListener("online", refresh);
     window.addEventListener("focus", refresh);
     return () => {
-      library.stop();
+      release();
       window.removeEventListener("online", refresh);
       window.removeEventListener("focus", refresh);
     };
-  }, [library, identityReady]);
+  }, [library, identityReady, signedIn]);
+
+  return { library, snapshot };
+}
+
+export function useDriveLibrary(ownerKey: DriveCacheOwnerKey, choirId: string, signedIn: boolean, identityReady: boolean, sessionId: string | null = null) {
+  const { library, snapshot } = useDriveLibraryResource(ownerKey, choirId, signedIn, identityReady, sessionId);
 
   // Detach before the next route resets scroll in its layout effects. Keep
   // network startup passive so identity observers clear the previous owner first.

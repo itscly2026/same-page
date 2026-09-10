@@ -88,3 +88,53 @@ it("starts the new owner's library after the identity observer clears previous c
   fireEvent.change(screen.getByRole("textbox", { name: "搜索乐谱" }), { target: { value: "秋日" } });
   expect(readLibraryView("user:one", drive).search).toBe("秋日");
 });
+
+it("shares an unfinished library read across a route handoff and fences a same-user replacement session", async () => {
+  const { act } = await import("@testing-library/react");
+  const { observeNavigationSession } = await import("../settings/navigation-events");
+  observeNavigationSession("one:session-one");
+  let finish!: (response: Response) => void;
+  const fetch = vi.fn(() => new Promise<Response>(resolve => { finish = resolve; }));
+  vi.stubGlobal("fetch", fetch);
+  function Library({ sessionId }: { sessionId: string }) {
+    const { snapshot } = useDriveLibrary("user:one", drive, true, true, sessionId);
+    return <p>{snapshot.access.kind === "opened" && snapshot.access.isMember ? snapshot.access.choir.name : "pending"}</p>;
+  }
+  const one = render(<Library sessionId="session-one" />);
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  one.unmount();
+  const two = render(<Library sessionId="session-one" />);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  const oldResponse = finish;
+  act(() => observeNavigationSession("one:session-two"));
+  two.rerender(<Library sessionId="session-two" />);
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  const payload = (name: string) => Response.json({ choir: { id: drive, name, guestAdmissionMode: "open" }, scores: [], storage: { usedBytes: 0, limitBytes: 1000 }, permissions: { capabilities: noCapabilities(), access: "membership" } });
+  await act(async () => { oldResponse(payload("old session")); });
+  expect(screen.queryByText("old session")).not.toBeInTheDocument();
+  await act(async () => { finish(payload("new session")); });
+  await screen.findByText("new session");
+});
+
+it("does not let a departing lifetime stop a library retained after an identity reset", async () => {
+  const { sharedDriveLibrary, retainDriveLibrary } = await import("./shared-drive-library");
+  const { resetNavigation } = await import("../settings/navigation-events");
+  resetNavigation();
+  const pending: Array<(response: Response) => void> = [];
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => pending.push(resolve))));
+  const library = sharedDriveLibrary("user:one", drive, "session");
+  library.setAuthenticated(true);
+  const leave = retainDriveLibrary(library);
+  await waitFor(() => expect(pending).toHaveLength(1));
+  leave();
+  // A layout reset can occur after render selected this instance, before mount.
+  resetNavigation();
+  const release = retainDriveLibrary(library);
+  await waitFor(() => expect(pending).toHaveLength(2));
+  pending[0](Response.json({}));
+  await Promise.resolve(); await Promise.resolve();
+  pending[1](Response.json({ choir: { id: drive, name: "current", guestAdmissionMode: "open" }, scores: [], storage: { usedBytes: 0, limitBytes: 1000 }, permissions: { capabilities: noCapabilities(), access: "membership" } }));
+  await library.whenSettled();
+  expect(library.getSnapshot().access).toMatchObject({ kind: "opened", choir: { name: "current" } });
+  release();
+});

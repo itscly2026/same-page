@@ -1,3 +1,4 @@
+import { useNetworkStatus } from "../platform/use-network-status";
 import { offlinePreparationDescription } from "../offline/offline-score-status";
 import { scoreDisplayName } from "../../shared/score-display-name";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -14,6 +15,7 @@ import "./offline-score-control.css";
 export function OfflineScoreControl({ score, authenticatedUserId, authenticatedSessionId, experience = false, disabled = false }: {
   score: ScoreSummary; authenticatedUserId: string | null; authenticatedSessionId: string | null; disabled?: boolean; experience?: boolean;
 }) {
+  const online = useNetworkStatus();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const detailsId = useId();
@@ -77,7 +79,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, authenticatedS
         <p role="status">{description}</p>
         <p>保存在这台设备上，供断网时打开。</p>
         {readFailed && <Button className="secondary-button" onPress={() => setInspectionAttempt(value => value + 1)}>重试校验</Button>}
-        {!readFailed && needsDownload && <Button className="secondary-button" isDisabled={disabled || !workspace || explicitDownload} onPress={() => void prepare()}>{downloading ? explicitDownload ? "正在准备…" : "继续保存（切换页面不中断）" : actionLabel}</Button>}
+        {!readFailed && needsDownload && <Button className="secondary-button" isDisabled={!online || disabled || !workspace || explicitDownload} onPress={() => void prepare()}>{downloading ? explicitDownload ? "正在准备…" : "继续保存（切换页面不中断）" : actionLabel}</Button>}
         <Button className="text-button" onPress={() => setDetailsOpen(false)}>关闭</Button>
       </Dialog>
     </Popover>
