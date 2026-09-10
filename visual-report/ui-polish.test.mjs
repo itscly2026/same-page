@@ -15,10 +15,11 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.route('**/api/**', async route => {
       const request = route.request(), pathname = new URL(request.url()).pathname;
       const result = fixture.resolve({ pathname, method: request.method(), identity: 'admin', cookie: '' });
-      if (pathname.endsWith('/layers') && request.method() === 'GET') {
+      if ((pathname.endsWith('/layers') || pathname.endsWith('/sync')) && request.method() === 'GET') {
         const body = JSON.parse(result.body);
-        const own = body.layers.find(layer => layer.kind === 'personal');
-        body.layers.push({ ...own, id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: '成员分享的演出笔记', canEdit: false, canShare: false, sharing: true });
+        const readerLayers = pathname.endsWith('/sync') ? body.layers : body;
+        const own = readerLayers.layers.find(layer => layer.kind === 'personal');
+        readerLayers.layers.push({ ...own, id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: '成员分享的演出笔记', canEdit: false, canShare: false, sharing: true });
         result.body = JSON.stringify(body);
       }
       await route.fulfill(result);
