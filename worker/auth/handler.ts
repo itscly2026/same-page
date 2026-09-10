@@ -1,6 +1,5 @@
 import type { Context } from "hono";
 
-import { isInternalAuthEmail } from "../../src/shared/auth";
 import type { AppEnvironment } from "../env";
 import { createAuth } from "./create-auth";
 import {
@@ -21,11 +20,6 @@ const PASSWORD_RESET_REQUEST_PATH =
   "/api/auth/email-otp/request-password-reset";
 const AUTH_FLOW_PATH = "/api/auth/flow";
 const SOCIAL_PROVIDERS_PATH = "/api/auth/social-providers";
-const EMAIL_AUTH_PATHS = new Set([
-  "/api/auth/sign-in/email",
-  PASSWORD_RESET_REQUEST_PATH,
-  "/api/auth/email-otp/reset-password",
-]);
 
 export async function handleAuthRequest(context: Context<AppEnvironment>) {
   const path = normalizedPathname(context.req.url);
@@ -41,13 +35,6 @@ export async function handleAuthRequest(context: Context<AppEnvironment>) {
     return context.json({
       providers: configuredSocialProviderIds(context.env),
     });
-  }
-  if (
-    context.req.method === "POST" &&
-    EMAIL_AUTH_PATHS.has(path) &&
-    (await requestUsesInternalEmail(context))
-  ) {
-    return context.json({ error: "invalid_request" }, 400);
   }
   const auth = createAuth(context.env, context.executionCtx);
 
@@ -84,12 +71,4 @@ export async function handleAuthRequest(context: Context<AppEnvironment>) {
 function normalizedPathname(url: string) {
   const pathname = new URL(url).pathname;
   return pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
-}
-
-async function requestUsesInternalEmail(context: Context<AppEnvironment>) {
-  const body = await context.req.raw.clone().json<unknown>().catch(() => null);
-  if (!body || typeof body !== "object" || !("email" in body)) return false;
-  return (
-    typeof body.email === "string" && isInternalAuthEmail(body.email)
-  );
 }

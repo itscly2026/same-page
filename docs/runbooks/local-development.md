@@ -7,8 +7,8 @@
 注册和密码重置需要 Same Page 专属 Resend key；不得复用 Webmail 的凭据。
 不在日志或提交内容中记录 OTP、收件人、邮件正文、邀请码或 Secret。
 
-Google 与微信是可选配置：分别成对设置 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
-和 `WECHAT_CLIENT_ID` / `WECHAT_CLIENT_SECRET` 才启用入口。平台配置及真实授权检查见
+Google 是可选配置：成对设置 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
+才启用入口。平台配置及真实授权检查见
 [发布 runbook](../operations/production-release.md#第三方登录配置)。
 
 ```bash

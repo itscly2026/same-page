@@ -7,12 +7,12 @@ const CONTACT_EMAIL = "admin@clyapps.com";
 export default function PrivacyPage() {
   return (
     <div className="privacy-page">
-      <TaskHeader title="隐私政策" backTo="/about" />
+      <TaskHeader title="隐私政策" backTo="/drives" />
       <main className="privacy-document" aria-label="隐私政策">
         <header className="privacy-document__header">
           <p className="eyebrow">合谱 · Same Page</p>
 
-          <p className="privacy-document__updated">最后更新：2026 年 9 月 10 日</p>
+          <p className="privacy-document__updated">最后更新于 2026-09-10</p>
           <p className="privacy-document__lead">
             合谱（Same Page）是为合唱排练设计的乐谱云盘。本政策说明我们在你使用服务时处理哪些信息、为什么处理，以及你可以如何联系我们。
           </p>
@@ -26,8 +26,8 @@ export default function PrivacyPage() {
               邮箱地址、邮箱验证状态、加密或散列后的登录凭据、第三方登录提供方返回的稳定认证身份标识，以及用于保护会话的 IP 地址和浏览器信息。
             </li>
             <li>
-              <strong>Google 或微信登录信息：</strong>
-              当你主动选择第三方登录时，我们会接收完成登录所需的基础身份资料，例如经过验证的邮箱、昵称或头像。微信未返回邮箱时，我们只会生成不可投递的内部标识，不会将其用于联系你。
+              <strong>Google登录信息：</strong>
+              当你主动选择第三方登录时，我们会接收完成登录所需的基础身份资料，例如经过验证的邮箱、昵称或头像。
             </li>
             <li>
               <strong>云盘内容：</strong>
@@ -46,7 +46,7 @@ export default function PrivacyPage() {
             <li>创建和保护用户，完成登录、邮箱验证与密码重置；</li>
             <li>判断你对云盘、乐谱和笔记层的访问与编辑权限；</li>
             <li>存储、同步并在你的设备上离线提供乐谱和笔记；</li>
-            <li>发送必要的登录安全邮件；</li>
+            <li>发送必要的登录安全邮件及云盘清理通知；</li>
             <li>防止滥用、排查故障并维护服务安全与可靠性。</li>
           </ul>
           <p>
@@ -74,10 +74,10 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong>Resend：</strong>
-              发送注册验证、密码重置等必要的登录安全邮件；
+              发送注册验证、密码重置等必要的登录安全邮件及云盘清理通知；
             </li>
             <li>
-              <strong>Google 或微信：</strong>
+              <strong>Google：</strong>
               仅在你选择相应方式时完成身份验证。
             </li>
           </ul>
@@ -108,7 +108,7 @@ export default function PrivacyPage() {
           <h2 id="privacy-retention">保留、删除与离线副本</h2>
           <p>云盘拥有者可彻底删除回收站乐谱、历史 PDF 或整个云盘。操作立即终止对应内容的产品访问，关联乐谱的所有成员笔记随之删除，产品不提供恢复能力。为处理系统故障，后台隔离保留相关数据 30 天，到期由定时任务清理；不承诺可为用户恢复，且保留数据不授予访问权限。</p>
           <ul>
-            <li>在你使用服务期间，我们会保留提供服务所需的用户和云盘数据。</li>
+            <li>在你使用服务期间，我们会保留提供服务所需的用户和云盘数据。连续超过 30 天无成员联网访问的免费体验云盘可能被清理；我们会至少提前 14 天通过邮件通知云盘拥有者，通知期内任一成员重新联网访问即取消本次清理。离线打开已有副本不计作联网访问。</li>
             <li>
               普通云盘的成员退出或被移除后，该成员关系授予的云端访问与同步立即撤销，个人层保留 30 天，期间可由有成员恢复权限的人恢复。个人层默认仅自己可见。公开体验中，本人个人层的访问与保留不依赖成员关系。
             </li>
@@ -142,7 +142,7 @@ export default function PrivacyPage() {
         <section aria-labelledby="privacy-rights">
           <h2 id="privacy-rights">你的选择与联系我们</h2>
           <p>
-            你可以选择不使用 Google 或微信登录，继续使用邮箱登录。若要查询、更正或删除用户信息，撤回第三方登录授权，或咨询本政策，请发送邮件至
+            你可以选择不使用 Google登录，继续使用邮箱登录。若要查询、更正或删除用户信息，撤回第三方登录授权，或咨询本政策，请发送邮件至
             <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>。撤回第三方授权不会自动删除 Same Page 中已建立的用户或依法需要保留的数据。
           </p>
         </section>

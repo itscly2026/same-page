@@ -86,7 +86,7 @@ export function AppRoutes() {
 }
 
 function PageWithFooter() {
-  return <div className="page-with-footer"><Outlet />{useLocation().pathname === "/" && <AppFooter />}</div>;
+  return <div className="page-with-footer"><Outlet />{["/", "/drives"].includes(useLocation().pathname) && <AppFooter />}</div>;
 }
 
 function RouteScrollReset() {

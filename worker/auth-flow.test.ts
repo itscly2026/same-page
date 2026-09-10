@@ -101,12 +101,12 @@ afterEach(() => {
 });
 
 describe("authentication and choir boundaries", () => {
-  it("exposes configured providers and starts minimal Google and Website App WeChat flows", async () => {
+  it("exposes configured providers and starts minimal Google flow", async () => {
     const providers = await callWorker("/api/auth/social-providers");
     expect(providers.status).toBe(200);
     expect(providers.headers.get("Cache-Control")).toBe("no-store");
     expect(await providers.json()).toEqual({
-      providers: ["google", "wechat"],
+      providers: ["google"],
     });
 
     const google = await startSocialAuthentication("google");
@@ -120,18 +120,6 @@ describe("authentication and choir boundaries", () => {
     expect(new Set(googleUrl.searchParams.get("scope")?.split(" "))).toEqual(
       new Set(["email", "profile", "openid"]),
     );
-
-    const wechat = await startSocialAuthentication("wechat");
-    const wechatUrl = new URL(wechat.url);
-    expect(wechat.redirect).toBe(true);
-    expect(wechatUrl.origin).toBe("https://open.weixin.qq.com");
-    expect(wechatUrl.pathname).toBe("/connect/qrconnect");
-    expect(wechatUrl.searchParams.get("redirect_uri")).toBe(
-      "https://same-page.test/api/auth/callback/wechat",
-    );
-    expect(wechatUrl.searchParams.get("scope")).toBe("snsapi_login");
-    expect(wechatUrl.searchParams.get("lang")).toBe("cn");
-    expect(wechatUrl.hash).toBe("#wechat_redirect");
   });
 
   it("returns provider cancellation and invalid OAuth state to the recoverable login route", async () => {
@@ -142,7 +130,7 @@ describe("authentication and choir boundaries", () => {
         origin: "https://same-page.test",
       },
       body: JSON.stringify({
-        provider: "wechat",
+        provider: "google",
         callbackURL: "/login?oauth=complete",
         errorCallbackURL: "/login?oauth=error",
       }),
@@ -151,7 +139,7 @@ describe("authentication and choir boundaries", () => {
     const state = new URL(startBody.url).searchParams.get("state");
 
     const cancelled = await callWorker(
-      `/api/auth/callback/wechat?error=access_denied&state=${encodeURIComponent(state!)}`,
+      `/api/auth/callback/google?error=access_denied&state=${encodeURIComponent(state!)}`,
       {
         headers: { cookie: cookieFrom(start) },
         redirect: "manual",
@@ -163,7 +151,7 @@ describe("authentication and choir boundaries", () => {
     );
 
     const repeated = await callWorker(
-      `/api/auth/callback/wechat?error=access_denied&state=${encodeURIComponent(state!)}`,
+      `/api/auth/callback/google?error=access_denied&state=${encodeURIComponent(state!)}`,
       {
         headers: { cookie: cookieFrom(start) },
         redirect: "manual",
@@ -175,88 +163,13 @@ describe("authentication and choir boundaries", () => {
     );
 
     const invalidState = await callWorker(
-      "/api/auth/callback/wechat?code=wechat-code&state=invalid-state",
+      "/api/auth/callback/google?code=google-code&state=invalid-state",
       { redirect: "manual" },
     );
     expect(invalidState.status).toBe(302);
     expect(invalidState.headers.get("location")).toBe(
       "/login?oauth=error&error=state_mismatch",
     );
-  });
-
-  it("returns WeChat token and profile network failures to the internal login route", async () => {
-    const failures = [
-      {
-        configure() {
-          network.use(
-            http.get(
-              "https://api.weixin.qq.com/sns/oauth2/access_token",
-              () => HttpResponse.json({ error: "unavailable" }, { status: 503 }),
-            ),
-          );
-        },
-      },
-      {
-        configure() {
-          network.use(
-            http.get(
-              "https://api.weixin.qq.com/sns/oauth2/access_token",
-              () =>
-                HttpResponse.json({
-                  access_token: "wechat-access-token",
-                  expires_in: 7200,
-                  refresh_token: "wechat-refresh-token",
-                  openid: "wechat-openid",
-                  scope: "snsapi_login",
-                }),
-            ),
-            http.get("https://api.weixin.qq.com/sns/userinfo", () =>
-              HttpResponse.json({ error: "unavailable" }, { status: 503 }),
-            ),
-          );
-        },
-      },
-    ];
-
-    for (const failure of failures) {
-      failure.configure();
-      const start = await callWorker("/api/auth/sign-in/social", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "https://same-page.test",
-        },
-        body: JSON.stringify({
-          provider: "wechat",
-          callbackURL: "/login?oauth=complete",
-          errorCallbackURL: "/login?oauth=error",
-        }),
-      });
-      const startBody = (await start.json()) as { url: string };
-      const state = new URL(startBody.url).searchParams.get("state");
-      const callback = await callWorker(
-        `/api/auth/callback/wechat?code=wechat-code&state=${encodeURIComponent(state!)}`,
-        {
-          headers: { cookie: cookieFrom(start) },
-          redirect: "manual",
-        },
-      );
-
-      expect(callback.status).toBe(302);
-      const location = new URL(
-        callback.headers.get("location")!,
-        "https://same-page.test",
-      );
-      expect(location.pathname).toBe("/login");
-      expect(location.searchParams.get("oauth")).toBe("error");
-      expect(location.searchParams.get("error")).toBeTruthy();
-      expect(location.href).not.toContain("wechat-code");
-      expect(location.href).not.toContain("wechat-access-token");
-    }
-
-    const database = createDatabase(env.DB);
-    expect(await database.select().from(user)).toHaveLength(0);
-    expect(await database.select().from(account)).toHaveLength(0);
   });
 
   it("rejects an OAuth continuation outside the trusted Same Page origin", async () => {
@@ -305,56 +218,8 @@ describe("authentication and choir boundaries", () => {
     }
   });
 
-  it("creates one WeChat user from unionid with non-routable email and encrypted tokens", async () => {
-    const firstSessionCookie = await completeWechatAuthentication();
-    expect(firstSessionCookie).toContain("better-auth.session_token=");
-
-    const database = createDatabase(env.DB);
-    const createdUsers = await database.select().from(user);
-    expect(createdUsers).toHaveLength(1);
-    expect(createdUsers[0]).toMatchObject({
-      name: "微信成员",
-      email: "wechat-unionid@wechat.placeholder.invalid",
-      emailVerified: false,
-    });
-
-    const createdAccounts = await database.select().from(account);
-    expect(createdAccounts).toHaveLength(1);
-    expect(createdAccounts[0]).toMatchObject({
-      accountId: "wechat-unionid",
-      providerId: "wechat",
-      userId: createdUsers[0].id,
-      scope: "snsapi_login",
-    });
-    expect(createdAccounts[0].accessToken).not.toBe("wechat-access-token");
-    expect(createdAccounts[0].refreshToken).not.toBe("wechat-refresh-token");
-    expect(deliveredEmails).toHaveLength(0);
-
-    const emailFlow = await callWorker("/api/auth/flow", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: createdUsers[0].email }),
-    });
-    expect(emailFlow.status).toBe(400);
-    const passwordReset = await callWorker(
-      "/api/auth/email-otp/request-password-reset",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: createdUsers[0].email }),
-      },
-    );
-    expect(passwordReset.status).toBe(400);
-    expect(deliveredEmails).toHaveLength(0);
-
-    await completeWechatAuthentication();
-    expect(await database.select().from(user)).toHaveLength(1);
-    expect(await database.select().from(account)).toHaveLength(1);
-  });
-
-  it.each(["google", "wechat"] as const)("supports original %s verification, deletion and explicit recovery", async (provider) => {
+  it.each(["google"] as const)("supports original %s verification, deletion and explicit recovery", async (provider) => {
     const authenticate = async () => {
-      if (provider === "wechat") return completeWechatAuthentication();
       let cookie = "";
       await completeGoogleAuthentication({ subject: "lifecycle-google", email: "lifecycle@example.test", name: "原登录身份", onSession: (value) => { cookie = value; } });
       return cookie;
@@ -375,26 +240,6 @@ describe("authentication and choir boundaries", () => {
     expect(await (await callWorker("/api/auth/get-session", { headers: { cookie: recovery } })).json()).toBeNull();
     expect((await postLifecycle("restore", recovery, { confirm: true, deletionId: deletion.deletionId })).status).toBe(204);
     expect((await createDatabase(env.DB).select().from(user))[0].id).toBe(userId);
-  });
-
-  it("falls back to the Website App openid when WeChat omits unionid", async () => {
-    await completeWechatAuthentication({
-      openid: "wechat-openid-only",
-      unionid: undefined,
-    });
-
-    const database = createDatabase(env.DB);
-    expect(await database.select().from(user)).toContainEqual(
-      expect.objectContaining({
-        email: "wechat-openid-only@wechat.placeholder.invalid",
-      }),
-    );
-    expect(await database.select().from(account)).toContainEqual(
-      expect.objectContaining({
-        accountId: "wechat-openid-only",
-        providerId: "wechat",
-      }),
-    );
   });
 
   it("links Google only to an existing verified email and creates a user for a different email", async () => {
@@ -1468,7 +1313,7 @@ async function callWorker(path: string, init: RequestInit = {}) {
   return response;
 }
 
-async function startSocialAuthentication(provider: "google" | "wechat") {
+async function startSocialAuthentication(provider: "google" | "google") {
   const response = await callWorker("/api/auth/sign-in/social", {
     method: "POST",
     headers: {
@@ -1483,69 +1328,6 @@ async function startSocialAuthentication(provider: "google" | "wechat") {
   });
   expect(response.status, await response.clone().text()).toBe(200);
   return (await response.json()) as { redirect: boolean; url: string };
-}
-
-async function completeWechatAuthentication(
-  identity: { openid: string; unionid?: string } = {
-    openid: "wechat-openid",
-    unionid: "wechat-unionid",
-  },
-) {
-  network.use(
-    http.get(
-      "https://api.weixin.qq.com/sns/oauth2/access_token",
-      () =>
-        HttpResponse.json({
-          access_token: "wechat-access-token",
-          expires_in: 7200,
-          refresh_token: "wechat-refresh-token",
-          openid: identity.openid,
-          scope: "snsapi_login",
-          ...(identity.unionid ? { unionid: identity.unionid } : {}),
-        }),
-    ),
-    http.get("https://api.weixin.qq.com/sns/userinfo", () =>
-      HttpResponse.json({
-        openid: identity.openid,
-        nickname: "微信成员",
-        headimgurl: "https://example.test/wechat-avatar.png",
-        privilege: [],
-        ...(identity.unionid ? { unionid: identity.unionid } : {}),
-      }),
-    ),
-  );
-
-  const start = await callWorker("/api/auth/sign-in/social", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      origin: "https://same-page.test",
-    },
-    body: JSON.stringify({
-      provider: "wechat",
-      callbackURL: "/login?oauth=complete",
-      errorCallbackURL: "/login?oauth=error",
-    }),
-  });
-  expect(start.status, await start.clone().text()).toBe(200);
-  const startBody = (await start.json()) as { url: string };
-  const state = new URL(startBody.url).searchParams.get("state");
-  expect(state).toBeTruthy();
-
-  const callback = await callWorker(
-    `/api/auth/callback/wechat?code=wechat-code&state=${encodeURIComponent(state!)}`,
-    {
-      headers: { cookie: cookieFrom(start) },
-      redirect: "manual",
-    },
-  );
-  expect(callback.status, await callback.clone().text()).toBe(302);
-  expect(callback.headers.get("location")).toBe("/login?oauth=complete");
-  const sessionCookie = callback.headers
-    .get("set-cookie")
-    ?.match(/(?:^|,\s*)((?:__Secure-)?better-auth\.session_token=[^;]+)/)?.[1];
-  expect(sessionCookie).toBeTruthy();
-  return sessionCookie!;
 }
 
 async function completeGoogleAuthentication(profile: {

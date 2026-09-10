@@ -158,7 +158,7 @@ export async function verifyDeployment({
     assert.equal(new Set(payload.providers).size, payload.providers.length);
     assert.ok(
       payload.providers.every((provider) =>
-        ["google", "wechat"].includes(provider),
+        ["google"].includes(provider),
       ),
       "only supported social providers may be exposed",
     );

@@ -14,6 +14,8 @@ const buildId = process.env.SAME_PAGE_BUILD_ID
   ?? process.env.GITHUB_SHA
   ?? execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 
+const buildPublishedDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Shanghai" });
+
 const buildRunId = process.env.GITHUB_RUN_ID ?? "";
 
 const testState = process.env.SAME_PAGE_TEST_STATE;
@@ -27,6 +29,7 @@ export default defineConfig(({ isPreview }) => ({
   define: {
     __SAME_PAGE_BUILD_ID__: JSON.stringify(buildId),
     __SAME_PAGE_BUILD_RUN_ID__: JSON.stringify(buildRunId),
+    __SAME_PAGE_BUILD_PUBLISHED_DATE__: JSON.stringify(buildPublishedDate),
   },
   build: {
     // The lazy reader contains the PDF.js display API (about 170 KiB gzip).

@@ -1,6 +1,5 @@
 import { Resend } from "resend";
 
-import { isInternalAuthEmail } from "../../src/shared/auth";
 import type { Env } from "../env";
 
 export type AuthOtpPurpose = "registration" | "forget-password";
@@ -11,9 +10,6 @@ export async function sendAuthOtp(
   otp: string,
   purpose: AuthOtpPurpose,
 ): Promise<void> {
-  if (isInternalAuthEmail(email)) {
-    throw new Error("OTP delivery blocked for internal authentication email");
-  }
   const message = buildAuthOtpEmail(otp, purpose);
   const resend = new Resend(env.RESEND_API_KEY_SAMEPAGE);
   const { error } = await resend.emails.send({

@@ -8,8 +8,6 @@ export interface Env {
   INVITE_SECRET: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
-  WECHAT_CLIENT_ID?: string;
-  WECHAT_CLIENT_SECRET?: string;
   PERFORMANCE_TEST_DELAY_MS?: string;
 }
 

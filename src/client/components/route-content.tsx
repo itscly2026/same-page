@@ -24,7 +24,7 @@ function RouteFeedback({ failed = false }: { failed?: boolean }) {
     : pathname.endsWith("/me") ? "退出云盘成员身份"
     : pathname === "/user" ? "账户"
     : pathname.includes("/settings/") ? "云盘管理"
-    : pathname === "/help" ? "帮助"
+    : pathname === "/help" ? "使用手册"
     : pathname === "/about" ? "关于合谱"
     : pathname === "/diagnostics" ? "故障诊断"
     : pathname === "/privacy" ? "隐私说明" : drive ? "乐谱云盘" : "合谱";
