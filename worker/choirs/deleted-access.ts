@@ -3,7 +3,7 @@ import type { AppEnvironment } from "../env";
 
 // Fence score, image, version, annotation and drive routes before dispatch.
 // Drive bootstrap folds the same tombstone check into its single-snapshot SQL;
-// all other routes (including score bootstrap) pass through this guard.
+// all other routes (including reader sync) pass through this guard.
 export const excludeDeletedResources: MiddlewareHandler<AppEnvironment> = async (context, next) => {
   const match = /^\/api\/(?:guest\/)?choirs\/([^/]+)(?:\/scores\/([^/]+)(?:\/versions\/([^/]+))?)?/.exec(context.req.path);
   if (match && !/^\/api\/choirs\/[^/]+\/bootstrap$/.test(context.req.path)) {
