@@ -1,4 +1,5 @@
-import { readPermissionMember, memberCapabilities } from "../permissions/access";
+import { noCapabilities } from "../../src/shared/drive-permissions";
+import { memberCapabilities } from "../permissions/access";
 import { Hono } from "hono";
 import { and, eq, sql } from "drizzle-orm";
 import { driveNameRequestSchema, memberDisplayNameRequestSchema } from "../../src/shared/choirs";
@@ -55,11 +56,11 @@ driveSettingsRoutes.patch("/choirs/:choirId/name", async context => {
   return changed.length ? context.json({ revision: changed[0].revision }) : context.json({ error: "revision_conflict" }, 409);
 });
 
-// Deliberately project only configuration suitable for every active member.
+// Project only non-sensitive configuration for confirmed drive readers.
 driveSettingsRoutes.get("/choirs/:choirId/management", async context => {
   const choirId = context.req.param("choirId");
-  const member = await readPermissionMember(context.env.DB, await resolveContextPrincipal(context), choirId);
+  const access = await requireChoirRead(createDatabase(context.env.DB), await resolveContextPrincipal(context), choirId);
   const choir = await context.env.DB.prepare("SELECT name, guest_admission_mode AS guestAdmissionMode FROM choirs WHERE id = ?").bind(choirId).first();
   const layers = await context.env.DB.prepare("SELECT slot, name, active FROM choir_shared_layer_settings WHERE choir_id = ? AND deleted_at IS NULL ORDER BY sort_order, slot").bind(choirId).all();
-  return context.json({ ...choir, layers: layers.results, capabilities: memberCapabilities(member) });
+  return context.json({ ...choir, layers: layers.results, isMember: access.kind === "membership", capabilities: access.kind === "membership" ? memberCapabilities(access.membership) : noCapabilities() });
 });

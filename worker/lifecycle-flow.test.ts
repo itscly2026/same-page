@@ -311,7 +311,7 @@ it("lets active members read minimal permission facts and management configurati
   expect(overview.status).toBe(200);
   const configuration = await overview.json();
   expect(configuration).toMatchObject({ name: expect.any(String), guestAdmissionMode: expect.any(String), layers: expect.any(Array) });
-  expect(Object.keys(configuration as object).sort()).toEqual(["capabilities", "guestAdmissionMode", "layers", "name"]);
+  expect(Object.keys(configuration as object).sort()).toEqual(["capabilities", "guestAdmissionMode", "isMember", "layers", "name"]);
   for (const path of ["management", "memberships", "permission-layers"]) expect((await get(path, outsider.cookie)).status).toBe(403);
   expect((await get("permission-changes")).status).toBe(403);
   expect((await get("join-code")).status).toBe(403);
@@ -320,15 +320,19 @@ it("lets active members read minimal permission facts and management configurati
   expect((await state(member.cookie)).memberships[0].isPreviewEntry).toBe(1);
   const guest = await post("/api/guest/session", "", { admission: "open", choirId });
   expect(guest.status).toBe(200);
-  // Preview access remains independent of membership, including after removal.
-  for (const path of ["management", "memberships", "permission-layers"]) {
-    expect((await get(path, outsider.cookie)).status).toBe(403);
-    expect((await callWorker(`/api/choirs/${choirId}/${path}`)).status).toBe(403);
-    expect((await get(path, cookieFrom(guest))).status).toBe(403);
+  // Readers can discover safe configuration without acquiring membership data or operations.
+  for (const cookie of [outsider.cookie, cookieFrom(guest)]) {
+    const response = await get("management", cookie);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ isMember: false, capabilities: { isOwner: false, operations: { operations: [], sharedLayers: [] }, management: { operations: [], sharedLayers: [] } } });
+    for (const path of ["memberships", "permission-layers", "join-code", "permission-changes", "scores/trash"]) expect((await get(path, cookie)).status).toBe(403);
+    expect((await callWorker(`/api/choirs/${choirId}/name`, { method: "PATCH", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ name: "不能改名", expectedRevision: 0 }) })).status).toBe(403);
   }
+  expect((await callWorker(`/api/choirs/${choirId}/management`)).status).toBe(403);
   const memberState = (await state(member.cookie)).memberships[0];
   const permissions = { operations: ["uploadFiles"], sharedLayers: [] };
   expect((await callWorker(`/api/choirs/${choirId}/memberships/${memberState.id}/permissions`, { method: "PUT", headers: { cookie: member.cookie, "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: memberState.revision, operations: permissions, management: { operations: [], sharedLayers: [] } }) })).status).toBe(403);
   await post(`/api/choirs/${choirId}/memberships/${memberState.id}`, owner.cookie, { action: "remove", expectedRevision: memberState.revision });
-  for (const path of ["management", "memberships", "permission-layers"]) expect((await get(path)).status).toBe(403);
+  expect(await (await get("management")).json()).toMatchObject({ isMember: false });
+  for (const path of ["memberships", "permission-layers"]) expect((await get(path)).status).toBe(403);
 });

@@ -1,3 +1,4 @@
+import { driveManagementSchema } from "../../shared/drive-management";
 import { ViewSelector } from "../components/view-selector";
 import { useReadResource } from "../settings/use-read-resource";
 import { useUnsavedChanges } from "../settings/use-unsaved-changes";
@@ -32,12 +33,16 @@ function MembershipManagement({ choirId, userId }: { choirId: string; userId: st
   const [drafts, setDrafts] = useState<Record<string, { operations: PermissionSet; management: PermissionSet }>>({});
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const load = useCallback(async (signal: AbortSignal) => {
+    const overviewResponse = await diagnosticFetch(`/api/choirs/${choirId}/management`, { signal });
+    if (!overviewResponse.ok) throw new SettingsRequestError(overviewResponse.status);
+    const overview = await parseDiagnosticResponse(overviewResponse, driveManagementSchema);
+    if (!overview.isMember) return { next: null, layers: [], overview };
     const response = await diagnosticFetch(`/api/choirs/${choirId}/memberships`, { signal });
     if (!response.ok) throw new SettingsRequestError(response.status);
     const next = await parseDiagnosticResponse(response, managedMembershipsSchema);
     const definitions = await diagnosticFetch(`/api/choirs/${choirId}/permission-layers`, { signal });
     if (!definitions.ok) throw new SettingsRequestError(definitions.status);
-    return { next, layers: (await definitions.json()).layers as Layer[] };
+    return { next, layers: (await definitions.json()).layers as Layer[], overview };
   }, [choirId]);
   const resource = useReadResource(`${userId}:${choirId}:memberships`, load);
   const state = resource.data?.next ?? null;
@@ -66,6 +71,12 @@ function MembershipManagement({ choirId, userId }: { choirId: string; userId: st
   });
   return <div className="app-page"><TaskHeader title={"成员与权限"} backTo={`/choirs/${choirId}`} /><main className="page-shell settings-page settings-ux lifecycle-page">
     {exitDialog}<header className="settings-heading"><p>找有权处理问题的人，或查看成员的权限。</p></header>
+    {resource.data && !resource.data.overview.isMember && <section className="management-list">
+      <h2>{resource.data.overview.name}</h2>
+      <p>成员与权限用于查看云盘内的权限分工，找到有权上传乐谱、配置共享层或管理成员的人。</p>
+      <p>操作权限决定成员能做什么；授权管理范围决定成员能把哪些权限授予别人。</p>
+      <p className="permission-lock-explanation">成员名单与个人权限仅向云盘成员开放。你可以浏览功能说明；成为成员后可查看实际分工，调整权限还需要相应授权。</p>
+    </section>}
     {state && <>
       <ViewSelector<"member" | "permission"> label="权限查看方式" value={view} onChange={setView} options={[{ id: "member", label: "按成员" }, { id: "permission", label: "按权限" }]} />
       {view === "member" && <div className="member-filters"><label>搜索成员<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="云盘内显示名" /></label><label>成员状态<select value={status} onChange={event => setStatus(event.target.value)}><option value="active">活动成员</option><option value="removed">已移除成员</option></select></label></div>}
@@ -86,7 +97,7 @@ function MembershipManagement({ choirId, userId }: { choirId: string; userId: st
       }} />)}
     {state?.capabilities.isOwner && <AuditLog choirId={choirId!} revision={state.memberships.map(m => m.revision).join(":")} />}
     <SettingsFeedback loading={resource.loading} loadError={resource.error ? settingsError(resource.error, "成员列表更新失败，已有内容已保留。") : null} message={message} retry={() => void reload().catch(() => undefined)} />
-    {(!state || needsRefresh) && <Button className="secondary-button" isDisabled={busy || loading} onPress={() => void reload().catch(() => undefined)}>重新读取成员列表</Button>}
+    {(!resource.data || needsRefresh) && <Button className="secondary-button" isDisabled={busy || loading} onPress={() => void reload().catch(() => undefined)}>重新读取成员列表</Button>}
     <ConfirmDialog confirmation={confirmation} busy={busy} onClose={() => setConfirmation(null)} />
   </main></div>;
 }

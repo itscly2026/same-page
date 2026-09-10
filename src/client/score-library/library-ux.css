@@ -56,14 +56,16 @@
 .drive-avatar { display: inline-flex; flex: 0 0 44px; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--brand-soft); color: var(--ink); font: inherit; font-weight: 600; font-size: 1.05rem; text-decoration: none; cursor: pointer; }
 .drive-page .file-library { padding-top: .25rem; padding-bottom: calc(7rem + env(safe-area-inset-bottom)); }
 .drive-page .library-workspace { margin-top: 0; }
-.drive-score-count { margin-left: .4rem; color: var(--muted); font-size: .85rem; font-weight: 400; }
+.library-title { min-width: 0; }
+.library-title h1 { margin: 0; font-size: 1.35rem; line-height: 1.5; overflow-wrap: anywhere; }
+.library-title p { margin: .25rem 0 0; color: var(--muted); font-size: .85rem; }
 .drive-drawer-overlay { position: fixed; inset: 0; z-index: 100; background: rgb(0 0 0 / 35%); }
 .drive-drawer { width: min(21rem, calc(100vw - 3rem)); height: 100dvh; overflow-y: auto; overscroll-behavior: contain; background: var(--surface); box-shadow: .5rem 0 2rem rgb(0 0 0 / 12%); }
 .drive-drawer [role="dialog"] { min-height: 100%; padding: max(1.25rem, env(safe-area-inset-top)) 1.25rem max(1.25rem, env(safe-area-inset-bottom)); outline: none; }
 .drive-drawer .dialog-heading { align-items: flex-start; }
 .drive-drawer h2 { margin: 0; font-size: 1.35rem; line-height: 1.5; overflow-wrap: anywhere; }
 .drive-drawer .icon-button { flex-shrink: 0; }
-.drive-drawer-switch { display: flex; align-items: center; gap: .6rem; text-decoration: none; min-height: 48px; margin-bottom: 1rem; color: var(--brand); font-weight: 600; }
+.drive-drawer-switch { display: flex; align-items: center; gap: .6rem; text-decoration: none; min-height: 48px; color: var(--brand); font-weight: 600; }
 .drive-drawer-footer { display: grid; gap: .25rem; margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--line); }
 .drive-drawer-footer a { display: flex; align-items: center; min-height: 44px; padding: .5rem .75rem; color: var(--muted); text-decoration: none; border-radius: .6rem; font-size: .85rem; }
 .drive-drawer nav { display: grid; }

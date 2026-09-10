@@ -164,16 +164,15 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
   return (
     <div className="app-page drive-page">
       <DriveHeader displayName={displayName} choirId={choirId} choirName={choir.name} userId={userId} localOnly={Boolean(access.local)} onEditDisplayName={(access.isMember || access.rememberedMembership) ? () => setSettingsField("display-name") : undefined} search={search} onSearch={updateSearch} onRefresh={() => void refresh()}
-        management={access.isMember || access.rememberedMembership || managementVisible ? () => <section className="drive-drawer-management">
+        management={() => <section className="drive-drawer-management">
           <h3>云盘管理</h3>
           <nav aria-label="云盘管理菜单">{[
             ["settings/info", "基本信息"], ["memberships", "成员与权限"], ["shared-layers", "共享层"], ["settings/admission", "加入方式"], ["settings/trash", "回收站"],
           ].map(([path, label]) => access.local ? <span key={path} aria-disabled="true">{label}</span> : <Link key={path} to={`/choirs/${choirId}/${path}`}>{label}</Link>)}</nav>
           {access.local && <p role="status">{!online ? "当前离线，联网后可使用管理操作。" : identity.onlineState === "signed-out" ? "重新登录后可使用管理操作。" : snapshot.reading.request === "pending" ? "正在确认访问权限，已有内容可以继续浏览。" : "访问权限尚未确认，请重试连接。"}</p>}
-        </section> : undefined}
+        </section>}
       />
       <main className="page-shell file-library">
-        <h1 className={access.retained ? undefined : "visually-hidden"}>{choir.name}</h1>
         {access.retained && <p role="status">已无法访问此云盘，以下为本机保留内容</p>}
         {(!online || (Boolean(userId) && identity.onlineState === "signed-out") || identity.onlineState === "unreachable" || searchMessage) && <details className="drive-connection-notice"><summary>{!online ? "离线" : searchMessage ? "列表更新失败" : identity.onlineState === "unreachable" ? "连接暂不可用" : "需要重新登录"}</summary>
           <IdentityNotice identity={identity} />
@@ -182,7 +181,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
         <section className="library-workspace" aria-labelledby="library-content-title">
           <div className="library-toolbar">
             <div className="library-controls">
-              <h2 id="library-content-title">{search.trim() ? `找到 ${visibleScores.length} 份乐谱` : <>乐谱 <span className="drive-score-count">{result.scores.length}</span></>}</h2>
+              <div className="library-title"><h1 id="library-content-title">{choir.name}</h1>{search.trim() && <p>找到 {visibleScores.length} 份乐谱</p>}</div>
               <label className="library-sort-label">
                 排序
                 <span className="library-sort-control">
