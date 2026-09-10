@@ -18,7 +18,7 @@ versionRoutes.get(path, async (context) => {
   const versions = await context.env.DB.prepare(
     `SELECT id, version_number AS versionNumber, size_bytes AS sizeBytes, sha256, etag,
        page_count AS pageCount, created_at AS createdAt, retention_expires_at AS retentionExpiresAt
-     FROM score_versions WHERE score_id = ? AND choir_id = ? AND state = 'ready'
+     FROM score_versions WHERE purged_at IS NULL AND score_id = ? AND choir_id = ? AND state = 'ready'
        AND candidate_expires_at IS NULL
        AND (retention_expires_at IS NULL OR retention_expires_at > ?)
      ORDER BY version_number DESC`,
@@ -40,7 +40,7 @@ versionRoutes.post(`${path}/:versionId/publish`, async (context) => {
        AND current_version_id <> ?
        AND EXISTS (SELECT 1 FROM membership_capabilities WHERE id = ? AND modifyFiles = 1)
        AND EXISTS (SELECT 1 FROM score_versions WHERE id = ? AND score_id = scores.id
-         AND state = 'ready' AND etag IS NOT NULL
+         AND purged_at IS NULL AND state = 'ready' AND etag IS NOT NULL
          AND (retention_expires_at IS NULL OR retention_expires_at > ?)
          AND (candidate_expires_at IS NULL OR (candidate_expires_at > ? AND base_revision = ?)))`,
   ).bind(versionId, now, scoreId, choirId, parsed.data.expectedRevision, versionId,

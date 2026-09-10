@@ -717,9 +717,9 @@ describe("authentication and choir boundaries", () => {
     const createChoirResponse = await callWorker("/api/choirs", {
       method: "POST",
       headers: { "content-type": "application/json", cookie: adminCookie },
-      body: JSON.stringify({ name: "不应创建" }),
+      body: JSON.stringify({ name: "缺少云盘内显示名" }),
     });
-    expect(createChoirResponse.status).toBe(404);
+    expect(createChoirResponse.status).toBe(400);
 
     const rotateResponse = await callWorker(
       `/api/choirs/${provisioned.choirId}/join-code/rotate`,

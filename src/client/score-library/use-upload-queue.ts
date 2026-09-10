@@ -157,7 +157,7 @@ async function uploadOne(choirId: string, file: File, signal: AbortSignal): Prom
     }
   } else if (response.status === 401 || response.status === 403) {
     return { status: "error", message: "登录已失效或没有上传权限，请重新登录或联系云盘拥有者。", pause: "permission" };
-  } else if (error === "storage_quota_exceeded" && response.status === 409) {
+  } else if ((error === "storage_quota_exceeded" || error === "score_limit_reached" || error === "platform_storage_limit_reached") && response.status === 409) {
     return { status: "error", message: uploadMessage(response.status, payload), pause: "quota" };
   } else if (response.status === 429) {
     return { status: "error", message: "请求过于频繁，请稍后再重试。", pause: "rate-limit" };

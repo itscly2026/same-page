@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { getSessionCookie } from "better-auth/cookies";
 
 import { AuthorizationError } from "./authorization";
@@ -89,6 +89,7 @@ async function resolveGuestPrincipalFromClaims(options: {
     where: and(
       eq(choirs.id, options.claims.choirId),
       eq(choirs.guestSessionVersion, options.claims.guestSessionVersion),
+      isNull(choirs.purgedAt),
     ),
     columns: { id: true },
   });

@@ -7,6 +7,7 @@ export const CHOIR_STORAGE_LIMIT_BYTES = 1_073_741_824;
 
 export async function provisionChoir(options: {
   binding: D1Database;
+  freeTrial?: boolean;
   ownerUserId: string;
   ownerDisplayName: string;
   inviteSecret: string;
@@ -37,8 +38,8 @@ export async function provisionChoir(options: {
       .prepare(
         `INSERT INTO choirs
           (id, owner_membership_id, name, guest_admission_mode, guest_session_version,
-           is_preview_entry, join_code_hash, join_code_ciphertext, storage_limit_bytes)
-         VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+           is_preview_entry, join_code_hash, join_code_ciphertext, storage_limit_bytes, plan, score_limit, member_limit)
+         VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         choirId,
@@ -48,7 +49,10 @@ export async function provisionChoir(options: {
         options.isPreviewEntry ? 1 : 0,
         joinCodeHash,
         joinCodeCiphertext,
-        CHOIR_STORAGE_LIMIT_BYTES,
+        options.freeTrial ? 52_428_800 : CHOIR_STORAGE_LIMIT_BYTES,
+        options.freeTrial ? "free" : "configured",
+        options.freeTrial ? 10 : null,
+        options.freeTrial ? 20 : null,
       ),
     options.binding
       .prepare(

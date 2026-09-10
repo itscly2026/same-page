@@ -1,3 +1,5 @@
+import { trialRoutes } from "./choirs/trial-routes";
+import { excludeDeletedResources } from "./choirs/deleted-access";
 import { permissionRoutes } from "./permissions/routes";
 import { cleanupAnnotationLayers } from "./annotations/cleanup";
 import { driveSettingsRoutes } from "./choirs/settings";
@@ -45,6 +47,8 @@ app.get("/api/health", (context) => {
 
 app.on(["GET", "POST"], "/api/auth/*", handleAuthRequest);
 
+app.use("/api/*", excludeDeletedResources);
+app.route("/api", trialRoutes);
 app.route("/api", diagnosticReportRoutes);
 app.route("/api", permissionRoutes);
 app.route("/api", lifecycleRoutes);
@@ -57,6 +61,13 @@ app.route("/api", annotationRoutes);
 app.notFound((context) => context.json({ error: "not_found" }, 404));
 
 app.onError((error, context) => {
+  if (error instanceof Error) {
+    const messages: string[] = [];
+    let cause: unknown = error;
+    for (let depth = 0; cause instanceof Error && depth < 5; depth++, cause = cause.cause) messages.push(cause.message);
+    const code = ["platform_storage_limit_reached", "free_drive_limit_reached", "owned_drive_limit_reached", "member_limit_reached", "score_limit_reached", "resource_deleted"].find(code => messages.some(message => message.includes(code)));
+    if (code) return context.json({ error: code }, 409);
+  }
   if (error instanceof Error && error.message.includes("owner_requires_transfer")) {
     return context.json({ error: "owner_requires_transfer" }, 409);
   }

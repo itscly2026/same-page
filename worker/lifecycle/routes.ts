@@ -23,7 +23,7 @@ lifecycleRoutes.get("/user/lifecycle", async (context) => {
     choirs.name, choirs.is_preview_entry AS isPreviewEntry, memberships.display_name AS displayName, memberships.status,
     memberships.lifecycle_revision AS revision, memberships.removed_at AS removedAt,
     choirs.owner_membership_id = memberships.id AS isOwner
-    FROM memberships JOIN choirs ON choirs.id = memberships.choir_id WHERE memberships.user_id = ?`).bind(session.user.id).all();
+    FROM memberships JOIN choirs ON choirs.id = memberships.choir_id WHERE choirs.purged_at IS NULL AND memberships.user_id = ?`).bind(session.user.id).all();
   context.header("Cache-Control", "no-store");
   return context.json({ userId: session.user.id, deletion, reauthenticated: Boolean(challenge), methods: methods.results.map((row) => row.method), memberships: drives.results });
 });

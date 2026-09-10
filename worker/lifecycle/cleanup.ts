@@ -2,6 +2,7 @@ import type { Env } from "../env";
 export const RECOVERY_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
 
 export async function cleanupLifecycles(env: Env, now = Date.now()) {
+  await env.DB.prepare("DELETE FROM choirs WHERE purged_at IS NOT NULL AND purged_at <= ?").bind(now - RECOVERY_PERIOD_MS).run();
   // Each conditional DELETE and its cascades are atomic, so restoration wins or
   // deletion wins; an earlier selection cannot authorize a later stale deletion.
   await env.DB.prepare(`DELETE FROM user WHERE id IN (

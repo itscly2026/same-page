@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, setCookie } from "hono/cookie";
 
@@ -87,6 +87,7 @@ choirRoutes.get("/guest/preview-choir", async (context) => {
     where: and(
       eq(choirs.isPreviewEntry, true),
       eq(choirs.guestAdmissionMode, "open"),
+      isNull(choirs.purgedAt),
     ),
   });
   if (!choir) return context.json({ error: "not_found" }, 404);
@@ -99,6 +100,7 @@ choirRoutes.get("/guest/choirs/:choirId", async (context) => {
     where: and(
       eq(choirs.id, context.req.param("choirId")),
       eq(choirs.guestAdmissionMode, "open"),
+      isNull(choirs.purgedAt),
     ),
     columns: {
       id: true,
@@ -172,6 +174,7 @@ choirRoutes.get("/choirs", async (context) => {
         eq(memberships.userId, principal.userId),
         eq(memberships.status, "active"),
         eq(choirs.isPreviewEntry, false),
+        isNull(choirs.purgedAt),
       ),
     ));
 
@@ -370,7 +373,8 @@ choirRoutes.put("/choirs/:choirId/join-code", async (context) => {
   const hash = await hashJoinCode(parsed.data, context.env.INVITE_SECRET);
   const ciphertext = await encryptJoinCode(parsed.data, choirId, context.env.INVITE_SECRET);
   const [updated] = await database.update(choirs).set({ joinCodeCiphertext: ciphertext })
-    .where(and(eq(choirs.id, choirId), eq(choirs.guestAdmissionMode, "invite"), eq(choirs.joinCodeHash, hash), sql`exists (select 1 from membership_capabilities where id = ${actor.id} and manageInvites = 1)`))
+    .where(and(eq(choirs.id, choirId), eq(choirs.guestAdmissionMode, "invite"),
+      isNull(choirs.purgedAt), eq(choirs.joinCodeHash, hash), sql`exists (select 1 from membership_capabilities where id = ${actor.id} and manageInvites = 1)`))
     .returning({ id: choirs.id });
   if (!updated) return context.json({ error: "join_code_mismatch" }, 409);
   context.header("Cache-Control", "no-store");

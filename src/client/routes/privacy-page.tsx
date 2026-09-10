@@ -12,7 +12,7 @@ export default function PrivacyPage() {
         <header className="privacy-document__header">
           <p className="eyebrow">合谱 · Same Page</p>
 
-          <p className="privacy-document__updated">最后更新：2026 年 9 月 6 日</p>
+          <p className="privacy-document__updated">最后更新：2026 年 9 月 10 日</p>
           <p className="privacy-document__lead">
             合谱（Same Page）是为合唱排练设计的乐谱云盘。本政策说明我们在你使用服务时处理哪些信息、为什么处理，以及你可以如何联系我们。
           </p>
@@ -106,6 +106,7 @@ export default function PrivacyPage() {
 
         <section aria-labelledby="privacy-retention">
           <h2 id="privacy-retention">保留、删除与离线副本</h2>
+          <p>云盘拥有者可彻底删除回收站乐谱、历史 PDF 或整个云盘。操作立即终止对应内容的产品访问，关联乐谱的所有成员笔记随之删除，产品不提供恢复能力。为处理系统故障，后台隔离保留相关数据 30 天，到期由定时任务清理；不承诺可为用户恢复，且保留数据不授予访问权限。</p>
           <ul>
             <li>在你使用服务期间，我们会保留提供服务所需的用户和云盘数据。</li>
             <li>

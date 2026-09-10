@@ -1,3 +1,4 @@
+import { PurgeDialog } from "../drives/purge-dialog";
 import { useEffect, useRef, useState } from "react";
 import { Button,  Modal, ModalOverlay } from "react-aria-components";
 import { Dialog } from "../navigation/overlays";
@@ -9,13 +10,14 @@ import { uploadMessage } from "./library-format";
 import { PdfVersionPreview } from "./pdf-version-preview";
 
 type Version = ScoreSummary["currentVersion"];
-export function PdfVersionDialog({ choirId, score, historyOnly, onClose, onComplete }: {
-  choirId: string; score: ScoreSummary; historyOnly: boolean;
+export function PdfVersionDialog({ choirId, score, historyOnly, canPurge = false, onClose, onComplete }: {
+  canPurge?: boolean; choirId: string; score: ScoreSummary; historyOnly: boolean;
   onClose(): void; onComplete(message: string): void | Promise<void>;
 }) {
   const session = authClient.useSession();
   const [initialUser] = useState(session.data?.user.id);
   const path = `/api/choirs/${choirId}/scores/${score.id}`;
+  const [purging, setPurging] = useState(false);
   const [history, setHistory] = useState<ScoreVersionHistory | null>(null);
   const [selected, setSelected] = useState<Version | null>(null);
   const [ready, setReady] = useState(false);
@@ -98,6 +100,8 @@ export function PdfVersionDialog({ choirId, score, historyOnly, onClose, onCompl
         <Button className="primary-button" isDisabled={!ready || !accepted || busy} onPress={() => void publish()}>{historyOnly ? "确认回滚" : "确认替换"}</Button>
       </> : null}
       {!historyOnly ? <p>确认前原版保持不变。候选文件计入云盘配额，取消后回收，未确认的上传在 24 小时后到期。</p> : null}
+      {historyOnly && selected && canPurge && <Button className="primary-button destructive-button" isDisabled={busy} onPress={() => setPurging(true)}>彻底删除所选历史版本</Button>}
+      {purging && selected && <PurgeDialog userId={initialUser} path={`${path}/versions/${selected.id}/purge`} title="彻底删除历史 PDF" description="所选历史谱面将无法查看或回滚。当前 PDF 和笔记不变。" onClose={() => setPurging(false)} onComplete={() => onComplete("历史版本已彻底删除。")} />}
       {message ? <p role="alert">{message}</p> : null}
     </Dialog></Modal>
   </ModalOverlay>;

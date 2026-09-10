@@ -15,6 +15,10 @@ export const choirs = sqliteTable(
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
+    plan: text("plan", { enum: ["configured", "free"] }).notNull().default("configured"),
+    scoreLimit: integer("score_limit"),
+    memberLimit: integer("member_limit"),
+    purgedAt: integer("purged_at", { mode: "timestamp_ms" }),
     ownerMembershipId: text("owner_membership_id").notNull(),
     sharedLayerRevision: integer("shared_layer_revision").notNull().default(0),
     nameRevision: integer("name_revision").notNull().default(0),
@@ -67,6 +71,7 @@ export const scores = sqliteTable(
     choirId: text("choir_id")
       .notNull()
       .references(() => choirs.id, { onDelete: "cascade" }),
+    purgedAt: integer("purged_at", { mode: "timestamp_ms" }),
     fileName: text("file_name").notNull(),
     fileNameKey: text("file_name_key").notNull(),
     currentVersionId: text("current_version_id"),
@@ -114,6 +119,7 @@ export const scoreVersions = sqliteTable(
     scoreId: text("score_id")
       .notNull()
       .references(() => scores.id, { onDelete: "cascade" }),
+    purgedAt: integer("purged_at", { mode: "timestamp_ms" }),
     versionNumber: integer("version_number").notNull(),
     objectKey: text("object_key").notNull().unique(),
     sizeBytes: integer("size_bytes").notNull(),

@@ -199,3 +199,7 @@
 .local-file-row p { margin: 6px 0 0; font-size: .875rem; color: #52666b; }
 .local-file-row button { flex-shrink: 0; min-height: 44px; }
 .destructive-menu-item { border-top: 1px solid #dde5e4; margin-top: 8px; padding-top: 12px; }
+
+.entry-form.purge-confirmation > button[type="submit"] { background: #b02d34; border-color: #b02d34; }
+.entry-form.purge-confirmation > button[type="submit"]:hover { background: #92232a; border-color: #92232a; }
+.entry-form.purge-confirmation > button[type="submit"]:focus-visible { outline: 3px solid #e09fa4; outline-offset: 3px; }
