@@ -137,19 +137,21 @@ vi.mock("../reader/pdf-document", () => ({
 }));
 
 vi.mock("../reader/pdf-page", async () => {
-  const { useContext, useEffect, useLayoutEffect, useRef } = await import("react");
-  const { DisplayRecovery } = await import("../reader/display-recovery");
+  const { useEffect, useLayoutEffect, useRef } = await import("react");
+  const { usePagePresentation } = await import("../reader/use-reader-presentation");
   return {
     PdfPageCanvas: ({
+      document,
+      presentation = true,
       pageNumber,
       onRenderStart,
     }: {
+      document: import("../reader/image-document").ScoreDocument;
+      presentation?: boolean;
       pageNumber: number;
       onRenderStart?(page: number): { ready(): void; cancel(): void };
     }) => {
-      const recovery = useContext(DisplayRecovery);
-      const recoveryRef = useRef(recovery);
-      recoveryRef.current = recovery;
+      usePagePresentation(document, pageNumber, { document, pageNumber }, false, presentation);
       const leaseRef = useRef<ReturnType<NonNullable<typeof onRenderStart>>>(null);
       useLayoutEffect(() => {
         const lease = onRenderStart?.(pageNumber);
@@ -159,7 +161,7 @@ vi.mock("../reader/pdf-page", async () => {
           lease?.cancel();
         };
       }, [onRenderStart, pageNumber]);
-      useEffect(() => { leaseRef.current?.ready(); recoveryRef.current?.ready(pageNumber); }, [onRenderStart, pageNumber, recovery?.currentPage]);
+      useEffect(() => { leaseRef.current?.ready(); }, [onRenderStart, pageNumber]);
       return <div aria-label={`渲染第 ${pageNumber} 页`} />;
     },
   };

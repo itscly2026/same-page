@@ -219,7 +219,9 @@ it("a confirmed visible page remains readable after the opening deadline", async
   try {
     const session = await open();
     await vi.waitFor(() => expect(session.getSnapshot().document).not.toBeNull());
-    session.confirmDisplay(session.getSnapshot().document!);
+    const document = session.getSnapshot().document!;
+    session.presentation.select({ document, page: 1, editing: false });
+    session.presentation.ready(document, 1);
     await vi.advanceTimersByTimeAsync(45_001);
     expect(session.getSnapshot()).toMatchObject({ status: "ready", error: null });
   } finally { vi.useRealTimers(); }

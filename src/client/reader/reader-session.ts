@@ -1,3 +1,4 @@
+import { ReaderPresentation } from "./reader-presentation";
 import { offlinePreparationDescription } from "../offline/offline-score-status";
 import { offlineScoreSummary as scoreFromOffline } from "../offline/retained-scores";
 import { revokeOfflinePreparationIdentity, OfflinePreparation, type OfflinePreparationState } from "../offline/offline-score";
@@ -49,20 +50,22 @@ export class ReaderSession {
   private lease: ReaderDocumentLease | null = null;
   private generation = 0;
   private displayPrepared = false;
-  private displayed: ScoreDocument | null = null;
+  readonly presentation = new ReaderPresentation({
+    confirmed: () => {
+      if (!this.displayPrepared) return false;
+      if (this.deadline) clearTimeout(this.deadline);
+      this.retained?.lease?.release();
+      this.retained = null;
+      return true;
+    },
+    recover: reason => { this.recoverDisplay(reason); },
+  });
   private retained: { document: ScoreDocument; mode: ScoreDisplayMode; source: Source | null; lease: ReaderDocumentLease | null } | null = null;
   private retainDisplay() {
-    if (this.retained || !this.state.document || this.displayed !== this.state.document || this.cloudInvalidated) return;
+    if (this.retained || !this.state.document || !this.presentation.hasPresented(this.state.document) || this.cloudInvalidated) return;
     this.retained = { document: this.state.document, mode: this.state.mode, source: this.source, lease: this.lease };
     this.lease = null;
   }
-  confirmDisplay = (document: ScoreDocument) => {
-    if (document !== this.state.document || !this.displayPrepared) return;
-    this.displayed = document;
-    if (this.deadline) clearTimeout(this.deadline);
-    this.retained?.lease?.release();
-    this.retained = null;
-  };
   private restoreDisplay() {
     if (!this.retained) return false;
     const previous = this.retained;
@@ -74,7 +77,6 @@ export class ReaderSession {
     this.retained = null;
     this.displayPrepared = true;
     this.pdfFailed = false;
-    this.displayed = previous.document;
     if (this.deadline) clearTimeout(this.deadline);
     this.publish({ document: previous.document, mode: previous.mode, status: "ready", error: null, modeMessage: "显示恢复未完成，已保留原谱面。" });
     return true;
@@ -120,6 +122,7 @@ export class ReaderSession {
   private publish(patch: Partial<ReaderSessionSnapshot>) {
     if (this.disposed) return;
     this.state = { ...this.state, ...patch };
+    if ("document" in patch) this.presentation.load(patch.document ?? null);
     this.listeners.forEach((listener) => listener());
   }
   private async current() { return !this.disposed && await assertLocalWorkspaceActive(this.workspace).then(() => true, () => false) && !this.disposed; }
@@ -173,7 +176,7 @@ export class ReaderSession {
     if (this.deadline) clearTimeout(this.deadline);
     this.deadline = setTimeout(() => {
       if (this.retained) { this.restoreDisplay(); return; }
-      if (this.state.status === "loading" || !this.state.score || this.displayed !== this.state.document) {
+      if (this.state.status === "loading" || !this.state.score || !this.presentation.hasPresented(this.state.document)) {
         recordFailure({ operation: "pdf", category: "internal", stage: "prepare",
           step: this.state.document ? "reader-presentation" : this.source ? "reader-document" : "reader-source", errorType: "TimeoutError", pdfReason: "timeout" });
         this.publish({ status: "error", error: "加载用时较长，可以重试或返回云盘。这不代表设备不兼容。" });
@@ -431,6 +434,7 @@ export class ReaderSession {
     this.lease = null;
     this.retained?.lease?.release();
     this.retained = null;
+    this.presentation.dispose();
     this.listeners.clear();
   }
 }
