@@ -66,8 +66,8 @@ export function OfflineScoreControl({ score, authenticatedUserId, authenticatedS
           setDetailsOpen(true);
         }}
       >
-        <Icon aria-hidden="true" size={20} />
-        {state === "ready" && <Check className="offline-score-check" aria-hidden="true" size={12} />}
+        <Icon aria-hidden="true" size={16} />
+        {state === "ready" && <Check className="offline-score-check" aria-hidden="true" size={9} />}
       </Button>
       <Tooltip className="offline-score-tooltip">{description}</Tooltip>
     </TooltipTrigger>

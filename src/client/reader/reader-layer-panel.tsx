@@ -2,12 +2,11 @@ import { isLocalExperience } from "../annotations/guest-notes";
 import { useReadingPreferenceProjection } from "./reading-preference-intents";
 import { loginHref } from "../auth/login-return";
 import { annotationLayerListResponseSchema } from "../../shared/annotations";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { PersonalLayerCard } from "./personal-layer-card";
 import { Link } from "react-router-dom";
-import { Button, MenuItem, MenuTrigger, Popover } from "react-aria-components";
-import { Menu } from "../navigation/overlays";
+import { Button } from "react-aria-components";
 
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import { syncAnnotations } from "../annotations/sync";
@@ -22,10 +21,10 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
   layers: AnnotationLayerSummary[];
   signedIn: boolean;
 }) {
+  const visibilityPrefix = useId();
   const managementTrigger = useRef<HTMLButtonElement>(null);
   const [creationId, setCreationId] = useState<string | null>(null);
   const [managing, setManaging] = useState(false);
-  const [managementTarget, setManagementTarget] = useState<{ id: string; action: "rename" | "delete" } | null>(null);
   const [newName, setNewName] = useState("");
   const [deletedLoaded, setDeletedLoaded] = useState(false);
   const [needsRefresh, setNeedsRefresh] = useState(false);
@@ -116,9 +115,8 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
   const mutationFeedback = (target: string | null, inManagement = false, showName = false) => feedbackTarget === target && feedbackInManagement === inManagement && (pending || message)
     ? <div className="reader-layer-feedback">{showName && feedbackName && <strong>{feedbackName}</strong>}<p role="status">{pending ? "正在处理…" : message}</p>{personalRetry && <Button isDisabled={pending} onPress={() => void personalRetry()}>重试</Button>}</div> : null;
 
-  const managementOpen = managing || managementTarget !== null;
-  const managedLayers = personalLayers.filter(layer => managing || layer.id === managementTarget?.id);
-  const missingFeedbackRow = feedbackTarget !== null && !(feedbackInManagement ? [...managedLayers, ...(managing ? deleted : [])] : personalLayers).some(layer => layer.id === feedbackTarget);
+  const managementOpen = managing;
+  const missingFeedbackRow = feedbackTarget !== null && !(feedbackInManagement ? (managing ? deleted : []) : personalLayers).some(layer => layer.id === feedbackTarget);
   const feedbackOutsideManagement = feedbackInManagement && !managementOpen;
 
   return (
@@ -142,16 +140,12 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
           {sharedLayers.map((layer) => (
             <article className="layer-card" key={layer.id}>
               <div className="layer-card__main reader-layer-row">
-                <label className="reader-layer-toggle">
-                  <input aria-label={`显示 ${layer.name}`}
-                    checked={layer.subscribed} type="checkbox"
-                    onChange={(event) => void save([{ layer, subscribed: event.target.checked }])} />
-                  <span className="layer-card__identity"><strong>
-                    {layer.name}
-                  </strong></span>
-                </label>
-                <input type="color" aria-label={`${layer.name}颜色`} value={layer.displayColor}
+                <label className="layer-row__name" htmlFor={`${visibilityPrefix}-${layer.id}`}><strong>{layer.name}</strong></label>
+                <input className="layer-row__accessory" type="color" aria-label={`${layer.name}颜色`} value={layer.displayColor}
                   onChange={event => void save([{ layer, colorOverride: event.target.value }])} />
+                <label className="layer-row__visibility"><input id={`${visibilityPrefix}-${layer.id}`} aria-label={`显示 ${layer.name}`}
+                  checked={layer.subscribed} type="checkbox"
+                  onChange={event => void save([{ layer, subscribed: event.target.checked }])} /></label>
               </div>
               {preferenceFeedback("shared", layer.sharedSlot!)}
             </article>
@@ -159,19 +153,11 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
         </div>
       </div>
       {(personalLayers.length > 0 || signedIn) && <div className="layer-section layer-section--personal">
-        <div className="layer-section__heading"><h3>个人层</h3>{signedIn && <MenuTrigger>
-          <Button ref={managementTrigger} className="personal-layer-more" aria-label="管理个人层" isDisabled={pending || needsRefresh}>⋯</Button>
-          <Popover className="file-menu-popover"><Menu aria-label="个人层操作">
-            {personalLayers.length === 1 ? <>
-              <MenuItem onAction={() => setManagementTarget({ id: personalLayers[0].id, action: "rename" })}>重命名 {personalLayers[0].name}</MenuItem>
-              <MenuItem onAction={() => setManagementTarget({ id: personalLayers[0].id, action: "delete" })}>删除 {personalLayers[0].name}</MenuItem>
-            </> : <MenuItem onAction={() => { setManaging(true); void personalRequest("layers?state=deleted", "GET", undefined, true); }}>管理个人层</MenuItem>}
-            <MenuItem onAction={() => { setManaging(true); void personalRequest("layers?state=deleted", "GET", undefined, true); }}>已删除个人层</MenuItem>
-          </Menu></Popover></MenuTrigger>}</div>
+        <div className="layer-section__heading"><h3>个人层</h3>{signedIn && <Button ref={managementTrigger} className="personal-layer-more" isDisabled={pending || needsRefresh} onPress={() => { setManaging(true); void personalRequest("layers?state=deleted", "GET", undefined, true); }}>已删除个人层</Button>}</div>
         {mutationFeedback(null)}{(feedbackOutsideManagement || (!feedbackInManagement && missingFeedbackRow)) && mutationFeedback(feedbackTarget, feedbackInManagement, true)}
-        {personalLayers.map(layer => <div key={layer.id}><PersonalLayerCard key={layer.id} layer={layer} workspace={workspace} pending={pending || !signedIn || needsRefresh}
+        {personalLayers.map(layer => <div key={layer.id}><PersonalLayerCard key={layer.id} layer={layer} workspace={workspace} pending={pending} blocked={!signedIn || needsRefresh} feedback={mutationFeedback(layer.id)}
           onChange={change => personalRequest(`personal-layers/${layer.id}`, "PUT", { ...change, expectedRevision: layer.revision ?? 0 })}
-          onSubscribe={subscribed => void preferences.save({ kind: "personal", id: layer.id }, { subscribed })} />{preferenceFeedback("personal", layer.id)}{mutationFeedback(layer.id)}</div>)}
+          onSubscribe={subscribed => void preferences.save({ kind: "personal", id: layer.id }, { subscribed })} />{preferenceFeedback("personal", layer.id)}</div>)}
         {signedIn && <>
           <div className="personal-layer-footer">
             {!creationId && <Button className="personal-layer-create" isDisabled={pending || needsRefresh} onPress={() => setCreationId(crypto.randomUUID())}>＋ 新建个人层</Button>}
@@ -182,12 +168,9 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
             <button disabled={pending || needsRefresh || !newName.trim()}>新建个人层</button>
           <Button isDisabled={pending} onPress={() => setCreationId(null)}>取消</Button>
           </form>}
-          {(managing || managementTarget) && <section className="personal-layer-management" aria-label="个人层管理">
-            <div className="layer-section__heading"><h4>管理个人层</h4><Button onPress={() => { setManaging(false); setManagementTarget(null); requestAnimationFrame(() => managementTrigger.current?.focus()); }}>关闭管理</Button></div>
-            {managedLayers.map(layer => <div key={`${layer.id}:${managementTarget?.action ?? "manage"}`}><PersonalLayerCard layer={layer} workspace={workspace} pending={pending || needsRefresh}
-              managementAction={managementTarget?.id === layer.id ? managementTarget.action : "manage"} onCancel={() => setManagementTarget(null)}
-              onChange={async change => { const saved = await personalRequest(`personal-layers/${layer.id}`, "PUT", { ...change, expectedRevision: layer.revision ?? 0 }, true); if (saved) setManagementTarget(null); return saved; }} />{mutationFeedback(layer.id, true)}</div>)}
-            {mutationFeedback(null, true)}{feedbackInManagement && missingFeedbackRow && mutationFeedback(feedbackTarget, true, true)}{managing && <h4>已删除个人层</h4>}{managing && pending && <p role="status">正在更新个人层…</p>}
+          {managing && <section className="personal-layer-management" aria-label="已删除个人层">
+            <div className="layer-section__heading"><h4>已删除个人层</h4><Button onPress={() => { setManaging(false); requestAnimationFrame(() => managementTrigger.current?.focus()); }}>关闭</Button></div>
+            {mutationFeedback(null, true)}{feedbackInManagement && missingFeedbackRow && mutationFeedback(feedbackTarget, true, true)}{managing && pending && <p role="status">正在更新个人层…</p>}
           {managing && deletedLoaded && !pending && deleted.length === 0 && <p className="reader-layer-help" role="status">没有可恢复的个人层。</p>}
           {managing && deleted.map(layer => <div key={layer.id}>{layer.name}<Button isDisabled={pending || needsRefresh}
             onPress={() => void personalRequest(`personal-layers/${layer.id}`, "PUT", { action: "restore", expectedRevision: layer.revision }, true)}>恢复 {layer.name}</Button>{mutationFeedback(layer.id, true)}</div>)}
@@ -197,12 +180,12 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
       </div>}
       {publishedLayers.length ? <div className="layer-section"><h3>成员分享</h3>
         <p className="reader-layer-help">显示作者的最新笔记，仅供阅读。</p>
-        {publishedLayers.map(layer => <label className="reader-layer-toggle" key={layer.id}>
-          <input type="checkbox" aria-label={`显示 ${layer.name}`} checked={layer.subscribed}
-            onChange={event => void preferences.save({ kind: "personal", id: layer.id }, { subscribed: event.target.checked })} />
-          <span className="layer-color-preview" style={{ background: layer.displayColor }} />{layer.name}
-          {preferenceFeedback("personal", layer.id)}
-        </label>)}
+        <div className="layer-card-list">{publishedLayers.map(layer => <article className="layer-card" key={layer.id}>
+          <div className="layer-card__main reader-layer-row"><label className="layer-row__name" htmlFor={`${visibilityPrefix}-${layer.id}`}><strong>{layer.name}</strong></label>
+            <label className="layer-row__visibility"><input id={`${visibilityPrefix}-${layer.id}`} type="checkbox" aria-label={`显示 ${layer.name}`} checked={layer.subscribed}
+              onChange={event => void preferences.save({ kind: "personal", id: layer.id }, { subscribed: event.target.checked })} /></label>
+          </div>{preferenceFeedback("personal", layer.id)}
+        </article>)}</div>
       </div> : null}
     </section>
   );

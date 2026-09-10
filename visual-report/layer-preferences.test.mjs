@@ -92,7 +92,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByRole("checkbox", { name: "显示 Ensemble" }).waitFor();
     assert.equal(await page.getByRole("checkbox").count(), 6);
     await page.locator(".layer-section--personal").scrollIntoViewIfNeeded();
-    await geometry(".reader-layer-toggle", "display");
+    await geometry(".layer-row__visibility", "display");
     await page.getByRole("button", { name: "关闭笔记显示" }).click();
     await page.getByRole("button", { name: /^(编辑|完成编辑)$/, exact: true }).click();
     await page.getByRole("button", { name: /当前编辑层/ }).click();
@@ -137,7 +137,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByRole("button", { name: "使用云盘默认", exact: true }).click();
     await page.getByRole("button", { name: "使用云盘默认", exact: true }).waitFor({ state: "hidden" });
     failNext = true;
-    await page.locator(".reader-layer-toggle").filter({ has: scoreDisplay }).locator(".layer-card__identity").click();
+    await page.locator(".reader-layer-row").filter({ has: scoreDisplay }).locator(".layer-row__name").click();
     await page.getByText("云端保存失败，本机选择已保留。", { exact: true }).waitFor();
     assert.equal(await scoreDisplay.isChecked(), true);
     await page.getByRole("button", { name: "重试", exact: true }).click();

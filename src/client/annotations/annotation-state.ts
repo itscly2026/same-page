@@ -28,13 +28,13 @@ import {
 
 export function readAnnotationLayers(workspace: LocalWorkspace) {
   return withLocalWorkspaceTransaction(workspace, "r", [localDatabase.annotationLayers], () =>
-    localDatabase.annotationLayers.where("scopeKey").equals(workspace.scopeKey).toArray());
+    localDatabase.annotationLayers.where("scopeKey").equals(workspace.scopeKey).sortBy("sortOrder"));
 }
 
 export function readScoreAnnotationState(workspace: LocalWorkspace) {
   return withLocalWorkspaceTransaction(workspace, "r", [localDatabase.annotationLayers, localDatabase.annotations, localDatabase.annotationOutbox, localDatabase.annotationConflicts], async () => {
     const [layers, annotations, pendingCount, conflicts] = await Promise.all([
-      localDatabase.annotationLayers.where("scopeKey").equals(workspace.scopeKey).toArray(),
+      localDatabase.annotationLayers.where("scopeKey").equals(workspace.scopeKey).sortBy("sortOrder"),
       localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey).toArray(),
       localDatabase.annotationOutbox.where("scopeKey").equals(workspace.scopeKey).count(),
       localDatabase.annotationConflicts.where("scopeKey").equals(workspace.scopeKey).toArray(),

@@ -12,7 +12,7 @@ it("shows safe configuration and explains locked actions before opening an edit 
   render(page());
   expect(await screen.findByText("需要邀请码")).toBeVisible();
   expect(screen.queryByText(/小林/)).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /查看与轮换邀请码/ }));
+  fireEvent.click(screen.getByRole("button", { name: /查看权限说明/ }));
   expect(screen.getByText("处理此项可联系 小林。")).toBeVisible();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(fetch.mock.calls.map(([url]) => url).sort()).toEqual(["/api/choirs/drive/management", "/api/choirs/drive/memberships"]);
@@ -29,7 +29,7 @@ it("lets nonmembers explore admission without requesting member information or i
   vi.stubGlobal("fetch", fetch);
   render(page());
   expect(await screen.findByText("需要邀请码")).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: /查看与轮换邀请码/ }));
+  fireEvent.click(screen.getByRole("button", { name: /查看权限说明/ }));
   expect(screen.getByText("需要“管理加入方式”权限。")).toBeVisible();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(fetch.mock.calls).toHaveLength(1);

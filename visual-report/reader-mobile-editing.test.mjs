@@ -217,3 +217,34 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByRole("button", { name: "返回云盘", exact: true }).waitFor();
   });
 }
+
+for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
+  test(`${engineName}: pen drawing dismisses tool settings without losing the first stroke`, async context => {
+    const browser = await engine.launch({ headless: true });
+    context.after(() => browser.close());
+    const page = await openMemberReader(browser, { width: 834, height: 1100 });
+    await showReaderChrome(page);
+    await page.getByRole("button", { name: "编辑", exact: true }).click();
+    await page.getByRole("button", { name: "画笔", exact: true }).click();
+    await page.getByRole("button", { name: "工具设置", exact: true }).click();
+    await page.getByRole("dialog", { name: "工具设置", exact: true }).waitFor();
+    await page.getByRole("button", { name: "压感", exact: true }).click();
+    await page.getByRole("dialog", { name: "工具设置", exact: true }).waitFor();
+    assert.ok(await page.locator('.annotation-overlay svg').evaluate(svg => {
+      const box = svg.getBoundingClientRect();
+      return svg.contains(document.elementFromPoint(box.x + box.width * .5, box.y + box.height * .4));
+    }), 'the popover does not intercept the first contact on the score');
+    await page.locator('.annotation-overlay svg').evaluate(svg => {
+      const box = svg.getBoundingClientRect();
+      const base = { bubbles: true, pointerType: 'pen', pointerId: 42, buttons: 1, pressure: .5, clientX: box.x + box.width * .5, clientY: box.y + box.height * .4 };
+      svg.dispatchEvent(new PointerEvent('pointerdown', base));
+      svg.dispatchEvent(new PointerEvent('pointermove', { ...base, clientX: base.clientX + 40 }));
+      svg.dispatchEvent(new PointerEvent('pointerup', { ...base, clientX: base.clientX + 40, buttons: 0 }));
+    });
+    await page.getByRole("dialog", { name: "工具设置", exact: true }).waitFor({ state: 'hidden', timeout: 3000 });
+    await page.waitForFunction(async () => {
+      const { localDatabase } = await import('/src/client/platform/local-database.ts');
+      return (await localDatabase.annotations.toArray()).some(note => note.payload?.kind === 'ink' && note.payload.points.length >= 2);
+    });
+  });
+}

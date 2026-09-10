@@ -13,7 +13,7 @@ import { operationLabels, type Operation } from "../../shared/drive-permissions"
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
 import { SettingsRequestError, settingsError } from "../settings/settings-request";
 import { DriveSettingsDialog } from "../score-library/drive-settings-dialog";
-import { InviteCodeDialog } from "../score-library/invite-code-dialog";
+import { InviteSharing } from "../score-library/invite-sharing";
 import { TrashContents } from "../score-library/trash-contents";
 
 type Overview = ReturnType<typeof driveManagementSchema.parse>;
@@ -24,7 +24,7 @@ export default function DriveManagementPage({ section }: { section: "info" | "ad
   return <DriveManagement key={`${session.data?.user.id ?? "guest"}:${choirId}`} choirId={choirId} userId={session.data?.user.id ?? "guest"} section={section} />;
 }
 function DriveManagement({ choirId, section, userId }: { choirId: string; section: string; userId: string }) {
-  const [dialog, setDialog] = useState<"name" | "invite" | null>(null);
+  const [dialog, setDialog] = useState<"name" | null>(null);
   const [locked, setLocked] = useState<Operation | null>(null);
   const resource = useReadResource<{ overview: Overview; members: Members | null }>(`${userId}:${choirId}:management`, async signal => {
     const overviewResponse = await diagnosticFetch(`/api/choirs/${choirId}/management`, { signal });
@@ -55,11 +55,10 @@ function DriveManagement({ choirId, section, userId }: { choirId: string; sectio
       {!data.overview.isMember && <p className="permission-lock-explanation">你正在只读浏览此云盘。可了解功能与公开配置；修改设置需要成为成员并获得相应授权。</p>}
       <div className="management-list">
         {section === "info" && row("云盘名称", data.overview.name, "修改云盘名称", "editDriveInfo", () => setDialog("name"))}
-        {section === "admission" && (data.overview.guestAdmissionMode === "invite" ? row("访客进入方式", "需要邀请码", "查看与轮换邀请码", "manageInvites", () => setDialog("invite")) : <section className="management-row"><h2>访客进入方式</h2><p>开放进入</p></section>)}
+        {section === "admission" && (data.overview.guestAdmissionMode === "invite" ? (resource.canMutate && can("manageInvites") ? <InviteSharing choirId={choirId} choirName={data.overview.name} /> : row("访客进入方式", "需要邀请码", "查看权限说明", "manageInvites", () => {})) : <section className="management-row"><h2>访客进入方式</h2><p>开放进入</p></section>)}
         {section === "trash" && (resource.canMutate && can("trashFiles") ? <TrashContents choirId={choirId} onRestored={() => {}} /> : row("回收站", "删除的乐谱在此保留 30 天。有删除与恢复文件权限的成员可查看并恢复。", "查看权限说明", "trashFiles", () => {}))}
       </div>
       {dialog === "name" && resource.canMutate && can("editDriveInfo") && <NameSettings choirId={choirId} onClose={() => setDialog(null)} onSaved={refresh} />}
-      {dialog === "invite" && resource.canMutate && can("manageInvites") && <InviteCodeDialog choirId={choirId} choirName={data.overview.name} onClose={() => setDialog(null)} />}
     </>}
   </main></div>;
 }

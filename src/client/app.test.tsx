@@ -978,27 +978,21 @@ describe("AppRoutes", () => {
       "/choirs/choir-1/shared-layers",
     );
     fireEvent.click(await screen.findByRole("link", { name: "加入方式" }));
-    fireEvent.click(await screen.findByRole("button", { name: "查看与轮换邀请码" }));
-    expect(await screen.findByRole("dialog", { name: "邀请加入云盘" })).toBeInTheDocument();
-    expect(await screen.findByLabelText("当前有效邀请码")).toHaveTextContent("HGFEDCBA");
+    expect(await screen.findByRole("region", { name: "邀请加入云盘" })).toBeInTheDocument();
+    expect(await screen.findByRole("img", { name: /邀请二维码/ })).toHaveTextContent("HGFE–DCBA");
     fireEvent.click(screen.getByRole("button", { name: "轮换邀请码" }));
     fireEvent.click(screen.getByRole("button", { name: "确认轮换" }));
 
     expect(
       await screen.findByText("邀请码已轮换，可随时在这里查看。"),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("当前有效邀请码")).toHaveTextContent(
-      "ABCDEFGH",
+    expect(screen.getByRole("img", { name: /邀请二维码/ })).toHaveTextContent(
+      "ABCD–EFGH",
     );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/choirs/choir-1/join-code/rotate",
       { method: "POST" },
     );
-
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
-    expect(screen.queryByLabelText("当前有效邀请码")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "查看与轮换邀请码" }));
-    expect(await screen.findByLabelText("当前有效邀请码")).toHaveTextContent("ABCDEFGH");
   });
 
   it("links signed-in members to drive-scoped My Preferences", async () => {

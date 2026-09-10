@@ -1,22 +1,24 @@
 import { ConfirmDialog } from "../settings/confirm-dialog";
-import { Copy, Download, Link as LinkIcon } from "lucide-react";
+import { Copy, Download, Share2, Link as LinkIcon } from "lucide-react";
 import { InviteCard } from "./invite-card";
-import { saveInviteCard } from "./save-invite-card";
+import { createInviteCardFile, deliverInviteCard } from "./save-invite-card";
 import { createInviteLink } from "../components/invite-link";
 import { useRef, useEffect, useState, type FormEvent } from "react";
-import { Button,  Form, Heading, Modal, ModalOverlay } from "react-aria-components";
-import { Dialog } from "../navigation/overlays";
+import { Button, Form } from "react-aria-components";
 
 import { currentJoinCodeResponseSchema, rotateJoinCodeResponseSchema } from "../../shared/choirs";
 import { JoinCodeField } from "../components/join-code-field";
 import { diagnosticFetch, parseDiagnosticResponse } from "../diagnostics/diagnostics";
 import { JOIN_CODE_LENGTH } from "../components/join-code";
 
-export function InviteCodeDialog({ choirId, choirName, onClose }: { choirId: string; choirName: string; onClose: () => void }) {
+export function InviteSharing({ choirId, choirName }: { choirId: string; choirName: string }) {
   const cardRef = useRef<SVGSVGElement>(null);
   const [confirmRotation, setConfirmRotation] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [currentCode, setCurrentCode] = useState<string | null>(null);
+  const [cardFile, setCardFile] = useState<{ code: string; file: File } | null>(null);
+  const [cardError, setCardError] = useState(false);
+  const [cardAttempt, setCardAttempt] = useState(0);
   const [originalCode, setOriginalCode] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -42,6 +44,17 @@ export function InviteCodeDialog({ choirId, choirName, onClose }: { choirId: str
     return () => controller.abort();
   }, [endpoint, reload]);
 
+  // Prepare before the share press so navigator.share retains user activation.
+  useEffect(() => {
+    if (!currentCode || !cardRef.current) return;
+    let active = true;
+    void createInviteCardFile(cardRef.current).then(file => {
+      if (active) { setCardFile({ code: currentCode, file }); setCardError(false); }
+    }).catch(() => { if (active) setCardError(true); });
+    return () => { active = false; };
+  }, [currentCode, choirName, cardAttempt]);
+  const readyFile = cardFile?.code === currentCode ? cardFile.file : null;
+
   async function copy(value: string, label: string) {
     try {
       await navigator.clipboard.writeText(value);
@@ -51,14 +64,14 @@ export function InviteCodeDialog({ choirId, choirName, onClose }: { choirId: str
     }
   }
 
-  async function download() {
-    if (!cardRef.current) return;
+  async function deliver(share: boolean) {
+    if (!readyFile) return;
     setSharing(true);
     try {
-      await saveInviteCard(cardRef.current);
-      setMessage("邀请卡已生成，请在下载中查看。");
+      const result = await deliverInviteCard(readyFile, share);
+      setMessage(result === "saved" ? "邀请卡已生成，请在下载中查看。" : null);
     } catch {
-      setMessage("邀请卡保存失败，请重试。");
+      setMessage("邀请卡生成或分享失败，请重试。");
     } finally {
       setSharing(false);
     }
@@ -106,24 +119,17 @@ export function InviteCodeDialog({ choirId, choirName, onClose }: { choirId: str
   }
 
   return (
-    <ModalOverlay className="modal-overlay" isOpen onOpenChange={(open) => { if (!open) onClose(); }} isDismissable={!busy}>
-      <Modal className="app-modal app-modal--compact">
-        <Dialog className="app-dialog drive-management-dialog invite-sharing-dialog" exitDisabled={busy}>
-          <div className="dialog-heading">
-            <div><p className="dialog-eyebrow">分享云盘</p><Heading slot="title">邀请加入云盘</Heading></div>
-            <Button className="icon-button" aria-label="关闭" isDisabled={busy} onPress={onClose}>×</Button>
-          </div>
+    <section className="invite-sharing-dialog invite-sharing-page" aria-label="邀请加入云盘">
           {currentCode ? (
             <>
               <InviteCard ref={cardRef} choirName={choirName} code={currentCode} link={createInviteLink(window.location.origin, currentCode)} />
               <div className="invite-share-actions">
-                <Button className="primary-button" isDisabled={busy} onPress={() => void copy(createInviteLink(window.location.origin, currentCode), "邀请链接")}><LinkIcon size={18} />复制邀请链接</Button>
-                <Button className="secondary-button" isDisabled={busy || sharing} onPress={() => void download()}><Download size={18} />{sharing ? "正在保存…" : "保存邀请卡"}</Button>
+                <Button className="secondary-button" isDisabled={busy || sharing} onPress={() => void copy(createInviteLink(window.location.origin, currentCode), "邀请链接")}><LinkIcon size={18} />复制邀请链接</Button>
+                <Button className="secondary-button" isDisabled={busy || sharing} onPress={() => void copy(currentCode, "邀请码")}><Copy size={18} />复制邀请码</Button>
+                <Button className="secondary-button" isDisabled={busy || sharing || !readyFile} onPress={() => void deliver(true)}><Share2 size={18} />分享邀请卡</Button>
+                <Button className="secondary-button" isDisabled={busy || sharing || !readyFile} onPress={() => void deliver(false)}><Download size={18} />保存邀请卡</Button>
               </div>
-              <div className="invite-manual-code">
-                <div><p>也可以手动输入邀请码</p><output aria-label="当前有效邀请码">{currentCode}</output></div>
-                <Button className="icon-button" aria-label="复制邀请码" isDisabled={busy} onPress={() => void copy(currentCode, "邀请码")}><Copy size={18} /></Button>
-              </div>
+              {cardError && <p role="alert">邀请卡生成失败。<Button onPress={() => { setCardError(false); setCardAttempt(value => value + 1); }}>重新生成</Button></p>}
             </>
           ) : loaded ? (
             <>
@@ -134,15 +140,13 @@ export function InviteCodeDialog({ choirId, choirName, onClose }: { choirId: str
               </Form>
             </>
           ) : !message ? <p role="status">正在读取邀请码…</p> : null}
-          <p className="drive-management-copy">轮换后，旧邀请码、邀请链接和二维码将一同失效。</p>
+          <div className="invite-rotation"><p className="drive-management-copy">轮换后，旧邀请码、邀请链接和二维码将一同失效。</p>
           <Button className="secondary-button" isDisabled={busy || sharing || !loaded} onPress={() => setConfirmRotation(true)}>
             {busy ? "正在保存…" : "轮换邀请码"}
           </Button>
-          <ConfirmDialog confirmation={confirmRotation ? { title: "轮换邀请码", action: "确认轮换", message: "当前邀请码、邀请链接和二维码会立即失效。请将新邀请方式发给需要加入的人。", onConfirm: rotate } : null} busy={busy} onClose={() => setConfirmRotation(false)} />
+          </div><ConfirmDialog confirmation={confirmRotation ? { title: "轮换邀请码", action: "确认轮换", message: "当前邀请码、邀请链接和二维码会立即失效。请将新邀请方式发给需要加入的人。", onConfirm: rotate } : null} busy={busy} onClose={() => setConfirmRotation(false)} />
           {message ? <p className="library-message" role="status">{message}</p> : null}
           {!loaded && message ? <Button onPress={() => setReload((value) => value + 1)}>重试</Button> : null}
-        </Dialog>
-      </Modal>
-    </ModalOverlay>
+    </section>
   );
 }
