@@ -61,7 +61,7 @@ export function OfflineScoreControl({ score, authenticatedUserId, authenticatedS
         aria-haspopup="dialog"
         aria-expanded={detailsOpen}
         aria-controls={detailsOpen ? detailsId : undefined}
-        isDisabled={disabled || !workspace}
+        isDisabled={!workspace}
         onPress={() => {
           setDetailsOpen(true);
         }}

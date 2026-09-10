@@ -16,7 +16,9 @@ export function ScoreLink({ userId, choirId, scoreId, local, experience = false,
   const workspace = useMemo(() => owner && local ? createLocalWorkspace(experience ? experienceOwnerKey(owner) : owner, choirId, scoreId) : null, [owner, choirId, scoreId, local, experience]);
   const offline = useOfflineScore(workspace);
   const ready = offline?.scopeKey === workspace?.scopeKey && offline?.record && !offline.invalid;
+  const inspected = Boolean(workspace && offline?.scopeKey === workspace.scopeKey);
+  const unavailable = inspected ? offline?.readFailed ? "本机副本暂时无法校验" : "此设备没有可用的离线副本" : "正在确认打开方式";
   return local && !ready
-    ? <div className="file-row__open" aria-disabled="true">{children}<small>{offline === undefined ? "正在校验…" : "需联网打开"}</small></div>
+    ? <div className="file-row__open" aria-disabled="true" aria-label={label} aria-description={`${description}，${unavailable}`} title={unavailable}>{children}</div>
     : <Link aria-label={label} aria-description={description} className="file-row__open" to={`/choirs/${choirId}/scores/${scoreId}${experience ? "?experience=1" : ""}`} onClick={onOpen}>{children}</Link>;
 }

@@ -140,9 +140,6 @@
 
 .reader-layer-help a { color: inherit; text-decoration-color: #aaa; text-underline-offset: 3px; }
 .reader-layer-panel .personal-layer-more { width: auto; min-height: 44px; padding: 0; font-size: .8rem; background: transparent; }
-.reader-layer-panel .personal-layer-actions { display: flex; flex-wrap: nowrap; gap: .25rem; padding: 0; border: 0; }
-.reader-layer-panel .personal-layer-actions button { min-height: 44px; width: auto; padding: .5rem .65rem; font-size: .8rem; background: transparent; }
-.reader-layer-panel .personal-layer-actions .personal-layer-delete { color: #a12a2a; margin-left: auto; }
 .personal-layer-audience { margin: 0; color: #737373; font-size: .75rem; }
 .personal-layer-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .25rem; margin-top: .5rem; }
 .reader-layer-panel .personal-layer-footer button { width: auto; min-height: 44px; border: 0; background: transparent; padding: .5rem .35rem; box-shadow: none; }
@@ -224,3 +221,5 @@
 .reader-layer-panel .personal-layer-rename input { flex: 1 1 140px; min-width: 0; }
 
 .layer-row__visibility:focus-within { outline: 2px solid #111; outline-offset: -2px; border-radius: .3rem; }
+
+.personal-layer-menu-trigger { display: grid; place-items: center; width: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--muted); border-radius: .5rem; }

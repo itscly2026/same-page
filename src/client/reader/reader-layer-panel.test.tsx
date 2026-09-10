@@ -102,8 +102,8 @@ it("creates another private layer, caches both editing targets, and protects uns
   expect(screen.getByRole("button", { name: "演出提示" })).toBeEnabled();
   fireEvent.click(screen.getByRole("button", { name: "关闭写入目标" }));
   await saveAnnotationDraft(workspace, { id: crypto.randomUUID(), layerId: newLayer.id, payload: { kind: "text", pageNumber: 1, x: .2, y: .3, fontScale: .024, text: "尚未同步" } });
-  const card = screen.getByRole("group", { name: "演出提示的操作" });
-  fireEvent.click(within(card).getByRole("button", { name: "删除" }));
+  fireEvent.click(screen.getByRole("button", { name: "演出提示的操作" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
   fireEvent.click(within(await screen.findByRole("dialog", { name: "确认删除此层" })).getByRole("button", { name: "确认删除" }));
   await screen.findByText(/此层有未同步内容或冲突/);
   expect(requests.filter(request => request.url.endsWith(`/personal-layers/${newLayer.id}`))).toHaveLength(0);
@@ -206,7 +206,8 @@ it("keeps sharing private until the server confirms and preserves privacy after 
 it("can reopen the single-layer delete confirmation after cancelling without changing its target", async () => {
   render(<Reader />);
   const openDelete = async () => {
-    fireEvent.click(within(await screen.findByRole("group", { name: "我的笔记的操作" })).getByRole("button", { name: "删除" }));
+    fireEvent.click(await screen.findByRole("button", { name: "我的笔记的操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
     return screen.findByRole("dialog", { name: "确认删除此层" });
   };
   const first = await openDelete();
@@ -274,9 +275,10 @@ it("keeps a deleted target's refresh failure reachable and retries without delet
   render(<Reader />);
   fireEvent.click(await screen.findByRole("button", { name: "已删除个人层" }));
   const manager = await screen.findByRole("region", { name: "已删除个人层" });
-  const card = await screen.findByRole("group", { name: "我的笔记的操作" });
-  await waitFor(() => expect(within(card).getByRole("button", { name: "删除" })).toBeEnabled());
-  fireEvent.click(within(card).getByRole("button", { name: "删除" }));
+  const menu = await screen.findByRole("button", { name: "我的笔记的操作" });
+  await waitFor(() => expect(menu).toBeEnabled());
+  fireEvent.click(menu);
+  fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
   fireEvent.click(within(await screen.findByRole("dialog", { name: "确认删除此层" })).getByRole("button", { name: "确认删除" }));
   await screen.findByText("修改已保存，内容刷新失败。请重试刷新。");
   expect(screen.getByRole("button", { name: "已删除个人层" })).toBeDisabled();
@@ -308,15 +310,17 @@ it("renames the chosen personal layer in place and returns focus to its action",
     return originalFetch(input, init);
   }));
   render(<Reader />);
-  const actions = await screen.findByRole("group", { name: "我的笔记的操作" });
+  const actions = await screen.findByRole("button", { name: "我的笔记的操作" });
   const card = actions.closest("article")!;
-  fireEvent.click(within(actions).getByRole("button", { name: "重命名" }));
+  expect(screen.queryByRole("menuitem", { name: "重命名" })).not.toBeInTheDocument();
+  fireEvent.click(actions);
+  fireEvent.click(await screen.findByRole("menuitem", { name: "重命名" }));
   const input = within(card).getByRole("textbox", { name: "我的笔记的名称" });
   expect(input).toHaveFocus();
   fireEvent.change(input, { target: { value: "排练标记" } });
   fireEvent.click(within(card).getByRole("button", { name: "保存名称" }));
   await screen.findByRole("checkbox", { name: "显示 排练标记" });
   await waitFor(() => expect(within(card).queryByRole("textbox")).not.toBeInTheDocument());
-  await waitFor(() => expect(within(card).getByRole("button", { name: "重命名" })).toHaveFocus());
+  await waitFor(() => expect(within(card).getByRole("button", { name: "排练标记的操作" })).toHaveFocus());
   expect(requests[0].body).toEqual({ name: "排练标记", expectedRevision: 0 });
 });

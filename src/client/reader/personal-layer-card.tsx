@@ -1,7 +1,8 @@
 import { isLocalExperience } from "../annotations/guest-notes";
-import { useId, useRef, useState, type ReactNode } from "react";
-import { Button, Heading, Modal, ModalOverlay, Switch } from "react-aria-components";
-import { Dialog } from "../navigation/overlays";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Button, Heading, Modal, ModalOverlay, MenuItem, MenuTrigger, Popover, Switch } from "react-aria-components";
+import { MoreHorizontal } from "lucide-react";
+import { Dialog, Menu } from "../navigation/overlays";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import { readScoreAnnotationState } from "../annotations/annotation-state";
 import type { LocalWorkspace } from "../platform/local-workspace";
@@ -21,8 +22,16 @@ export function PersonalLayerCard({ layer, workspace, pending, blocked, feedback
   const [confirming, setConfirming] = useState(false);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
-  const renameButton = useRef<HTMLButtonElement>(null);
-  const closeRename = () => { setRenaming(false); requestAnimationFrame(() => renameButton.current?.focus()); };
+  const nameInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!renaming) return;
+    // The closing menu restores focus in its teardown; hand it to the inline
+    // editor after that restoration so keyboard input starts here immediately.
+    const frame = requestAnimationFrame(() => nameInput.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [renaming]);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const closeRename = () => { setRenaming(false); requestAnimationFrame(() => menuButton.current?.focus()); };
   const remove = async () => {
     setChecking(true); setError("");
     try {
@@ -44,13 +53,16 @@ export function PersonalLayerCard({ layer, workspace, pending, blocked, feedback
         onChange={event => onSubscribe(event.target.checked)} /></label>
     </div>
     <div className="personal-layer-details"><p className="personal-layer-audience">{isLocalExperience(workspace) ? "仅保存在此浏览器" : layer.sharing ? "云盘成员可见" : "仅自己可见"}</p>
-      <div className="personal-layer-actions" role="group" aria-label={`${layer.name}的操作`}>
-        <Button ref={renameButton} isDisabled={pending || blocked || renaming} onPress={() => { setName(layer.name); setRenaming(true); }}>重命名</Button>
-        <Button className="personal-layer-delete" isDisabled={pending || blocked} onPress={() => { setError(""); setConfirming(true); }}>删除</Button>
-      </div>
+      <MenuTrigger>
+        <Button ref={menuButton} className="personal-layer-menu-trigger" aria-label={`${layer.name}的操作`} isDisabled={pending || blocked || renaming}><MoreHorizontal aria-hidden="true" size={18} /></Button>
+        <Popover className="file-menu-popover" placement="bottom end"><Menu aria-label={`${layer.name}的操作`}>
+          <MenuItem onAction={() => { setName(layer.name); setRenaming(true); }}>重命名</MenuItem>
+          <MenuItem onAction={() => { setError(""); setConfirming(true); }}>删除</MenuItem>
+        </Menu></Popover>
+      </MenuTrigger>
     </div>
     {renaming && <form className="personal-layer-rename" onSubmit={event => { event.preventDefault(); void onChange({ name: name.trim() }).then(saved => { if (saved) closeRename(); }); }}>
-      <input autoFocus aria-label={`${layer.name}的名称`} maxLength={60} required value={name} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === "Escape" && !pending) { event.stopPropagation(); closeRename(); } }} />
+      <input ref={nameInput} autoFocus aria-label={`${layer.name}的名称`} maxLength={60} required value={name} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === "Escape" && !pending) { event.stopPropagation(); closeRename(); } }} />
       <button disabled={pending || blocked || !name.trim()}>保存名称</button><Button isDisabled={pending} onPress={closeRename}>取消</Button>
     </form>}
     {!confirming && feedback}
