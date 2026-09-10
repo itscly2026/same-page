@@ -238,6 +238,8 @@ describe("AppRoutes", () => {
     await storeOfflineScore({ ...workspace, key: "management-offline", versionId: "version", fileName: "谱.pdf", sha256: "test", pageCount: 1, blob: new Blob(["PDF"]), active: 1, verifiedAt: 1, annotationSnapshot: await captureOfflineAnnotationSnapshot(workspace) });
     const actions: unknown[] = [];
     let lost = loseResponse;
+    let releaseRestoreAccess!: () => void;
+    const restoreAccess = new Promise<void>(resolve => { releaseRestoreAccess = resolve; });
     vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
       if (input.endsWith("/lifecycle")) {
         const body = JSON.parse(String(init?.body)); actions.push(body);
@@ -247,6 +249,7 @@ describe("AppRoutes", () => {
         if (lost) { lost = false; throw new TypeError("response_lost"); }
         return Response.json({ action: body.action, revision: layer.revision, sharedLayerRevision: layer.revision, activeSharedSlots: layer.deletedAt === null && layer.active ? ["E"] : [] });
       }
+      if (input.endsWith("/management") && layer.revision === 2) await restoreAccess;
       if (input.endsWith("/management")) return Response.json({ isMember: true, name: "测试云盘", guestAdmissionMode: "open", capabilities: effectiveCapabilities(true, emptyPermissions(), emptyPermissions()), layers: [] });
       if (input.includes("/shared-layers")) return Response.json({ drive: { id: "choir-1", name: "测试云盘" }, sharedLayerRevision: layer.revision, activeSharedSlots: layer.deletedAt === null && layer.active ? ["E"] : [], layers: input.includes("state=deleted") === (layer.deletedAt !== null) ? [layer] : [] });
       return new Response(null, { status: 404 });
@@ -269,12 +272,21 @@ describe("AppRoutes", () => {
     expect((await localDatabase.offlineSnapshots.get("management-offline"))?.annotationSnapshot.layers).toEqual([]);
     expect((await localDatabase.offlineScores.get("management-offline"))?.blob.size).toBe(3);
     expect((await localDatabase.annotations.where("scopeKey").equals(workspace.scopeKey).toArray())[0]).toMatchObject({ state: "draft", layerId: shared.id });
-    fireEvent.click(await screen.findByRole("radio", { name: "已删除层" }));
+    const deletedView = await screen.findByRole("radio", { name: "已删除层" });
+    await waitFor(() => expect(deletedView).toBeEnabled());
+    fireEvent.click(deletedView);
     expect(await screen.findByText(/恢复截止：/)).toHaveTextContent("恢复后启用");
     fireEvent.click(screen.getByRole("button", { name: /^恢复$/ }));
     await waitFor(() => expect(screen.queryByRole("button", { name: /^恢复$/ })).not.toBeInTheDocument());
     expect(actions).toEqual([{ action: "delete", expectedRevision: 0 }, { action: "restore", expectedRevision: 1 }]);
-    fireEvent.click(screen.getByRole("radio", { name: "当前共享层" }));
+    // The refreshed list can remove the restored row before the parallel
+    // authority read finishes. Row removal alone does not make navigation ready.
+    const currentView = screen.getByRole("radio", { name: "当前共享层" });
+    expect(currentView).toBeDisabled();
+    releaseRestoreAccess();
+    await waitFor(() => expect(currentView).toBeEnabled());
+    fireEvent.click(currentView);
+    expect(currentView).toBeChecked();
     expect(await screen.findByText("已授权 2 位成员")).toBeVisible();
   });
 
