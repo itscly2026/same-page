@@ -492,6 +492,7 @@ h1 {
 }
 
 .marketing-animation {
+  position: relative;
   display: block;
   padding: 0;
   border: 0;
@@ -3193,3 +3194,17 @@ h1 {
 .permission-fields .text-button { margin-left: .5rem; min-height: 44px; }
 
 .app-footer a { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+
+.marketing-animation__replay {
+  position: absolute;
+  right: 1rem;
+  bottom: 0.75rem;
+  color: rgb(1 70 83 / 35%);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.marketing-animation:hover .marketing-animation__replay,
+.marketing-animation:focus-visible .marketing-animation__replay {
+  color: rgb(1 70 83 / 70%);
+}

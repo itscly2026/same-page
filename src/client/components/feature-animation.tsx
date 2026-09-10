@@ -11,6 +11,7 @@ export function FeatureAnimation({ illustration, animation, label }: {
   const button = useRef<HTMLButtonElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [run, setRun] = useState(0);
+  const [completed, setCompleted] = useState(false);
   const [source, setSource] = useState<string | null>(null);
 
   useEffect(() => {
@@ -55,7 +56,12 @@ export function FeatureAnimation({ illustration, animation, label }: {
       type="button"
       className="marketing-feature__illustration marketing-animation"
       aria-label={`${source ? "正在演示" : run ? "重播" : "播放演示"}：${label}`}
-      onClick={() => { if (!source) setRun(value => value + 1); }}
+      onClick={() => {
+        if (!source) {
+          setCompleted(false);
+          setRun(value => value + 1);
+        }
+      }}
     >
       <img
         src={source ?? illustration}
@@ -67,10 +73,16 @@ export function FeatureAnimation({ illustration, animation, label }: {
         onLoad={() => {
           if (!source) return;
           clearTimeout(timer.current);
-          timer.current = setTimeout(() => setSource(null), DURATION_MS);
+          timer.current = setTimeout(() => {
+            setSource(null);
+            setCompleted(true);
+          }, DURATION_MS);
         }}
         onError={() => { if (source) setSource(null); }}
       />
+      {completed && !source && (
+        <span className="marketing-animation__replay" aria-hidden="true">↻ 重播</span>
+      )}
     </button>
   );
 }
