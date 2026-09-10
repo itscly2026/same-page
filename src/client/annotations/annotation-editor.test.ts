@@ -7,6 +7,7 @@ import * as annotationState from "./annotation-state";
 import { OUTBOX_RECOVERY_REQUEST_EVENT } from "./outbox-recovery";
 import { clearDiagnostics, exportDiagnostics } from "../diagnostics/diagnostics";
 import { readScoreAnnotationState, type DraftInput } from "./annotation-state";
+import { GUEST_NOTE_LAYER_ID } from "./guest-notes";
 import { AnnotationEditor } from "./annotation-editor";
 
 const workspace = createLocalWorkspace(authenticatedLocalOwnerKey("editor"), "drive", "score");
@@ -260,7 +261,7 @@ it("finishes local experience notes without creating an account outbox or reques
   window.addEventListener(OUTBOX_RECOVERY_REQUEST_EVENT, recovery);
   try {
     localEditor.begin();
-    expect(await localEditor.persist(text("experience"))).toBe(true);
+    expect(await localEditor.persist({ ...text("experience"), layerId: GUEST_NOTE_LAYER_ID })).toBe(true);
     expect(await localEditor.finish()).toBe("local-saved");
     expect((await readScoreAnnotationState(experience)).annotations).toHaveLength(1);
     expect(await localDatabase.annotationOutbox.count()).toBe(0);

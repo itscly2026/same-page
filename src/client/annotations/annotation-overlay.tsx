@@ -150,7 +150,8 @@ export function AnnotationOverlay({
   const deleteActiveRef = useRef(false);
   const deleteTargetRef = useRef<HTMLDivElement>(null);
   const visualViewport = useVisualViewport(editing);
-  const canStartEdit = editing && layers.some(layer => layer.id === activeLayerId && layer.canEdit);
+  const finishing = persistence === "finishing";
+  const canStartEdit = editing && !finishing && layers.some(layer => layer.id === activeLayerId && layer.canEdit);
   const canMoveObjects = canStartEdit && ["select", "text", "rectangle", "ellipse"].includes(tool);
   const visibleLayerIds = new Set(
     layers
@@ -404,7 +405,7 @@ export function AnnotationOverlay({
     annotation: LocalAnnotationRecord,
     payload: MovablePayload,
   ) => {
-    if (!canMoveObjects || annotation.layerId !== activeLayerId) return;
+    if (!canMoveObjects || editor?.getSnapshot() === "finishing" || annotation.layerId !== activeLayerId) return;
     event.stopPropagation();
     if (textEditor) return;
     const active = objectTransform.current;
@@ -540,7 +541,7 @@ export function AnnotationOverlay({
   };
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (!canStartEdit || !activeLayerId) return;
+    if (!canStartEdit || editor?.getSnapshot() === "finishing" || !activeLayerId) return;
     setHover(null);
     if (objectTransform.current) {
       addTransformPointer(event, objectTransform.current);
@@ -622,6 +623,7 @@ export function AnnotationOverlay({
   };
 
   const pointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (editor?.getSnapshot() === "finishing") return;
     if (canStartEdit && event.pointerType === "pen" && event.buttons === 0 && drawingPointer.current === null && !pendingTextPlacement.current && !objectTransform.current && eraserPointerId.current === null) {
       setHover(point(event)); return;
     }
@@ -677,6 +679,7 @@ export function AnnotationOverlay({
   };
 
   const pointerUp = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (editor?.getSnapshot() === "finishing") return;
     const pendingPlacement = pendingTextPlacement.current;
     if (pendingPlacement?.pointerId === event.pointerId) {
       pendingTextPlacement.current = null;
@@ -882,7 +885,7 @@ export function AnnotationOverlay({
               setSelectedId(null);
               openTextEditor({ id: selected.id, x: payload.x, y: payload.y, initial: payload.text, fontScale: payload.fontScale, pageWidth, source: "existing", color: payload.color });
             }} />}
-          {!canStartEdit && <aside className="annotation-storage-error" role="status">
+          {!canStartEdit && !finishing && <aside className="annotation-storage-error" role="status">
             <strong>此层已停止编辑</strong>
             <p>共享层已停用、删除或权限已改变。当前输入可完成并保存在原层的本机草稿中；不会上传或转写其他层。</p>
           </aside>}
@@ -916,6 +919,7 @@ export function AnnotationOverlay({
         }}
         onSubmit={(event) => {
           event.preventDefault();
+          if (editor?.getSnapshot() === "finishing") return;
           void finishTextEditor();
         }}
         onPointerDown={(event) => {
@@ -933,26 +937,26 @@ export function AnnotationOverlay({
         onClick={(event) => {
           const intentional = backdropReleased.current && event.detail <= 1;
           backdropReleased.current = false;
-          if (event.target === event.currentTarget && intentional) void finishTextEditor();
+          if (editor?.getSnapshot() !== "finishing" && event.target === event.currentTarget && intentional) void finishTextEditor();
         }}
       >
         <header ref={textComposerHeaderRef}>
           <button
             tabIndex={textEditor ? 0 : -1}
             type="button"
-            disabled={textSaving}
+            disabled={textSaving || finishing}
             onClick={cancelTextEditor}
           >
             取消
           </button>
-          <button tabIndex={textEditor ? 0 : -1} disabled={textSaving} type="submit">完成</button>
+          <button tabIndex={textEditor ? 0 : -1} disabled={textSaving || finishing} type="submit">完成</button>
         </header>
         {textEditor ? (
           <textarea
             aria-label="笔记文本"
             autoFocus
             name="text"
-            readOnly={textSaving}
+            readOnly={textSaving || finishing}
             ref={textInputRef}
             inputMode="text"
             placeholder="点按输入文字"
@@ -963,8 +967,9 @@ export function AnnotationOverlay({
               fontSize: editorFontSize,
             }}
             value={editorText}
-            onChange={(event) => { openingPoint.current = null; setEditorText(event.target.value); }}
+            onChange={(event) => { if (editor?.getSnapshot() === "finishing") return; openingPoint.current = null; setEditorText(event.target.value); }}
             onKeyDown={(event) => {
+              if (editor?.getSnapshot() === "finishing") return;
               if (event.key === "Escape") {
                 event.preventDefault();
                 cancelTextEditor();
@@ -993,7 +998,7 @@ export function AnnotationOverlay({
             <input
               aria-label="字号"
               type="range"
-            disabled={textSaving}
+            disabled={textSaving || finishing}
               min={MIN_TEXT_FONT_SCALE}
               max={MAX_TEXT_FONT_SCALE}
               step="0.001"

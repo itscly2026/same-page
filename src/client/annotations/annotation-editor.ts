@@ -6,7 +6,7 @@ import { diagnoseLocalOperation } from "../diagnostics/local-operation";
 import { requestOutboxRecovery } from "./outbox-recovery";
 
 export type EditingCompletion = "local-saved" | "failed" | null;
-export type PersistenceState = "idle" | "saving" | "failed";
+export type PersistenceState = "idle" | "saving" | "failed" | "finishing";
 type HistoryEntry = { before: DraftInput; after: DraftInput };
 type Edit = { kind: "write"; input: DraftInput; replaceHistory: boolean }
   | { kind: "undo" | "redo"; layerId: string };
@@ -23,7 +23,7 @@ export class AnnotationEditor {
   private generation = 0;
   private active = false;
   private running = false;
-  private state: PersistenceState = "idle";
+  private state: Exclude<PersistenceState, "finishing"> = "idle";
   private completion: Promise<EditingCompletion> | null = null;
   private lifetime = new AbortController();
   private editRevision = 0;
@@ -34,7 +34,7 @@ export class AnnotationEditor {
     void this.workspace.catch(() => undefined);
   }
 
-  getSnapshot = () => this.state;
+  getSnapshot = (): PersistenceState => this.completion ? "finishing" : this.state;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
@@ -60,7 +60,10 @@ export class AnnotationEditor {
     const signal = this.lifetime.signal;
     const task = this.completeEditing(signal);
     this.completion = task;
-    void task.then(() => { if (this.completion === task) this.completion = null; });
+    this.publish(this.state);
+    void task.then(() => {
+      if (this.completion === task) { this.completion = null; this.publish(this.state); }
+    });
     return task;
   }
 
@@ -225,7 +228,7 @@ export class AnnotationEditor {
     return true;
   }
 
-  private publish(state: PersistenceState) {
+  private publish(state: Exclude<PersistenceState, "finishing">) {
     this.state = state;
     for (const listener of this.listeners) listener();
   }

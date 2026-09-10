@@ -13,6 +13,7 @@ import {
   authenticatedLocalOwnerKey,
   createLocalWorkspace,
 } from "../platform/local-workspace";
+import * as annotationState from "./annotation-state";
 import { AnnotationEditor } from "./annotation-editor";
 import {
   AnnotationOverlay,
@@ -889,4 +890,26 @@ afterEach(() => {
   editor.cancel();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it.each(["text", "ink"] as const)("blocks new %s input during completion and restores input after queue failure", async tool => {
+  renderOverlay([], tool);
+  const overlay = screen.getByLabelText("第 1 页笔记层"); mockBounds(overlay);
+  let reject!: (reason: unknown) => void;
+  const queue = vi.spyOn(annotationState, "queueScoreDrafts").mockReturnValueOnce(new Promise<number>((_, fail) => { reject = fail; }));
+  let completion!: ReturnType<AnnotationEditor["finish"]>;
+  act(() => { completion = editor.finish(); });
+  await waitFor(() => expect(queue).toHaveBeenCalled());
+  expect(editor.getSnapshot()).toBe("finishing");
+  fireEvent.pointerDown(overlay, { pointerId: 42, clientX: 20, clientY: 30 });
+  fireEvent.pointerMove(overlay, { pointerId: 42, clientX: 80, clientY: 30 });
+  fireEvent.pointerUp(overlay, { pointerId: 42, clientX: 80, clientY: 30 });
+  expect(screen.queryByLabelText("笔记文本")).not.toBeInTheDocument();
+  expect(await localDatabase.annotations.count()).toBe(0);
+  expect(screen.queryByText("此层已停止编辑")).not.toBeInTheDocument();
+  await act(async () => { reject(new Error("storage unavailable")); expect(await completion).toBe("failed"); });
+  fireEvent.pointerDown(overlay, { pointerId: 43, clientX: 20, clientY: 30 });
+  fireEvent.pointerUp(overlay, { pointerId: 43, clientX: 20, clientY: 30 });
+  if (tool === "text") expect(screen.getByLabelText("笔记文本")).not.toHaveAttribute("readonly");
+  else await waitFor(async () => expect(await localDatabase.annotations.count()).toBe(1));
 });
