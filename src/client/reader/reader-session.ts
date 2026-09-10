@@ -16,16 +16,14 @@ import { readOfflineFileBytes, findVerifiedOfflineScore } from "../offline/offli
 import { markLoadingJourneyMilestone } from "../performance/loading-performance";
 import { acquireReaderDocument, confirmReaderDocumentVersion, invalidateReaderDocument, ReaderDocumentVersionMismatchError, type ReaderDocumentLease } from "./reader-document-cache";
 import { peekReaderScore, rememberReaderScore, forgetReaderScore } from "./reader-score-cache";
-import { ImageDocument, prepareImageManifest, type ScoreDocument } from "./image-document";
-import { scoreImagesPath, type ScoreDisplayMode } from "../../shared/score-images";
+import type { PDFDocumentProxy } from "./pdf-document";
 
 type CloudLookup = { state: "active"; score: ScoreSummary } | { state: "trashed" | "permission-denied" | "missing" | "network-unavailable" | "service-unavailable" };
 type Source = { kind: "cloud" | "offline"; versionId?: string };
 export interface ReaderSessionSnapshot {
   score: ScoreSummary | null;
-  document: ScoreDocument | null;
-  mode: ScoreDisplayMode;
-  modeMessage: string | null;
+  document: PDFDocumentProxy | null;
+  displayMessage: string | null;
   offline: OfflineScoreRecord | null;
   cloudState: "checking" | "active" | "trashed" | "unavailable";
   capability: "preparing" | "ready" | "failed" | "read-only" | "trashed";
@@ -46,7 +44,6 @@ export class ReaderSession {
   private localPriorityTimer: ReturnType<typeof setTimeout> | null = null;
   private localPriorityExpired = false;
   private abort = new AbortController();
-  private displayAbort = new AbortController();
   private started = false;
   private source: Source | null = null;
   private lease: ReaderDocumentLease | null = null;
@@ -60,18 +57,17 @@ export class ReaderSession {
       this.retained = null;
       return true;
     },
-    recover: reason => { this.recoverDisplay(reason); },
+    recover: () => { this.restoreDisplay(); },
   });
-  private retained: { document: ScoreDocument; mode: ScoreDisplayMode; source: Source | null; lease: ReaderDocumentLease | null } | null = null;
+  private retained: { document: PDFDocumentProxy; source: Source | null; lease: ReaderDocumentLease | null } | null = null;
   private retainDisplay() {
     if (this.retained || !this.state.document || !this.presentation.hasPresented(this.state.document) || this.cloudInvalidated) return;
-    this.retained = { document: this.state.document, mode: this.state.mode, source: this.source, lease: this.lease };
+    this.retained = { document: this.state.document, source: this.source, lease: this.lease };
     this.lease = null;
   }
   private restoreDisplay() {
     if (!this.retained) return false;
     const previous = this.retained;
-    this.displayAbort.abort();
     this.generation++;
     this.lease?.release();
     this.lease = previous.lease;
@@ -80,7 +76,7 @@ export class ReaderSession {
     this.displayPrepared = true;
     this.pdfFailed = false;
     if (this.deadline) clearTimeout(this.deadline);
-    this.publish({ document: previous.document, mode: previous.mode, status: "ready", error: null, modeMessage: "显示恢复未完成，已保留原谱面。" });
+    this.publish({ document: previous.document, status: "ready", error: null, displayMessage: "显示恢复未完成，已保留原谱面。" });
     return true;
   }
   private lookupSequence = 0;
@@ -89,7 +85,7 @@ export class ReaderSession {
   private localSettled = false;
   private cloudSettled = false;
   private pdfFailed = false;
-  private automaticRecoveryUsed = false;
+  private pdfError: string | null = null;
   private cloudInvalidated = false;
   private lookup: CloudLookup | null = null;
   private unsubscribeSync?: () => void;
@@ -106,7 +102,7 @@ export class ReaderSession {
     this.identity = workspace.ownerKey.startsWith("user:") ? workspace.ownerKey.slice(5) : workspace.ownerKey.startsWith("experience:") ? workspace.ownerKey : "guest";
     const score = peekReaderScore(this.identity, workspace.choirId, workspace.scoreId);
     this.confirmedVersion = score?.currentVersion.id ?? null;
-    this.state = { mode: "pdf", modeMessage: null, score, document: null, offline: null, cloudState: "checking", capability: "preparing", status: "loading", error: null, downloading: false, downloadMessage: null, preparation: { phase: "idle" } };
+    this.state = { displayMessage: null, score, document: null, offline: null, cloudState: "checking", capability: "preparing", status: "loading", error: null, downloading: false, downloadMessage: null, preparation: { phase: "idle" } };
   }
   setAuthenticatedUser = (userId: string | null, sessionId: string | null = null) => {
     if (this.authenticatedUserId === userId && this.authenticatedSessionId === sessionId) return;
@@ -152,7 +148,6 @@ export class ReaderSession {
       this.publish({ offline });
       this.localSettled = true;
       if (offline) {
-        if ((!navigator.onLine || this.lookup?.state === "network-unavailable") && offline.imageManifest) this.publish({ mode: "images" });
         if (this.localMatches() && (!this.state.document || this.state.cloudState !== "active")) await this.openOffline(offline);
         await restoreOfflineAnnotationSnapshot(this.workspace, offline).catch(() => undefined);
         if (!await this.current()) return;
@@ -190,14 +185,14 @@ export class ReaderSession {
         invalidateReaderDocument({ ...this.workspace });
         this.dispose();
       }
-    }, this.state.mode === "images" ? 180_000 : 45_000);
+    }, 45_000);
   }
   refresh = () => {
     if (this.disposed || !navigator.onLine) return Promise.resolve();
     this.refreshTask ??= this.confirmCloud().finally(() => { this.refreshTask = null; });
     return this.refreshTask;
   };
-  private localMatches() { return !!this.state.offline && (!this.confirmedVersion || this.confirmedVersion === this.state.offline.versionId) && (this.state.offline.imageManifest ? "images" : "pdf") === this.state.mode; }
+  private localMatches() { return !!this.state.offline && (!this.confirmedVersion || this.confirmedVersion === this.state.offline.versionId); }
   private async confirmCloud() {
     try { await syncReader(this.workspace, { push: false, signal: AbortSignal.any([this.abort.signal, this.layerAbort.signal]) }); }
     catch (error) {
@@ -222,7 +217,7 @@ export class ReaderSession {
       const confirmation = confirmReaderDocumentVersion({ ...this.workspace, sourceKind: "cloud", versionId: this.confirmedVersion });
       if (!this.localSettled && !this.localPriorityExpired) {
         // Inspect the verified local copy before starting a competing cloud PDF.
-      } else if ((this.source?.kind === "offline" || this.state.mode === "images") && this.source?.versionId === this.confirmedVersion) {
+      } else if (this.source?.kind === "offline" && this.source?.versionId === this.confirmedVersion) {
         // A matching offline document already owns the display lease.
       } else if (this.localMatches() && !this.state.document) {
         await this.openOffline(this.state.offline!);
@@ -239,7 +234,6 @@ export class ReaderSession {
         invalidateReaderDocument({ ...this.workspace, sourceKind: "cloud" });
       }
       this.publish({ cloudState: lookup.state === "trashed" ? "trashed" : "unavailable", ...(lookup.state === "trashed" ? { capability: "trashed" as const } : {}) });
-      if (lookup.state === "network-unavailable" && this.state.offline?.imageManifest && !this.state.document) this.publish({ mode: "images" });
       if (this.localMatches()) void this.openOffline(this.state.offline!);
       this.publish({ capability: lookup.state === "trashed" ? "trashed" : this.state.offline ? this.state.capability : "failed" });
     }
@@ -250,7 +244,7 @@ export class ReaderSession {
     if (this.source?.kind === "offline" && this.source.versionId === offline.versionId) return;
     const generation = this.generation;
     let data: ArrayBuffer | undefined;
-    try { data = offline.imageManifest ? undefined : await readOfflineFileBytes(offline.blob); }
+    try { data = await readOfflineFileBytes(offline.blob); }
     catch {
       if (!await this.current() || generation !== this.generation) return;
       this.publish({ offline: null, downloadMessage: "本机谱面读取失败，请重新下载；本机笔记仍然保留。" });
@@ -264,12 +258,9 @@ export class ReaderSession {
   }
   private openSource(source: Source, data?: ArrayBuffer) {
     if (this.disposed) return;
-    if (this.state.mode === "images" && source.kind === "cloud" && !this.state.score) return;
     this.retainDisplay();
     this.displayPrepared = false;
     if (this.source) this.armDeadline();
-    this.displayAbort.abort();
-    this.displayAbort = new AbortController();
     const generation = ++this.generation;
     this.lease?.release();
     this.source = source;
@@ -277,33 +268,13 @@ export class ReaderSession {
     if (source.kind === "cloud") this.cloudInvalidated = false;
     this.pdfFailed = false;
     this.publish({ document, status: document ? "ready" : "loading", error: null });
-    if (this.state.mode === "images") {
-      const score = this.state.score!;
-      const local = source.kind === "offline" ? this.state.offline : null;
-      const signal = this.displayAbort.signal;
-      const manifest = local?.imageManifest
-        ? Promise.resolve(local.imageManifest)
-        : prepareImageManifest(this.workspace, source.versionId!, score.currentVersion.sha256, signal);
-      void manifest.then(async manifest => {
-        if (!await this.current() || generation !== this.generation) return;
-        this.displayPrepared = true;
-        this.publish({ document: new ImageDocument(manifest, scoreImagesPath(this.workspace.choirId, this.workspace.scoreId, manifest.versionId), local?.blob), status: "ready", modeMessage: this.automaticRecoveryUsed ? "PDF 显示失败，当前使用图片恢复。" : null });
-        this.prepareAutomaticOfflineCopy();
-      }).catch(error => {
-        if (this.disposed || generation !== this.generation) return;
-        recordFailure({ operation: "pdf", category: pdfFailureCategory(error), stage: "prepare" });
-        if (this.restoreDisplay()) return;
-        this.publish({ status: "error", error: "图片兼容模式准备失败，可以重试或选择 PDF 阅读。本机草稿仍然保留。" });
-      });
-      return;
-    }
     markLoadingJourneyMilestone("open-score", "pdf-task-start");
     const lease = acquireReaderDocument({ ...this.workspace, source: data ?? cloudPdfSource(this.workspace, source.versionId), sourceKind: source.kind, versionId: source.versionId });
     this.lease = lease;
     void lease.promise.then(async (document) => {
       if (!await this.current() || generation !== this.generation) return;
       this.displayPrepared = true;
-      this.publish({ document, status: "ready", modeMessage: null });
+      this.publish({ document, status: "ready", displayMessage: null });
       this.resolveFailure();
       this.prepareAutomaticOfflineCopy();
     }).catch((error) => {
@@ -313,9 +284,9 @@ export class ReaderSession {
         this.openSource({ kind: "cloud", versionId: error.expectedVersionId });
         return;
       }
-      if (this.recoverDisplay(error)) return;
       if (this.restoreDisplay()) return;
       this.pdfFailed = true;
+      this.pdfError = pdfErrorMessage(error, source.kind);
       this.resolveFailure();
     });
   }
@@ -324,7 +295,7 @@ export class ReaderSession {
     if (this.lookup && this.lookup.state !== "active" && !this.localMatches() && !this.confirmedVersion) {
       this.publish({ status: "error", error: failureMessage(this.lookup.state) });
     } else if (this.pdfFailed) {
-      this.publish({ status: "error", error: this.source?.kind === "offline" ? "本机离线副本无法解析，现有笔记仍然保留。" : "PDF 无法解析或文件暂时不可用。" });
+      this.publish({ status: "error", error: this.pdfError });
     }
   }
   retryLayers = () => this.refresh();
@@ -336,14 +307,14 @@ export class ReaderSession {
   private offlinePreparation() {
     const score = this.state.score!;
     if (!this.preparation) {
-      const preparation = new OfflinePreparation(this.workspace, score, this.state.mode, this.authenticatedUserId, this.fileFence);
+      const preparation = new OfflinePreparation(this.workspace, score, this.authenticatedUserId, this.fileFence);
       this.preparation = preparation;
       preparation.subscribe(() => {
         if (this.preparation !== preparation || this.disposed) return;
         const state = preparation.getSnapshot();
         this.publish({ preparation: state, downloading: state.phase === "preparing",
           downloadMessage: state.phase === "ready" ? "离线副本已完整校验，可以离线打开。"
-            : state.phase === "failed" ? offlinePreparationDescription(state, { record: this.state.offline, invalid: false }, this.state.score?.currentVersion.id ?? "", this.state.mode) : null,
+            : state.phase === "failed" ? offlinePreparationDescription(state, { record: this.state.offline, invalid: false }, this.state.score?.currentVersion.id ?? "") : null,
           ...(state.phase === "ready" ? { offline: state.record } : {}),
         });
       });
@@ -358,7 +329,7 @@ export class ReaderSession {
   private prepareOffline(intent: "automatic" | "explicit") {
     if (this.disposed || !this.state.score || this.state.cloudState !== "active") return Promise.resolve();
     const document = this.state.document;
-    const pdfData = this.state.mode === "pdf" && this.displayPrepared && this.source?.versionId === this.state.score.currentVersion.id && document && "getData" in document
+    const pdfData = this.displayPrepared && this.source?.versionId === this.state.score.currentVersion.id && document && "getData" in document
       ? () => document.getData() : undefined;
     return this.offlinePreparation().prepare(intent, pdfData);
   }
@@ -370,45 +341,6 @@ export class ReaderSession {
     }
     return this.prepareOffline("explicit");
   };
-  recoverDisplay = (error: unknown) => {
-    if (!this.disposed && this.restoreDisplay()) return true;
-    if (this.disposed || this.state.mode !== "pdf" || this.automaticRecoveryUsed || !navigator.onLine || !isRecoverablePdfFailure(error)) return false;
-    this.automaticRecoveryUsed = true;
-    if (!this.changeMode("images")) return false;
-    this.publish({ modeMessage: "PDF 显示失败，已尝试图片兼容模式。你仍可切回 PDF 阅读。" });
-    return true;
-  };
-  retryPdf = () => {
-    if (this.state.mode !== "images" || !this.state.document) return false;
-    this.changeMode("pdf");
-    return true;
-  };
-  private changeMode(mode: ScoreDisplayMode) {
-    if (this.disposed) return false;
-    if (mode === this.state.mode) {
-      return false;
-    }
-    if ((!navigator.onLine || this.lookup?.state === "network-unavailable") && (!this.state.offline || (this.state.offline.imageManifest ? "images" : "pdf") !== mode)) {
-      this.publish({ modeMessage: `本机没有${mode === "images" ? "图片" : "PDF"}离线副本，请联网后下载。当前副本仍可使用。` });
-      return false;
-    }
-    this.retainDisplay();
-    this.releasePreparation();
-    this.displayPrepared = false;
-    this.displayAbort.abort();
-    this.generation++;
-    this.lease?.release();
-    this.lease = null;
-    this.source = null;
-    this.pdfFailed = false;
-    this.publish({ mode, downloadMessage: null, modeMessage: this.state.document ? "正在准备新的显示方式，原谱面继续保留…" : null, status: this.state.document ? "ready" : "loading", error: null });
-    this.armDeadline();
-    if (this.localMatches()) void this.openOffline(this.state.offline!);
-    else if (this.confirmedVersion) this.openSource({ kind: "cloud", versionId: this.confirmedVersion });
-    else void this.confirmCloud();
-    this.prepareAutomaticOfflineCopy();
-    return true;
-  }
   cancel = () => {
     this.publish({ status: "error", error: "加载已取消，本机草稿仍然保留。" });
     invalidateReaderDocument({ ...this.workspace });
@@ -421,7 +353,6 @@ export class ReaderSession {
     if (this.deadline) clearTimeout(this.deadline);
     if (this.localPriorityTimer) clearTimeout(this.localPriorityTimer);
     this.abort.abort();
-    this.displayAbort.abort();
     this.generation++;
     this.lease?.release();
     this.lease = null;
@@ -438,6 +369,12 @@ function failureMessage(state: Exclude<CloudLookup["state"], "active">) {
   return { trashed: "这份乐谱已移入回收站，当前设备没有可用的离线副本。", "permission-denied": "当前账号没有访问这份乐谱的权限。请返回云盘确认成员关系。", "network-unavailable": "网络暂时不可用，且当前设备没有这份乐谱的离线副本。", "service-unavailable": "服务暂时不可用或返回内容异常，请稍后重试；本机内容仍然保留。", missing: "这份乐谱不存在或已经被永久移除。" }[state];
 }
 
-export function isRecoverablePdfFailure(error: unknown) {
-  return pdfFailureCategory(error) !== "network" && error instanceof Error && ["PdfEngineUnavailableError", "InvalidPDFException", "FormatError", "UnknownErrorException", "PdfPageRenderError"].includes(error.name);
+function pdfErrorMessage(error: unknown, source: Source["kind"]) {
+  const reason = pdfFailureReason(error);
+  if (reason === "engine-unavailable") return "当前浏览器无法启动 PDF 阅读引擎，请升级浏览器或系统，也可以下载原 PDF 阅读。本机笔记仍然保留。";
+  const category = pdfFailureCategory(error);
+  if (category === "permission") return "当前无法访问这份 PDF，请返回云盘确认登录状态和权限。";
+  if (category === "network") return "PDF 下载失败，请检查网络后重试。本机笔记仍然保留。";
+  if (error instanceof Error && error.name === "PasswordException") return "这份 PDF 需要密码，暂时无法在这里阅读。可以下载原 PDF 打开。";
+  return source === "offline" ? "本机离线副本无法解析，现有笔记仍然保留。" : "PDF 无法解析或文件暂时不可用，可以重试或下载原 PDF。";
 }

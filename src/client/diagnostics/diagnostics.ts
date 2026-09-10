@@ -129,6 +129,7 @@ export async function parseDiagnosticResponse<T>(response: Response, schema: { p
 }
 
 export function pdfFailureCategory(error: unknown): DiagnosticCategory {
+  if (error instanceof TypeError && /^(Failed to fetch|Load failed|NetworkError when attempting to fetch resource\.?)$/.test(error.message)) return "network";
   if (typeof error === "object" && error !== null) {
     if ("status" in error && typeof error.status === "number") {
       return error.status === 0 ? "network" : categoryForStatus(error.status);
@@ -171,7 +172,7 @@ export function recordFailure(failure: Failure) {
       ...(errorType ? { errorType } : {}),
       ...(causeType ? { causeType } : {}),
       ...(errorCode ? { errorCode } : {}),
-      ...(failure.engineVersion && /^(pdfjs|pdfium)-[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$/.test(failure.engineVersion) ? { engineVersion: failure.engineVersion } : {}),
+      ...(failure.engineVersion && /^pdfjs-[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$/.test(failure.engineVersion) ? { engineVersion: failure.engineVersion } : {}),
       ...(failure.pdfReason && pdfReasons.includes(failure.pdfReason) ? { pdfReason: failure.pdfReason } : {}),
       id: crypto.randomUUID(), time: now, operation, category, stage,
       requestId, serverBuild, count: 1,

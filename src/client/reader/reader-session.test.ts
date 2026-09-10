@@ -66,76 +66,6 @@ it("a stalled document reaches a recoverable timeout without classifying the dev
   } finally { session.dispose(); vi.useRealTimers(); }
 });
 
-it("opens server page geometry in image mode without starting PDF.js", async () => {
-  const workspace = await resolveLocalWorkspace({ authenticatedUserId: null, choirId: "image-drive", scoreId: "image-score" });
-  const manifest = {
-    versionId: "image-version", sourceSha256: "a".repeat(64), generation: "11111111-1111-4111-8111-111111111111",
-    spec: "png-rgb-v1", engine: "pdfium-149.0.0.0",
-    pages: [{ pageNumber: 1, width: 800, height: 600, rotation: 90, crop: [0, 0, 600, 800],
-      assets: [2048, 3072].map(edge => ({ edge, width: edge, height: edge * 0.75, sha256: "b".repeat(64), sizeBytes: 100 })) }],
-  };
-  vi.stubGlobal("fetch", vi.fn(async (input: string) => {
-    if (input.endsWith("/images")) return Response.json({ state: "ready", manifest });
-    if (input.includes("/sync?")) return Response.json({ state: "active", layers: { layers: [], sharedLayerRevision: 0, permissions: { canManageLayers: false } }, annotations: { cursor: 0, objects: [] }, permissions: { capabilities: noCapabilities() }, score: { id: "image-score", choirId: "image-drive", fileName: "图片.pdf", updatedAt: 1,
-      currentVersion: { id: "image-version", versionNumber: 1, sizeBytes: 10, sha256: "a".repeat(64), etag: "test", pageCount: 1, createdAt: 1 } } });
-    return new Response(null, { status: 503 });
-  }));
-  const before = vi.mocked(loadPdfDocument).mock.calls.length;
-  const session = new ReaderSession(workspace, null);
-  session.recoverDisplay(Object.assign(new Error("decode failure"), { name: "InvalidPDFException" }));
-  session.open();
-  try {
-    await vi.waitFor(() => expect(session.getSnapshot().status).toBe("ready"));
-    expect(session.getSnapshot().document?.numPages).toBe(1);
-    const page = await session.getSnapshot().document!.getPage(1);
-    expect(page.getViewport({ scale: 1 })).toMatchObject({ width: 800, height: 600 });
-    expect(vi.mocked(loadPdfDocument).mock.calls.length).toBe(before);
-    await vi.waitFor(() => expect(session.getSnapshot().downloading).toBe(false));
-    const readable = session.getSnapshot().document;
-    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
-    expect(session.retryPdf()).toBe(true);
-    expect(session.getSnapshot().document).toBe(readable);
-    expect(session.getSnapshot()).toMatchObject({ mode: "images", status: "ready", modeMessage: expect.stringContaining("当前副本仍可使用") });
-  } finally { session.dispose(); }
-});
-
-it("ignores a late PDF when selecting images before version confirmation", async () => {
-  const workspace = await resolveLocalWorkspace({ authenticatedUserId: null, choirId: "late-mode-drive", scoreId: "score" });
-  let finish!: (value: Awaited<ReturnType<typeof loadPdfDocument>["promise"]>) => void;
-  vi.mocked(loadPdfDocument).mockReturnValueOnce({ promise: new Promise(resolve => { finish = resolve; }), destroy: vi.fn().mockResolvedValue(undefined) });
-  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
-  const session = new ReaderSession(workspace, null);
-  session.open();
-  try {
-    await vi.waitFor(() => expect(finish).toBeDefined());
-    session.recoverDisplay(Object.assign(new Error("decode failure"), { name: "InvalidPDFException" }));
-    // Only document identity is consumed; PDF.js is the external engine boundary.
-    finish({ document: { numPages: 99 } as Awaited<ReturnType<typeof loadPdfDocument>["promise"]>["document"], versionId: "late-version" });
-    await new Promise(resolve => setTimeout(resolve, 30));
-    expect(session.getSnapshot()).toMatchObject({ mode: "images", status: "loading", document: null });
-  } finally { session.dispose(); }
-});
-
-it("keeps automatic recovery temporary across subsequent opens", async () => {
-  const workspace = await resolveLocalWorkspace({ authenticatedUserId: null, choirId: "automatic-mode-drive", scoreId: "score" });
-  const values = new Map<string, string>();
-  vi.stubGlobal("localStorage", { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
-  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
-  vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
-  const session = new ReaderSession(workspace, null);
-  try {
-    expect(session.recoverDisplay(Object.assign(new Error("render failure"), { name: "PdfPageRenderError" }))).toBe(true);
-    expect(session.getSnapshot().mode).toBe("images");
-    const reopened = new ReaderSession(workspace, null);
-    expect(reopened.getSnapshot().mode).toBe("pdf");
-    session.recoverDisplay(Object.assign(new Error("decode failure"), { name: "InvalidPDFException" }));
-    reopened.dispose();
-    const explicit = new ReaderSession(workspace, null);
-    expect(explicit.getSnapshot().mode).toBe("pdf");
-    explicit.dispose();
-  } finally { session.dispose(); }
-});
-
 it("requires confirmed identity before user-owned offline preparation and cancels it on identity loss", async () => {
   const workspace = await resolveLocalWorkspace({ authenticatedUserId: "a", choirId: "auth-drive", scoreId: "score" });
   const requested: string[] = [];
@@ -167,14 +97,27 @@ it("requires confirmed identity before user-owned offline preparation and cancel
   } finally { session.dispose(); }
 });
 
-it("does not recover transport, permission, timeout or unclassified failures and only tries once", async () => {
-  const workspace = await resolveLocalWorkspace({ authenticatedUserId: null, choirId: "classification", scoreId: "score" });
-  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+it.each([
+  [Object.assign(new Error(), { name: "PdfEngineUnavailableError" }), "请升级浏览器或系统"],
+  [new TypeError("Failed to fetch"), "请检查网络后重试"],
+  [Object.assign(new Error(), { status: 403 }), "确认登录状态和权限"],
+  [Object.assign(new Error(), { name: "InvalidPDFException" }), "PDF 无法解析"],
+  [Object.assign(new Error(), { name: "PasswordException" }), "这份 PDF 需要密码"],
+])("keeps PDF failure %s actionable without starting another rendering service", async (error, message) => {
+  const workspace = await resolveLocalWorkspace({ authenticatedUserId: null, choirId: "failure-drive", scoreId: "score" });
+  vi.mocked(loadPdfDocument).mockImplementationOnce(() => ({ promise: Promise.reject(error), destroy: vi.fn().mockResolvedValue(undefined) }));
+  const fetchMock = vi.fn(async (input: string) => input.endsWith("/bootstrap")
+    ? Response.json({ state: "active", permissions: { capabilities: noCapabilities() }, score: { id: "score", choirId: "failure-drive", fileName: "谱.pdf", updatedAt: 1,
+      currentVersion: { id: "version", versionNumber: 1, sizeBytes: 10, sha256: "a".repeat(64), etag: "test", pageCount: 1, createdAt: 1 } } })
+    : new Response(null, { status: 503 }));
+  vi.stubGlobal("fetch", fetchMock);
   const session = new ReaderSession(workspace, null);
+  session.open();
   try {
-    for (const error of [new TypeError("Failed to fetch"), Object.assign(new Error(), { status: 403 }), Object.assign(new Error(), { name: "TimeoutError" }), Object.assign(new Error(), { name: "UnknownErrorException", details: "TypeError: Failed to fetch" })]) expect(session.recoverDisplay(error)).toBe(false);
-    const failure = Object.assign(new Error(), { name: "InvalidPDFException" });
-    expect(session.recoverDisplay(failure)).toBe(true);
-    expect(session.recoverDisplay(failure)).toBe(false);
+    await vi.waitFor(() => expect(session.getSnapshot().status).toBe("error"));
+    expect(session.getSnapshot().error).toContain(message);
+    expect(session.getSnapshot().document).toBeNull();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(expect.arrayContaining([expect.stringContaining("/bootstrap")]));
+    expect(fetchMock.mock.calls.map(([url]) => url).filter(url => !/\/(bootstrap|layers|annotations)(\?|$)/.test(url))).toEqual([]);
   } finally { session.dispose(); }
 });

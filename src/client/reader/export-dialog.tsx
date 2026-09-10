@@ -6,8 +6,7 @@ import type { AnnotationLayerSummary } from "../../shared/annotations";
 import { scorePdfFileName } from "../../shared/score-display-name";
 import { Dialog } from "../navigation/overlays";
 import type { LocalWorkspace } from "../platform/local-workspace";
-import type { ScoreDocument } from "./image-document";
-import { ImageDocument } from "./image-document";
+import type { PDFDocumentProxy } from "./pdf-document";
 import { exportScore } from "./export-score";
 import { prepareExport } from "./prepare-export";
 import { FileUp } from "lucide-react";
@@ -15,10 +14,10 @@ import "./export-dialog.css";
 import { holdUpdate } from "../updates/update-safety";
 
 export function ExportDialog({ layers: initialLayers, workspace, source: initialSource, versionId, fileName, authenticatedUserId, onClose }: {
-  layers?: AnnotationLayerSummary[]; workspace: LocalWorkspace; source?: ScoreDocument; versionId: string; fileName: string;
+  layers?: AnnotationLayerSummary[]; workspace: LocalWorkspace; source?: PDFDocumentProxy; versionId: string; fileName: string;
   authenticatedUserId: string | null; onClose(): void;
 }) {
-  const [prepared, setPrepared] = useState<{ source: ScoreDocument; layers: AnnotationLayerSummary[] } | null>(() => initialSource && !(initialSource instanceof ImageDocument) && initialLayers ? { source: initialSource, layers: initialLayers } : null);
+  const [prepared, setPrepared] = useState<{ source: PDFDocumentProxy; layers: AnnotationLayerSummary[] } | null>(() => initialSource && initialLayers ? { source: initialSource, layers: initialLayers } : null);
   const liveLayers = useLiveQuery(() => readAnnotationLayers(workspace), [workspace.scopeKey]);
   const layers = initialLayers ?? liveLayers ?? prepared?.layers ?? [];
   const source = prepared?.source;
@@ -28,7 +27,7 @@ export function ExportDialog({ layers: initialLayers, workspace, source: initial
   const [message, setMessage] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    if (initialSource && !(initialSource instanceof ImageDocument) && initialLayers) return;
+    if (initialSource && initialLayers) return;
     let active = true;
     const task = prepareExport(workspace, versionId);
     task.promise.then(result => { if (active) { setPrepared(result); setSelected(defaults(result.layers)); } }).catch(error => {
@@ -37,7 +36,7 @@ export function ExportDialog({ layers: initialLayers, workspace, source: initial
     return () => { active = false; task.destroy(); };
   }, [workspace, versionId, initialSource, initialLayers, attempt]);
   const run = async () => {
-    if (!source || source instanceof ImageDocument) return;
+    if (!source) return;
     const release = holdUpdate();
     setBusy(true); setMessage(null);
     try {

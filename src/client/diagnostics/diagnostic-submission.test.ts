@@ -13,7 +13,7 @@ it("captures only parsed environment tokens and fixed reader state, never raw UA
   expect(environment.systemVersion).toBe("18.1");
   expect(JSON.stringify(environment)).not.toMatch(/private|token|secret|https/);
   recordFailure({ operation: "pdf", category: "internal", stage: "decode" });
-  const report = captureDiagnosticReport("optional user text", { displayMode: "images", interactionMode: "editing", pendingCount: 2, conflictCount: null });
+  const report = captureDiagnosticReport("optional user text", { interactionMode: "editing", pendingCount: 2, conflictCount: null });
   expect(report.records[0].operation).toBe("pdf");
   expect(report.reader?.pendingCount).toBe(2);
   expect(report.description).toBe("optional user text");

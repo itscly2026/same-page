@@ -7,7 +7,7 @@ import { chromium, webkit, expect } from "@playwright/test";
 import { startStorageFixture } from "./storage-fixture.mjs";
 
 for (const engine of [chromium, webkit]) {
-  test(`${engine.name()}: CCITT and JPEG2000 paint real content online and with the origin stopped`, { timeout: 90000 }, async t => {
+  test(`${engine.name()}: legacy fills missing APIs in page and Worker and paints CCITT/JPEG2000 online and offline`, { timeout: 90000 }, async t => {
     const pdf = await readFile(new URL("./fixtures/image-codecs.pdf", import.meta.url));
     const fixture = await startStorageFixture({ authenticated: true, pdf });
     t.after(() => fixture.stop());
@@ -18,6 +18,7 @@ for (const engine of [chromium, webkit]) {
     assert.equal((await context.request.post(`${fixture.origin}/api/auth/sign-in/email`, {
       headers: { origin: fixture.origin }, data: { email: account.email, password: account.password },
     })).status(), 200);
+    await context.addInitScript(installCompatibilityProbe);
     const page = await context.newPage();
     await page.goto(`${fixture.origin}/choirs/${fixture.choirId}`, { waitUntil: "domcontentloaded" });
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
@@ -25,6 +26,12 @@ for (const engine of [chromium, webkit]) {
     await page.waitForURL(`**/scores/${fixture.scoreId}*`);
     const scoreUrl = page.url();
     await assertSquare(page, 1);
+    const probe = await page.evaluate(() => globalThis.__pdfCompatibilityProbe);
+    assert.deepEqual(probe.pageMissing, [true, true, true, true]);
+    assert.deepEqual(probe.workerMissing, [true, true, true, true]);
+    assert.deepEqual(probe.workerRestored, [true, true, true, true]);
+    assert.deepEqual(await page.evaluate(() => [typeof Iterator, typeof Promise.try,
+      typeof Map.prototype.getOrInsert, typeof Map.prototype.getOrInsertComputed]), Array(4).fill("function"));
     await page.getByRole("button", { name: "下一页", exact: true }).press("Enter");
     await assertSquare(page, 2);
     if (!await page.getByRole("button", { name: "更多", exact: true }).isVisible()) {
@@ -57,6 +64,23 @@ for (const engine of [chromium, webkit]) {
   });
 }
 
+test("missing native Promise.withResolvers exposes engine recovery and an independent PDF download", { timeout: 60000 }, async t => {
+  const fixture = await startStorageFixture();
+  t.after(() => fixture.stop());
+  const browser = await chromium.launch();
+  t.after(() => browser.close());
+  const context = await browser.newContext();
+  await context.addInitScript(() => { Promise.withResolvers = undefined; });
+  const page = await context.newPage();
+  await page.goto(`${fixture.origin}/choirs/${fixture.choirId}/scores/${fixture.scoreId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("alert")).toContainText("请升级浏览器或系统");
+  const link = page.getByRole("link", { name: "下载原 PDF", exact: true });
+  await expect(link).toBeVisible();
+  const [download] = await Promise.all([page.waitForEvent("download"), link.click()]);
+  const bytes = await readFile(await download.path());
+  assert.deepEqual(bytes, fixture.pdf);
+});
+
 async function assertSquare(page, pageNumber) {
   const canvas = page.locator(`.page-reader__sheet[data-page-turn-current][data-page-number="${pageNumber}"] .pdf-page-canvas canvas[data-pdf-canvas-active]`).first();
   await expect(canvas).toBeVisible();
@@ -70,4 +94,37 @@ async function assertSquare(page, pageNumber) {
   });
   assert.ok(pixels.center.slice(0, 3).every(value => value < 30), `page ${pageNumber}: expected black center, got ${pixels.center}`);
   assert.ok(pixels.corner.slice(0, 3).every(value => value > 225), `page ${pageNumber}: expected white corner, got ${pixels.corner}`);
+}
+
+// This is a controlled API-absence regression, not a claim to emulate old Safari.
+// Use the shipped entry/Worker and real pixels; both realms must restore APIs.
+function installCompatibilityProbe() {
+  const removeApis = () => {
+    globalThis.Iterator = undefined;
+    Promise.try = undefined;
+    Map.prototype.getOrInsert = undefined;
+    Map.prototype.getOrInsertComputed = undefined;
+    return [globalThis.Iterator, Promise.try, Map.prototype.getOrInsert,
+      Map.prototype.getOrInsertComputed].map(value => value === undefined);
+  };
+  const pageMissing = removeApis();
+  globalThis.__pdfCompatibilityProbe = { pageMissing };
+  const NativeWorker = globalThis.Worker;
+  globalThis.Worker = class extends NativeWorker {
+    constructor(url, options) {
+      const source = `const missing = (${removeApis.toString()})();
+        await import(${JSON.stringify(new URL(String(url), location.href).href)});
+        self.postMessage({ compatibilityProbe: true, missing, restored:
+          [globalThis.Iterator, Promise.try, Map.prototype.getOrInsert,
+           Map.prototype.getOrInsertComputed].map(value => typeof value === "function") });`;
+      const wrapper = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+      super(wrapper, options);
+      this.addEventListener("message", event => {
+        if (!event.data?.compatibilityProbe) return;
+        globalThis.__pdfCompatibilityProbe.workerMissing = event.data.missing;
+        globalThis.__pdfCompatibilityProbe.workerRestored = event.data.restored;
+        URL.revokeObjectURL(wrapper);
+      });
+    }
+  };
 }

@@ -1,6 +1,6 @@
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import type { PDFDocumentProxy, getDocument as GetDocument } from "pdfjs-dist";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
+import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.mjs?url";
 import { pdfJsWasmDirectory } from "../../shared/pdfjs-assets";
 
 export class PdfEngineUnavailableError extends Error {
@@ -32,8 +32,11 @@ export function loadPdfDocument(
   let destroyed = false;
   let loadingTask: ReturnType<typeof GetDocument> | null = null;
   const promise = (async () => {
+    // The current legacy build still requires this native API. Its absence is
+    // an engine compatibility failure, not a corrupt PDF or a network problem.
+    if (!("withResolvers" in Promise) || typeof Promise.withResolvers !== "function") throw new PdfEngineUnavailableError();
     let engine: typeof import("pdfjs-dist");
-    try { engine = await import("pdfjs-dist"); }
+    try { engine = await import("pdfjs-dist/legacy/build/pdf.mjs"); }
     catch (error) {
       // Dynamic-import transport failures must stay retryable network errors.
       if (error instanceof Error && /fetch|network|loading chunk|module script|load failed|timeout/i.test(error.message)) throw error;

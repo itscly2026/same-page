@@ -96,7 +96,6 @@ test("diagnostic feedback survives lost receipts and returns to reader diagnosti
       await dialog.getByText("查看诊断内容", { exact: true }).click();
       const snapshot = JSON.parse(await dialog.getByLabel("可发送给支持人员的诊断内容").inputValue());
       assert.equal(snapshot.reader.interactionMode, "reading");
-      assert.equal(snapshot.reader.displayMode, "pdf");
       assert.ok(!JSON.stringify(snapshot).includes(fixture.scoreId));
       assert.ok(!JSON.stringify(snapshot).includes(fixture.fileName));
       await dialog.getByText("查看诊断内容", { exact: true }).click();
