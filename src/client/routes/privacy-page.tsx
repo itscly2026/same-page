@@ -7,7 +7,7 @@ const CONTACT_EMAIL = "admin@clyapps.com";
 export default function PrivacyPage() {
   return (
     <div className="privacy-page">
-      <TaskHeader title="隐私政策" backTo="/about" />
+      <TaskHeader title="隐私政策" backTo="/drives" />
       <main className="privacy-document" aria-label="隐私政策">
         <header className="privacy-document__header">
           <p className="eyebrow">合谱 · Same Page</p>
