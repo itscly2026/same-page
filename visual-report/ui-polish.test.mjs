@@ -53,24 +53,32 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.screenshot({ path: `artifacts/verification/issue-251/${engineName}-layers-tablet.png` });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: `artifacts/verification/issue-251/${engineName}-layers.png` });
-    const actions = page.getByRole('button', { name: '我的笔记的操作' });
-    await expect(page.getByRole('menuitem', { name: '重命名' })).toHaveCount(0);
+    const actions = page.getByRole('button', { name: '管理个人层' });
+    await expect(page.getByRole('button', { name: '重命名 我的笔记' })).toHaveCount(0);
+    const rowGeometry = () => page.locator('.layer-section--personal .reader-layer-row').first().evaluate(row => { const box = row.getBoundingClientRect(); const section = row.closest('.layer-section').getBoundingClientRect(); return { x: box.x - section.x, y: box.y - section.y, width: box.width, height: box.height }; });
+    const before = await rowGeometry();
     await actions.click();
-    await page.getByRole('menuitem', { name: '重命名', exact: true }).click();
+    await expect(page.getByRole('switch', { name: '公开 我的笔记' })).toHaveCount(0);
+    await expect(page.getByRole('checkbox', { name: '显示 我的笔记', exact: true })).toHaveCount(0);
+    assert.deepEqual(await rowGeometry(), before);
+    await page.getByRole('button', { name: '重命名 我的笔记', exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `artifacts/verification/issue-251/${engineName}-layer-management.png` });
+    await page.getByRole('button', { name: '重命名 我的笔记', exact: true }).click();
     const input = page.getByRole('textbox', { name: '我的笔记的名称' });
     await expect(input).toBeFocused();
     const inputBounds = await input.boundingBox();
     assert.ok(inputBounds.y >= 0 && inputBounds.y + inputBounds.height <= 844);
     await page.screenshot({ path: `artifacts/verification/issue-251/${engineName}-rename.png` });
     await input.press('Escape');
-    await actions.click();
-    await page.getByRole('menuitem', { name: '删除', exact: true }).click();
+    await page.getByRole('button', { name: '删除 我的笔记', exact: true }).click();
     await expect(page.getByRole('dialog', { name: '确认删除此层' })).toBeVisible();
     const confirmBounds = await page.getByRole('button', { name: '确认删除', exact: true }).boundingBox();
     assert.ok(confirmBounds.width >= 44 && confirmBounds.height >= 44);
     await page.screenshot({ path: `artifacts/verification/issue-251/${engineName}-delete.png` });
     await page.getByRole('dialog', { name: '确认删除此层' }).getByRole('button', { name: '取消' }).click();
-    await expect(actions).toBeFocused();
+    await expect(page.getByRole('button', { name: '删除 我的笔记', exact: true })).toBeFocused();
+    await page.getByRole('button', { name: '完成个人层管理' }).click();
+    await expect(page.getByRole('checkbox', { name: '显示 我的笔记', exact: true })).toBeVisible();
   });
 }
 

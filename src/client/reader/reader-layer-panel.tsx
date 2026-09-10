@@ -6,6 +6,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { diagnosticFetch } from "../diagnostics/diagnostics";
 import { PersonalLayerCard } from "./personal-layer-card";
 import { Link } from "react-router-dom";
+import { MoreHorizontal } from "lucide-react";
 import { Button } from "react-aria-components";
 
 import type { AnnotationLayerSummary } from "../../shared/annotations";
@@ -24,6 +25,7 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
   const visibilityPrefix = useId();
   const managementTrigger = useRef<HTMLButtonElement>(null);
   const [creationId, setCreationId] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
   const [managing, setManaging] = useState(false);
   const [newName, setNewName] = useState("");
   const [deletedLoaded, setDeletedLoaded] = useState(false);
@@ -115,7 +117,7 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
   const mutationFeedback = (target: string | null, inManagement = false, showName = false) => feedbackTarget === target && feedbackInManagement === inManagement && (pending || message)
     ? <div className="reader-layer-feedback">{showName && feedbackName && <strong>{feedbackName}</strong>}<p role="status">{pending ? "正在处理…" : message}</p>{personalRetry && <Button isDisabled={pending} onPress={() => void personalRetry()}>重试</Button>}</div> : null;
 
-  const managementOpen = managing;
+  const managementOpen = editing && managing;
   const missingFeedbackRow = feedbackTarget !== null && !(feedbackInManagement ? (managing ? deleted : []) : personalLayers).some(layer => layer.id === feedbackTarget);
   const feedbackOutsideManagement = feedbackInManagement && !managementOpen;
 
@@ -153,13 +155,14 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
         </div>
       </div>
       {(personalLayers.length > 0 || signedIn) && <div className="layer-section layer-section--personal">
-        <div className="layer-section__heading"><h3>个人层</h3>{signedIn && <Button ref={managementTrigger} className="personal-layer-more" isDisabled={pending || needsRefresh} onPress={() => { setManaging(true); void personalRequest("layers?state=deleted", "GET", undefined, true); }}>已删除个人层</Button>}</div>
+        <div className="layer-section__heading"><h3>个人层</h3>{signedIn && <Button className="personal-layer-more" aria-label={editing ? "完成个人层管理" : "管理个人层"} aria-pressed={editing} isDisabled={pending} onPress={() => setEditing(!editing)}>{editing ? "完成" : <MoreHorizontal aria-hidden="true" size={18} />}</Button>}</div>
         {mutationFeedback(null)}{(feedbackOutsideManagement || (!feedbackInManagement && missingFeedbackRow)) && mutationFeedback(feedbackTarget, feedbackInManagement, true)}
-        {personalLayers.map(layer => <div key={layer.id}><PersonalLayerCard key={layer.id} layer={layer} workspace={workspace} pending={pending} blocked={!signedIn || needsRefresh} feedback={mutationFeedback(layer.id)}
+        {personalLayers.map(layer => <div key={layer.id}><PersonalLayerCard key={`${layer.id}-${editing}`} editing={editing} layer={layer} workspace={workspace} pending={pending} blocked={!signedIn || needsRefresh} feedback={mutationFeedback(layer.id)}
           onChange={change => personalRequest(`personal-layers/${layer.id}`, "PUT", { ...change, expectedRevision: layer.revision ?? 0 })}
           onSubscribe={subscribed => void preferences.save({ kind: "personal", id: layer.id }, { subscribed })} />{preferenceFeedback("personal", layer.id)}</div>)}
         {signedIn && <>
           <div className="personal-layer-footer">
+            {editing && <Button ref={managementTrigger} className="personal-layer-more" isDisabled={pending || needsRefresh} onPress={() => { setManaging(true); void personalRequest("layers?state=deleted", "GET", undefined, true); }}>已删除个人层</Button>}
             {!creationId && <Button className="personal-layer-create" isDisabled={pending || needsRefresh} onPress={() => setCreationId(crypto.randomUUID())}>＋ 新建个人层</Button>}
 
           </div>
@@ -168,7 +171,7 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
             <button disabled={pending || needsRefresh || !newName.trim()}>新建个人层</button>
           <Button isDisabled={pending} onPress={() => setCreationId(null)}>取消</Button>
           </form>}
-          {managing && <section className="personal-layer-management" aria-label="已删除个人层">
+          {editing && managing && <section className="personal-layer-management" aria-label="已删除个人层">
             <div className="layer-section__heading"><h4>已删除个人层</h4><Button onPress={() => { setManaging(false); requestAnimationFrame(() => managementTrigger.current?.focus()); }}>关闭</Button></div>
             {mutationFeedback(null, true)}{feedbackInManagement && missingFeedbackRow && mutationFeedback(feedbackTarget, true, true)}{managing && pending && <p role="status">正在更新个人层…</p>}
           {managing && deletedLoaded && !pending && deleted.length === 0 && <p className="reader-layer-help" role="status">没有可恢复的个人层。</p>}

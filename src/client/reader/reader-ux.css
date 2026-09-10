@@ -222,4 +222,5 @@
 
 .layer-row__visibility:focus-within { outline: 2px solid #111; outline-offset: -2px; border-radius: .3rem; }
 
-.personal-layer-menu-trigger { display: grid; place-items: center; width: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--muted); border-radius: .5rem; }
+.reader-layer-panel .personal-layer-row-action { width: 100%; min-width: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; font-size: .8rem; }
+.reader-layer-panel .personal-layer-row-action--delete { color: #a32525; }
