@@ -1,4 +1,6 @@
 import { limitDriveMutation } from "../security/drive-rate-limit";
+import { readScoreLayers, readScoreAnnotations } from "../annotations/routes";
+import { readerSyncQuerySchema } from "../../src/shared/reader-sync";
 import { and, eq, isNull } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 
@@ -214,10 +216,13 @@ scoreRoutes.get("/choirs/:choirId/scores/:scoreId/status", async (context) => {
   );
 });
 
-scoreRoutes.get("/choirs/:choirId/scores/:scoreId/bootstrap", async (context) => {
+scoreRoutes.get("/choirs/:choirId/scores/:scoreId/sync", async (context) => {
   const choirId = context.req.param("choirId");
   const scoreId = context.req.param("scoreId");
-  const access = await resolveChoirAccess(context, choirId);
+  const parsed = readerSyncQuerySchema.safeParse(context.req.query());
+  if (!parsed.success) return context.json({ error: "invalid_sync_query" }, 400);
+  const { principal, access } = await resolveContextChoirReadAccess(context, choirId);
+  if (!principal) return context.json({ error: "forbidden" }, 403);
   const row = await measureServerTiming(context, "d1", () =>
     context.env.DB.prepare(
       `SELECT scores.id, scores.choir_id, scores.file_name, scores.updated_at,
@@ -240,10 +245,16 @@ scoreRoutes.get("/choirs/:choirId/scores/:scoreId/bootstrap", async (context) =>
       trashExpiresAt: row.trash_expires_at ?? undefined,
     });
   }
+  const scope = { choirId, scoreId, principal, membership: access.kind === "membership" ? access.membership : null };
+  const layers = await readScoreLayers(context, scope);
+  const ids = layers.layers.map(layer => layer.id).sort();
+  const cursor = JSON.stringify(ids) === JSON.stringify(parsed.data.layerIds) ? parsed.data.cursor : 0;
+  const annotations = await readScoreAnnotations(context, scope, cursor);
   return context.json({
+    layers, annotations,
     state: "active" as const,
     score: serializeScoreRow(row),
-    permissions: { capabilities: access.capabilities },
+    permissions: { capabilities: access.kind === "membership" ? memberCapabilities(access.membership) : noCapabilities() },
   });
 });
 

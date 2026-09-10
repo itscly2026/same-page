@@ -51,10 +51,11 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
         payload.layers = payload.layers.filter(layer => deleted === (layer.slot === "E" && deletedAt !== null)).map(layer => layer.slot === "E" ? { ...layer, revision: layerRevision, deletedAt, recoverUntil: deletedAt === null ? null : deletedAt + 30 * 86400000 } : layer);
         response.body = JSON.stringify(payload);
       }
-      if (pathname.endsWith("/layers")) {
+      if (pathname.endsWith("/layers") || pathname.endsWith("/sync")) {
         const payload = JSON.parse(response.body);
         // Member fixture has a drive-wide E edit grant and no grants on S/A/T/B.
-        payload.layers = payload.layers.map(layer => layer.sharedSlot === "E" ? { ...layer, canEdit: true } : layer);
+        const readerLayers = pathname.endsWith("/sync") ? payload.layers : payload;
+        readerLayers.layers = readerLayers.layers.map(layer => layer.sharedSlot === "E" ? { ...layer, canEdit: true } : layer);
         response.body = JSON.stringify(payload);
       }
       await route.fulfill(response);

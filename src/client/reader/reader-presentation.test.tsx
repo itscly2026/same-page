@@ -21,8 +21,8 @@ beforeEach(async () => {
   vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as CanvasRenderingContext2D);
-  vi.stubGlobal("fetch", vi.fn(async (input: string) => input.endsWith("/bootstrap")
-    ? Response.json({ state: "active", permissions: { capabilities: noCapabilities() }, score: {
+  vi.stubGlobal("fetch", vi.fn(async (input: string) => input.includes("/sync?")
+    ? Response.json({ state: "active", layers: { layers: [], sharedLayerRevision: 0, permissions: { canManageLayers: false } }, annotations: { cursor: 0, objects: [] }, permissions: { capabilities: noCapabilities() }, score: {
       id: "score", choirId: "presentation", fileName: "谱.pdf", updatedAt: 1,
       currentVersion: { id: version, versionNumber: 1, sizeBytes: 10, sha256: "a".repeat(64), etag: version, pageCount: 2, createdAt: 1 },
     } }) : new Response(null, { status: 503 })));

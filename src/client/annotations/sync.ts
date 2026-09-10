@@ -24,7 +24,7 @@ import {
 import { removeCachedPublications, cacheAnnotationLayers, readAnnotationLayers, applyPulledAnnotations, applyPushResults, prepareAnnotationPush } from "./annotation-state";
 
 type SyncResult = { pushed: number; pulled: number };
-type SyncOptions = { pull: false } | {
+type SyncOptions = { pull: false; signal?: AbortSignal } | {
   pull: true;
   push?: false;
   signal?: AbortSignal;
@@ -50,8 +50,8 @@ export async function syncAnnotations(workspace: LocalWorkspace, options: SyncOp
   const report = diagnosticScope();
   if (!options.pull) {
     return withScoreSyncLock(workspace, async locked => ({
-      pushed: await drainAnnotationOutbox(locked), pulled: 0,
-    }));
+      pushed: await drainAnnotationOutbox(locked, { signal: options.signal }), pulled: 0,
+    }), { signal: options.signal });
   }
   const requestedAt = ++refreshOrder;
   options.signal?.throwIfAborted();
@@ -191,6 +191,13 @@ export async function refreshLayerCapabilities(workspace: LocalWorkspace, signal
     return response;
   }, diagnostics);
   const { layers, sharedLayerRevision } = await diagnoseLocalOperation("sync-layers-response", () => parseDiagnosticResponse(layerResponse, annotationLayerListResponseSchema), diagnostics);
+  return applyLayerCapabilities(workspace, { layers, sharedLayerRevision }, preferenceVersion, signal, report);
+}
+
+export async function applyLayerCapabilities(workspace: LocalWorkspace,
+  { layers, sharedLayerRevision }: { layers: AnnotationLayerSummary[]; sharedLayerRevision: number },
+  preferenceVersion: Awaited<ReturnType<typeof readingPreferenceVersion>>, signal: AbortSignal, report = diagnosticScope()) {
+  const diagnostics = { report, signal };
   await assertLocalWorkspaceActive(workspace);
   signal.throwIfAborted();
   await diagnoseLocalOperation("sync-layers-identity", async () => {

@@ -23,7 +23,7 @@ export function operationForUrl(url: string): DiagnosticOperation {
   try {
     const path = new URL(url, "https://same-page.invalid").pathname;
     if (/^\/api\/auth(?:\/|$)/.test(path)) return "auth";
-    if (/\/annotations(?:\/|$)/.test(path)) return "sync";
+    if (/\/(?:annotations|sync)(?:\/|$)/.test(path)) return "sync";
     if (/\/(?:layers|shared-layers)(?:\/|$)/.test(path)) return "layers";
     if (/\/pdf$/.test(path)) return "pdf";
     if (/^\/api\/(?:choirs|guest)(?:\/|$)/.test(path)) return "drive";

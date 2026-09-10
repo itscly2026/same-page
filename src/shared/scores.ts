@@ -77,7 +77,7 @@ export const scoreCloudStateSchema = z.object({
   trashExpiresAt: z.number().optional(),
 });
 
-export const readerScoreBootstrapSchema = z.discriminatedUnion("state", [
+export const readerScoreStateSchema = z.discriminatedUnion("state", [
   z.object({
     state: z.literal("active"),
     score: scoreSummarySchema,
@@ -93,7 +93,7 @@ export type ScoreSummary = z.infer<typeof scoreSummarySchema>;
 export type TrashedScoreSummary = z.infer<typeof trashedScoreSummarySchema>;
 export type ScoreListResponse = z.infer<typeof scoreListResponseSchema>;
 export type DriveBootstrapResponse = z.infer<typeof driveBootstrapResponseSchema>;
-export type ReaderScoreBootstrap = z.infer<typeof readerScoreBootstrapSchema>;
+export type ReaderScoreState = z.infer<typeof readerScoreStateSchema>;
 
 export const versionPublicationRequestSchema = z.object({
   expectedRevision: z.number().int().positive(),

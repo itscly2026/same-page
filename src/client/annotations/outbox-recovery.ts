@@ -1,3 +1,4 @@
+import { syncReader } from "../reader/sync-reader";
 import Dexie, { type IndexableType } from "dexie";
 import { parseDiagnosticResponse, diagnosticFetch, diagnosticScope, diagnosticErrorType } from "../diagnostics/diagnostics";
 import { scoreCloudStateSchema } from "../../shared/scores";
@@ -202,6 +203,8 @@ async function recoverScope(
     const pushed = await pushPendingAnnotations(workspace, {
       maxOperations: OUTBOX_RECOVERY_LIMITS.operationsPerScope,
     });
+    // Accepted writes must remain accepted even if the following read fails.
+    if (pushed && pushed > 0) await syncReader(workspace, { push: false, fresh: true }).catch(() => undefined);
     return pushed === undefined ? result("busy") : result("pushed", pushed);
   } catch (error) {
     if (error instanceof LocalWorkspaceOwnerChangedError) {

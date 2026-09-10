@@ -1217,3 +1217,38 @@ it("keeps finite shared-slot grants stable and separates configuration from cont
   const { slot } = await created.json() as { slot: string };
   expect(await layerBySlot(fixture, member.cookie, slot)).toMatchObject({ canEdit: false });
 });
+
+it("reader sync combines current score, layers and cursor data with one authorization pass", async () => {
+  const fixture = await createFixture();
+  const sql: string[] = [];
+  const binding = new Proxy(env.DB, { get(target, key) {
+    if (key === "prepare") return (query: string) => { sql.push(query); return target.prepare(query); };
+    const value = Reflect.get(target, key);
+    return typeof value === "function" ? value.bind(target) : value;
+  } });
+  const context = createExecutionContext();
+  const response = await worker.fetch(new Request(`https://same-page.test/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/sync`, {
+    headers: { cookie: fixture.adminCookie },
+  }), { ...env, DB: binding }, context);
+  await waitOnExecutionContext(context);
+  expect(response.status).toBe(200);
+  const body = await response.json() as { state: string; score: { id: string }; layers: { layers: unknown[] }; annotations: { objects: unknown[]; hasMore: boolean } };
+  expect(body).toMatchObject({ state: "active", score: { id: fixture.scoreId }, annotations: { objects: [], hasMore: false } });
+  expect(body.layers.layers).toHaveLength(6);
+  expect(sql.filter(query => query.includes('from "session"'))).toHaveLength(1);
+  expect(sql.filter(query => query.includes('from "user"'))).toHaveLength(1);
+  expect(sql.some(query => query === "SELECT trashed_at FROM scores WHERE id = ? AND choir_id = ?")).toBe(false);
+});
+
+it("reader sync resets the cursor when the visible layer set changes", async () => {
+  const fixture = await createFixture();
+  const id = crypto.randomUUID();
+  expect((await push(fixture, [operation(id, fixture.layerId, 0, "早先的笔记")])).status).toBe(200);
+  const base = `/api/choirs/${fixture.choirId}/scores/${fixture.scoreId}/sync`;
+  const request = () => callWorker(`${base}?cursor=999999&layerIds=%5B%5D`, { headers: { cookie: fixture.adminCookie } });
+  expect(await (await request()).json()).toMatchObject({ annotations: { objects: [expect.objectContaining({ id })] } });
+  const invalid = await callWorker(`${base}?cursor=-1`, { headers: { cookie: fixture.adminCookie } });
+  expect(invalid.status).toBe(400);
+  await env.DB.prepare("UPDATE scores SET trashed_at = ?, trash_expires_at = ? WHERE id = ?").bind(Date.now(), Date.now() + 10000, fixture.scoreId).run();
+  expect(await (await request()).json()).toMatchObject({ state: "trashed" });
+});

@@ -39,7 +39,7 @@ it("repeated foreground refreshes share one pending confirmation", async () => {
   const session = new ReaderSession(workspace, null);
   const first = session.refresh();
   for (let index = 0; index < 20; index++) expect(session.refresh()).toBe(first);
-  expect(fetch).toHaveBeenCalledTimes(1);
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
   session.dispose();
 });
 
@@ -76,7 +76,7 @@ it("opens server page geometry in image mode without starting PDF.js", async () 
   };
   vi.stubGlobal("fetch", vi.fn(async (input: string) => {
     if (input.endsWith("/images")) return Response.json({ state: "ready", manifest });
-    if (input.endsWith("/bootstrap")) return Response.json({ state: "active", permissions: { capabilities: noCapabilities() }, score: { id: "image-score", choirId: "image-drive", fileName: "图片.pdf", updatedAt: 1,
+    if (input.includes("/sync?")) return Response.json({ state: "active", layers: { layers: [], sharedLayerRevision: 0, permissions: { canManageLayers: false } }, annotations: { cursor: 0, objects: [] }, permissions: { capabilities: noCapabilities() }, score: { id: "image-score", choirId: "image-drive", fileName: "图片.pdf", updatedAt: 1,
       currentVersion: { id: "image-version", versionNumber: 1, sizeBytes: 10, sha256: "a".repeat(64), etag: "test", pageCount: 1, createdAt: 1 } } });
     return new Response(null, { status: 503 });
   }));
@@ -142,7 +142,7 @@ it("requires confirmed identity before user-owned offline preparation and cancel
   const downloadState: { signal?: AbortSignal | null } = {};
   vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
     requested.push(input);
-    if (input.endsWith("/bootstrap")) return Response.json({ state: "active", permissions: { capabilities: noCapabilities() }, score: { id: "score", choirId: "auth-drive", fileName: "谱.pdf", updatedAt: 1,
+    if (input.includes("/sync?")) return Response.json({ state: "active", layers: { layers: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind: "personal", sharedSlot: null, name: "我的笔记", sortOrder: 0, subscribed: true, subscriptionSource: "personal", displayColor: "#dc2626", colorSource: "personal", adminDefaultColor: null, driveSubscribed: null, driveColorOverride: null, scoreSubscriptionOverride: null, canEdit: true }], sharedLayerRevision: 0, permissions: { canManageLayers: false } }, annotations: { cursor: 0, objects: [] }, permissions: { capabilities: noCapabilities() }, score: { id: "score", choirId: "auth-drive", fileName: "谱.pdf", updatedAt: 1,
       currentVersion: { id: "version", versionNumber: 1, sizeBytes: 10, sha256: "a".repeat(64), etag: "test", pageCount: 1, createdAt: 1 } } });
     if (input.endsWith("/pdf") && downloadState.signal !== undefined) {
       downloadState.signal = init?.signal;

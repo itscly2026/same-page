@@ -1,13 +1,15 @@
+import { isLocalExperience } from "../annotations/guest-notes";
 import { ReaderPresentation } from "./reader-presentation";
 import { offlinePreparationDescription } from "../offline/offline-score-status";
 import { offlineScoreSummary as scoreFromOffline } from "../offline/retained-scores";
 import { revokeOfflinePreparationIdentity, OfflinePreparation, type OfflinePreparationState } from "../offline/offline-score";
 import { liveQuery } from "dexie";
 import { captureOfflineFileFence } from "../offline/local-files";
-import { DiagnosticResponseError, diagnosticFetch, parseDiagnosticResponse, pdfFailureCategory, pdfFailureReason, pdfEngineVersion, recordFailure } from "../diagnostics/diagnostics";
-import { readerScoreBootstrapSchema, type ScoreSummary } from "../../shared/scores";
+import { DiagnosticResponseError, pdfFailureCategory, pdfFailureReason, pdfEngineVersion, recordFailure } from "../diagnostics/diagnostics";
+import { type ScoreSummary } from "../../shared/scores";
 import { restoreOfflineAnnotationSnapshot } from "../annotations/annotation-state";
-import { syncAnnotations } from "../annotations/sync";
+import { syncReader, subscribeReaderSync, ReaderSyncError } from "./sync-reader";
+import type { ReaderSyncResponse } from "../../shared/reader-sync";
 import { type OfflineScoreRecord } from "../platform/local-database";
 import { assertLocalWorkspaceActive, type LocalWorkspace } from "../platform/local-workspace";
 import { readOfflineFileBytes, findVerifiedOfflineScore } from "../offline/offline-score-verification";
@@ -90,7 +92,7 @@ export class ReaderSession {
   private automaticRecoveryUsed = false;
   private cloudInvalidated = false;
   private lookup: CloudLookup | null = null;
-  private layerTask: Promise<void> | null = null;
+  private unsubscribeSync?: () => void;
   private refreshTask: Promise<void> | null = null;
   private preparation: OfflinePreparation | null = null;
   private readonly identity: string;
@@ -114,7 +116,7 @@ export class ReaderSession {
     this.layerAbort.abort();
     this.releasePreparation();
     this.layerAbort = new AbortController();
-    if (this.started) void Promise.resolve(this.layerTask).then(() => this.refresh());
+    if (this.started) void Promise.resolve(this.refreshTask).then(() => this.refresh());
   };
   private layerAbort = new AbortController();
   getSnapshot = () => this.state;
@@ -165,10 +167,12 @@ export class ReaderSession {
       this.resolveFailure();
       this.prepareAutomaticOfflineCopy();
     });
-    void this.confirmCloud();
+    this.unsubscribeSync = subscribeReaderSync(this.workspace, result => this.applyCloud(result));
+    if (navigator.onLine) void this.refresh();
+    else void this.applyCloud({ state: "network-unavailable" });
   }
   private startCloudIfNeeded() {
-    if (!this.disposed && !this.source && (!this.cloudSettled || this.lookup?.state === "active" || this.confirmedVersion)) {
+    if (!this.disposed && !this.source && navigator.onLine && (!this.cloudSettled || this.lookup?.state === "active")) {
       this.openSource({ kind: "cloud", versionId: this.confirmedVersion ?? undefined });
     }
   }
@@ -186,14 +190,22 @@ export class ReaderSession {
     }, this.state.mode === "images" ? 180_000 : 45_000);
   }
   refresh = () => {
-    if (this.disposed || !navigator.onLine || globalThis.document.visibilityState === "hidden") return Promise.resolve();
+    if (this.disposed || !navigator.onLine) return Promise.resolve();
     this.refreshTask ??= this.confirmCloud().finally(() => { this.refreshTask = null; });
     return this.refreshTask;
   };
   private localMatches() { return !!this.state.offline && (!this.confirmedVersion || this.confirmedVersion === this.state.offline.versionId) && (this.state.offline.imageManifest ? "images" : "pdf") === this.state.mode; }
   private async confirmCloud() {
+    try { await syncReader(this.workspace, { push: false, signal: AbortSignal.any([this.abort.signal, this.layerAbort.signal]) }); }
+    catch (error) {
+      if (this.disposed || this.layerAbort.signal.aborted || this.state.cloudState !== "checking") return;
+      await this.applyCloud({ state: error instanceof ReaderSyncError
+        ? error.status === 401 || error.status === 403 ? "permission-denied" : error.status >= 500 ? "service-unavailable" : "missing"
+        : error instanceof DiagnosticResponseError ? "service-unavailable" : "network-unavailable" });
+    }
+  }
+  private async applyCloud(lookup: CloudLookup | ReaderSyncResponse) {
     const sequence = ++this.lookupSequence;
-    const lookup = await lookupScore(this.workspace, this.abort.signal);
     if (!await this.current() || sequence < this.appliedLookup) return;
     const unavailable = lookup.state === "network-unavailable" || lookup.state === "service-unavailable";
     if (!unavailable) this.appliedLookup = sequence;
@@ -214,7 +226,7 @@ export class ReaderSession {
       } else if ((confirmation !== "match" || this.source?.kind !== "cloud") && !(this.pdfFailed && !this.cloudInvalidated && this.source?.kind === "cloud" && (!this.source.versionId || this.source.versionId === this.confirmedVersion))) {
         this.openSource({ kind: "cloud", versionId: this.confirmedVersion });
       }
-      void this.retryLayers();
+      if ("layers" in lookup) this.publish({ capability: lookup.layers.layers.some(layer => layer.canEdit) || isLocalExperience(this.workspace) ? "ready" : "read-only" });
     } else {
       if (!unavailable) {
         this.releasePreparation();
@@ -226,7 +238,7 @@ export class ReaderSession {
       this.publish({ cloudState: lookup.state === "trashed" ? "trashed" : "unavailable", ...(lookup.state === "trashed" ? { capability: "trashed" as const } : {}) });
       if (lookup.state === "network-unavailable" && this.state.offline?.imageManifest && !this.state.document) this.publish({ mode: "images" });
       if (this.localMatches()) void this.openOffline(this.state.offline!);
-      if (lookup.state !== "trashed") void this.retryLayers();
+      this.publish({ capability: lookup.state === "trashed" ? "trashed" : this.state.offline ? this.state.capability : "failed" });
     }
     this.resolveFailure();
     this.prepareAutomaticOfflineCopy();
@@ -312,29 +324,7 @@ export class ReaderSession {
       this.publish({ status: "error", error: this.source?.kind === "offline" ? "本机离线副本无法解析，现有笔记仍然保留。" : "PDF 无法解析或文件暂时不可用。" });
     }
   }
-  retryLayers = () => {
-    if (this.disposed || this.getSnapshot().cloudState === "trashed") return Promise.resolve();
-    this.layerTask ??= this.prepareLayers().finally(() => { this.layerTask = null; });
-    return this.layerTask;
-  };
-  private async prepareLayers() {
-    if (this.state.capability !== "ready") this.publish({ capability: "preparing" });
-    let layersApplied = false;
-    try {
-      if (this.workspace.ownerKey.startsWith("user:") && this.workspace.ownerKey !== `user:${this.authenticatedUserId ?? ""}`) throw new Error("layer_identity_mismatch");
-      await syncAnnotations(this.workspace, {
-        pull: true, freshLayers: false, signal: AbortSignal.any([this.abort.signal, this.layerAbort.signal]),
-        onLayersApplied: layers => {
-          if (this.disposed || this.state.cloudState === "trashed") return;
-          layersApplied = true;
-          this.publish({ capability: layers.some(layer => layer.canEdit) ? "ready" : "read-only" });
-        },
-      });
-    } catch {
-      if (layersApplied || !await this.current() || this.getSnapshot().cloudState === "trashed") return;
-      this.publish({ capability: this.state.offline ? (this.state.offline.annotationSnapshot.layers.some((layer) => layer.canEdit) ? "ready" : "read-only") : "failed" });
-    }
-  }
+  retryLayers = () => this.refresh();
   private releasePreparation() {
     this.preparation?.dispose();
     this.preparation = null;
@@ -435,20 +425,12 @@ export class ReaderSession {
     this.retained?.lease?.release();
     this.retained = null;
     this.presentation.dispose();
+    this.unsubscribeSync?.();
     this.listeners.clear();
   }
 }
 function scorePath(workspace: LocalWorkspace) { return `/api/choirs/${encodeURIComponent(workspace.choirId)}/scores/${encodeURIComponent(workspace.scoreId)}`; }
 function cloudPdfSource(workspace: LocalWorkspace, versionId?: string) { return versionId ? `${scorePath(workspace)}/versions/${encodeURIComponent(versionId)}/pdf` : `${scorePath(workspace)}/pdf`; }
-async function lookupScore(workspace: LocalWorkspace, signal: AbortSignal): Promise<CloudLookup> {
-  try {
-    const response = await diagnosticFetch(`${scorePath(workspace)}/bootstrap`, { signal });
-    if (response.status === 401 || response.status === 403) return { state: "permission-denied" };
-    if (!response.ok) return { state: response.status >= 500 ? "service-unavailable" : "missing" };
-    const body = await parseDiagnosticResponse(response, readerScoreBootstrapSchema);
-    return body.state === "active" ? { state: "active", score: body.score } : { state: "trashed" };
-  } catch (error) { return { state: error instanceof DiagnosticResponseError ? "service-unavailable" : "network-unavailable" }; }
-}
 function failureMessage(state: Exclude<CloudLookup["state"], "active">) {
   return { trashed: "这份乐谱已移入回收站，当前设备没有可用的离线副本。", "permission-denied": "当前账号没有访问这份乐谱的权限。请返回云盘确认成员关系。", "network-unavailable": "网络暂时不可用，且当前设备没有这份乐谱的离线副本。", "service-unavailable": "服务暂时不可用或返回内容异常，请稍后重试；本机内容仍然保留。", missing: "这份乐谱不存在或已经被永久移除。" }[state];
 }
