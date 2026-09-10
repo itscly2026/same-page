@@ -151,3 +151,21 @@ it("unmount and disposal reject late display events", async () => {
   session.presentation.ready(source.document, 1);
   expect(session.presentation.hasPresented(source.document)).toBe(false);
 });
+
+it("a failed replacement restores the previously presented document and its visible state", async () => {
+  const previous = pdf();
+  const replacement = pdf();
+  replacement.renderPage.mockImplementation(() => ({ promise: Promise.reject(new Error("draw failed")), cancel: vi.fn() }));
+  const session = await open(previous.document);
+  render(<Scene session={session} />);
+  await waitFor(() => expect(previous.finishes).toHaveLength(1));
+  await act(async () => previous.finishes[0]());
+  await waitFor(() => expect(status()).toHaveTextContent("visible"));
+  version = "v2";
+  supply(replacement.document);
+  await act(async () => { await session.refresh(); });
+  await waitFor(() => expect(replacement.renderPage).toHaveBeenCalled());
+  await waitFor(() => expect(session.getSnapshot()).toMatchObject({ document: previous.document, mode: "pdf", modeMessage: "显示恢复未完成，已保留原谱面。" }));
+  expect(status()).toHaveTextContent("visible");
+  expect(session.presentation.hasPresented(replacement.document)).toBe(false);
+});

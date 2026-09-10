@@ -121,8 +121,8 @@ export class ReaderSession {
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private publish(patch: Partial<ReaderSessionSnapshot>) {
     if (this.disposed) return;
-    if ("document" in patch) this.presentation.load(patch.document ?? null);
     this.state = { ...this.state, ...patch };
+    if ("document" in patch) this.presentation.load(patch.document ?? null);
     this.listeners.forEach((listener) => listener());
   }
   private async current() { return !this.disposed && await assertLocalWorkspaceActive(this.workspace).then(() => true, () => false) && !this.disposed; }
