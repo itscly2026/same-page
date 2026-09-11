@@ -546,8 +546,9 @@ function AnnotatedPdfPage({
       <Suspense fallback={null}>
         <AnnotationOverlay
           {...annotationProps}
-          key={`${pageNumber}:${annotationProps.editing ? `edit:${annotationProps.activeLayerId}:${annotationProps.tool}` : "read"}`}
+          key={`${pageNumber}:${annotationProps.editing ? `edit:${annotationProps.activeLayerId}` : "read"}`}
           pageNumber={pageNumber}
+          pageAspectRatio={resolvedAspectRatio}
         />
       </Suspense>
     </div>
