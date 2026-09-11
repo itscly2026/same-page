@@ -6,7 +6,7 @@ import { PDFDocument } from "pdf-lib";
 import { startVisualServer } from "./setup.mjs";
 import { createVisualFixtureSession } from "./fixtures.mjs";
 
-for (const [name, engine] of Object.entries({ chromium, webkit })) test(`${name}: single-coat and separate-stroke overlap match SVG and exported PDF for round and chisel nibs`, async t => {
+for (const [name, engine] of Object.entries({ chromium, webkit })) test(`${name}: same-stroke and separate-stroke overlap match SVG and exported PDF for round and chisel nibs`, async t => {
   const app = await startVisualServer({ script: "dev" }); const browser = await engine.launch();
   t.after(async () => { await browser.close(); await app.stop(); });
   const page = await browser.newPage(); await page.goto(app.origin);
@@ -36,7 +36,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) test(`${name}
   }, [...await pdf.save()]);
   for (const row of evidence) for (const target of ["screen","exported"]) {
     assert.ok(Math.abs(row[target].single[2]-179)<6, JSON.stringify(row));
-    assert.ok(Math.abs(row[target].cross[2]-179)<6, JSON.stringify(row));
+    assert.ok(Math.abs(row[target].cross[2]-125)<6, JSON.stringify(row));
     assert.ok(Math.abs(row[target].separate[2]-125)<6, JSON.stringify(row));
   }
   await mkdir("artifacts/editor-preview",{recursive:true});

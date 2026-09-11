@@ -38,7 +38,6 @@ import { Link, useParams } from "react-router-dom";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import type {
   AnnotationOverlayInteraction,
-  AnnotationTool,
 } from "../annotations/annotation-overlay";
 import {
   cleanupUncreatedDeleteConflicts,
@@ -84,6 +83,7 @@ import { DiagnosticReportDialog, DiagnosticReportModal } from "../diagnostics/di
 
 type ReaderPanel = "layers";
 
+import { useLastTool } from "../reader/use-last-tool";
 import { useToolStyle } from "../reader/use-tool-style";
 
 const ReaderEditingControls = lazy(() =>
@@ -129,7 +129,7 @@ function ReaderPageContent() {
   const [editingEditor, setEditingEditor] = useState<AnnotationEditor | null>(null);
   const [annotationInteraction, setAnnotationInteraction] =
     useState<AnnotationOverlayInteraction>("idle");
-  const [tool, setTool] = useState<AnnotationTool>("text");
+  const { tool, setTool } = useLastTool(resolvedWorkspace?.ownerKey ?? `user:${identity.localUserId ?? "guest"}`);
   const { style: toolStyle, setStyle: setToolStyle } = useToolStyle(resolvedWorkspace?.ownerKey ?? `user:${identity.localUserId ?? "guest"}`, tool);
   const { color: toolColor, setColor: setToolColor } = useToolColor(resolvedWorkspace?.ownerKey ?? `user:${identity.localUserId ?? "guest"}`, tool);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
@@ -315,7 +315,6 @@ function ReaderPageContent() {
     setReaderPanel(null);
     setActiveLayerId(editableLayer.id);
     writeStringPreference(preferenceKey, editableLayer.id);
-    setTool("text");
     setEditingEditor(editor);
 
   };

@@ -87,6 +87,7 @@ interface TextSelection {
 export function AnnotationOverlay({
   editor,
   pageNumber,
+  pageAspectRatio,
   layers,
   annotations,
   editing,
@@ -98,6 +99,7 @@ export function AnnotationOverlay({
 }: {
   editor: AnnotationEditor | null;
   pageNumber: number;
+  pageAspectRatio?: number;
   layers: AnnotationLayerSummary[];
   annotations: LocalAnnotationRecord[];
   editing: boolean;
@@ -111,7 +113,8 @@ export function AnnotationOverlay({
   const eraserGradientId = useId();
   const [pageWidth, setPageWidth] = useState(1000);
   const [draftId, setDraftId] = useState<string | null>(null);
-  const [aspectRatio, setAspectRatio] = useState(1);
+  const [measuredAspectRatio, setAspectRatio] = useState(1);
+  const aspectRatio = pageAspectRatio ?? measuredAspectRatio;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hover, setHover] = useState<Extract<AnnotationPayload, { kind: "ink" }>["points"][number] | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -144,6 +147,26 @@ export function AnnotationOverlay({
     id: string;
     payload: MovablePayload;
   } | null>(null);
+  // Keep released transforms visible until the local projection takes over.
+  // Failed writes stay in the editor's retry queue and retain this preview.
+  const [releasedTransforms, setReleasedTransforms] = useState<Map<string, { payload: MovablePayload; revision: number }>>(() => new Map());
+  const projectedTransforms = new Map([...releasedTransforms].map(([id, released]) => {
+    const committed = editor?.getCommittedObject(id);
+    // A later undo/redo can commit before the live query delivers the dragged
+    // position. Follow that newer intent instead of waiting for a skipped value.
+    const payload = committed && committed.revision > released.revision
+      ? committed.input.payload : released.payload;
+    return [id, payload] as const;
+  }));
+  const acknowledged = [...projectedTransforms].filter(([id, payload]) => {
+    const record = annotations.find(annotation => annotation.id === id);
+    return payload === null ? !record || record.deleted : JSON.stringify(record?.payload) === JSON.stringify(payload);
+  }).map(([id]) => id);
+  if (acknowledged.length) {
+    const next = new Map(releasedTransforms);
+    acknowledged.forEach(id => next.delete(id));
+    setReleasedTransforms(next);
+  }
   const [transformingObject, setTransformingObject] = useState(false);
   const interactionRef = useRef<AnnotationOverlayInteraction>("idle");
   const [deleteActive, setDeleteActive] = useState(false);
@@ -168,7 +191,9 @@ export function AnnotationOverlay({
   const editorFontScaleProgress =
     (editorFontScale - MIN_TEXT_FONT_SCALE) /
     (MAX_TEXT_FONT_SCALE - MIN_TEXT_FONT_SCALE);
-  const pageAnnotations = annotations.filter(
+  const pageAnnotations = annotations.map(annotation => {
+    return projectedTransforms.has(annotation.id) ? { ...annotation, payload: projectedTransforms.get(annotation.id) ?? null } : annotation;
+  }).filter(
     (annotation) =>
       annotation.payload?.pageNumber === pageNumber &&
       visibleLayerIds.has(annotation.layerId),
@@ -328,7 +353,15 @@ export function AnnotationOverlay({
 
   const cancelTextEditor = () => {
     if (textSavingRef.current) return;
-    if (textEditor) editor?.discard(textEditor.id);
+    if (textEditor && editor?.discard(textEditor.id)) {
+      // Discard can retire a failed drag of this same object as well as text.
+      // Its released preview must not outlive the intent it represents.
+      setReleasedTransforms(previous => {
+        const next = new Map(previous);
+        next.delete(textEditor.id);
+        return next;
+      });
+    }
     closeTextEditor();
   };
 
@@ -524,6 +557,8 @@ export function AnnotationOverlay({
       });
       return;
     }
+    const revision = editor?.getEditRevision() ?? 0;
+    if (!shouldDelete) setReleasedTransforms(previous => new Map(previous).set(transform.id, { payload: transform.preview, revision }));
     void editor?.persist({
       id: transform.id,
       layerId: transform.layerId,
@@ -728,6 +763,7 @@ export function AnnotationOverlay({
   };
 
   const cancelForNavigation = useEffectEvent(() => {
+    setHover(null);
     pendingTextPlacement.current = null;
     cancelObjectTransform();
     const id = currentStrokeId.current;
@@ -754,6 +790,13 @@ export function AnnotationOverlay({
     viewport?.addEventListener("reader-navigation-start", cancel);
     return () => viewport?.removeEventListener("reader-navigation-start", cancel);
   }, []);
+  const previousTool = useRef(tool);
+  useLayoutEffect(() => {
+    if (previousTool.current === tool) return;
+    previousTool.current = tool;
+    // Retire the previous pointer interaction before the new tool can paint.
+    cancelForNavigation();
+  }, [tool]);
 
   return (
     <>
@@ -959,7 +1002,6 @@ export function AnnotationOverlay({
             readOnly={textSaving || finishing}
             ref={textInputRef}
             inputMode="text"
-            placeholder="点按输入文字"
             maxLength={1000}
             rows={2}
             style={{

@@ -36,6 +36,7 @@ it("serializes consecutive writes and history operations before allowing complet
   const b = editor.persist(text("B"));
   const undo = editor.undo("personal");
   expect(editor.getSnapshot()).toBe("saving");
+  expect(editor.discard("note")).toBe(false);
   expect(await Promise.all([a, b, undo])).toEqual([true, true, true]);
   expect(await savedText()).toMatchObject({ text: "A" });
   expect(await editor.redo("personal")).toBe(true);
@@ -83,7 +84,8 @@ it("retries one failed stroke as a single undoable change including its latest p
 it("cancels failed text without resurrecting it on retry or recording phantom history", async () => {
   vi.spyOn(localDatabase.annotations, "put").mockRejectedValueOnce(new Error("storage unavailable"));
   expect(await editor.persist(text("cancel me"))).toBe(false);
-  editor.discard("note");
+  expect(editor.discard("note")).toBe(true);
+  expect(editor.discard("note")).toBe(false);
   expect(editor.getSnapshot()).toBe("idle");
   expect(await editor.retry()).toBe(true);
   expect(await savedText()).toBeUndefined();

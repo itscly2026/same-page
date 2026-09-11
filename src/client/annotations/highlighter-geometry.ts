@@ -26,7 +26,7 @@ function footprint(pose: Pose, round: boolean): Pair[] {
 const rounded = (value: number) => Math.round(value * 1e8) / 1e8;
 const asMulti = (ring: Pair[]): MultiPolygon => [[ring]];
 
-type State = { key: string; count: number; last: Point; pose: Pose; nib: Pair[]; current: MultiPolygon };
+type State = { key: string; count: number; last: Point; pose: Pose; nib: Pair[]; coats: MultiPolygon[] };
 // Retain only the most recent prefix per stroke. React's live snapshots share
 // immutable point objects; completed/edited snapshots naturally invalidate it.
 const cache = new WeakMap<Point, State>();
@@ -37,10 +37,10 @@ export function highlighterPasses(ink: Ink, aspectRatio: number): MultiPolygon[]
   const cached = cache.get(first);
   let state: State;
   if (cached?.key === key && cached.count <= ink.points.length && cached.last === ink.points[cached.count - 1]) {
-    state = { ...cached };
+    state = { ...cached, coats: [...cached.coats] };
   } else {
     const pose = highlighterPose(ink, first, aspectRatio), nib = footprint(pose, ink.nib === "round");
-    state = { key, count: 1, last: first, pose, nib, current: asMulti(nib) };
+    state = { key, count: 1, last: first, pose, nib, coats: [asMulti(nib)] };
   }
   for (let index = state.count; index < ink.points.length; index++) {
     const point = ink.points[index]!, end = highlighterPose(ink, point, aspectRatio), start = state.pose;
@@ -53,10 +53,17 @@ export function highlighterPasses(ink: Ink, aspectRatio: number): MultiPolygon[]
       const pose = { x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t, angle: start.angle + delta * t, length: start.length + (end.length - start.length) * t, thickness: start.thickness + (end.thickness - start.thickness) * t };
       const nib = footprint(pose, ink.nib === "round");
       const hull = polygonHull([...state.nib, ...nib])!;
-      // One contact gesture deposits one translucent coat. Union its swept
-      // footprint so pauses, crossings and sample density cannot make seams.
-      // A later stroke is a separate annotation and adds another coat.
-      state.current = clipping.union(state.current, asMulti(hull));
+      // Only newly entered contact area deposits ink. Adjacent samples share
+      // the preceding nib, so density and pauses add no coat; returning after
+      // leaving an area does. Each nested region represents one opacity pass.
+      let deposit = clipping.difference(asMulti(hull), asMulti(state.nib));
+      for (let coat = 0; deposit.length; coat++) {
+        const previous = state.coats[coat];
+        if (!previous) { state.coats.push(deposit); break; }
+        const overlap = clipping.intersection(previous, deposit);
+        state.coats[coat] = clipping.union(previous, deposit);
+        deposit = overlap;
+      }
       state.nib = nib;
     }
     state.pose = end;
@@ -64,7 +71,7 @@ export function highlighterPasses(ink: Ink, aspectRatio: number): MultiPolygon[]
     state.last = point;
   }
   cache.set(first, state);
-  return [state.current];
+  return state.coats;
 }
 export function highlighterNibPath(ink: Pick<Ink, "nib" | "strokeWidth">, point: Point, aspectRatio: number): string {
   const nib = footprint(highlighterPose(ink, point, aspectRatio), ink.nib === "round");

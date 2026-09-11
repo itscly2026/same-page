@@ -86,6 +86,7 @@ describe("AnnotationOverlay", () => {
     fireEvent.pointerDown(overlay, { pointerId: 1, pointerType: "touch", clientX: 20, clientY: 30 });
     fireEvent.pointerUp(overlay, { pointerId: 1, pointerType: "touch", clientX: 20, clientY: 30 });
     expect(screen.getByLabelText("笔记文本")).toHaveFocus();
+    expect(screen.getByLabelText("笔记文本")).not.toHaveAttribute("placeholder");
     expect(screen.getByLabelText("笔记文本")).not.toBeDisabled();
   });
 
@@ -562,6 +563,8 @@ describe("AnnotationOverlay", () => {
     expect(Number.parseFloat(button.style.left)).toBeCloseTo(60);
     expect(Number.parseFloat(button.style.top)).toBeCloseTo(70);
     fireEvent.pointerUp(button, { pointerId: 3, clientX: 60, clientY: 70 });
+    expect(Number.parseFloat(button.style.left)).toBeCloseTo(60);
+    expect(Number.parseFloat(button.style.top)).toBeCloseTo(70);
 
     await waitFor(async () => {
       const stored = await localDatabase.annotations.get(text.key);
@@ -573,6 +576,96 @@ describe("AnnotationOverlay", () => {
     });
     expect(await editor.undo(activeLayerId)).toBe(true);
     expect(await editor.undo(activeLayerId)).toBe(false);
+  });
+
+  it("keeps consecutive released transforms through a failed write, retry, projection and undo", async () => {
+    const text = annotation("text-1", activeLayerId, textPayload("连续拖动"));
+    await localDatabase.annotations.put(text);
+    const view = renderOverlay([text], "text");
+    const button = screen.getByRole("button", { name: "连续拖动" });
+    mockBounds(button.parentElement!); mockTextBounds(button);
+    const write = vi.spyOn(localDatabase.annotations, "put").mockRejectedValueOnce(new Error("storage failed"));
+    fireEvent.pointerDown(button, { pointerId: 3, clientX: 20, clientY: 30 });
+    fireEvent.pointerMove(button, { pointerId: 3, clientX: 40, clientY: 50 });
+    fireEvent.pointerUp(button, { pointerId: 3, clientX: 40, clientY: 50 });
+    await waitFor(() => expect(editor.getSnapshot()).toBe("failed"));
+    expect(Number.parseFloat(button.style.left)).toBeCloseTo(40);
+    write.mockRestore();
+    await act(async () => { expect(await editor.retry()).toBe(true); });
+    expect(Number.parseFloat(button.style.left)).toBeCloseTo(40);
+    // The next gesture starts before the asynchronous local projection arrives.
+    fireEvent.pointerDown(button, { pointerId: 4, clientX: 40, clientY: 50 });
+    fireEvent.pointerMove(button, { pointerId: 4, clientX: 60, clientY: 70 });
+    fireEvent.pointerUp(button, { pointerId: 4, clientX: 60, clientY: 70 });
+    expect(Number.parseFloat(button.style.left)).toBeCloseTo(60);
+    await waitFor(() => expect(editor.getSnapshot()).toBe("idle"));
+    const project = async () => {
+      const saved = (await localDatabase.annotations.get(text.key))!;
+      view.rerender(<AnnotationOverlay editor={editor} pageNumber={1} layers={layers} annotations={[saved]} editing tool="text" activeLayerId={activeLayerId} />);
+    };
+    await project();
+    expect(Number.parseFloat(button.style.left)).toBeCloseTo(60);
+    await act(async () => { expect(await editor.undo(activeLayerId)).toBe(true); });
+    await project();
+    expect(Number.parseFloat(button.style.left)).toBeCloseTo(40);
+    await act(async () => { expect(await editor.undo(activeLayerId)).toBe(true); });
+    await project();
+    expect(Number.parseFloat(button.style.left)).toBeCloseTo(20);
+    expect(await editor.undo(activeLayerId)).toBe(false);
+  });
+
+  it("retires a discarded failed drag preview when canceling its text composer", async () => {
+    const text = annotation("text-1", activeLayerId, textPayload("取消失败拖动"));
+    await localDatabase.annotations.put(text);
+    renderOverlay([text], "text");
+    const button = screen.getByRole("button", { name: "取消失败拖动" });
+    mockBounds(button.parentElement!); mockTextBounds(button);
+    const write = vi.spyOn(localDatabase.annotations, "put").mockRejectedValueOnce(new Error("storage failed"));
+    fireEvent.pointerDown(button, { pointerId: 3, clientX: 20, clientY: 30 });
+    fireEvent.pointerMove(button, { pointerId: 3, clientX: 40, clientY: 50 });
+    fireEvent.pointerUp(button, { pointerId: 3, clientX: 40, clientY: 50 });
+    await waitFor(() => expect(editor.getSnapshot()).toBe("failed"));
+    expect(Number.parseFloat(button.style.left)).toBeCloseTo(40);
+    write.mockRestore();
+    openExistingText("取消失败拖动");
+    fireEvent.keyDown(screen.getByLabelText("笔记文本"), { key: "Escape" });
+    expect(screen.queryByLabelText("笔记文本")).not.toBeInTheDocument();
+    expect(editor.getSnapshot()).toBe("idle");
+    expect(Number.parseFloat(button.style.left)).toBeCloseTo(20);
+    expect((await localDatabase.annotations.get(text.key))?.payload).toEqual(text.payload);
+    await act(async () => { expect(await editor.finish()).toBe("local-saved"); });
+    expect((await localDatabase.annotations.get(text.key))?.payload).toEqual(text.payload);
+  });
+
+  it("shows undo even if the local query skips the released drag projection", async () => {
+    const text = annotation("text-1", activeLayerId, textPayload("快速撤销"));
+    await localDatabase.annotations.put(text);
+    const view = renderOverlay([text], "text");
+    const button = screen.getByRole("button", { name: "快速撤销" });
+    mockBounds(button.parentElement!); mockTextBounds(button);
+    fireEvent.pointerDown(button, { pointerId: 3, clientX: 20, clientY: 30 });
+    fireEvent.pointerMove(button, { pointerId: 3, clientX: 60, clientY: 70 });
+    fireEvent.pointerUp(button, { pointerId: 3, clientX: 60, clientY: 70 });
+    await waitFor(() => expect(editor.getSnapshot()).toBe("idle"));
+    expect(Number.parseFloat(button.style.left)).toBeCloseTo(60);
+    await act(async () => { expect(await editor.undo(activeLayerId)).toBe(true); });
+    const saved = (await localDatabase.annotations.get(text.key))!;
+    view.rerender(<AnnotationOverlay editor={editor} pageNumber={1} layers={layers} annotations={[saved]} editing tool="text" activeLayerId={activeLayerId} />);
+    expect(Number.parseFloat(button.style.left)).toBeCloseTo(20);
+  });
+
+  it("cancels an unfinished stroke on tool change without remounting saved ink", async () => {
+    const saved = annotation("ink-saved", activeLayerId, { kind: "ink", pageNumber: 1, brush: "highlighter", nib: "chisel", pressureMode: "uniform", strokeWidth: .02, points: [{ x: .1, y: .1 }, { x: .2, y: .2 }] });
+    const view = renderOverlay([saved], "highlighter");
+    const overlay = screen.getByLabelText("第 1 页笔记层"); mockBounds(overlay);
+    const path = overlay.querySelector("path[data-ink-stroke]");
+    fireEvent.pointerDown(overlay, { pointerId: 4, clientX: 30, clientY: 40 });
+    fireEvent.pointerMove(overlay, { pointerId: 4, clientX: 50, clientY: 60 });
+    view.rerender(<AnnotationOverlay editor={editor} pageNumber={1} layers={layers} annotations={[saved]} editing tool="eraser" activeLayerId={activeLayerId} />);
+    expect(overlay.querySelector("path[data-ink-stroke]")).toBe(path);
+    await waitFor(async () => expect((await localDatabase.annotations.toArray()).filter(note => !note.deleted)).toHaveLength(0));
+    await act(async () => { await editor.finish(); });
+    expect((await localDatabase.annotations.toArray()).filter(note => !note.deleted)).toHaveLength(0);
   });
 
   it.each(["text", "rectangle", "ellipse"] as const)("moves and trash-deletes shapes with the %s tool", async tool => {

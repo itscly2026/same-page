@@ -10,7 +10,7 @@ export type PersistenceState = "idle" | "saving" | "failed" | "finishing";
 type HistoryEntry = { before: DraftInput; after: DraftInput };
 type Edit = { kind: "write"; input: DraftInput; replaceHistory: boolean }
   | { kind: "undo" | "redo"; layerId: string };
-type PendingEdit = { edit: Edit; complete: (saved: boolean) => void };
+type PendingEdit = { revision: number; edit: Edit; complete: (saved: boolean) => void };
 
 // One mounted reader owns one editor. All local edits, including history, cross
 // this queue; durable draft/OCC semantics remain in annotation-state.
@@ -27,6 +27,9 @@ export class AnnotationEditor {
   private completion: Promise<EditingCompletion> | null = null;
   private lifetime = new AbortController();
   private editRevision = 0;
+  private readonly committedObjects = new Map<string, { revision: number; input: DraftInput }>();
+  getEditRevision = () => this.editRevision;
+  getCommittedObject = (id: string) => this.committedObjects.get(id);
 
   constructor(workspace: LocalWorkspace) {
     this.workspace = captureLocalWorkspaceSession(workspace);
@@ -120,6 +123,7 @@ export class AnnotationEditor {
     this.running = false;
     for (const task of this.pending) task.complete(false);
     this.pending = [];
+    this.committedObjects.clear();
     this.undoByLayer.clear();
     this.redoByLayer.clear();
     this.publish("idle");
@@ -132,13 +136,16 @@ export class AnnotationEditor {
   redo(layerId: string) { return this.enqueue({ kind: "redo", layerId }); }
 
   discard(id: string) {
-    if (this.running) return;
+    if (this.running) return false;
+    let discarded = false;
     this.pending = this.pending.filter(task => {
       if (task.edit.kind !== "write" || task.edit.input.id !== id) return true;
       task.complete(false);
+      discarded = true;
       return false;
     });
     this.publish(this.pending.length ? "failed" : "idle");
+    return discarded;
   }
 
   retry() {
@@ -157,9 +164,10 @@ export class AnnotationEditor {
       const previous = !this.running ? this.pending.at(-1) : undefined;
       if (previous?.edit.kind === "write" && edit.kind === "write" && previous.edit.input.id === edit.input.id) {
         previous.complete(false);
+        previous.revision = this.editRevision;
         previous.edit = { ...edit, replaceHistory: previous.edit.replaceHistory && edit.replaceHistory };
         previous.complete = resolve;
-      } else this.pending.push({ edit, complete: resolve });
+      } else this.pending.push({ revision: this.editRevision, edit, complete: resolve });
     });
     void this.drain();
     return completion;
@@ -173,7 +181,7 @@ export class AnnotationEditor {
     while (this.pending.length && generation === this.generation) {
       const task = this.pending[0];
       try {
-        const changed = await this.apply(task.edit, generation);
+        const changed = await this.apply(task.edit, generation, task.revision);
         if (generation !== this.generation) return;
         this.pending.shift();
         task.complete(changed);
@@ -191,7 +199,7 @@ export class AnnotationEditor {
     }
   }
 
-  private async apply(edit: Edit, generation: number) {
+  private async apply(edit: Edit, generation: number, revision: number) {
     const workspace = await this.workspace;
     if (generation !== this.generation) return false;
     if (edit.kind === "write") {
@@ -212,6 +220,7 @@ export class AnnotationEditor {
       } else if (!(before.deleted && input.deleted)) stack.push({ before, after: input });
       this.undoByLayer.set(input.layerId, stack);
       this.redoByLayer.delete(input.layerId);
+      this.committedObjects.set(input.id, { revision, input });
       return true;
     }
     const source = edit.kind === "undo" ? this.undoByLayer : this.redoByLayer;
@@ -221,6 +230,8 @@ export class AnnotationEditor {
     if (!entry) return false;
     await saveAnnotationDraft(workspace, edit.kind === "undo" ? entry.before : entry.after);
     if (generation !== this.generation) return false;
+    const input = edit.kind === "undo" ? entry.before : entry.after;
+    this.committedObjects.set(input.id, { revision, input });
     stack.pop();
     const target = destination.get(edit.layerId) ?? [];
     target.push(entry);
