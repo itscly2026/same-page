@@ -19,3 +19,35 @@ SELECT * FROM drive_platform_limits;
 ```
 
 此统计不包括笔记、R2 待清理孤立对象；实际基础设施用量需同时查看 R2 / D1 指标。迁移不修改存量 storage_limit_bytes。
+
+## 调整指定云盘的额度
+
+目前通过运维修改 D1 的 `choirs` 记录，产品界面没有额度编辑入口。
+按云盘 ID 定位，先记录原额度，再更新并回读同一条记录；避免按重名的云盘名称更新。
+查询时仅选取以下字段，不输出邀请码相关字段。
+
+```sql
+SELECT id, name, plan, storage_used_bytes, storage_limit_bytes, member_limit, score_limit
+FROM choirs WHERE id = '<云盘 ID>' AND purged_at IS NULL;
+
+-- 示例：容量调为 1 GiB、有效成员上限调为 100；仅在原额度不更高时执行。
+UPDATE choirs
+SET storage_limit_bytes = 1073741824, member_limit = 100
+WHERE id = '<云盘 ID>' AND purged_at IS NULL
+  AND storage_limit_bytes <= 1073741824
+  AND member_limit IS NOT NULL AND member_limit <= 100;
+
+SELECT id, name, plan, storage_used_bytes, storage_limit_bytes, member_limit, score_limit
+FROM choirs WHERE id = '<云盘 ID>' AND purged_at IS NULL;
+```
+
+只调整容量或成员数时，只更新对应字段并保留对应的额度条件。
+`member_limit` 统计有效成员关系（包含拥有者），`score_limit` 限制当前乐谱数；
+这两个字段为 `NULL` 表示不设该项上限，正整数表示明确上限。
+`storage_limit_bytes` 必须是正整数，不能用 `NULL` 表示无限容量。
+容量仍包括当前、候选、回收站及保留期内历史 PDF。
+
+单盘提额无需更改 `plan`，后续请求直接按数据库额度执行，无需重新部署。
+保留 `plan = 'free'` 时，仍受免费云盘的平台总容量、每人拥有数等限制；
+调整 `plan` 是另一个运营决定，不应作为单盘提额的附带操作。
+单 PDF 大小和页数限制也独立于云盘总容量。

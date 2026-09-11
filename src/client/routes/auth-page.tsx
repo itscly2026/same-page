@@ -1,3 +1,4 @@
+import { useAuthInputVisibility } from "../auth/use-auth-input-visibility";
 import { loginReturn } from "../auth/login-return";
 import { joinDrive, resumeDriveEntry, cancelDriveEntry, type DriveEntryResult } from "../auth/drive-entry";
 import { invalidateSettingsLifetime, useSettingsLifetime, captureSettingsLifetime } from "../settings/use-settings-lifetime";
@@ -50,6 +51,7 @@ type AuthView =
 const SOCIAL_EMAIL_DRAFT_KEY = "same-page:social-auth-email-draft";
 
 export default function AuthPage() {
+  const authPageRef = useAuthInputVisibility();
   const navigate = useNavigate();
   const location = useLocation();
   const initialOauthResult = new URLSearchParams(location.search).get("oauth");
@@ -768,7 +770,7 @@ export default function AuthPage() {
   })();
 
   return (
-    <div className="app-page auth-page">
+    <div ref={authPageRef} className="app-page auth-page">
       <AppHeader
         actions={
           <Button className="header-action" onPress={() => void cancelEntry()}>{returnTarget ? "继续只读浏览" : "返回首页"}</Button>

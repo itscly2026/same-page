@@ -2,12 +2,9 @@
 
 ### Development stage
 
-This repository is in rapid greenfield development. Optimize for the cleanest
-current domain model and module interfaces; breaking changes are allowed. When
-a design changes, update every caller, test, migration, and document together,
-and delete the superseded path. Add compatibility layers, legacy request
-shapes, deprecation paths, or migration bridges only when the user explicitly
-requires them.
+This product is in active use. Preserve existing user data and deployed-client
+compatibility when changing schemas, APIs, or local storage. Plan safe migrations
+and rollout transitions alongside changes to callers, tests, and documentation.
 
 ### Issue tracker
 
