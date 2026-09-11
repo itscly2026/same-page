@@ -59,6 +59,7 @@ describe("AuthPage", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+    vi.restoreAllMocks();
     sessionStorage.clear();
   });
 
@@ -85,6 +86,64 @@ describe("AuthPage", () => {
     fireEvent.change(await screen.findByLabelText("密码"), { target: { value: "correct horse battery staple" } });
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
     expect(await screen.findByLabelText("current route")).toHaveTextContent("/choirs/drive/scores/score");
+  });
+
+  it("does not recover a stale input after focus leaves auth or the page unmounts", async () => {
+    mockFirstPasswordFlow();
+    const viewport = Object.assign(new EventTarget(), { offsetTop: 0, height: 200 });
+    vi.stubGlobal("visualViewport", viewport);
+    const { unmount } = render(<MemoryRouter><AuthPage /></MemoryRouter>);
+    await startFirstPassword();
+    const input = screen.getByLabelText("六位验证码");
+    const scroll = vi.fn();
+    input.scrollIntoView = scroll;
+    vi.spyOn(input, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 308, 240, 48));
+    input.focus();
+    viewport.dispatchEvent(new Event("resize"));
+    input.blur();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(scroll).not.toHaveBeenCalled();
+    input.focus();
+    viewport.dispatchEvent(new Event("resize"));
+    unmount();
+    window.dispatchEvent(new Event("focus"));
+    viewport.dispatchEvent(new Event("resize"));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  it("restores a focused OTP after returning and a later keyboard resize without typing", async () => {
+    mockFirstPasswordFlow();
+    const viewport = Object.assign(new EventTarget(), { offsetTop: 176, height: 287 });
+    vi.stubGlobal("visualViewport", viewport);
+    renderAuthPage();
+    await startFirstPassword();
+    const input = screen.getByLabelText("六位验证码");
+    const scroll = vi.fn();
+    input.scrollIntoView = scroll;
+    vi.spyOn(input, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 308, 240, 48));
+    input.focus();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(scroll).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: "12" } });
+    const visibility = vi.spyOn(document, "visibilityState", "get");
+    visibility.mockReturnValue("hidden");
+    viewport.offsetTop = 0;
+    viewport.height = 566;
+    document.dispatchEvent(new Event("visibilitychange"));
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(scroll).not.toHaveBeenCalled();
+    viewport.height = 335;
+    viewport.dispatchEvent(new Event("resize"));
+    await vi.waitFor(() => expect(scroll).toHaveBeenCalledWith({
+      block: "center", inline: "nearest", behavior: "instant",
+    }));
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue("12");
+    visibility.mockRestore();
   });
 
   it("lets a guest cancel login and continue the requested score", async () => {
