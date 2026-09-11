@@ -13,7 +13,7 @@ import {
   type DriveCacheOwnerKey,
 } from "./drive-library-cache";
 import { readLibraryView, rememberLibraryView, selectLibraryScores, type LibrarySort, type LibraryView } from "./library-view-state";
-import { driveLibraryTransport, type DriveLibraryAccess, type DriveLibraryTransport } from "./drive-library-transport";
+import { driveLibraryTransport, type DriveLibraryAccess, type DriveLibraryTransport, type ScoreFileChange } from "./drive-library-transport";
 
 export interface DriveLibrarySnapshot {
   reading: Pick<ReadState<never>, "request" | "authority">;
@@ -24,10 +24,6 @@ export interface DriveLibrarySnapshot {
   joinMessage: string | null;
   joining: boolean;
 }
-
-export type ConfirmedScoreChange =
-  | { kind: "trash"; scoreId: string }
-  | { kind: "rename"; scoreId: string; fileName: string };
 
 type OpenedAccess = Extract<DriveLibraryAccess, { kind: "opened" }>;
 
@@ -155,12 +151,46 @@ export class DriveLibrary {
     return this.load(false, requirePersistence);
   }
 
+  private scoreChanges = new Map<string, ScoreFileChange | "unconfirmed">();
+  private scoreChangeRequests = new Map<string, Promise<Response>>();
+
+  scoreChangeRecovery = (scoreId: string): "saved" | "unconfirmed" | undefined => {
+    const change = this.scoreChanges.get(scoreId);
+    return change === undefined ? undefined : change === "unconfirmed" ? "unconfirmed" : "saved";
+  };
+
+  requestScoreChange = (change: ScoreFileChange): Promise<Response> => {
+    const signal = this.ownerSignal;
+    signal.throwIfAborted();
+    if (!this.isActive() || this.scoreChanges.has(change.scoreId)) throw new Error("score_change_requires_read");
+    // The library retains uncertainty across dialog closure. The request also
+    // settles here after unmount, so a reopened dialog cannot read ahead of it.
+    this.scoreChanges.set(change.scoreId, "unconfirmed");
+    const request = Promise.resolve().then(() => {
+      signal.throwIfAborted();
+      return this.transport.change(change, signal);
+    }).then(response => {
+      signal.throwIfAborted();
+      if (response.ok) this.scoreChanges.set(change.scoreId, change);
+      else if (response.status < 500 && ![401, 403, 404, 409].includes(response.status)) this.scoreChanges.delete(change.scoreId);
+      return response;
+    }).finally(() => {
+      if (this.scoreChangeRequests.get(change.scoreId) === request) this.scoreChangeRequests.delete(change.scoreId);
+    });
+    this.scoreChangeRequests.set(change.scoreId, request);
+    return request;
+  };
+
   // A confirmed write is projected before any fallible storage/read work. Retrying
   // this completion repeats only local persistence and a fresh directory read.
-  completeScoreChange = async (change?: ConfirmedScoreChange) => {
+  completeScoreChange = async (scoreId: string) => {
     const signal = this.ownerSignal;
     signal.throwIfAborted();
     if (!this.isActive()) throw new Error("drive_library_inactive");
+    await this.scoreChangeRequests.get(scoreId)?.catch(() => undefined);
+    signal.throwIfAborted();
+    const pending = this.scoreChanges.get(scoreId);
+    const change = pending === "unconfirmed" ? undefined : pending;
     if (change) {
       this.request?.controller.abort(); this.request = null;
       this.localController?.abort();
@@ -185,6 +215,8 @@ export class DriveLibrary {
     // confirm a fresh read before the submission module can release its retry gate.
     if (!this.isActive() || this.request || this.confirmedAt === -Infinity || this.snapshot.refreshMessage ||
         this.snapshot.reading.authority !== "confirmed") throw new Error("drive_refresh_unconfirmed");
+    this.scoreChanges.delete(scoreId);
+    return change;
   };
 
   confirmName = async (name: string) => {

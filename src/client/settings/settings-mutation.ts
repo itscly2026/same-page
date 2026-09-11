@@ -30,16 +30,19 @@ function mutationMessage(result: MutationResult) {
 
 // Mount this hook inside the user/drive-keyed view. The same synchronous gate
 // protects submissions and recovery reads, even before React renders pending.
-export function useSettingsMutation({ enabled = true, refresh: read, onRevoked }: {
+export function useSettingsMutation({ enabled = true, refresh: read, onRevoked, initialRecovery }: {
   enabled?: boolean;
+  initialRecovery?: "saved" | "unconfirmed";
   refresh: (isCurrent: Current) => Promise<void>;
   onRevoked?: () => void;
 }) {
   const lifetime = useSettingsLifetime();
-  const gate = useRef({ pending: false, needsRefresh: false });
+  const gate = useRef({ pending: false, needsRefresh: Boolean(initialRecovery) });
   const [pending, setPending] = useState(false);
-  const [needsRefresh, setNeedsRefresh] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [needsRefresh, setNeedsRefresh] = useState(Boolean(initialRecovery));
+  const [message, setMessage] = useState<string | null>(() => initialRecovery
+    ? mutationMessage({ kind: initialRecovery === "saved" ? "saved-refresh-failed" : "unconfirmed", error: null })
+    : null);
   const requireRefresh = (value: boolean) => {
     gate.current.needsRefresh = value;
     setNeedsRefresh(value);
@@ -100,7 +103,7 @@ export function useSettingsMutation({ enabled = true, refresh: read, onRevoked }
       const revoked = outcome.kind === "revoked" || (outcome.kind === "saved-refresh-failed" && outcome.error instanceof SettingsRequestError && [401, 403].includes(outcome.error.status));
       if (revoked) onRevoked?.();
       requireRefresh(outcome.kind === "unconfirmed" || outcome.kind === "revoked" || outcome.kind === "saved-refresh-failed" ||
-        (outcome.kind === "failed" && outcome.error instanceof SettingsRequestError && outcome.error.status === 409));
+        (outcome.kind === "failed" && outcome.error instanceof SettingsRequestError && [404, 409].includes(outcome.error.status)));
       setMessage(outcome.kind === "saved" ? submission.successMessage ?? null : mutationMessage(outcome));
       return outcome.kind === "saved";
     }

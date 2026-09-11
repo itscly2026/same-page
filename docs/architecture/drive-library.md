@@ -10,7 +10,7 @@
 - `local-drive-directory.ts`：内部 Dexie 存储 seam，事务检查 workspace 会话；目录成员集合独立于保留的离线副本。React adapter 不访问它。
 - `library-view-state.ts`：本机搜索、排序、返回位置和最近打开记录。内容缓存不再复制视图字段，文件库是视图写入的唯一调用入口。
 - `use-drive-library.ts`：React adapter，订阅 snapshot、连接焦点/联网/滚动事件，并在文件列表提交后执行一次返回位置恢复。
-- `use-score-file-action.ts`：重命名与移到回收站的提交入口，复用 `useSettingsMutation` 的串行提交、结果分类与生命周期隔离；持有已确认意图，恢复只重做目录完成工作，不重放写请求。
+- `use-score-file-action.ts`：重命名与移到回收站的提交入口，复用 `useSettingsMutation` 的串行提交、结果分类与生命周期隔离；文件库生命周期持有未确认与已确认意图，关闭重开弹窗仍需先恢复读取；恢复只重做目录完成工作，不重放写请求。
 - `choir-page.tsx`：展示状态、菜单和文件操作，记录阅读器打开性能并预备乐谱摘要；不编排网络与缓存，也不直接保存视图。
 
 ## 可观察规则
