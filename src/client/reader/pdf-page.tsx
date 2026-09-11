@@ -1,3 +1,4 @@
+import { foregroundDeadline, waitForForeground } from "./foreground-deadline";
 import { pdfFailureCategory, pdfFailureReason, pdfEngineVersion, recordFailure } from "../diagnostics/diagnostics";
 import { acquireRenderSlot, sizeRenderCanvas, releaseRenderCanvas } from "./render-budget";
 import { usePagePresentation } from "./use-reader-presentation";
@@ -53,6 +54,28 @@ export function PdfPageCanvas({
   useLayoutEffect(() => { const canvases = [...canvasRefs.current]; return () => { canvases.forEach(canvas => { if (canvas) releaseRenderCanvas(canvas); }); }; }, []);
 
   useEffect(() => {
+    const canvases = canvasRefs.current.filter((canvas): canvas is HTMLCanvasElement => canvas !== null);
+    const lost = new Set<HTMLCanvasElement>();
+    const onLost = (event: Event) => {
+      const canvas = event.currentTarget as HTMLCanvasElement;
+      lost.add(canvas);
+      if (canvas === canvasRefs.current[frontCanvas.current]) setPainted(null);
+    };
+    const onRestored = (event: Event) => {
+      const canvas = event.currentTarget as HTMLCanvasElement;
+      if (lost.delete(canvas)) setAttempt(value => value + 1);
+    };
+    canvases.forEach(canvas => {
+      canvas.addEventListener("contextlost", onLost);
+      canvas.addEventListener("contextrestored", onRestored);
+    });
+    return () => canvases.forEach(canvas => {
+      canvas.removeEventListener("contextlost", onLost);
+      canvas.removeEventListener("contextrestored", onRestored);
+    });
+  }, []);
+
+  useEffect(() => {
     const sourceChanged =
       source.current.pageNumber !== pageNumber;
     source.current = { document, pageNumber };
@@ -71,16 +94,18 @@ export function PdfPageCanvas({
 
     const abort = new AbortController();
     const draw = async () => {
+      await waitForForeground(abort.signal);
       const release = await acquireRenderSlot(abort.signal);
       try {
         for (let resolution = 1; resolution >= 0.5; resolution /= 2) {
           let drawing = true;
           let onAbort: (() => void) | undefined;
-          let timer: ReturnType<typeof setTimeout> | undefined;
+          let cancelDeadline: (() => void) | undefined;
           try {
             await Promise.race([
               (async () => {
                 const page = await document.getPage(pageNumber);
+                await waitForForeground(abort.signal);
                 abort.signal.throwIfAborted();
                 if (!drawing) throw new DOMException("cancelled", "AbortError");
                 const unscaled = page.getViewport({ scale: 1 });
@@ -96,14 +121,14 @@ export function PdfPageCanvas({
               new Promise<never>((_, reject) => {
                 onAbort = () => reject(abort.signal.reason);
                 abort.signal.addEventListener("abort", onAbort, { once: true });
-                timer = setTimeout(() => reject(Object.assign(new Error("page_render_timeout"), { name: "TimeoutError" })), 20_000);
+                cancelDeadline = foregroundDeadline(() => reject(Object.assign(new Error("page_render_timeout"), { name: "TimeoutError" })), 20_000);
               }),
             ]);
             return;
           } catch (error) {
             cancelRender?.();
             if (abort.signal.aborted || resolution === 0.5 || (error instanceof Error && error.name === "TimeoutError")) throw error;
-          } finally { drawing = false; if (onAbort) abort.signal.removeEventListener("abort", onAbort); if (timer) clearTimeout(timer); }
+          } finally { drawing = false; if (onAbort) abort.signal.removeEventListener("abort", onAbort); cancelDeadline?.(); }
         }
       } finally { release(); }
     };

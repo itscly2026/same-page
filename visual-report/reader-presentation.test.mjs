@@ -72,6 +72,28 @@ test("restores a later continuous page and confirms its first canvas", { timeout
               }
               const actualPage = await page.evaluate(() => JSON.parse(localStorage.getItem("reader-preferences:visual-user-member:visual-choir:visual-score")).page);
               await page.locator(`.pdf-page-canvas[data-page-number="${actualPage}"] [data-pdf-canvas-active]`).waitFor({ timeout: 5000 });
+              // Lifecycle simulation is browser integration coverage, not iPad suspension proof.
+              const bitmap = page.locator(`.pdf-page-canvas[data-page-number="${actualPage}"] [data-pdf-canvas-active]`);
+              const originalPixels = await bitmap.evaluate(canvas => canvas.toDataURL());
+              await page.evaluate(() => {
+                Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+                document.dispatchEvent(new Event("visibilitychange"));
+              });
+              await page.evaluate(() => {
+                Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+                document.dispatchEvent(new Event("visibilitychange"));
+                window.dispatchEvent(new Event("pageshow"));
+              });
+              assert.equal(await bitmap.evaluate(canvas => canvas.toDataURL()), originalPixels);
+              await bitmap.evaluate(canvas => {
+                canvas.dispatchEvent(new Event("contextlost"));
+                canvas.dispatchEvent(new Event("contextrestored"));
+              });
+              await bitmap.waitFor();
+              await page.waitForFunction(({ number, pixels }) => {
+                const canvas = document.querySelector(`.pdf-page-canvas[data-page-number="${number}"] [data-pdf-canvas-active]`);
+                return canvas?.toDataURL() === pixels;
+              }, { number: actualPage, pixels: originalPixels });
               const current = await page.locator(`.pdf-page-canvas[data-page-number="${expectedPage}"]`).boundingBox();
               assert.ok(current.y < 1148 && current.y + current.height > 0, `the requested page must be in the viewport: ${JSON.stringify({ name, savedPage, expectedPage, actualPage, reopen, current, scrollTop: await page.locator(".continuous-reader").evaluate(el => el.scrollTop) })}`);
               expectedPage = actualPage;

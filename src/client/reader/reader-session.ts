@@ -1,3 +1,4 @@
+import { foregroundDeadline } from "./foreground-deadline";
 import { isLocalExperience } from "../annotations/guest-notes";
 import { ReaderPresentation } from "./reader-presentation";
 import { offlinePreparationDescription } from "../offline/offline-score-status";
@@ -40,7 +41,7 @@ export class ReaderSession {
   private state: ReaderSessionSnapshot;
   private listeners = new Set<() => void>();
   private disposed = false;
-  private deadline: ReturnType<typeof setTimeout> | null = null;
+  private deadline: (() => void) | null = null;
   private localPriorityTimer: ReturnType<typeof setTimeout> | null = null;
   private localPriorityExpired = false;
   private abort = new AbortController();
@@ -52,7 +53,7 @@ export class ReaderSession {
   readonly presentation = new ReaderPresentation({
     confirmed: () => {
       if (!this.displayPrepared) return false;
-      if (this.deadline) clearTimeout(this.deadline);
+      this.deadline?.();
       this.retained?.lease?.release();
       this.retained = null;
       return true;
@@ -75,7 +76,7 @@ export class ReaderSession {
     this.retained = null;
     this.displayPrepared = true;
     this.pdfFailed = false;
-    if (this.deadline) clearTimeout(this.deadline);
+    this.deadline?.();
     this.publish({ document: previous.document, status: "ready", error: null, displayMessage: "显示恢复未完成，已保留原谱面。" });
     return true;
   }
@@ -172,8 +173,8 @@ export class ReaderSession {
     }
   }
   private armDeadline() {
-    if (this.deadline) clearTimeout(this.deadline);
-    this.deadline = setTimeout(() => {
+    this.deadline?.();
+    this.deadline = foregroundDeadline(() => {
       if (this.retained) { this.restoreDisplay(); return; }
       if (this.state.status === "loading" || !this.state.score || !this.presentation.hasPresented(this.state.document)) {
         recordFailure({ operation: "pdf", category: "internal", stage: "prepare",
@@ -347,7 +348,7 @@ export class ReaderSession {
     this.releasePreparation();
     this.disposed = true;
     this.fileWatcher?.unsubscribe();
-    if (this.deadline) clearTimeout(this.deadline);
+    this.deadline?.();
     if (this.localPriorityTimer) clearTimeout(this.localPriorityTimer);
     this.abort.abort();
     this.generation++;
