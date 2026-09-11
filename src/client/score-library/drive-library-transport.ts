@@ -14,7 +14,12 @@ export type DriveLibraryAccess =
 
 type LoadedAccess = Exclude<DriveLibraryAccess, { kind: "loading" }>;
 
+export type ScoreFileChange =
+  | { kind: "trash"; scoreId: string }
+  | { kind: "rename"; scoreId: string; fileName: string };
+
 export interface DriveLibraryTransport {
+  change(change: ScoreFileChange, signal: AbortSignal): Promise<Response>;
   load(signal: AbortSignal, allowAdmission: boolean, authenticated: boolean): Promise<LoadedAccess>;
   join(displayName: string, signal: AbortSignal): Promise<string | null>;
 }
@@ -38,6 +43,11 @@ export function driveLibraryTransport(choirId: string): DriveLibraryTransport {
     };
   };
   return {
+    change(change, signal) {
+      return diagnosticFetch(`/api/choirs/${choirId}/scores/${change.scoreId}`, change.kind === "rename"
+        ? { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ fileName: change.fileName }), signal }
+        : { method: "DELETE", signal });
+    },
     async load(signal, allowAdmission, authenticated) {
       const first = await bootstrap(signal, authenticated);
       if (!allowAdmission || (first.kind === "denied" && first.admissionBlocked) || !["denied", "not-found"].includes(first.kind)) return first;

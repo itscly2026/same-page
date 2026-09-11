@@ -278,14 +278,12 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
         }}
       /> : null}
       {scoreAction && (scoreAction.action === "info" || can(scoreAction.action === "trash" ? "trashFiles" : "modifyFiles")) ? (
-        <ScoreActionDialog canPurge={result.permissions.capabilities.isOwner}
-          key={`${scoreAction.score.id}:${scoreAction.action}`}
+        <ScoreActionDialog library={library} canPurge={result.permissions.capabilities.isOwner}
+          key={`${identity.authenticatedSessionId}:${scoreAction.score.id}:${scoreAction.action}`}
           choirId={choirId}
           selection={scoreAction}
           onClose={() => setScoreAction(null)}
-          onComplete={async (nextMessage) => {
-            if (scoreAction.action === "trash") await library.confirmRemoval(scoreAction.score.id);
-            await refreshAfterMutation();
+          onComplete={(nextMessage) => {
             setScoreAction(null);
             setMessage(nextMessage);
           }}

@@ -75,6 +75,7 @@ it("lets asynchronous domain completion stop after unmount and skips its refresh
 
 it.each([
   { name: "transport uncertainty", status: null, message: "操作结果未确认", revoked: false },
+  { name: "server uncertainty", status: 500, message: "操作结果未确认", revoked: false },
   { name: "signed-out", status: 401, message: "登录已失效", revoked: true },
   { name: "revocation", status: 403, message: "你没有操作此设置的权限", revoked: true },
   { name: "revision conflict", status: 409, message: "保存失败", revoked: false },
