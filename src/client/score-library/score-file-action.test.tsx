@@ -154,7 +154,7 @@ it.each(["unconfirmed", "saved"])("retains %s recovery across closing and reopen
   fireEvent.change(screen.getByRole("textbox", { name: "文件名" }), { target: { value: "新谱" } });
   fireEvent.click(screen.getByRole("button", { name: "确认" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(outcome === "saved" ? "已保存" : "未确认");
-  fireEvent.click(screen.getByRole("button", { name: "关闭", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "关闭" }));
   expect(close).toHaveBeenCalledOnce(); first.unmount();
   render(element);
   expect(screen.getByRole("button", { name: "确认" })).toBeDisabled();
@@ -182,5 +182,19 @@ it("waits for the departed dialog's pending write before rereading in a reopened
   transport.load.mockResolvedValue(opened([{ ...score, fileName: "新谱.pdf" }]));
   await act(async () => { response.resolve(new Response(null, { status: 204 })); await submission; await recovery; });
   expect(complete).toHaveBeenCalledExactlyOnceWith("文件已重命名。");
+  expect(request).toHaveBeenCalledTimes(1);
+});
+
+it("projects and persists a confirmed deletion even after the submitting dialog closes", async () => {
+  const { library, request, complete } = await setup();
+  const response = deferred<Response>(); request.mockReturnValue(response.promise);
+  const first = renderHook(() => useScoreFileAction(library, score, "trash", complete));
+  let submission!: Promise<void>;
+  await act(async () => { submission = first.result.current.submit(""); });
+  first.unmount();
+  await act(async () => { response.resolve(new Response(null, { status: 204 })); await submission; });
+  expect(library.getSnapshot().scores).toEqual([]);
+  await waitFor(async () => expect((await directories.readLocalDriveDirectories("one"))[0].scores).toEqual([]));
+  expect(complete).not.toHaveBeenCalled();
   expect(request).toHaveBeenCalledTimes(1);
 });

@@ -151,12 +151,11 @@ export class DriveLibrary {
     return this.load(false, requirePersistence);
   }
 
-  private scoreChanges = new Map<string, ScoreFileChange | "unconfirmed">();
-  private scoreChangeRequests = new Map<string, Promise<Response>>();
+  private scoreChanges = new Map<string, { change?: ScoreFileChange; request?: Promise<Response>; persistence?: Promise<void> }>();
 
   scoreChangeRecovery = (scoreId: string): "saved" | "unconfirmed" | undefined => {
     const change = this.scoreChanges.get(scoreId);
-    return change === undefined ? undefined : change === "unconfirmed" ? "unconfirmed" : "saved";
+    return change === undefined ? undefined : change.change ? "saved" : "unconfirmed";
   };
 
   requestScoreChange = (change: ScoreFileChange): Promise<Response> => {
@@ -165,19 +164,27 @@ export class DriveLibrary {
     if (!this.isActive() || this.scoreChanges.has(change.scoreId)) throw new Error("score_change_requires_read");
     // The library retains uncertainty across dialog closure. The request also
     // settles here after unmount, so a reopened dialog cannot read ahead of it.
-    this.scoreChanges.set(change.scoreId, "unconfirmed");
+    const pending: { change?: ScoreFileChange; request?: Promise<Response>; persistence?: Promise<void> } = {};
+    this.scoreChanges.set(change.scoreId, pending);
     const request = Promise.resolve().then(() => {
       signal.throwIfAborted();
       return this.transport.change(change, signal);
     }).then(response => {
       signal.throwIfAborted();
-      if (response.ok) this.scoreChanges.set(change.scoreId, change);
+      if (response.ok) {
+        pending.change = change;
+        this.projectScoreChange(change);
+        // Persistence belongs to the library even if the dialog has closed.
+        // Retain its outcome so an attached/reopened dialog can recover failures.
+        pending.persistence = this.persistScoreChange(change, signal);
+        void pending.persistence.catch(() => undefined);
+      }
       else if (response.status < 500 && ![401, 403, 404, 409].includes(response.status)) this.scoreChanges.delete(change.scoreId);
       return response;
     }).finally(() => {
-      if (this.scoreChangeRequests.get(change.scoreId) === request) this.scoreChangeRequests.delete(change.scoreId);
+      pending.request = undefined;
     });
-    this.scoreChangeRequests.set(change.scoreId, request);
+    pending.request = request;
     return request;
   };
 
@@ -187,26 +194,15 @@ export class DriveLibrary {
     const signal = this.ownerSignal;
     signal.throwIfAborted();
     if (!this.isActive()) throw new Error("drive_library_inactive");
-    await this.scoreChangeRequests.get(scoreId)?.catch(() => undefined);
-    signal.throwIfAborted();
     const pending = this.scoreChanges.get(scoreId);
-    const change = pending === "unconfirmed" ? undefined : pending;
+    await pending?.request?.catch(() => undefined);
+    signal.throwIfAborted();
+    const change = pending?.change;
     if (change) {
-      this.request?.controller.abort(); this.request = null;
-      this.localController?.abort();
-      const access = this.snapshot.access;
-      if (access.kind !== "opened" || access.retained) throw new Error("drive_access_unconfirmed");
-      const scores = change.kind === "trash"
-        ? access.result.scores.filter(score => score.id !== change.scoreId)
-        : access.result.scores.map(score => score.id === change.scoreId ? { ...score, fileName: change.fileName } : score);
-      const next = { ...access, result: { ...access.result, scores } };
-      rememberDriveLibrary(this.ownerKey, this.choirId, next, this.confirmedAt);
-      this.publish({ access: next });
-      const workspace = await this.workspace;
-      signal.throwIfAborted();
-      if (!workspace) throw new Error("local_directory_unavailable");
-      if (change.kind === "trash") await removeLocalDriveScore(workspace, change.scoreId, signal);
-      else await renameLocalDriveScore(workspace, change.scoreId, change.fileName, signal);
+      this.projectScoreChange(change);
+      const persistence = pending.persistence;
+      pending.persistence = undefined;
+      await (persistence ?? this.persistScoreChange(change, signal));
     }
     signal.throwIfAborted();
     await this.reload(true);
@@ -215,9 +211,30 @@ export class DriveLibrary {
     // confirm a fresh read before the submission module can release its retry gate.
     if (!this.isActive() || this.request || this.confirmedAt === -Infinity || this.snapshot.refreshMessage ||
         this.snapshot.reading.authority !== "confirmed") throw new Error("drive_refresh_unconfirmed");
-    this.scoreChanges.delete(scoreId);
+    if (this.scoreChanges.get(scoreId) === pending) this.scoreChanges.delete(scoreId);
     return change;
   };
+
+  private projectScoreChange(change: ScoreFileChange) {
+    this.request?.controller.abort(); this.request = null;
+    this.localController?.abort();
+    const access = this.snapshot.access;
+    if (access.kind !== "opened" || access.retained) return;
+    const scores = change.kind === "trash"
+      ? access.result.scores.filter(score => score.id !== change.scoreId)
+      : access.result.scores.map(score => score.id === change.scoreId ? { ...score, fileName: change.fileName } : score);
+    const next = { ...access, result: { ...access.result, scores } };
+    rememberDriveLibrary(this.ownerKey, this.choirId, next, this.confirmedAt);
+    this.publish({ access: next });
+  }
+
+  private async persistScoreChange(change: ScoreFileChange, signal: AbortSignal) {
+    const workspace = await this.workspace;
+    signal.throwIfAborted();
+    if (!workspace) throw new Error("local_directory_unavailable");
+    if (change.kind === "trash") await removeLocalDriveScore(workspace, change.scoreId, signal);
+    else await renameLocalDriveScore(workspace, change.scoreId, change.fileName, signal);
+  }
 
   confirmName = async (name: string) => {
     if (!this.isActive() || this.snapshot.access.kind !== "opened") return;
