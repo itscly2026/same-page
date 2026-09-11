@@ -614,6 +614,29 @@ describe("AnnotationOverlay", () => {
     expect(await editor.undo(activeLayerId)).toBe(false);
   });
 
+  it("retires a discarded failed drag preview when canceling its text composer", async () => {
+    const text = annotation("text-1", activeLayerId, textPayload("取消失败拖动"));
+    await localDatabase.annotations.put(text);
+    renderOverlay([text], "text");
+    const button = screen.getByRole("button", { name: "取消失败拖动" });
+    mockBounds(button.parentElement!); mockTextBounds(button);
+    const write = vi.spyOn(localDatabase.annotations, "put").mockRejectedValueOnce(new Error("storage failed"));
+    fireEvent.pointerDown(button, { pointerId: 3, clientX: 20, clientY: 30 });
+    fireEvent.pointerMove(button, { pointerId: 3, clientX: 40, clientY: 50 });
+    fireEvent.pointerUp(button, { pointerId: 3, clientX: 40, clientY: 50 });
+    await waitFor(() => expect(editor.getSnapshot()).toBe("failed"));
+    expect(Number.parseFloat(button.style.left)).toBeCloseTo(40);
+    write.mockRestore();
+    openExistingText("取消失败拖动");
+    fireEvent.keyDown(screen.getByLabelText("笔记文本"), { key: "Escape" });
+    expect(screen.queryByLabelText("笔记文本")).not.toBeInTheDocument();
+    expect(editor.getSnapshot()).toBe("idle");
+    expect(Number.parseFloat(button.style.left)).toBeCloseTo(20);
+    expect((await localDatabase.annotations.get(text.key))?.payload).toEqual(text.payload);
+    await act(async () => { expect(await editor.finish()).toBe("local-saved"); });
+    expect((await localDatabase.annotations.get(text.key))?.payload).toEqual(text.payload);
+  });
+
   it("shows undo even if the local query skips the released drag projection", async () => {
     const text = annotation("text-1", activeLayerId, textPayload("快速撤销"));
     await localDatabase.annotations.put(text);

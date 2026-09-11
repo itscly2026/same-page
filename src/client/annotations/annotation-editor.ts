@@ -136,13 +136,16 @@ export class AnnotationEditor {
   redo(layerId: string) { return this.enqueue({ kind: "redo", layerId }); }
 
   discard(id: string) {
-    if (this.running) return;
+    if (this.running) return false;
+    let discarded = false;
     this.pending = this.pending.filter(task => {
       if (task.edit.kind !== "write" || task.edit.input.id !== id) return true;
       task.complete(false);
+      discarded = true;
       return false;
     });
     this.publish(this.pending.length ? "failed" : "idle");
+    return discarded;
   }
 
   retry() {

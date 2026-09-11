@@ -353,7 +353,15 @@ export function AnnotationOverlay({
 
   const cancelTextEditor = () => {
     if (textSavingRef.current) return;
-    if (textEditor) editor?.discard(textEditor.id);
+    if (textEditor && editor?.discard(textEditor.id)) {
+      // Discard can retire a failed drag of this same object as well as text.
+      // Its released preview must not outlive the intent it represents.
+      setReleasedTransforms(previous => {
+        const next = new Map(previous);
+        next.delete(textEditor.id);
+        return next;
+      });
+    }
     closeTextEditor();
   };
 

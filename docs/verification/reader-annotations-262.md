@@ -29,3 +29,9 @@
 浏览器验证包含 `reader-annotation-stability.test.mjs`、`highlighter-nib.test.mjs`、`reader-experience.test.mjs`、`pdf-export.test.mjs`、`reader-mobile-editing.test.mjs`。其中荧光笔测试直接对比 SVG 与导出 PDF 的像素：30% 单层黄色的蓝通道约 179，同笔或异笔两层覆盖约 125。
 
 真实 iPad/Pencil 与已安装 PWA 的缩放闪动、硬件笔事件和软键盘仍需设备验收。桌面 Chromium/WebKit 自动化不代替这些结论。
+
+## Review 后补充：取消失败拖动
+
+复现：文字从 20% 拖到 40% 且本地写入失败，随后打开该文字输入框并按 Escape。取消会丢弃同对象的待重试写入，原实现恢复 idle 却留下 40% 的预览，数据库仍为 20%。新增回归在修复前失败（expected 20, received 40）。
+
+`AnnotationEditor.discard` 现在返回是否实际丢弃写入；取消输入框仅在确认丢弃时清除同对象的释放预览，使其恢复当前本地数据。正在写入或没有待丢弃操作时返回 false，不提前撤销预览。补充测试覆盖真实取消链、完成编辑后的数据库内容，以及进行中/已丢弃操作的返回值。Node 24 的 89 项编辑器、覆盖层及阅读器测试通过。
