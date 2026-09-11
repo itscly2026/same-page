@@ -50,3 +50,12 @@ export async function rememberDriveAccessRevoked(workspace: LocalWorkspace, sign
       scores: [], membership: false, capabilities: noCapabilities(), accessRevoked: true });
   });
 }
+
+export async function renameLocalDriveScore(workspace: LocalWorkspace, scoreId: string, fileName: string, signal: AbortSignal) {
+  await withLocalWorkspaceTransaction(workspace, "rw", [localDatabase.driveDirectories], async () => {
+    signal.throwIfAborted();
+    const key = JSON.stringify([workspace.ownerKey, workspace.choirId]);
+    const directory = await localDatabase.driveDirectories.get(key);
+    if (directory) await localDatabase.driveDirectories.put({ ...directory, scores: directory.scores.map(score => score.id === scoreId ? { ...score, fileName } : score) });
+  });
+}

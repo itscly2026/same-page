@@ -98,7 +98,9 @@ describe("DriveLibrary interface", () => {
     const { library, transport } = create(async () => opened());
     await library.refresh();
     await storeOfflineScore({ ...createLocalWorkspace(authenticatedLocalOwnerKey("one"), choirId, "score-one"), key: "retained", versionId: "version-one", fileName: "秋日.pdf", sha256: "unverified", pageCount: 1, blob: new Blob(["PDF"]), active: 1, verifiedAt: 1, annotationSnapshot: { layers: [], annotations: [], cursor: 0, verifiedAt: 1 } });
-    await library.confirmRemoval("score-one");
+    const removed = opened(); removed.result.scores = [];
+    transport.load.mockResolvedValueOnce(removed);
+    await library.completeScoreChange({ kind: "trash", scoreId: "score-one" });
     await library.confirmName("新云盘名称");
     transport.load.mockRejectedValueOnce(new TypeError("offline"));
     await library.changed();
@@ -193,11 +195,11 @@ describe("DriveLibrary interface", () => {
   });
 
   it("does not restore a confirmed deletion when the subsequent directory refresh fails", async () => {
+    await activateAuthenticatedLocalOwner("one");
     const { library, transport } = create(async () => opened());
     await library.refresh();
-    await library.confirmRemoval("score-one");
     transport.load.mockRejectedValueOnce(new TypeError("offline"));
-    await library.changed();
+    await expect(library.completeScoreChange({ kind: "trash", scoreId: "score-one" })).rejects.toThrow("drive_refresh_unconfirmed");
     expect(library.getSnapshot().scores).toEqual([]);
     expect(library.getSnapshot().refreshMessage).toContain("当前内容已保留");
   });

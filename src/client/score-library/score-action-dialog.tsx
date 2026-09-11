@@ -1,5 +1,6 @@
-import { scoreDisplayName, scorePdfFileName } from "../../shared/score-display-name";
-import { diagnosticFetch } from "../diagnostics/diagnostics";
+import { scoreDisplayName } from "../../shared/score-display-name";
+import type { DriveLibrary } from "./drive-library";
+import { useScoreFileAction } from "./use-score-file-action";
 import { type FormEvent, lazy, Suspense, useState } from "react";
 import {
   Button,
@@ -16,7 +17,7 @@ import { Dialog } from "../navigation/overlays";
 
 import type { ScoreSummary } from "../../shared/scores";
 import { LibraryDialogHeading } from "./library-dialog-heading";
-import { formatBytes, uploadMessage } from "./library-format";
+import { formatBytes } from "./library-format";
 
 const PdfVersionDialog = lazy(() => import("./pdf-version-dialog").then((module) => ({ default: module.PdfVersionDialog })));
 
@@ -29,16 +30,18 @@ export interface ScoreActionSelection {
 
 export function ScoreActionDialog({
   choirId,
+  library,
   canPurge = false,
   selection,
   onClose,
   onComplete,
 }: {
+  library: DriveLibrary;
   canPurge?: boolean;
   choirId: string;
   selection: ScoreActionSelection;
   onClose: () => void;
-  onComplete: (message: string) => void | Promise<void>;
+  onComplete: (message: string) => void;
 }) {
   if (selection.action === "info") {
     const { score } = selection;
@@ -61,33 +64,18 @@ export function ScoreActionDialog({
   }
   if (selection.action === "replace" || selection.action === "history") {
     return <Suspense fallback={<p role="status">正在加载版本工具…</p>}><PdfVersionDialog canPurge={canPurge} choirId={choirId} score={selection.score} historyOnly={selection.action === "history"}
-      onClose={onClose} onComplete={onComplete} /></Suspense>;
+      onClose={onClose} onComplete={async message => { await library.changed(); onComplete(message); }} /></Suspense>;
   }
-  return <BasicScoreActionDialog choirId={choirId} selection={selection} onClose={onClose} onComplete={onComplete} />;
+  return <BasicScoreActionDialog library={library} choirId={choirId} selection={selection} onClose={onClose} onComplete={onComplete} />;
 }
 
-function BasicScoreActionDialog({ choirId, selection, onClose, onComplete }: Parameters<typeof ScoreActionDialog>[0]) {
+function BasicScoreActionDialog({ library, selection, onClose, onComplete }: Parameters<typeof ScoreActionDialog>[0]) {
   const [renameValue, setRenameValue] = useState(scoreDisplayName(selection.score.fileName));
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
+  const mutation = useScoreFileAction(library, selection.score, selection.action === "rename" ? "rename" : "trash", onComplete);
+  const busy = mutation.pending;
+  const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setBusy(true);
-    setMessage(null);
-    try {
-      const response = await runScoreAction(choirId, selection, renameValue);
-      const payload = response.status === 204 ? null : await response.json().catch(() => null);
-      if (!response.ok) {
-        setMessage(uploadMessage(response.status, payload));
-        return;
-      }
-      await onComplete(successMessage(selection.action));
-    } catch {
-      setMessage("操作未完成，请稍后重试。");
-    } finally {
-      setBusy(false);
-    }
+    void mutation.submit(renameValue);
   };
 
   return (
@@ -117,14 +105,15 @@ function BasicScoreActionDialog({ choirId, selection, onClose, onComplete }: Par
                 )}
                 <Button
                   type="submit"
-                  isDisabled={busy}
+                  isDisabled={mutation.blocked}
                 >
                   {busy ? "正在处理…" : selection.action === "trash" ? "移到回收站" : "确认"}
                 </Button>
               </Form>
-              {message ? (
+              {mutation.needsRefresh && <Button className="secondary-button" isDisabled={busy} onPress={() => void mutation.retry()}>重新读取状态</Button>}
+              {mutation.message ? (
                 <p className="form-message" role="alert">
-                  {message}
+                  {mutation.message}
                 </p>
               ) : null}
             </>
@@ -135,28 +124,7 @@ function BasicScoreActionDialog({ choirId, selection, onClose, onComplete }: Par
   );
 }
 
-function runScoreAction(
-  choirId: string,
-  selection: ScoreActionSelection,
-  renameValue: string,
-) {
-  const scorePath = `/api/choirs/${choirId}/scores/${selection.score.id}`;
-  if (selection.action === "rename") {
-    return diagnosticFetch(scorePath, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ fileName: scorePdfFileName(renameValue) }),
-    });
-  }
-  return diagnosticFetch(scorePath, { method: "DELETE" });
-}
-
 function actionTitle(action: ScoreAction) {
   if (action === "rename") return "重命名";
   return "移到回收站";
-}
-
-function successMessage(action: ScoreAction) {
-  if (action === "rename") return "文件已重命名。";
-  return "文件已移到回收站，将在三十天后自动删除。";
 }

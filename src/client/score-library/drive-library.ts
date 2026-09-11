@@ -4,7 +4,7 @@ import { localDatabase } from "../platform/local-database";
 import { liveQuery } from "dexie";
 import { readRetainedScores } from "../offline/retained-scores";
 import { captureLocalWorkspaceSession, createLocalWorkspace, currentLocalOwnerKey, authenticatedLocalOwnerKey, type LocalWorkspace } from "../platform/local-workspace";
-import { readLocalDriveDirectories, rememberLocalDriveDirectory, rememberDriveAccessRevoked, renameLocalDriveDirectory, removeLocalDriveScore } from "./local-drive-directory";
+import { readLocalDriveDirectories, rememberLocalDriveDirectory, rememberDriveAccessRevoked, renameLocalDriveDirectory, removeLocalDriveScore, renameLocalDriveScore } from "./local-drive-directory";
 import { noCapabilities, hasManagement } from "../../shared/drive-permissions";
 import type { ScoreSummary } from "../../shared/scores";
 import {
@@ -24,6 +24,10 @@ export interface DriveLibrarySnapshot {
   joinMessage: string | null;
   joining: boolean;
 }
+
+export type ConfirmedScoreChange =
+  | { kind: "trash"; scoreId: string }
+  | { kind: "rename"; scoreId: string; fileName: string };
 
 type OpenedAccess = Extract<DriveLibraryAccess, { kind: "opened" }>;
 
@@ -140,26 +144,47 @@ export class DriveLibrary {
 
   refresh = () => this.load(this.snapshot.access.kind !== "opened");
 
-  changed = () => {
+  changed = () => this.reload();
+
+  private reload(requirePersistence = false) {
     if (!this.isActive()) return Promise.resolve();
     invalidateDriveLibrary(this.ownerKey, this.choirId);
     this.confirmedAt = -Infinity;
     this.request?.controller.abort();
     this.request = null;
-    return this.load(false);
-  };
+    return this.load(false, requirePersistence);
+  }
 
-  confirmRemoval = async (scoreId: string) => {
-    if (!this.isActive() || this.snapshot.access.kind !== "opened") return;
-    this.request?.controller.abort();
-    this.request = null;
-    this.localController?.abort();
-    const access = { ...this.snapshot.access, result: { ...this.snapshot.access.result, scores: this.snapshot.access.result.scores.filter(score => score.id !== scoreId) } };
-    rememberDriveLibrary(this.ownerKey, this.choirId, access, this.confirmedAt);
-    this.publish({ access });
+  // A confirmed write is projected before any fallible storage/read work. Retrying
+  // this completion repeats only local persistence and a fresh directory read.
+  completeScoreChange = async (change?: ConfirmedScoreChange) => {
     const signal = this.ownerSignal;
-    const workspace = await this.workspace;
-    if (workspace) await removeLocalDriveScore(workspace, scoreId, signal);
+    signal.throwIfAborted();
+    if (!this.isActive()) throw new Error("drive_library_inactive");
+    if (change) {
+      this.request?.controller.abort(); this.request = null;
+      this.localController?.abort();
+      const access = this.snapshot.access;
+      if (access.kind !== "opened" || access.retained) throw new Error("drive_access_unconfirmed");
+      const scores = change.kind === "trash"
+        ? access.result.scores.filter(score => score.id !== change.scoreId)
+        : access.result.scores.map(score => score.id === change.scoreId ? { ...score, fileName: change.fileName } : score);
+      const next = { ...access, result: { ...access.result, scores } };
+      rememberDriveLibrary(this.ownerKey, this.choirId, next, this.confirmedAt);
+      this.publish({ access: next });
+      const workspace = await this.workspace;
+      signal.throwIfAborted();
+      if (!workspace) throw new Error("local_directory_unavailable");
+      if (change.kind === "trash") await removeLocalDriveScore(workspace, change.scoreId, signal);
+      else await renameLocalDriveScore(workspace, change.scoreId, change.fileName, signal);
+    }
+    signal.throwIfAborted();
+    await this.reload(true);
+    signal.throwIfAborted();
+    // Ordinary navigation keeps a usable list on failure; recovery must positively
+    // confirm a fresh read before the submission module can release its retry gate.
+    if (!this.isActive() || this.request || this.confirmedAt === -Infinity || this.snapshot.refreshMessage ||
+        this.snapshot.reading.authority !== "confirmed") throw new Error("drive_refresh_unconfirmed");
   };
 
   confirmName = async (name: string) => {
@@ -214,7 +239,7 @@ export class DriveLibrary {
     }
   };
 
-  private load(allowAdmission: boolean): Promise<void> {
+  private load(allowAdmission: boolean, requirePersistence = false): Promise<void> {
     if (!this.isActive()) return Promise.resolve();
     if (this.request) return this.request.done;
     const controller = new AbortController();
@@ -240,7 +265,12 @@ export class DriveLibrary {
         }
         if (access.kind === "opened" && !access.local) {
           const captured = await workspace;
-          if (captured) await rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal, access.isMember && !access.choir.isPreviewEntry, access.result.permissions.capabilities, access.result.storage).catch(() => undefined);
+          if (!captured && requirePersistence) throw new Error("local_directory_unavailable");
+          if (captured) {
+            const persisted = rememberLocalDriveDirectory(captured, access.choir, access.result.scores, signal, access.isMember && !access.choir.isPreviewEntry, access.result.permissions.capabilities, access.result.storage);
+            if (requirePersistence) await persisted;
+            else await persisted.catch(() => undefined);
+          }
         }
         if (this.request !== pending || signal.aborted) return;
         if (access.kind === "opened") {

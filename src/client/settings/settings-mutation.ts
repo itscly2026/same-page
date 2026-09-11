@@ -6,7 +6,7 @@ import { captureSettingsLifetime, useSettingsLifetime } from "./use-settings-lif
 type MutationResult =
   | { kind: "saved" }
   | { kind: "saved-refresh-failed"; error: unknown }
-  | { kind: "failed" | "unconfirmed" | "revoked"; error: unknown };
+  | { kind: "failed" | "unconfirmed" | "revoked"; error: unknown; message?: string };
 
 type Current = () => boolean;
 type Submission = {
@@ -15,15 +15,16 @@ type Submission = {
   confirmed?: (response: Response, isCurrent: Current) => void | Promise<void>;
   refresh?: boolean;
   successMessage?: string;
+  rejectionMessage?: (status: number, body: unknown) => string;
 };
 
 function mutationMessage(result: MutationResult) {
   switch (result.kind) {
     case "saved": return null;
     case "saved-refresh-failed": return `已保存。但刷新失败，请重新读取最新状态，不必再次提交。${result.error instanceof SettingsRequestError && [401, 403].includes(result.error.status) ? settingsError(result.error, "") : ""}`;
-    case "failed": return result.error instanceof SettingsRequestError && result.error.code ? lifecycleError(result.error.code) : "保存失败，修改已保留，请核对后重试。";
+    case "failed": return result.message ?? (result.error instanceof SettingsRequestError && result.error.code ? lifecycleError(result.error.code) : "保存失败，修改已保留，请核对后重试。");
     case "unconfirmed": return "操作结果未确认，请重新读取状态后再决定是否重试。";
-    case "revoked": return settingsError(result.error, "操作权限已撤销。");
+    case "revoked": return result.message ?? settingsError(result.error, "操作权限已撤销。");
   }
 }
 
@@ -48,12 +49,13 @@ export function useSettingsMutation({ enabled = true, refresh: read, onRevoked }
   // Only a successful read acknowledges uncertainty; a failed read keeps the
   // original write diagnosis so a confirmed save never looks like a failed save.
   const refresh = async () => {
-    if (gate.current.pending) return;
+    if (gate.current.pending) return false;
     const isCurrent = captureSettingsLifetime(lifetime);
     gate.current.pending = true; setPending(true);
     try {
       await read(isCurrent);
-      if (isCurrent()) { requireRefresh(false); setMessage(null); }
+      if (isCurrent()) { requireRefresh(false); setMessage(null); return true; }
+      return false;
     } catch (error) {
       if (isCurrent()) {
         requireRefresh(true);
@@ -81,7 +83,7 @@ export function useSettingsMutation({ enabled = true, refresh: read, onRevoked }
       if (!isCurrent()) return null;
       if (!response.ok) {
         const body = await response.json().catch(() => null);
-        result = { kind: response.status === 401 || response.status === 403 ? "revoked" : "failed", error: new SettingsRequestError(response.status, typeof body?.error === "string" ? body.error : undefined) };
+        result = { kind: response.status >= 500 ? "unconfirmed" : response.status === 401 || response.status === 403 ? "revoked" : "failed", error: new SettingsRequestError(response.status, typeof body?.error === "string" ? body.error : undefined), message: submission.rejectionMessage?.(response.status, body) };
       } else {
         try {
           await submission.confirmed?.(response, isCurrent);
