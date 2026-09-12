@@ -9,7 +9,7 @@ export function InstallSteps({ guide }: { guide: InstallGuide }) {
     { icon: Ellipsis, title: "点右上角 ···", detail: "打开当前 App 的菜单。" },
     { icon: Compass, title: ios ? "用 Safari 打开" : "在浏览器中打开", detail: "选择菜单里的“在浏览器中打开”，接着按页面提示添加。" },
   ] : ios ? [
-    { icon: Share, title: "点分享按钮", detail: "图标是方框上有一个向上的箭头；部分布局需先点“更多”。" },
+    { icon: Share, title: "点分享按钮", detail: "部分布局需先点“更多”。" },
     { icon: SquarePlus, title: "添加到主屏幕", detail: "在分享菜单中向下找这个选项。" },
     { icon: Check, title: "点“添加”", detail: "如有“作为网页 App 打开”，保持开启。" },
   ] : guide === "android" ? [
