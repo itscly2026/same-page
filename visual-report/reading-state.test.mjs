@@ -36,7 +36,7 @@ test("desktop and narrow readers preserve local intent and warm display name dra
     await page.goto(`${server.origin}/choirs/visual-choir/scores/visual-score`);
     await page.waitForFunction(() => document.querySelector("[data-pdf-canvas-active]")?.width > 100);
     await page.locator(".page-reader__viewport").click();
-    await page.getByRole("button", { name: "看哪些笔记", exact: true }).click();
+    await page.getByRole("button", { name: "笔记图层", exact: true }).click();
     const ensemble = page.getByRole("checkbox", { name: "显示 Ensemble", exact: true });
     await ensemble.waitFor(); hold = true;
     const initial = await ensemble.isChecked();
@@ -56,7 +56,7 @@ test("desktop and narrow readers preserve local intent and warm display name dra
       await second.goto(`${server.origin}/choirs/visual-choir/scores/visual-score`);
       await second.waitForFunction(() => document.querySelector("[data-pdf-canvas-active]")?.width > 100);
       await second.locator(".page-reader__viewport").click();
-      await second.getByRole("button", { name: "看哪些笔记", exact: true }).click();
+      await second.getByRole("button", { name: "笔记图层", exact: true }).click();
       const other = second.getByRole("checkbox", { name: "显示 Ensemble", exact: true });
       await other.waitFor(); await other.click();
       // The scenario requires a newer durable intent while the first tab owns

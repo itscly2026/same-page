@@ -52,7 +52,7 @@ test("library and reader share export choices without saving notices at desktop 
     assert.deepEqual(await dialog.getByRole("checkbox").evaluateAll(inputs => inputs.map(input => [input.closest("label").textContent, input.checked])), defaults);
     await page.screenshot({ path: `artifacts/issue-238/${width}-reader-export.png`, fullPage: true });
     await dialog.getByRole("button", { name: "取消", exact: true }).click();
-    await page.getByRole("button", { name: "看哪些笔记", exact: true }).click();
+    await page.getByRole("button", { name: "笔记图层", exact: true }).click();
     const toggle = page.getByRole("checkbox", { name: "显示 Ensemble", exact: true });
     await toggle.click();
     assert.equal(await page.getByText(/已同步。|等待同步。|正在保存到本机/).count(), 0);

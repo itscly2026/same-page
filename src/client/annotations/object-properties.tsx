@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { useState } from "react";
 import type { AnnotationPayload } from "../../shared/annotations";
 import { StyleFields } from "./style-fields";
@@ -19,7 +20,7 @@ export function ObjectProperties({ payload, personal, displayColor, onApply, onC
     if (saved) onClose();
   };
   return <aside className="annotation-object-properties" aria-label="所选笔记属性">
-    <header><h2>所选笔记</h2><button type="button" aria-label="关闭所选笔记属性" onClick={onClose}>×</button></header>
+    <header><h2>所选笔记</h2><button type="button" className="icon-button" aria-label="关闭所选笔记属性" onClick={onClose}><X size={20} aria-hidden="true" /></button></header>
     <p>修改当前对象，可撤销。</p>
     <fieldset disabled={saving}><div style={{ color: personal ? color : displayColor }}><StyleFields tool={tool} value={style} onChange={value => setStyle({ ...style, ...value })} /></div>
     {personal && <label className="annotation-object-color">颜色<input aria-label="所选笔记颜色" type="color" value={color} onChange={event => setColor(event.target.value)} /></label>}

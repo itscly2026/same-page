@@ -42,7 +42,7 @@ test(`${engineName}: reader controls remain reachable without overlap across vie
   }
   await page.getByRole("button", { name: "编辑", exact: true }).click();
   await page.locator(".annotation-controls").waitFor();
-  for (const name of ["返回云盘", "看哪些笔记", "更多"]) assert.equal(await page.getByRole("button", { name, exact: true }).count(), 0);
+  for (const name of ["返回云盘", "笔记图层", "更多"]) assert.equal(await page.getByRole("button", { name, exact: true }).count(), 0);
   await page.getByRole("button", { name: "完成编辑", exact: true }).click();
   await page.locator(".page-preview-strip").waitFor({ state: "visible" });
   const preview = await page.getByRole("slider", { name: "跳转页码" }).boundingBox();

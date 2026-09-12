@@ -101,7 +101,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByRole("button", { name: "返回", exact: true }).click();
     await page.goto(`${origin}${drive}/scores/visual-score`);
     await showReader(page);
-    await page.getByRole("button", { name: "看哪些笔记", exact: true }).click();
+    await page.getByRole("button", { name: "笔记图层", exact: true }).click();
     await page.getByRole("checkbox", { name: "显示 Ensemble" }).waitFor();
     assert.equal(await page.getByRole("checkbox").count(), 6);
     await page.locator(".layer-section--personal").scrollIntoViewIfNeeded();
@@ -142,7 +142,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
 
     await page.goto(`${origin}${drive}/scores/visual-score`);
     await showReader(page);
-    await page.getByRole("button", { name: "看哪些笔记", exact: true }).click();
+    await page.getByRole("button", { name: "笔记图层", exact: true }).click();
     const scoreDisplay = page.getByRole("checkbox", { name: "显示 Ensemble" });
     await scoreDisplay.waitFor();
     assert.equal(await scoreDisplay.isChecked(), false, "drive default applies to this score");
@@ -213,7 +213,7 @@ async function showReader(page) {
   const viewport = page.locator(".page-reader__viewport");
   const box = await viewport.boundingBox();
   await viewport.click({ position: { x: box.width / 2, y: box.height / 2 } });
-  await page.getByRole("button", { name: "看哪些笔记", exact: true }).waitFor();
+  await page.getByRole("button", { name: "笔记图层", exact: true }).waitFor();
 }
 async function layout(page, selector) {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "document has no horizontal overflow");
