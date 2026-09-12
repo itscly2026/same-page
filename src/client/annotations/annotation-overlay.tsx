@@ -29,6 +29,7 @@ import { calculateTextEditorLayout } from "./text-editor-layout";
 import { inkSvgPaths, inkHit, inkFillRule } from "./ink-geometry";
 import { defaultToolStyle, type ToolStyle } from "./tool-style";
 import { highlighterNibPath } from "./highlighter-geometry";
+import { TextAlignment, TextSizeInput } from "./style-fields";
 import { ObjectProperties } from "./object-properties";
 
 export type AnnotationTool = "select" | "text" | "ink" | "highlighter" | "rectangle" | "ellipse" | "eraser";
@@ -48,6 +49,7 @@ interface TextEditorBase {
   x: number;
   y: number;
   initial: string;
+  textAlign?: TextPayload["textAlign"];
   fontScale: number;
   pageWidth: number;
   color?: string;
@@ -102,6 +104,7 @@ export function AnnotationOverlay({
   activeLayerId,
   toolStyle = defaultToolStyle(tool),
   onInteractionChange,
+  onTextStyleChange,
   interactionRef: handoffRef,
 }: {
   editor: AnnotationEditor | null;
@@ -113,6 +116,7 @@ export function AnnotationOverlay({
   tool: AnnotationTool;
   toolColor?: string;
   toolStyle?: ToolStyle;
+  onTextStyleChange?(style: Pick<ToolStyle, "fontScale" | "textAlign">): void;
   activeLayerId: string | null;
   interactionRef?: Ref<AnnotationInteractionHandle>;
   onInteractionChange?(interaction: AnnotationOverlayInteraction): void;
@@ -131,8 +135,8 @@ export function AnnotationOverlay({
   const textSavingRef = useRef(false);
   const [textSaving, setTextSaving] = useState(false);
   const [editorText, setEditorText] = useState("");
+  const [editorTextAlign, setEditorTextAlign] = useState<"left" | "center" | "right">("center");
   const [editorFontScale, setEditorFontScale] = useState(DEFAULT_TEXT_FONT_SCALE);
-  const [fontScaleAdjusting, setFontScaleAdjusting] = useState(false);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
   const textComposerHeaderRef = useRef<HTMLElement>(null);
   const pendingTextPlacement = useRef<PendingTextPlacement | null>(null);
@@ -184,11 +188,11 @@ export function AnnotationOverlay({
   );
   const activeLayerColor = layerColors.get(activeLayerId ?? "") ?? toolColor;
   const editorFontSize = textEditor
-    ? clampRange(textEditor.pageWidth * editorFontScale, 12, 96)
+    ? textEditor.pageWidth * editorFontScale
     : 12;
   const editorFontScaleProgress =
     (editorFontScale - MIN_TEXT_FONT_SCALE) /
-    (MAX_TEXT_FONT_SCALE - MIN_TEXT_FONT_SCALE);
+    (0.032 - MIN_TEXT_FONT_SCALE);
   const pageAnnotations = annotations.map(annotation => {
     return projectedTransforms.has(annotation.id) ? { ...annotation, payload: projectedTransforms.get(annotation.id) ?? null } : annotation;
   }).filter(
@@ -307,7 +311,7 @@ export function AnnotationOverlay({
     flushSync(() => {
       setEditorText(editor.initial);
       setEditorFontScale(editor.fontScale);
-      setFontScaleAdjusting(false);
+      setEditorTextAlign(editor.textAlign ?? "center");
       setTextEditor(editor);
       updateInteraction("composing-text");
     });
@@ -317,7 +321,6 @@ export function AnnotationOverlay({
   };
 
   const closeTextEditor = () => {
-    setFontScaleAdjusting(false);
     textSelection.current = null;
     pendingTextPlacement.current = null;
     setTextEditor(null);
@@ -367,11 +370,15 @@ export function AnnotationOverlay({
         x: textDraft.x,
         y: textDraft.y,
         fontScale: editorFontScale,
+        textAlign: editorTextAlign,
         color: textDraft.color ?? toolColor,
         text,
       },
     });
-    if (saved) closeTextEditor();
+    if (saved) {
+      if (textDraft.source === "new") onTextStyleChange?.({ fontScale: editorFontScale, textAlign: editorTextAlign });
+      closeTextEditor();
+    }
     return Boolean(saved);
   };
 
@@ -480,7 +487,7 @@ export function AnnotationOverlay({
     }
 
     const clamped = next.kind === "text"
-      ? clampTextToPage(next, transform.element, bounds)
+      ? { ...next, x: clamp(next.x), y: clamp(next.y) }
       : { ...next, x: clampRange(next.x, 0, 1 - next.width), y: clampRange(next.y, 0, 1 - next.height) };
     transform.preview = clamped;
     setObjectTransformPreview({ id: transform.id, payload: clamped });
@@ -525,6 +532,7 @@ export function AnnotationOverlay({
         y: transform.payload.y,
         initial: transform.payload.text,
         fontScale: transform.payload.fontScale,
+        textAlign: transform.payload.textAlign,
         pageWidth: bounds?.width ?? 640,
         source: "existing",
         openingPoint: { x: event.clientX, y: event.clientY },
@@ -574,6 +582,7 @@ export function AnnotationOverlay({
         y: position.y,
         initial: "",
         fontScale: toolStyle.fontScale,
+        textAlign: toolStyle.textAlign,
         pageWidth: bounds.width,
         source: "new",
         openingPoint: { x: event.clientX, y: event.clientY },
@@ -791,10 +800,11 @@ export function AnnotationOverlay({
               left: `${position.x * 100}%`,
               top: `${position.y * 100}%`,
               color: layerColors.get(annotation.layerId) ?? payload.color ?? "#dc2626",
-              ...(position.kind === "text" ? { fontSize: `${position.fontScale * 100}cqw` } : {
+              ...(position.kind === "text" ? { fontSize: `${position.fontScale * 100}cqw`, textAlign: position.textAlign ?? "center" } : {
                 width: `${position.width * 100}%`, height: `${position.height * 100}%`,
               }),
             }}
+            data-transforming={objectTransformPreview?.id === annotation.id || undefined}
             data-selected={selectedId === annotation.id && tool === "select" || undefined}
             key={annotation.id}
             disabled={!canMoveObjects || annotation.layerId !== activeLayerId}
@@ -826,7 +836,7 @@ export function AnnotationOverlay({
               const payload = selected.payload;
               if (payload?.kind !== "text") return;
               setSelectedId(null);
-              openTextEditor({ id: selected.id, x: payload.x, y: payload.y, initial: payload.text, fontScale: payload.fontScale, pageWidth, source: "existing", color: payload.color });
+              openTextEditor({ id: selected.id, x: payload.x, y: payload.y, initial: payload.text, fontScale: payload.fontScale, textAlign: payload.textAlign, pageWidth, source: "existing", color: payload.color });
             }} />}
           {!canStartEdit && !finishing && <aside className="annotation-storage-error" role="status">
             <strong>此层已停止编辑</strong>
@@ -892,6 +902,7 @@ export function AnnotationOverlay({
           >
             取消
           </button>
+          {textEditor && <TextAlignment value={editorTextAlign} onChange={setEditorTextAlign} />}
           <button tabIndex={textEditor ? 0 : -1} disabled={textSaving || finishing} type="submit">完成</button>
         </header>
         {textEditor ? (
@@ -904,9 +915,11 @@ export function AnnotationOverlay({
             inputMode="text"
             maxLength={1000}
             rows={2}
+            wrap="off"
             style={{
               color: layerColors.get(activeLayerId ?? "") ?? textEditor.color ?? toolColor,
               fontSize: editorFontSize,
+              textAlign: editorTextAlign,
             }}
             value={editorText}
             onChange={(event) => { if (editor?.getSnapshot() === "finishing") return; openingPoint.current = null; setEditorText(event.target.value); }}
@@ -922,29 +935,24 @@ export function AnnotationOverlay({
             }}
           />
         ) : null}
-        <label className="annotation-font-scale">
-          <output
-            aria-hidden={fontScaleAdjusting ? undefined : "true"}
-            className="annotation-font-scale__value"
-            data-visible={fontScaleAdjusting || undefined}
-          >
-            {Math.round(editorFontSize)}
-          </output>
+        <div className="annotation-font-scale">
+          <TextSizeInput className="annotation-font-scale__value" disabled={textSaving || finishing}
+            value={editorFontScale} onChange={setEditorFontScale} />
           <span className="annotation-font-scale__control">
             <span aria-hidden="true" className="annotation-font-scale__track" />
             <span
               aria-hidden="true"
               className="annotation-font-scale__thumb"
-              style={{ bottom: `${editorFontScaleProgress * 100}%` }}
+              style={{ bottom: `${Math.min(1, editorFontScaleProgress) * 100}%` }}
             />
             <input
               aria-label="字号"
               type="range"
             disabled={textSaving || finishing}
               min={MIN_TEXT_FONT_SCALE}
-              max={MAX_TEXT_FONT_SCALE}
+              max={0.032}
               step="0.001"
-              value={editorFontScale}
+              value={Math.min(0.032, editorFontScale)}
               onChange={(event) => setEditorFontScale(Number(event.target.value))}
               onPointerDown={() => {
                 const input = textInputRef.current;
@@ -955,19 +963,16 @@ export function AnnotationOverlay({
                       direction: input.selectionDirection,
                     }
                   : null;
-                setFontScaleAdjusting(true);
               }}
               onPointerCancel={() => {
-                setFontScaleAdjusting(false);
                 focusTextInput(textSelection.current);
               }}
               onPointerUp={() => {
-                setFontScaleAdjusting(false);
                 focusTextInput(textSelection.current);
               }}
             />
           </span>
-        </label>
+        </div>
           </form>
         </>,
         document.body,
@@ -1006,24 +1011,6 @@ function useVisualViewport(enabled: boolean) {
     };
   }, [enabled]);
   return viewport;
-}
-
-function clampTextToPage(payload: TextPayload, element: HTMLElement, pageBounds: DOMRect): TextPayload {
-  const previousFontSize = element.style.fontSize;
-  let textBounds: DOMRect;
-  try {
-    element.style.fontSize = `${payload.fontScale * 100}cqw`;
-    textBounds = element.getBoundingClientRect();
-  } finally {
-    element.style.fontSize = previousFontSize;
-  }
-  const halfWidth = Math.min(0.49, textBounds.width / pageBounds.width / 2);
-  const halfHeight = Math.min(0.49, textBounds.height / pageBounds.height / 2);
-  return {
-    ...payload,
-    x: clampRange(payload.x, halfWidth, 1 - halfWidth),
-    y: clampRange(payload.y, halfHeight, 1 - halfHeight),
-  };
 }
 
 function clamp(value: number) {

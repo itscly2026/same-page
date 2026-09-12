@@ -79,6 +79,46 @@ test(`${engineName}: reader controls remain reachable without overlap across vie
 });
 }
 
+for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
+  for (const layout of ["page", "continuous"]) {
+    test(`${engineName}: editing ${layout} turns a zoomed page and centers the destination`, async context => {
+      const browser = await engine.launch({ headless: true });
+      context.after(() => browser.close());
+      const page = await openMemberReader(browser, { width: 834, height: 800 });
+      await showReaderChrome(page);
+      if (layout === "continuous") {
+        await page.getByRole("button", { name: "更多", exact: true }).click();
+        await page.getByRole("button", { name: "连续滚动", exact: true }).click();
+      }
+      await page.getByRole("button", { name: "编辑", exact: true }).click();
+      const viewport = page.locator(layout === "page" ? ".page-reader__viewport" : ".continuous-reader");
+      await viewport.evaluate(element => {
+        const send = (type, id, x) => element.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType: "touch", pointerId: id, clientX: x, clientY: 300 }));
+        send("pointerdown", 1, 200); send("pointerdown", 2, 300);
+        send("pointermove", 2, 400); send("pointerup", 2, 400); send("pointerup", 1, 200);
+      });
+      await page.waitForFunction(selector => Number(document.querySelector(selector)?.dataset.zoom) === 2, layout === "page" ? ".page-reader__viewport" : ".continuous-reader");
+      await viewport.evaluate(element => {
+        const content = element.querySelector(".page-reader__content, .continuous-reader__inner");
+        const remaining = Math.max(0, content.getBoundingClientRect().right - element.getBoundingClientRect().right);
+        const send = (type, id, x) => element.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType: "touch", pointerId: id, clientX: x, clientY: 300 }));
+        send("pointerdown", 3, 500); send("pointerdown", 4, 600);
+        send("pointermove", 3, 500 - remaining - 120); send("pointermove", 4, 600 - remaining - 120);
+        send("pointerup", 4, 600 - remaining - 120); send("pointerup", 3, 500 - remaining - 120);
+      });
+      await page.locator('.annotation-overlay[data-editing] svg[aria-label="第 2 页笔记层"]').waitFor();
+      await page.waitForFunction(selector => {
+        const viewport = document.querySelector(selector);
+        const paper = viewport.querySelector('.annotation-overlay[data-editing]');
+        if (!paper || Number(viewport.dataset.zoom) > 1) return false;
+        const a = viewport.getBoundingClientRect(), b = paper.getBoundingClientRect();
+        return Math.abs((a.left + a.right - b.left - b.right) / 2) < 2 && Math.abs((a.top + a.bottom - b.top - b.bottom) / 2) < 5;
+      }, layout === "page" ? ".page-reader__viewport" : ".continuous-reader");
+      assert.equal(await page.locator('.annotation-overlay[data-editing]').getAttribute("data-tool"), "text");
+    });
+  }
+}
+
 test("grows and caps the real text composer inside an iPad WebKit visual viewport", async (context) => {
   const browser = await webkit.launch({ headless: true });
   context.after(() => browser.close());
@@ -111,7 +151,7 @@ test("grows and caps the real text composer inside an iPad WebKit visual viewpor
   }));
   assert.ok(multiline.clientHeight >= multiline.scrollHeight);
 
-  const longValue = Array(30).fill("很多换行仍然可以继续编辑").join("\n");
+  const longValue = Array(60).fill("很多换行仍然可以继续编辑").join("\n");
   await input.fill(longValue);
   await assertEventually(page, () => {
     const element = document.querySelector("textarea[aria-label='笔记文本']");

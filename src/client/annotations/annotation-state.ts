@@ -155,6 +155,11 @@ export async function saveAnnotationDraft(
   workspace: LocalWorkspace,
   input: DraftInput,
 ) {
+  // New-client intent must be explicit, including undo of legacy centered text.
+  // The server reserves an omitted alignment for writes from older clients.
+  if (input.payload?.kind === "text" && input.payload.textAlign === undefined) {
+    input = { ...input, payload: { ...input.payload, textAlign: "center" } };
+  }
   await assertLocalWorkspaceActive(workspace);
   if (isLocalExperience(workspace) && input.layerId !== GUEST_NOTE_LAYER_ID) throw new Error("guest_notes_are_local_only");
   await localDatabase.transaction(

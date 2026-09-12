@@ -515,6 +515,21 @@ describe("annotation layers and object synchronization", () => {
     expect(newAdmission.status).toBe(200);
   });
 
+  it("preserves alignment for legacy writers but accepts explicit centered undo idempotently", async () => {
+    const fixture = await createFixture();
+    const first = operation(crypto.randomUUID(), fixture.layerId, 0, "旧居中");
+    await push(fixture, [first]);
+    const aligned = { ...operation(first.annotationId, fixture.layerId, 1, "左对齐"), payload: { ...first.payload, textAlign: "left" } };
+    expect(await (await push(fixture, [aligned])).json()).toMatchObject({ results: [{ status: "accepted", object: { version: 2, payload: { textAlign: "left" } } }] });
+    const legacy = operation(first.annotationId, fixture.layerId, 2, "旧客户端改字");
+    expect(await (await push(fixture, [legacy])).json()).toMatchObject({ results: [{ status: "accepted", object: { version: 3, payload: { text: "旧客户端改字", textAlign: "left" } } }] });
+    expect(await (await push(fixture, [legacy])).json()).toMatchObject({ results: [{ status: "accepted", object: { version: 3 } }] });
+    const undo = { ...operation(first.annotationId, fixture.layerId, 3, "旧居中"), payload: { ...first.payload, textAlign: "center" } };
+    expect(await (await push(fixture, [undo])).json()).toMatchObject({ results: [{ status: "accepted", object: { version: 4, payload: { textAlign: "center" } } }] });
+    expect(await (await push(fixture, [undo])).json()).toMatchObject({ results: [{ status: "accepted", object: { version: 4 } }] });
+    expect(await (await push(fixture, [{ ...undo, payload: { ...undo.payload, textAlign: "right" } }])).json()).toMatchObject({ results: [{ status: "op_id_reused" }] });
+  });
+
   it("merges independent objects, conflicts only the stale object, and retries opId idempotently", async () => {
     const fixture = await createFixture();
     const firstId = crypto.randomUUID();

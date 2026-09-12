@@ -118,7 +118,7 @@ describe("local annotation durability", () => {
     }]);
     await reapplyAnnotationConflict(workspace, operation.opId, keepBoth);
     expect(await localDatabase.annotations.where("[scopeKey+state]").equals([workspace.scopeKey, "draft"]).toArray())
-      .toEqual([expect.objectContaining({ payload: { ...textPayload("B") }, baseVersion: keepBoth ? 0 : 2 })]);
+      .toEqual([expect.objectContaining({ payload: { ...textPayload("B"), textAlign: "center" }, baseVersion: keepBoth ? 0 : 2 })]);
   });
 
   it("undoes content after confirmation without restoring pending metadata", async () => {
@@ -135,7 +135,7 @@ describe("local annotation durability", () => {
     expect(await localDatabase.annotations.toCollection().first()).toMatchObject({ version: 1, baseVersion: 1, state: "draft", payload: { text: "A" } });
     await editor.redo(layerId);
     await queueScoreDrafts(workspace);
-    expect(await localDatabase.annotationOutbox.toArray()).toEqual([expect.objectContaining({ baseVersion: 1, payload: { ...textPayload("B") } })]);
+    expect(await localDatabase.annotationOutbox.toArray()).toEqual([expect.objectContaining({ baseVersion: 1, payload: { ...textPayload("B"), textAlign: "center" } })]);
   });
 
   it("ignores duplicate responses after a newer confirmation and retains edits made during a conflict", async () => {

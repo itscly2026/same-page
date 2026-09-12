@@ -207,23 +207,23 @@ describe("AnnotationOverlay", () => {
     expect(interactions).toEqual(["composing-text"]);
     expect(input).toHaveStyle({ color: "rgb(161, 38, 82)" });
     const fontScale = screen.getByRole("slider", { name: "字号" });
-    expect(fontScale).toHaveValue("0.024");
+    expect(fontScale).toHaveValue("0.016");
     const fontValue = composer.querySelector(".annotation-font-scale__value");
-    expect(fontValue).not.toHaveAttribute("data-visible");
+    expect(fontValue).toHaveAttribute("data-visible");
     fireEvent.change(input, { target: { value: "保持选择范围" } });
     expect(screen.getByLabelText("笔记文本")).toBe(stableInput);
     input.setSelectionRange(2, 6, "forward");
     fireEvent.pointerDown(fontScale);
     fontScale.focus();
     expect(fontValue).toHaveAttribute("data-visible");
-    fireEvent.change(fontScale, { target: { value: "0.04" } });
-    expect(fontScale).toHaveValue("0.04");
+    fireEvent.change(fontScale, { target: { value: "0.028" } });
+    expect(fontScale).toHaveValue("0.028");
     expect(screen.getByLabelText("笔记文本")).toBe(stableInput);
     expect(input).toHaveValue("保持选择范围");
     expect(input.selectionStart).toBe(2);
     expect(input.selectionEnd).toBe(6);
     fireEvent.pointerUp(fontScale);
-    expect(fontValue).not.toHaveAttribute("data-visible");
+    expect(fontValue).toHaveAttribute("data-visible");
     expect(input).toHaveFocus();
     expect(input.selectionStart).toBe(2);
     expect(input.selectionEnd).toBe(6);
@@ -396,6 +396,29 @@ describe("AnnotationOverlay", () => {
     expect(focus).toHaveBeenCalledOnce();
   });
 
+  it("allows gradual size entry and saves explicit alignment without wrapping", async () => {
+    renderOverlay([], "text");
+    const overlay = screen.getByLabelText("第 1 页笔记层");
+    mockBounds(overlay);
+    openNewText(overlay);
+    const input = screen.getByLabelText("笔记文本");
+    expect(input).toHaveAttribute("wrap", "off");
+    const size = screen.getByRole("spinbutton", { name: "字号数值" });
+    fireEvent.focus(size);
+    fireEvent.change(size, { target: { value: "" } });
+    expect(size).toHaveValue(null);
+    fireEvent.change(size, { target: { value: "2" } });
+    expect(size).toHaveValue(2);
+    fireEvent.change(size, { target: { value: "24" } });
+    fireEvent.blur(size);
+    expect(size).toHaveValue(24);
+    fireEvent.click(screen.getByRole("button", { name: "左对齐" }));
+    expect(input).toHaveStyle({ textAlign: "left" });
+    fireEvent.change(input, { target: { value: "长句不会自动断行\n短句" } });
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    await waitFor(async () => expect(await localDatabase.annotations.toCollection().first()).toMatchObject({ payload: { textAlign: "left", fontScale: .024, text: "长句不会自动断行\n短句" } }));
+  });
+
   it("saves multiline text, its original page anchor and normalized font scale only on complete", async () => {
     renderOverlay([], "text");
     const overlay = screen.getByLabelText("第 1 页笔记层");
@@ -405,8 +428,8 @@ describe("AnnotationOverlay", () => {
     fireEvent.change(screen.getByLabelText("笔记文本"), {
       target: { value: "第一行\n第二行" },
     });
-    fireEvent.change(screen.getByRole("slider", { name: "字号" }), {
-      target: { value: "0.04" },
+    fireEvent.change(screen.getByRole("spinbutton", { name: "字号数值" }), {
+      target: { value: "40" },
     });
     fireEvent.click(within(composer).getByRole("button", { name: "完成" }));
 
@@ -749,7 +772,7 @@ describe("AnnotationOverlay", () => {
     });
   });
 
-  it("clamps a pinched text using its new rendered size before release", async () => {
+  it("preserves the text anchor while enlarged glyphs extend beyond the page", async () => {
     const text = annotation("text-1", activeLayerId, textPayload("边缘缩放", 0.9, 0.3));
     await localDatabase.annotations.put(text);
     renderOverlay([text], "text");
@@ -769,7 +792,7 @@ describe("AnnotationOverlay", () => {
       expect(stored?.payload?.kind).toBe("text");
       if (stored?.payload?.kind !== "text") return;
       expect(stored.payload.fontScale).toBeCloseTo(0.048);
-      expect(stored.payload.x).toBeCloseTo(0.7);
+      expect(stored.payload.x).toBeCloseTo(0.8);
     });
   });
 

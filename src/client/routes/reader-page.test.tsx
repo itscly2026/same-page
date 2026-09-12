@@ -1117,6 +1117,54 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(screen.queryByText("编辑")).not.toBeInTheDocument();
   });
 
+  it.each(["page", "continuous"] as const)("turns while editing %s and fits the destination after zooming", async layout => {
+    vi.mocked(fetch).mockImplementation((input: string | URL | Request) => Promise.resolve(
+      (String(input).includes("/layers") || String(input).includes("/sync?"))
+        ? readerLayersResponse(String(input), { layers: completeReaderLayers().map(layer => ({ ...layer, canEdit: layer.kind === "personal" })), sharedLayerRevision: 0, permissions: { canManageLayers: false } })
+        : activeSyncResponse()));
+    render(<MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+      <Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByLabelText("翻页阅读");
+    toggleChrome();
+    if (layout === "continuous") {
+      fireEvent.click(screen.getByRole("button", { name: "更多" }));
+      fireEvent.click(screen.getByRole("button", { name: "连续滚动" }));
+      fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    }
+    const edit = screen.getByRole("button", { name: "编辑" });
+    await waitFor(() => expect(edit).toHaveAttribute("data-state", "ready"));
+    fireEvent.click(edit);
+    const viewport = document.querySelector<HTMLElement>(layout === "page" ? ".page-reader__viewport" : ".continuous-reader")!;
+    const content = document.querySelector<HTMLElement>(layout === "page" ? ".page-reader__content" : ".continuous-reader__inner")!;
+    const rect = (width: number) => ({ x: 0, y: 0, top: 0, left: 0, right: width, bottom: 800, width, height: 800, toJSON() {} });
+    vi.spyOn(viewport, "getBoundingClientRect").mockImplementation(() => rect(1000));
+    vi.spyOn(content, "getBoundingClientRect").mockImplementation(() => rect(1000 * Number(viewport.dataset.zoom)));
+    const sample = (pointerId: number, clientX: number) => ({ pointerId, pointerType: "touch", clientX, clientY: 200 });
+    // First zoom to 2x. A pinch itself must not navigate.
+    fireEvent.pointerDown(viewport, sample(1, 100));
+    fireEvent.pointerDown(viewport, sample(2, 200));
+    fireEvent.pointerMove(viewport, sample(2, 300));
+    fireEvent.pointerUp(viewport, sample(2, 300));
+    fireEvent.pointerUp(viewport, sample(1, 100));
+    expect(viewport).toHaveAttribute("data-zoom", "2");
+    expect(screen.getByLabelText("第 1 页笔记层").closest(".annotation-overlay")).toHaveAttribute("data-editing");
+    // Pan the remaining 1000px of paper, then cross the 80px turn threshold.
+    viewport.scrollTop = 80;
+    fireEvent.pointerDown(viewport, sample(3, 1500));
+    fireEvent.pointerDown(viewport, sample(4, 1600));
+    fireEvent.pointerMove(viewport, sample(3, 400));
+    fireEvent.pointerMove(viewport, sample(4, 500));
+    fireEvent.pointerUp(viewport, sample(4, 500));
+    fireEvent.pointerUp(viewport, sample(3, 400));
+    if (layout === "page") await finishPageTurn();
+    await waitFor(() => expect(screen.getByLabelText("第 2 页笔记层").closest(".annotation-overlay")).toHaveAttribute("data-editing"));
+    expect(Number(viewport.dataset.zoom)).toBeLessThanOrEqual(1);
+    expect(screen.getByLabelText("第 2 页笔记层").closest(".annotation-overlay")).toHaveAttribute("data-tool", "text");
+    if (layout === "page") expect(viewport.scrollTop).toBe(0);
+    else expect(virtualTestState.scrollToIndex).toHaveBeenCalledWith(1, { align: "center" });
+  });
+
   it("selects the page at the viewport center before locking it for editing", async () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);

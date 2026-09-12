@@ -36,3 +36,12 @@ it("falls back on invalid or unreadable storage and retains a choice when writin
   act(() => hook.result.current.setTool("ellipse"));
   expect(hook.result.current.tool).toBe("ellipse");
 });
+
+it("remembers new text size and alignment across mounts while isolating owners", () => {
+  const first = renderHook(() => useToolStyle("user:one", "text"));
+  expect(first.result.current.style).toMatchObject({ fontScale: .016, textAlign: "center" });
+  act(() => first.result.current.setStyle({ ...first.result.current.style, fontScale: .02, textAlign: "right" }));
+  first.unmount();
+  expect(renderHook(() => useToolStyle("user:one", "text")).result.current.style).toMatchObject({ fontScale: .02, textAlign: "right" });
+  expect(renderHook(() => useToolStyle("user:two", "text")).result.current.style).toMatchObject({ fontScale: .016, textAlign: "center" });
+});

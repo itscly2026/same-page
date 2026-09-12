@@ -270,3 +270,18 @@ it("finishes local experience notes without creating an account outbox or reques
     expect(recovery).not.toHaveBeenCalled();
   } finally { localEditor.cancel(); window.removeEventListener(OUTBOX_RECOVERY_REQUEST_EVENT, recovery); }
 });
+
+it("writes explicit center when undo restores a legacy text payload", async () => {
+  await editor.persist(text("legacy"));
+  await localDatabase.annotations.toCollection().modify(note => {
+    if (note.payload?.kind === "text") delete note.payload.textAlign;
+  });
+  const next = text("aligned");
+  if (next.payload?.kind === "text") next.payload.textAlign = "left";
+  await editor.persist(next);
+  expect(await savedText()).toMatchObject({ textAlign: "left" });
+  await editor.undo("personal");
+  expect(await savedText()).toMatchObject({ text: "legacy", textAlign: "center" });
+  await editor.redo("personal");
+  expect(await savedText()).toMatchObject({ text: "aligned", textAlign: "left" });
+});

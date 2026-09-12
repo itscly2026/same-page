@@ -261,7 +261,7 @@ function ReaderPageContent() {
     currentPage,
     pageCount: document?.numPages ?? 1,
     documentKey: `${documentScopeKey ?? "none"}:${score?.currentVersion.id ?? "none"}`,
-    enabled: layout === "page" && !editing && document !== null,
+    enabled: layout === "page" && document !== null,
     onPageChange: setCurrentPage,
   });
   const requestPage = pager.request;
@@ -447,6 +447,7 @@ function ReaderPageContent() {
     tool,
     toolColor,
     toolStyle,
+    onTextStyleChange: value => setToolStyle({ ...toolStyle, ...value }),
     activeLayerId,
     onInteractionChange: setAnnotationInteraction,
     editor,

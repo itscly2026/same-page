@@ -55,6 +55,7 @@ export function useReaderGestures({
   constrainScroll,
   onNavigationStart,
   isObjectGestureActive,
+  onEditingPageTurn,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   contentRef: RefObject<HTMLElement | null>;
@@ -72,6 +73,7 @@ export function useReaderGestures({
   constrainScroll?(): void;
   onNavigationStart?(): void;
   isObjectGestureActive?(): boolean;
+  onEditingPageTurn?(direction: "previous" | "next"): void;
   captureAnchor?(center: Point): (zoom: number) => Point;
 }) {
   const constrain = useEffectEvent(() => constrainScroll?.());
@@ -90,6 +92,7 @@ export function useReaderGestures({
   const previewFrame = useRef<number | null>(null);
   const latestZoom = useRef(zoom);
   const pinched = useRef(false);
+  const editTurn = useRef<{ center: Point; bounds: DOMRect; viewport: DOMRect; distance: number; scaled: boolean; direction: "previous" | "next" | null } | null>(null);
 
   const clearPreview = useCallback(() => {
     previewBoundaryRef?.current?.removeAttribute("data-gesture-preview");
@@ -111,14 +114,27 @@ export function useReaderGestures({
     content.setAttribute("data-gesture-preview", "");
   }, [contentRef, previewBoundaryRef]);
 
+  const sampleEditingTurn = useCallback(() => {
+    const turn = editTurn.current;
+    if (!turn || points.current.size !== 2) return;
+    const [first, second] = [...points.current.values()];
+    if (Math.abs(distance(first, second) / turn.distance - 1) > 0.08) turn.scaled = true;
+    turn.direction = editingTurnDirection(turn, midpoint(first, second));
+    if (turn.direction) containerRef.current?.setAttribute("data-edit-page-turn", turn.direction);
+    else containerRef.current?.removeAttribute("data-edit-page-turn");
+  }, [containerRef]);
+
   const schedulePreview = useCallback((next: PinchPreview) => {
     preview.current = next;
     if (previewFrame.current !== null) return;
     previewFrame.current = requestAnimationFrame(() => {
       previewFrame.current = null;
+      // Pointer events arrive separately; classify their combined frame, not
+      // the transient distance after just one finger moves.
+      sampleEditingTurn();
       if (preview.current) paintPreview(preview.current);
     });
-  }, [paintPreview]);
+  }, [paintPreview, sampleEditingTurn]);
 
   const cancelPreviewFrame = useCallback(() => {
     if (previewFrame.current === null) return;
@@ -172,6 +188,11 @@ export function useReaderGestures({
       pageTurn?.begin(pageTurnSample(event, pageTurnExtent));
       return;
     }
+    if (points.current.size > 2 && editTurn.current) {
+      editTurn.current.scaled = true;
+      editTurn.current.direction = null;
+      containerRef.current?.removeAttribute("data-edit-page-turn");
+    }
     if (points.current.size !== 2) return;
     if (
       primary.current &&
@@ -198,6 +219,9 @@ export function useReaderGestures({
         y: center.y - contentBounds.top,
       },
     };
+    if (twoFingerOnly && onEditingPageTurn && container) {
+      editTurn.current = { center, bounds: contentBounds, viewport: container.getBoundingClientRect(), distance: distance(first, second), scaled: false, direction: null };
+    }
     latestZoom.current = zoom;
     pinched.current = true;
     previewBoundaryRef?.current?.setAttribute("data-gesture-preview", "");
@@ -265,6 +289,8 @@ export function useReaderGestures({
     primary.current = null;
     pinch.current = null;
     pinched.current = false;
+    editTurn.current = null;
+    containerRef.current?.removeAttribute("data-edit-page-turn");
   };
 
   const finishPinch = () => {
@@ -304,10 +330,17 @@ export function useReaderGestures({
     if (disabled) return;
     const start = primary.current;
     const wasPinched = pinched.current;
+    sampleEditingTurn();
     points.current.delete(event.pointerId);
     if (points.current.size < 2) pinch.current = null;
     if (wasPinched) {
-      if (points.current.size === 0) finishPinch();
+      if (points.current.size === 0) {
+        const direction = editTurn.current?.direction;
+        if (direction) {
+          cancelPreviewFrame(); clearPreview(); preview.current = null; pendingCommit.current = null;
+          resetGesture(); onEditingPageTurn?.(direction);
+        } else finishPinch();
+      }
       return;
     }
     if (twoFingerOnly || !start || start.id !== event.pointerId) return;
@@ -444,4 +477,15 @@ function distance(first: Point, second: Point) {
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+/** Extra travel beyond the paper edge, never travel used to pan the paper. */
+export function editingTurnDirection(session: { center: Point; bounds: Pick<DOMRect, "left" | "right">; viewport: Pick<DOMRect, "left" | "right">; scaled: boolean }, center: Point): "previous" | "next" | null {
+  if (session.scaled) return null;
+  const dx = center.x - session.center.x;
+  const dy = center.y - session.center.y;
+  if (Math.abs(dx) < Math.abs(dy) * 2) return null;
+  const allowance = dx > 0 ? Math.max(0, session.viewport.left - session.bounds.left) : Math.max(0, session.bounds.right - session.viewport.right);
+  if (Math.abs(dx) - allowance < 80) return null;
+  return dx > 0 ? "previous" : "next";
 }

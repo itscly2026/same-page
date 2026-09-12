@@ -26,7 +26,7 @@ test("export preserves multipage source geometry and overlays text and ink on ro
     const loaded = loadPdfDocument(new Uint8Array(bytes).buffer);
     const { document: source } = await loaded.promise;
     const annotations = Array.from({ length: 4 }, (_, i) => [
-      { layerId: "selected", deleted: false, payload: { kind: "text", pageNumber: i + 1, x: .5, y: .2, fontScale: .04, text: "换气 · Breath\nKeep this long English phrase together when possible and breathe gently" } },
+      { layerId: "selected", deleted: false, payload: { kind: "text", pageNumber: i + 1, x: .5, y: .2, fontScale: .04, textAlign: ["left", "center", "right", "left"][i], text: "换气 · Breath\nKeep this long English phrase together when possible and breathe gently" } },
       { layerId: "selected", deleted: false, payload: { kind: "ink", brush: "pen", nib: "round", pressureMode: "uniform", pageNumber: i + 1, strokeWidth: .003, points: [{ x: .1, y: .7 }, { x: .3, y: .7 }] } },
       { layerId: "excluded", deleted: false, payload: { kind: "text", pageNumber: i + 1, x: .5, y: .5, fontScale: .08, text: "EXCLUDED" } },
     ]).flat();
@@ -43,6 +43,7 @@ test("export preserves multipage source geometry and overlays text and ink on ro
       const label = document.createElement("button");
       label.className = "annotation-text";
       label.style.cssText = `left:${payload.x * 100}%;top:${payload.y * 100}%;font-size:${payload.fontScale * 100}cqw`;
+      label.style.textAlign = payload.textAlign ?? "center";
       label.textContent = payload.text;
       container.append(label); document.body.append(container);
       const box = label.getBoundingClientRect();
