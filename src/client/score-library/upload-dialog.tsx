@@ -1,3 +1,4 @@
+import { UploadProgressView } from "./upload-progress-view";
 import { formatBytes } from "./library-format";
 import { useEffect, useLayoutEffect } from "react";
 import { Button,  Modal, ModalOverlay } from "react-aria-components";
@@ -69,6 +70,7 @@ export function UploadDialog({ choirId, storage, isOpen, onOpenChange, onComplet
       {queue.items.length > 0 ? <ul className="upload-list" aria-label="上传状态">
         {queue.items.map((item) => <li key={item.id} data-status={item.status}>
           <span>{item.name}</span><strong>{item.message}</strong>
+          {item.status === "uploading" ? <UploadProgressView name={item.name} progress={item.progress} /> : null}
           {item.status === "error" && item.file ? <Button className="text-button" aria-label={`重试 ${item.name}`} onPress={() => queue.retry(item.id)}>重试</Button> : null}
           {item.status === "unknown" || item.status === "success" ? <Button className="text-button" aria-label={`核对 ${item.name}`} onPress={() => { changeOpen(false); onInspect(item.name); }}>核对文件库</Button> : null}
         </li>)}
