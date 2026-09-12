@@ -1,8 +1,11 @@
 import {
   type PointerEvent as ReactPointerEvent,
   useEffect,
-  useEffectEvent,
   useId,
+  useImperativeHandle,
+  useMemo,
+  useSyncExternalStore,
+  type Ref,
   useLayoutEffect,
   useRef,
   useState,
@@ -19,6 +22,7 @@ import {
 } from "../../shared/annotations";
 import type { LocalAnnotationRecord } from "../platform/local-database";
 import type { AnnotationEditor } from "./annotation-editor";
+import { NoteInteraction } from "./note-interaction";
 import { useEditorPersistence } from "./use-annotation-editor";
 import { calculateTextEditorLayout } from "./text-editor-layout";
 
@@ -84,6 +88,8 @@ interface TextSelection {
   direction: "forward" | "backward" | "none";
 }
 
+export interface AnnotationInteractionHandle { interrupt(): void; }
+
 export function AnnotationOverlay({
   editor,
   pageNumber,
@@ -96,6 +102,7 @@ export function AnnotationOverlay({
   activeLayerId,
   toolStyle = defaultToolStyle(tool),
   onInteractionChange,
+  interactionRef: handoffRef,
 }: {
   editor: AnnotationEditor | null;
   pageNumber: number;
@@ -107,23 +114,19 @@ export function AnnotationOverlay({
   toolColor?: string;
   toolStyle?: ToolStyle;
   activeLayerId: string | null;
+  interactionRef?: Ref<AnnotationInteractionHandle>;
   onInteractionChange?(interaction: AnnotationOverlayInteraction): void;
 }) {
   const persistence = useEditorPersistence(editor);
+  const notes = useMemo(() => new NoteInteraction(editor), [editor]);
+  const { draftId, stroke: draftStroke, shape: draftShape, erased: erasedPreview } = useSyncExternalStore(notes.subscribe, notes.getSnapshot);
   const eraserGradientId = useId();
   const [pageWidth, setPageWidth] = useState(1000);
-  const [draftId, setDraftId] = useState<string | null>(null);
   const [measuredAspectRatio, setAspectRatio] = useState(1);
   const aspectRatio = pageAspectRatio ?? measuredAspectRatio;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hover, setHover] = useState<Extract<AnnotationPayload, { kind: "ink" }>["points"][number] | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const [draftShape, setDraftShape] = useState<Extract<AnnotationPayload, { kind: "shape" }> | null>(null);
-  const shapeStart = useRef<{ x: number; y: number } | null>(null);
-  const [draftStroke, setDraftStroke] = useState<Extract<AnnotationPayload, { kind: "ink" }> | null>(null);
-  const liveStroke = useRef<Extract<AnnotationPayload, { kind: "ink" }> | null>(null);
-  const strokeFrame = useRef<number | null>(null);
-  const lastCheckpoint = useRef(0);
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
   const textSavingRef = useRef(false);
   const [textSaving, setTextSaving] = useState(false);
@@ -134,14 +137,9 @@ export function AnnotationOverlay({
   const textComposerHeaderRef = useRef<HTMLElement>(null);
   const pendingTextPlacement = useRef<PendingTextPlacement | null>(null);
   const openingPoint = useRef<{ x: number; y: number } | null>(null);
-  const drawingPointer = useRef<number | null>(null);
   const backdropPointer = useRef<number | null>(null);
   const backdropReleased = useRef(false);
   const textSelection = useRef<TextSelection | null>(null);
-  const currentStrokeId = useRef<string | null>(null);
-  const eraserPointerId = useRef<number | null>(null);
-  const erasedStrokeIds = useRef(new Set<string>());
-  const [erasedPreview, setErasedPreview] = useState(new Set<string>());
   const objectTransform = useRef<ObjectTransformState | null>(null);
   const [objectTransformPreview, setObjectTransformPreview] = useState<{
     id: string;
@@ -210,36 +208,14 @@ export function AnnotationOverlay({
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => editor?.registerFinishCommit(async () => {
-    if (activeLayerId && erasedStrokeIds.current.size) {
-      const ids = [...erasedStrokeIds.current];
-      erasedStrokeIds.current.clear();
-      eraserPointerId.current = null;
-      const saved = await Promise.all(ids.map(id => editor.persist({ id, layerId: activeLayerId, payload: null, deleted: true })));
-      setErasedPreview(new Set());
-      if (!saved.every(Boolean)) return false;
-    }
-    if (!liveStroke.current || !currentStrokeId.current || !activeLayerId) return true;
-    const saved = editor.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: liveStroke.current }, true);
-    liveStroke.current = null;
-    currentStrokeId.current = null;
-    drawingPointer.current = null;
-    if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current);
-    strokeFrame.current = null;
-    setDraftStroke(null);
-    setDraftId(null);
-    return saved;
-  }), [editor, activeLayerId]);
+  useEffect(() => editor?.registerFinishCommit(() => notes.end("finish")), [editor, notes]);
 
   useEffect(() => {
-    const flush = () => {
-      if (liveStroke.current && currentStrokeId.current && activeLayerId) void editor?.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: liveStroke.current }, true);
-    };
-    const hidden = () => { if (document.visibilityState === "hidden") flush(); };
+    const hidden = () => { if (document.visibilityState === "hidden") notes.checkpoint(); };
     document.addEventListener("visibilitychange", hidden);
-    window.addEventListener("pagehide", flush);
-    return () => { flush(); if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current); document.removeEventListener("visibilitychange", hidden); window.removeEventListener("pagehide", flush); };
-  }, [editor, activeLayerId]);
+    window.addEventListener("pagehide", notes.checkpoint);
+    return () => { notes.dispose(); document.removeEventListener("visibilitychange", hidden); window.removeEventListener("pagehide", notes.checkpoint); };
+  }, [notes]);
 
   useLayoutEffect(() => {
     const input = textInputRef.current;
@@ -302,13 +278,12 @@ export function AnnotationOverlay({
       if (
         annotation.layerId !== activeLayerId ||
         !payload || payload.kind !== "ink" ||
-        erasedStrokeIds.current.has(annotation.id)
+        erasedPreview.has(annotation.id)
       ) {
         continue;
       }
       if (!inkHit(payload, bounds.width, bounds.height, pointer.x, pointer.y, ERASER_HIT_RADIUS_PX)) continue;
-      erasedStrokeIds.current.add(annotation.id);
-      setErasedPreview(new Set(erasedStrokeIds.current));
+      notes.erase(event.pointerId, annotation.id);
     }
   };
 
@@ -621,24 +596,19 @@ export function AnnotationOverlay({
     }
     if (tool === "eraser") {
       capturePointer(event.currentTarget, event.pointerId);
-      eraserPointerId.current = event.pointerId;
-      erasedStrokeIds.current.clear();
+      notes.begin(event.pointerId, activeLayerId, "eraser", event.timeStamp);
       eraseAt(event);
       return;
     }
-    if (drawingPointer.current !== null) return;
-    drawingPointer.current = event.pointerId;
+    if (notes.drawing) return;
     if (tool === "rectangle" || tool === "ellipse") {
       capturePointer(event.currentTarget, event.pointerId);
-      shapeStart.current = point(event);
-      currentStrokeId.current = crypto.randomUUID();
-      setDraftShape({ kind: "shape", shape: tool, pageNumber, ...shapeStart.current, width: 0, height: 0, strokeWidth: toolStyle.strokeWidth, color: toolColor });
+      notes.begin(event.pointerId, activeLayerId, { kind: "shape", shape: tool, pageNumber, ...point(event), width: 0, height: 0, strokeWidth: toolStyle.strokeWidth, color: toolColor }, event.timeStamp);
       return;
     }
     if (tool !== "ink" && tool !== "highlighter") return;
     capturePointer(event.currentTarget, event.pointerId);
     const position = point(event);
-    currentStrokeId.current = crypto.randomUUID();
     const initialStroke: Extract<AnnotationPayload, { kind: "ink" }> = {
       kind: "ink",
       pageNumber,
@@ -650,16 +620,12 @@ export function AnnotationOverlay({
       opacity: tool === "highlighter" ? toolStyle.opacity : 1,
       color: toolColor,
     };
-    setDraftId(currentStrokeId.current);
-    liveStroke.current = initialStroke;
-    setDraftStroke({ ...initialStroke, points: [...initialStroke.points] });
-    void editor?.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: initialStroke });
-    lastCheckpoint.current = event.timeStamp;
+    notes.begin(event.pointerId, activeLayerId, initialStroke, event.timeStamp);
   };
 
   const pointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (editor?.getSnapshot() === "finishing") return;
-    if (canStartEdit && event.pointerType === "pen" && event.buttons === 0 && drawingPointer.current === null && !pendingTextPlacement.current && !objectTransform.current && eraserPointerId.current === null) {
+    if (canStartEdit && event.pointerType === "pen" && event.buttons === 0 && !notes.drawing && !pendingTextPlacement.current && !objectTransform.current) {
       setHover(point(event)); return;
     }
     setHover(null);
@@ -683,33 +649,11 @@ export function AnnotationOverlay({
       updateObjectTransform(event);
       return;
     }
-    if (editing && tool === "eraser" && eraserPointerId.current === event.pointerId) {
+    if (editing && tool === "eraser" && notes.erasing(event.pointerId)) {
       eraseAt(event);
       return;
     }
-    if (drawingPointer.current !== null && drawingPointer.current !== event.pointerId) return;
-    if (draftShape && shapeStart.current) {
-      const position = point(event), start = shapeStart.current;
-      setDraftShape({ ...draftShape, x: Math.min(start.x, position.x), y: Math.min(start.y, position.y), width: Math.abs(position.x - start.x), height: Math.abs(position.y - start.y) });
-      return;
-    }
-    if (!editing || (tool !== "ink" && tool !== "highlighter") || !currentStrokeId.current || !activeLayerId) return;
-    const position = point(event);
-    const current = liveStroke.current;
-    if (!current) return;
-    // The mutable input buffer is independent of React and persisted snapshots.
-    // Keep long gestures writable within the persisted point budget. Retain
-    // both ends while reducing older sample density before accepting new input.
-    if (current.points.length >= 5000) current.points = current.points.filter((_, index, points) => index % 2 === 0 || index === points.length - 1);
-    current.points.push(position);
-    if (strokeFrame.current === null) strokeFrame.current = requestAnimationFrame(() => {
-      strokeFrame.current = null;
-      if (liveStroke.current) setDraftStroke({ ...liveStroke.current, points: [...liveStroke.current.points] });
-    });
-    if (event.timeStamp - lastCheckpoint.current >= 120) {
-      lastCheckpoint.current = event.timeStamp;
-      void editor?.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: current }, true);
-    }
+    if (editing) notes.move(event.pointerId, point(event), event.timeStamp);
 
   };
 
@@ -730,73 +674,27 @@ export function AnnotationOverlay({
       finishObjectTransform(event);
       return;
     }
-    if (drawingPointer.current !== null && drawingPointer.current !== event.pointerId) return;
-    drawingPointer.current = null;
-    if (eraserPointerId.current === event.pointerId || currentStrokeId.current !== null) {
-      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-    }
-    if (draftShape && activeLayerId && currentStrokeId.current && draftShape.width > 0 && draftShape.height > 0) {
-      void editor?.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: draftShape });
-    }
-    setDraftShape(null); shapeStart.current = null;
-    if (liveStroke.current && currentStrokeId.current && activeLayerId) {
-      if (event.type !== "pointercancel" && liveStroke.current.points.length < 5000) {
-        const finalPoint = point(event), last = liveStroke.current.points.at(-1)!;
-        if (finalPoint.x !== last.x || finalPoint.y !== last.y) liveStroke.current.points.push(finalPoint);
-      }
-      void editor?.persist({ id: currentStrokeId.current, layerId: activeLayerId, payload: liveStroke.current }, true);
-    }
-    liveStroke.current = null;
-    setDraftId(null);
-    if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current);
-    strokeFrame.current = null;
-    setDraftStroke(null);
-    currentStrokeId.current = null;
-    eraserPointerId.current = null;
-    if (activeLayerId && event.type !== "pointercancel") {
-      for (const id of erasedStrokeIds.current) void editor?.persist({ id, layerId: activeLayerId, payload: null, deleted: true });
-    }
-    erasedStrokeIds.current.clear();
-    setErasedPreview(new Set());
+    if (!notes.owns(event.pointerId)) return;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    void notes.end(event.type === "pointercancel" ? "pointercancel" : "release", event.pointerId, point(event));
   };
 
-  const cancelForNavigation = useEffectEvent(() => {
+  const interrupt = () => {
     setHover(null);
     pendingTextPlacement.current = null;
     cancelObjectTransform();
-    const id = currentStrokeId.current;
-    if (id && activeLayerId && liveStroke.current) {
-      // Remove any durable checkpoints from the interrupted stroke too.
-      void editor?.persist({ id, layerId: activeLayerId, payload: null, deleted: true }, true);
-    }
-    currentStrokeId.current = null;
-    drawingPointer.current = null;
-    liveStroke.current = null;
-    shapeStart.current = null;
-    eraserPointerId.current = null;
-    erasedStrokeIds.current.clear();
-    if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current);
-    strokeFrame.current = null;
-    setDraftStroke(null);
-    setDraftId(null);
-    setDraftShape(null);
-    setErasedPreview(new Set());
-  });
-  useEffect(() => {
-    const viewport = overlayRef.current?.closest(".page-reader__viewport, .continuous-reader");
-    const cancel = () => cancelForNavigation();
-    viewport?.addEventListener("reader-navigation-start", cancel);
-    return () => viewport?.removeEventListener("reader-navigation-start", cancel);
-  }, []);
+    void notes.end("interrupt");
+  };
+  // Layout capture invokes this synchronously before the second touch can edit.
+  useImperativeHandle(handoffRef, () => ({ interrupt }));
+
   const previousTool = useRef(tool);
   useLayoutEffect(() => {
     if (previousTool.current === tool) return;
     previousTool.current = tool;
     // Retire the previous pointer interaction before the new tool can paint.
-    cancelForNavigation();
-  }, [tool]);
+    interrupt();
+  });
 
   return (
     <>
@@ -819,7 +717,6 @@ export function AnnotationOverlay({
             if (pendingTextPlacement.current.opened) closeTextEditor();
             pendingTextPlacement.current = null;
           } else if (objectTransform.current?.pointers.has(event.pointerId)) cancelObjectTransform();
-          else if (draftShape) { setDraftShape(null); shapeStart.current = null; currentStrokeId.current = null; drawingPointer.current = null; }
           else pointerUp(event);
         }}
       >

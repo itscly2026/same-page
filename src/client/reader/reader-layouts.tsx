@@ -17,6 +17,7 @@ import { Button } from "react-aria-components";
 import type { AnnotationLayerSummary } from "../../shared/annotations";
 import type {
   AnnotationOverlayInteraction,
+  AnnotationInteractionHandle,
   AnnotationTool,
 } from "../annotations/annotation-overlay";
 import type { LocalAnnotationRecord } from "../platform/local-database";
@@ -72,6 +73,7 @@ export function PageLayout({
   pager,
 }: Omit<ReaderLayoutProps, "onPageChange"> & { pager: PagedReader }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const noteInteraction = useRef<AnnotationInteractionHandle>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const previewBoundaryRef = useRef<HTMLDivElement>(null);
   const size = useElementSize(containerRef);
@@ -119,6 +121,7 @@ export function PageLayout({
     previewBoundaryRef,
     disabled: false,
     twoFingerOnly: annotationProps.editing,
+    onNavigationStart: () => noteInteraction.current?.interrupt(),
     zoom,
     onZoomChange,
     onTap: onToggleChrome,
@@ -203,6 +206,7 @@ export function PageLayout({
                       width={renderedWidth}
                       aspectRatio={item.page === currentPage ? pageRatio : undefined}
                       annotationProps={annotationProps}
+                      interactionRef={annotationProps.editing ? noteInteraction : undefined}
                       onPageRenderStart={pager.beginPageRender}
                     />
                   </div>
@@ -247,6 +251,7 @@ export function ContinuousLayout({
   annotationProps,
 }: ReaderLayoutProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const noteInteraction = useRef<AnnotationInteractionHandle>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const alignedPage = useRef<{ page: number; geometryReady: boolean } | null>(null);
   const size = useElementSize(scrollRef);
@@ -316,6 +321,7 @@ export function ContinuousLayout({
     contentRef,
     disabled: false,
     twoFingerOnly: annotationProps.editing,
+    onNavigationStart: () => noteInteraction.current?.interrupt(),
     zoom,
     onZoomChange,
     onTap: onToggleChrome,
@@ -388,6 +394,7 @@ export function ContinuousLayout({
               pageNumber={item.index + 1}
               width={pageWidth}
               aspectRatio={ratios[item.index] ?? 0.707}
+              interactionRef={annotationProps.editing && item.index + 1 === currentPage ? noteInteraction : undefined}
               annotationProps={item.index + 1 === currentPage ? annotationProps : { ...annotationProps, editing: false }}
             />
           </div>
@@ -515,6 +522,7 @@ function AnnotatedPdfPage({
   aspectRatio,
   annotationProps,
   onPageRenderStart,
+  interactionRef,
 }: {
   document: PDFDocumentProxy;
   pageNumber: number;
@@ -522,6 +530,7 @@ function AnnotatedPdfPage({
   aspectRatio?: number;
   annotationProps: AnnotationPageProps;
   onPageRenderStart?(page: number): PdfPageRenderLease;
+  interactionRef?: RefObject<AnnotationInteractionHandle | null>;
 }) {
   const resolvedAspectRatio = usePdfPageAspectRatio(
     document,
@@ -546,6 +555,7 @@ function AnnotatedPdfPage({
       <Suspense fallback={null}>
         <AnnotationOverlay
           {...annotationProps}
+          interactionRef={interactionRef}
           key={`${pageNumber}:${annotationProps.editing ? `edit:${annotationProps.activeLayerId}` : "read"}`}
           pageNumber={pageNumber}
           pageAspectRatio={resolvedAspectRatio}

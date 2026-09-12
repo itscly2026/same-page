@@ -62,6 +62,18 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     });
     await context.addInitScript(() => localStorage.setItem("reader-gesture-hint-seen", "true"));
     const page = await context.newPage();
+    // Optimistic controls can settle before local persistence or the PUT. Wait
+    // for the exact write before reload/navigation or counting later writes.
+    const confirmPreference = async (action, scope, slot, expected) => {
+      const pathname = `/api/choirs/visual-choir${scope === "score" ? "/scores/visual-score" : ""}/shared-layers/${slot}/preference`;
+      const confirmed = page.waitForResponse(response => {
+        const request = response.request();
+        return response.ok() && request.method() === "PUT" && new URL(response.url()).pathname === pathname &&
+          Object.entries(expected).every(([key, value]) => request.postDataJSON()?.[key] === value);
+      });
+      await action();
+      await confirmed;
+    };
     // Each geometry is exercised once; both engines run the behavior flow below.
     const viewports = engineName === "chromium"
       ? [[320, 740], [740, 320], [1440, 1000]]
@@ -111,7 +123,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByText("云端保存失败，本机选择已保留。", { exact: true }).waitFor();
     assert.equal(await display.isChecked(), false);
     await capture(page, `${engineName}-display-save-failure`);
-    await page.getByRole("button", { name: "重试 Ensemble" }).click();
+    await confirmPreference(() => page.getByRole("button", { name: "重试 Ensemble" }).click(), "drive", "E", { subscribed: false });
     await page.waitForFunction(() => !document.querySelector('input[aria-label="Ensemble 默认显示"]').checked);
     await page.getByRole("link", { name: "笔记颜色", exact: true }).click();
     const color = page.getByLabel("Ensemble 笔记颜色", { exact: true });
@@ -120,10 +132,10 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await page.getByText("云端保存失败，本机选择已保留。", { exact: true }).waitFor();
     assert.equal(await color.inputValue(), "#123456");
     await capture(page, `${engineName}-color-save-failure`);
-    await page.getByRole("button", { name: "重试 Ensemble" }).click();
+    await confirmPreference(() => page.getByRole("button", { name: "重试 Ensemble" }).click(), "drive", "E", { colorOverride: "#123456" });
     await page.waitForFunction(() => document.querySelector('input[type="color"]').value === "#123456");
     await capture(page, `${engineName}-color-custom`);
-    await page.getByRole("button", { name: "Ensemble 恢复默认颜色" }).click();
+    await confirmPreference(() => page.getByRole("button", { name: "Ensemble 恢复默认颜色" }).click(), "drive", "E", { colorOverride: null });
     await page.getByRole("button", { name: "Ensemble 恢复默认颜色" }).waitFor({ state: "hidden" });
     await page.reload();
     assert.notEqual(await page.getByLabel("Ensemble 笔记颜色", { exact: true }).inputValue(), "#123456");
@@ -135,16 +147,16 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     await scoreDisplay.waitFor();
     assert.equal(await scoreDisplay.isChecked(), false, "drive default applies to this score");
     // Clear the pre-existing Bass fixture override first.
-    await page.getByRole("button", { name: "使用云盘默认", exact: true }).click();
+    await confirmPreference(() => page.getByRole("button", { name: "使用云盘默认", exact: true }).click(), "score", "B", { subscribed: null, colorOverride: null });
     await page.getByRole("button", { name: "使用云盘默认", exact: true }).waitFor({ state: "hidden" });
     failNext = true;
     await page.locator(".reader-layer-row").filter({ has: scoreDisplay }).locator(".layer-row__name").click();
     await page.getByText("云端保存失败，本机选择已保留。", { exact: true }).waitFor();
     assert.equal(await scoreDisplay.isChecked(), true);
-    await page.getByRole("button", { name: "重试", exact: true }).click();
+    await confirmPreference(() => page.getByRole("button", { name: "重试", exact: true }).click(), "score", "E", { subscribed: true });
     await page.waitForFunction(() => document.querySelector('input[aria-label="显示 Ensemble"]').checked);
     await capture(page, `${engineName}-score-override`);
-    await page.getByRole("button", { name: "使用云盘默认", exact: true }).click();
+    await confirmPreference(() => page.getByRole("button", { name: "使用云盘默认", exact: true }).click(), "score", "E", { subscribed: null, colorOverride: null });
     await page.getByRole("button", { name: "使用云盘默认", exact: true }).waitFor({ state: "hidden" });
     assert.equal(await scoreDisplay.isChecked(), false);
     await page.getByRole("button", { name: "关闭笔记显示" }).click();
