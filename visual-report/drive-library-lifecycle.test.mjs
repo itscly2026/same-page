@@ -51,9 +51,15 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.getByRole("searchbox", { name: /搜索.*中的乐谱/ }).fill("秋日");
     const score = page.locator('a.file-row__open[href$="/scores/visual-score"]');
     await score.scrollIntoViewIfNeeded();
-    const savedTop = await page.evaluate(() => window.scrollY);
-    assert.ok(savedTop > 500);
+    // Browser focus/actionability scrolling may move the viewport before click.
+    // Capture the departure position independently of the product's saved state,
+    // at the same user-action boundary as prepareScoreOpen.
+    await score.evaluate(element => element.addEventListener("click", () => {
+      window.__libraryDepartureScrollTop = window.scrollY;
+    }, { capture: true, once: true }));
     await score.click();
+    const savedTop = await page.evaluate(() => window.__libraryDepartureScrollTop);
+    assert.ok(savedTop > 500);
     await page.locator("[data-pdf-canvas-active]").first().waitFor();
     hold();
     await page.clock.setFixedTime(new Date("2026-09-10T00:01:01Z"));

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter, once } from "node:events";
 import { mkdir, writeFile } from "node:fs/promises";
 import { test } from "node:test";
-import { chromium } from "playwright";
+import { chromium, expect } from "@playwright/test";
 import { startVisualServer } from "./setup.mjs";
 import { createVisualFixtureSession } from "./fixtures.mjs";
 
@@ -76,11 +76,11 @@ test("desktop and narrow readers preserve local intent and warm display name dra
       await other.waitFor(); await other.click();
       // The scenario requires a newer durable intent while the first tab owns
       // the lock. A checked input only proves optimistic display, not IDB commit.
-      await second.waitForFunction(async expected => {
+      await expect.poll(() => second.evaluate(async expected => {
         const { localDatabase } = await import("/src/client/platform/local-database.ts");
         return (await localDatabase.readingPreferences.toArray()).some(row =>
           row.kind === "shared" && row.id === "E" && row.pending && row.subscribed === expected);
-      }, !initial);
+      }, !initial)).toBe(true);
       assert.equal(puts, before + 1, "second tab waits for the first tab's preference lock");
       hold = false; releases.splice(0).forEach(release => release());
       await waitForPreferences(second);
@@ -111,7 +111,9 @@ test("desktop and narrow readers preserve local intent and warm display name dra
 });
 
 async function waitForPreferences(page) {
-  await page.waitForFunction(async () => {
+  // waitForFunction treats the Promise itself as truthy; poll the resolved IDB
+  // result so an unfinished save cannot be mistaken for completed sync.
+  await expect.poll(() => page.evaluate(async () => {
     const { localDatabase } = await import("/src/client/platform/local-database.ts");
     const { currentReadingIntent } = await import("/src/client/reader/reading-preference-intents.ts");
     const rows = await localDatabase.readingPreferences.toArray();
@@ -119,6 +121,6 @@ async function waitForPreferences(page) {
       const intent = currentReadingIntent(row.key);
       return !row.pending && (!intent || (intent.localState === "saved" && intent.version === row.version));
     });
-  });
+  })).toBe(true);
   assert.equal(await page.getByText(/正在保存到本机|等待同步。|已同步。/).count(), 0);
 }
