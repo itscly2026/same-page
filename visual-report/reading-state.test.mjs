@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter, once } from "node:events";
 import { mkdir, writeFile } from "node:fs/promises";
 import { test } from "node:test";
 import { chromium } from "playwright";
@@ -14,7 +15,10 @@ test("desktop and narrow readers preserve local intent and warm display name dra
   const evidence = [];
   for (const width of [1440, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: "block", reducedMotion: "reduce" });
+    t.after(() => context.close());
     const fixture = createVisualFixtureSession();
+    const preferenceRequests = new EventEmitter();
+    const preferenceBodies = [];
     let hold = false;
     const releases = [];
     let puts = 0, settingsReads = 0, remoteName = false;
@@ -22,7 +26,11 @@ test("desktop and narrow readers preserve local intent and warm display name dra
       const request = route.request(); const pathname = new URL(request.url()).pathname;
       if (request.method() === "PUT" && pathname.endsWith("/preference")) {
         puts++;
-        if (hold) await new Promise(resolve => releases.push(resolve));
+        preferenceBodies.push(request.postDataJSON());
+        if (hold) await new Promise(resolve => {
+          releases.push(resolve);
+          preferenceRequests.emit("held", request);
+        });
       }
       if (pathname.endsWith("/settings") && request.method() === "GET") {
         settingsReads++;
@@ -51,7 +59,14 @@ test("desktop and narrow readers preserve local intent and warm display name dra
     await waitForPreferences(page);
     assert.equal(await ensemble.isChecked(), !initial);
     if (width === 1440) {
-      hold = true; const before = puts; await ensemble.click();
+      hold = true; const before = puts;
+      // Establish an in-flight old intent before the second tab can save a new
+      // one. Otherwise flushKey may correctly coalesce both into a single PUT.
+      const [[firstRequest]] = await Promise.all([
+        once(preferenceRequests, "held", { signal: AbortSignal.timeout(30_000) }),
+        ensemble.click(),
+      ]);
+      assert.equal(firstRequest.postDataJSON().subscribed, initial);
       const second = await context.newPage();
       await second.goto(`${server.origin}/choirs/visual-choir/scores/visual-score`);
       await second.waitForFunction(() => document.querySelector("[data-pdf-canvas-active]")?.width > 100);
@@ -71,6 +86,7 @@ test("desktop and narrow readers preserve local intent and warm display name dra
       await waitForPreferences(second);
       assert.equal(await other.isChecked(), !initial);
       assert.equal(puts, before + 2, "lock holder drains the newer durable intent");
+      assert.deepEqual(preferenceBodies.slice(before).map(body => body.subscribed), [initial, !initial]);
       await second.close();
     }
     await page.goto(`${server.origin}/choirs/visual-choir`);
