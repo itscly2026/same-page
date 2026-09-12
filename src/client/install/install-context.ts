@@ -2,6 +2,8 @@ import { createContext, useContext } from "react";
 
 export const InstallContext = createContext<{
   hidden: boolean;
+  runningInApp: boolean;
+  requested: boolean;
   nativeAvailable: boolean;
   suggest: boolean;
   open: () => void;

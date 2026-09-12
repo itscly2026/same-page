@@ -1,6 +1,7 @@
+import { createInstallHandoff, verifyInstallHandoff } from "../security/install-handoff";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
-import { deleteCookie, setCookie } from "hono/cookie";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 
 import {
   guestSessionRequestSchema,
@@ -19,6 +20,7 @@ import type { AppEnvironment } from "../env";
 import { measureServerTiming } from "../performance/server-timing";
 import {
   createGuestSessionToken,
+  verifyGuestSessionToken,
   GUEST_SESSION_COOKIE,
   GUEST_SESSION_SECONDS,
 } from "../security/guest-session";
@@ -82,6 +84,33 @@ choirRoutes.post("/guest/session", async (context) => {
   });
 });
 
+// A short-lived, guest-only bridge. Never expose the session cookie or join code.
+choirRoutes.post("/guest/install-handoff", async (context) => {
+  context.header("Cache-Control", "no-store");
+  const principal = await resolveContextGuestPrincipal(context);
+  const body = await context.req.json<{ choirId?: string }>().catch(() => null);
+  if (!principal || body?.choirId !== principal.choirId) return context.json({ error: "unauthorized" }, 401);
+  const claims = await verifyGuestSessionToken(getCookie(context, GUEST_SESSION_COOKIE) ?? "", context.env.INVITE_SECRET);
+  if (!claims) return context.json({ error: "unauthorized" }, 401);
+  return context.json({ token: await createInstallHandoff(claims, context.env.INVITE_SECRET) });
+});
+
+choirRoutes.post("/guest/install-handoff/redeem", async (context) => {
+  context.header("Cache-Control", "no-store");
+  const body = await context.req.json<{ token?: unknown }>().catch(() => null);
+  const claims = typeof body?.token === "string" ? await verifyInstallHandoff(body.token, context.env.INVITE_SECRET) : null;
+  if (!claims) return context.json({ error: "expired" }, 401);
+  const choir = await createDatabase(context.env.DB).query.choirs.findFirst({
+    where: and(eq(choirs.id, claims.choirId), eq(choirs.guestSessionVersion, claims.guestSessionVersion), isNull(choirs.purgedAt)),
+  });
+  if (!choir) return context.json({ error: "expired" }, 401);
+  setCookie(context, GUEST_SESSION_COOKIE, await createGuestSessionToken(claims, context.env.INVITE_SECRET), {
+    httpOnly: true, secure: new URL(context.req.url).protocol === "https:", sameSite: "Lax", path: "/",
+    maxAge: Math.max(1, Math.floor((claims.expiresAt - Date.now()) / 1000)),
+  });
+  return context.json({ choir: serializeChoir(choir), entryKind: choir.isPreviewEntry ? "preview" : "admission" });
+});
+
 choirRoutes.get("/guest/preview-choir", async (context) => {
   const choir = await createDatabase(context.env.DB).query.choirs.findFirst({
     where: and(
@@ -120,6 +149,7 @@ choirRoutes.get("/guest/choirs/:choirId", async (context) => {
 });
 
 choirRoutes.get("/guest/session", async (context) => {
+  context.header("Cache-Control", "no-store");
   const principal = await resolveContextGuestPrincipal(context);
   if (!principal) {
     deleteCookie(context, GUEST_SESSION_COOKIE, { path: "/" });

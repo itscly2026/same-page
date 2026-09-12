@@ -1,3 +1,5 @@
+import { guestSessionResponseSchema } from "../../shared/choirs";
+import { activateGuestLocalOwner } from "../platform/local-workspace";
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { choirMembershipsResponseSchema } from "../../shared/choirs";
@@ -50,6 +52,7 @@ export function StartupEntry({ identity }: { identity: ApplicationIdentity }) {
     return () => controller.abort();
   }, [userId, online, retry]);
 
+  if (!userId && !identity.restoring && identity.onlineState === "signed-out") return <GuestStartupEntry />;
   if (!result || result.userId !== userId || result.online !== online) return null;
   if (typeof result.value === "object") return <Navigate to={result.value.path} replace state={{ missingLastDrive: result.value.missingLastDrive }} />;
   if (result.value === "failed") return <p className="page-shell" role="status">暂时无法加载已加入的云盘。<button className="text-button" onClick={() => { setResult(null); setRetry(value => value + 1); }}>重试</button></p>;
@@ -63,4 +66,24 @@ async function localDestination(userId: string, failedOnline: boolean): Promise<
     // public homepage available even when the network or local database fails.
     return drives.length ? destination(userId, drives.map(entry => entry.choirId)) : failedOnline ? "failed" : "home";
   } catch { return failedOnline ? "failed" : "home"; }
+}
+
+function GuestStartupEntry() {
+  const [path, setPath] = useState<string | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    async function restore() {
+      try {
+        const response = await diagnosticFetch("/api/guest/session", { cache: "no-store", signal: controller.signal });
+        if (!response.ok) return;
+        const guest = await parseDiagnosticResponse(response, guestSessionResponseSchema);
+        if (controller.signal.aborted || guest.entryKind === "preview") return;
+        await activateGuestLocalOwner(guest.choir.id, controller.signal);
+        if (!controller.signal.aborted) setPath(`/choirs/${guest.choir.id}`);
+      } catch { /* The public homepage remains usable if admission is unavailable. */ }
+    }
+    void restore();
+    return () => controller.abort();
+  }, []);
+  return path ? <Navigate to={path} replace /> : null;
 }

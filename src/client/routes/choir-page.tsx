@@ -1,3 +1,4 @@
+import { InstallSuggestion } from "../install/install-entry";
 import { scoreDisplayName } from "../../shared/score-display-name";
 import { hasManagement, type Operation } from "../../shared/drive-permissions";
 import { BackButton } from "../navigation/back-button";
@@ -178,6 +179,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           <IdentityNotice identity={identity} />
           {searchMessage && <p role="status">{searchMessage}<Button onPress={() => void refresh()}>重试</Button></p>}
         </details>}
+        <InstallSuggestion />
         <section className="library-workspace" aria-labelledby="library-content-title">
           <div className="library-toolbar">
             <div className="library-controls">

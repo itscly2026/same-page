@@ -12,6 +12,7 @@ import { LocalIdentityObserver } from "./platform/local-identity-observer";
 import { ReaderPage } from "./reader/reader-runtime";
 import { HomePage } from "./routes/home-page";
 
+const InstallPage = lazy(() => import("./install/install-page"));
 const HelpPage = lazy(() => import("./routes/help-page"));
 const DriveManagementPage = lazy(() => import("./routes/drive-management-page"));
 const AboutPage = lazy(() => import("./routes/about-page"));
@@ -51,6 +52,7 @@ export function AppRoutes() {
             <Route path="/drives" element={<RouteContent><HomePage /></RouteContent>} />
             <Route path="/choirs/:choirId/storage" element={<RouteContent><LocalStoragePage /></RouteContent>} />
             <Route path="/choirs/:choirId/me" element={<RouteContent><LeaveDrivePage /></RouteContent>} />
+            <Route path="/install" element={<RouteContent><InstallPage /></RouteContent>} />
             <Route path="/help" element={<RouteContent><HelpPage /></RouteContent>} />
             {(["info", "admission", "trash"] as const).map(section => <Route key={section} path={`/choirs/:choirId/settings/${section}`} element={<RouteContent><DriveManagementPage section={section} /></RouteContent>} />)}
             <Route path="/about" element={<RouteContent><AboutPage /></RouteContent>} />
