@@ -179,7 +179,7 @@ function ChoirLibrary({ choirId, identity, cacheOwner }: { choirId: string; iden
           <IdentityNotice identity={identity} />
           {searchMessage && <p role="status">{searchMessage}<Button onPress={() => void refresh()}>重试</Button></p>}
         </details>}
-        {!access.local && <InstallSuggestion />}
+        <InstallSuggestion />
         <section className="library-workspace" aria-labelledby="library-content-title">
           <div className="library-toolbar">
             <div className="library-controls">
