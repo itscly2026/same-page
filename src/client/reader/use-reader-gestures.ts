@@ -384,12 +384,19 @@ export function useReaderGestures({
     // The child claims an object on its first pointerdown (after capture).
     // Keep that ownership through all releases, even if a cancellation clears
     // the child's transform before the other fingers leave the screen.
-    if (objectPointers.current.size > 0 || isObjectGestureActive?.()) {
+    const objectActive = isObjectGestureActive?.() ?? false;
+    if (objectPointers.current.size > 0 || objectActive) {
       for (const id of points.current.keys()) objectPointers.current.add(id);
       points.current.clear();
       primary.current = null;
       if (event.type === "pointerup" || event.type === "pointercancel") objectPointers.current.delete(event.pointerId);
       else objectPointers.current.add(event.pointerId);
+      // A cancelled child no longer owns these events. Drain the sequence
+      // without letting a remaining/new finger start a fresh note.
+      if (!objectActive) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
       return;
     }
     const suppress = pinched.current || points.current.size >= 2;

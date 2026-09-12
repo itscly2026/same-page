@@ -1,4 +1,5 @@
-import { createRef } from "react";
+import { useReaderGestures } from "../reader/use-reader-gestures";
+import { createRef, useRef } from "react";
 import Dexie from "dexie";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1046,4 +1047,55 @@ it.each(["text", "ink"] as const)("blocks new %s input during completion and res
   fireEvent.pointerUp(overlay, { pointerId: 43, clientX: 20, clientY: 30 });
   if (tool === "text") expect(screen.getByLabelText("笔记文本")).not.toHaveAttribute("readonly");
   else await waitFor(async () => expect(await localDatabase.annotations.count()).toBe(1));
+});
+
+
+function ObjectGestureReader({ annotations }: { annotations: LocalAnnotationRecord[] }) {
+  const viewport = useRef<HTMLDivElement>(null);
+  const interaction = useRef<AnnotationInteractionHandle>(null);
+  const handlers = useReaderGestures({
+    containerRef: viewport, contentRef: viewport, twoFingerOnly: true,
+    disabled: false, zoom: 1, onZoomChange: vi.fn(), onTap: vi.fn(),
+    onNavigationStart: () => interaction.current?.interrupt(),
+    isObjectGestureActive: () => interaction.current?.ownsObjectGesture() ?? false,
+  });
+  return <div ref={viewport} {...handlers}><AnnotationOverlay interactionRef={interaction} editor={editor} pageNumber={1} layers={layers} annotations={annotations} editing tool="text" activeLayerId={activeLayerId} /></div>;
+}
+
+it.each(["text", "shape"] as const)("keeps the original text gesture when the second finger lands on another %s", async kind => {
+  const first = annotation("first", activeLayerId, textPayload("原文字"));
+  const other = annotation("other", activeLayerId, kind === "text" ? textPayload("另一文字") : { kind: "shape", shape: "rectangle", pageNumber: 1, x: .5, y: .3, width: .2, height: .1, strokeWidth: .003 });
+  await localDatabase.annotations.bulkPut([first, other]);
+  render(<ObjectGestureReader annotations={[first, other]} />);
+  const button = screen.getByRole("button", { name: "原文字" });
+  const target = screen.getByRole("button", { name: kind === "text" ? "另一文字" : "矩形笔记" });
+  mockBounds(button.parentElement!); mockTextBounds(button);
+  const sample = (pointerId: number, clientX: number) => ({ pointerId, pointerType: "touch", clientX, clientY: 30 });
+  fireEvent.pointerDown(button, sample(1, 20));
+  fireEvent.pointerDown(target, sample(2, 40));
+  fireEvent.pointerMove(target, sample(2, 60));
+  expect(parseFloat(button.style.fontSize)).toBeCloseTo(4.8);
+  fireEvent.pointerUp(target, sample(2, 60));
+  fireEvent.pointerUp(button, sample(1, 20));
+  await waitFor(async () => expect((await localDatabase.annotations.get(first.key))?.payload).toMatchObject({ fontScale: .048 }));
+  expect((await localDatabase.annotations.get(other.key))?.payload).toEqual(other.payload);
+});
+
+it("suppresses new text placement after cancellation until all object fingers leave", () => {
+  const note = annotation("cancelled", activeLayerId, textPayload("取消文字"));
+  render(<ObjectGestureReader annotations={[note]} />);
+  const button = screen.getByRole("button", { name: "取消文字" });
+  const overlay = screen.getByLabelText("第 1 页笔记层");
+  mockBounds(overlay); mockTextBounds(button);
+  const sample = (pointerId: number) => ({ pointerId, pointerType: "touch", clientX: 20 + pointerId * 10, clientY: 30 });
+  fireEvent.pointerDown(button, sample(1));
+  fireEvent.pointerDown(overlay, sample(2));
+  fireEvent.pointerCancel(button, sample(1));
+  fireEvent.pointerDown(overlay, sample(3));
+  fireEvent.pointerUp(overlay, sample(3));
+  expect(screen.queryByRole("textbox", { name: "笔记文本" })).not.toBeInTheDocument();
+  fireEvent.pointerUp(overlay, sample(2));
+  fireEvent.pointerDown(overlay, sample(4));
+  fireEvent.pointerUp(overlay, sample(4));
+  expect(screen.getByRole("textbox", { name: "笔记文本" })).toBeInTheDocument();
 });

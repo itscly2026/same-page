@@ -417,8 +417,8 @@ export function AnnotationOverlay({
     event.stopPropagation();
     if (textEditor) return;
     const active = objectTransform.current;
-    if (active && active.id !== annotation.id) return;
-    if (active?.id === annotation.id) {
+    // Subsequent fingers belong to the existing transform, even over another object.
+    if (active) {
       addTransformPointer(event, active);
       return;
     }
