@@ -258,7 +258,7 @@ export function ContinuousLayout({
     previousPadding.current = startPadding;
   }, [startPadding]);
   const fitted = useRef({ request: 0, zoom: 1 });
-  const pendingFit = useRef<{ page: number; zoom: number } | null>(null);
+  const pendingFit = useRef<{ page: number; zoom: number; center?: boolean } | null>(null);
   useEffect(() => {
     if (!fitRequest || !geometryReady || size.width <= 0 || size.height <= 0) return;
     if (fitted.current.request === fitRequest && Math.abs(zoom - fitted.current.zoom) > 0.001) return;
@@ -293,7 +293,7 @@ export function ContinuousLayout({
   useEffect(() => {
     if (pendingFit.current) {
       if (Math.abs(zoom - pendingFit.current.zoom) > 0.001) return;
-      virtualizer.scrollToIndex(pendingFit.current.page - 1, { align: "center" });
+      virtualizer.scrollToIndex(pendingFit.current.page - 1, { align: pendingFit.current.center ? "center" : "start" });
       alignedPage.current = { page: pendingFit.current.page, geometryReady };
       pendingFit.current = null;
       return;
@@ -343,7 +343,7 @@ export function ContinuousLayout({
       if (nextPage < 1 || nextPage > document.numPages || annotationProps.editor?.getSnapshot() !== "idle") return;
       const nextZoom = calculateFittedPageWidth(size.width, size.height, ratios[nextPage - 1] ?? 0.707) / Math.max(1, size.width);
       setFitPadding(true);
-      pendingFit.current = { page: nextPage, zoom: nextZoom };
+      pendingFit.current = { page: nextPage, zoom: nextZoom, center: true };
       if (scrollRef.current) scrollRef.current.scrollLeft = 0;
       onZoomChange(nextZoom); onPageChange(nextPage);
     } : undefined,
