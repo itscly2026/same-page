@@ -30,6 +30,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     assert.ok((await page.locator('.file-row__size').allTextContents()).every(value => /^\d+ (B|KB|MB)$/.test(value)));
     await page.screenshot({ path: `artifacts/verification/issue-251/${engineName}-library.png` });
     await page.getByRole('button', { name: '打开云盘菜单' }).click();
+    await assertIconCentered(page.getByRole('button', { name: '关闭云盘菜单' }));
     await page.getByRole('link', { name: '加入方式', exact: true }).click();
     for (const name of ['复制邀请链接', '复制邀请码', '分享邀请卡', '保存邀请卡']) await expect(page.getByRole('button', { name, exact: true })).toBeEnabled();
     const rotation = await page.getByRole('button', { name: '轮换邀请码', exact: true }).boundingBox();
@@ -41,10 +42,11 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     const viewport = page.locator('.page-reader__viewport');
     const bounds = await viewport.boundingBox();
     await viewport.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
-    await page.getByRole('button', { name: '看哪些笔记', exact: true }).click();
+    await page.getByRole('button', { name: '笔记图层', exact: true }).click();
     await page.getByRole('checkbox', { name: '显示 成员分享的演出笔记' }).waitFor();
     for (const width of [320, 390, 834]) {
       await page.setViewportSize({ width, height: 844 });
+      await assertIconCentered(page.getByRole('button', { name: '关闭笔记显示' }));
       const positions = await page.locator('.layer-row__visibility input').evaluateAll(inputs => inputs.map(input => input.getBoundingClientRect().x));
       assert.ok(positions.length >= 7 && Math.max(...positions) - Math.min(...positions) < 1, `checkbox alignment at ${width}: ${positions}`);
       const panel = page.locator('.reader-layer-panel');
@@ -59,7 +61,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     const rowGeometry = () => page.locator('.layer-section--personal .reader-layer-row').first().evaluate(row => { const box = row.getBoundingClientRect(); const section = row.closest('.layer-section').getBoundingClientRect(); return { x: box.x - section.x, y: box.y - section.y, width: box.width, height: box.height }; });
     const before = await rowGeometry();
     await actions.click();
-    await expect(page.getByRole('switch', { name: '公开 我的笔记' })).toHaveCount(0);
+    await expect(page.getByRole('switch', { name: '分享 我的笔记' })).toHaveCount(0);
     await expect(page.getByRole('checkbox', { name: '显示 我的笔记', exact: true })).toHaveCount(0);
     assert.deepEqual(await rowGeometry(), before);
     await page.getByRole('button', { name: '重命名 我的笔记', exact: true }).scrollIntoViewIfNeeded();
@@ -140,4 +142,14 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
       assert.deepEqual(await page.evaluate(() => window.rowNotices), []);
     }
   });
+}
+
+async function assertIconCentered(button) {
+  const result = await button.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    const icon = element.querySelector('svg').getBoundingClientRect();
+    return { dx: icon.x + icon.width / 2 - box.x - box.width / 2,
+      dy: icon.y + icon.height / 2 - box.y - box.height / 2 };
+  });
+  assert.ok(Math.abs(result.dx) < 1 && Math.abs(result.dy) < 1, `icon not centered: ${JSON.stringify(result)}`);
 }

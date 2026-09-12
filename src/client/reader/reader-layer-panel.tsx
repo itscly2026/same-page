@@ -122,8 +122,8 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
   const feedbackOutsideManagement = feedbackInManagement && !managementOpen;
 
   return (
-    <section className="reader-layer-panel" aria-label="看哪些笔记" aria-busy={pending}>
-      <p className="reader-layer-help">仅影响你在这份谱上的显示，更改自动保存。</p><div className="reader-layer-preferences">{isLocalExperience(workspace) ? <span>体验显示仅保存在此浏览器</span> : signedIn ? <Link to={`/choirs/${workspace.choirId}/preferences`}>设置此云盘的默认显示</Link> : <Link to={loginHref(`/choirs/${workspace.choirId}/scores/${workspace.scoreId}`, "layers")}>登录后设置默认显示</Link>}</div>
+    <section className="reader-layer-panel" aria-label="笔记图层" aria-busy={pending}>
+      <p className="reader-layer-help">设置本谱的显示、颜色与个人层分享。</p><div className="reader-layer-preferences">{isLocalExperience(workspace) ? <span>体验显示仅保存在此浏览器</span> : signedIn ? <Link to={`/choirs/${workspace.choirId}/preferences`}>设置此云盘的默认显示</Link> : <Link to={loginHref(`/choirs/${workspace.choirId}/scores/${workspace.scoreId}`, "layers")}>登录后设置默认显示</Link>}</div>
       <div className="layer-section">
         <div className="layer-section__heading">
           <div><h3>共享层</h3></div>
@@ -182,7 +182,7 @@ export function ReaderLayerPanel({ workspace, layers: storedLayers, signedIn }: 
         </>}
       </div>}
       {publishedLayers.length ? <div className="layer-section"><h3>成员分享</h3>
-        <p className="reader-layer-help">显示作者的最新笔记，仅供阅读。</p>
+        <p className="reader-layer-help">其他成员分享的个人层，仅供阅读。</p>
         <div className="layer-card-list">{publishedLayers.map(layer => <article className="layer-card" key={layer.id}>
           <div className="layer-card__main reader-layer-row"><label className="layer-row__name" htmlFor={`${visibilityPrefix}-${layer.id}`}><strong>{layer.name}</strong></label>
             <label className="layer-row__visibility"><input id={`${visibilityPrefix}-${layer.id}`} type="checkbox" aria-label={`显示 ${layer.name}`} checked={layer.subscribed}

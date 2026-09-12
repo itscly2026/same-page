@@ -70,7 +70,7 @@ export function ReaderEditingControls({
     <section className="annotation-controls" aria-label="笔记工具">
       {showHint && <div className="reader-edit-first-hint" role="status">
         <span>仅当前层可编辑，其他层淡化供参考。点勾号完成后恢复阅读。</span>
-        <Button aria-label="关闭编辑提示" onPress={() => { setShowHint(false); try { localStorage.setItem("reader-edit-hint-seen", "true"); } catch { /* Optional hint preference. */ } }}><X aria-hidden="true" size={18} /></Button>
+        <Button className="icon-button" aria-label="关闭编辑提示" onPress={() => { setShowHint(false); try { localStorage.setItem("reader-edit-hint-seen", "true"); } catch { /* Optional hint preference. */ } }}><X aria-hidden="true" size={18} /></Button>
       </div>}
       <DialogTrigger isOpen={choosingLayer} onOpenChange={setChoosingLayer}>
         <Button
@@ -83,7 +83,7 @@ export function ReaderEditingControls({
         </Button>
         <Popover className="reader-edit-layer-popover" placement="top" offset={12}>
           <Dialog aria-label="写到哪里">
-            <div className="reader-target-heading"><h2>写到哪里</h2><Button aria-label="关闭写入目标" onPress={() => setChoosingLayer(false)}><X aria-hidden="true" size={18} /></Button></div>
+            <div className="reader-target-heading"><h2>写到哪里</h2><Button className="icon-button" aria-label="关闭写入目标" onPress={() => setChoosingLayer(false)}><X aria-hidden="true" size={18} /></Button></div>
             <p>共享层 · 此云盘可见</p>
             <div className="annotation-layer-switcher" aria-label="编辑层">
               {layers.filter(layer => layer.kind === "shared").map((layer) => (

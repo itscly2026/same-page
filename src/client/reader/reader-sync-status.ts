@@ -53,8 +53,7 @@ export function deriveReaderSyncStatus({
     message: !online ? "已保存在本机 · 等待联网" : draftCount > 0 ? "已保存在本机 · 完成编辑后同步" : `已保存在本机 · ${pendingCount} 项等待同步`,
   };
   // A completed request, empty query or network connection is not acceptance.
-  if (outcome === "synced") return { kind: "quiet", message: "已同步" };
-  if (acceptedCount > 0) return { kind: "quiet", message: "已同步" };
+  if (acceptedCount > 0) return { kind: "quiet", message: "没有待上传的修改" };
   return { kind: "quiet", message: "尚无笔记修改" };
 }
 

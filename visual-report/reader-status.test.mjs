@@ -55,7 +55,7 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
     await page.getByRole("button", { name: "更多", exact: true }).click();
     const menu = page.getByRole("dialog", { name: "更多阅读选项" });
     await menu.waitFor();
-    assert.match(await menu.innerText(), /保存与同步/);
+    await menu.getByRole("region", { name: "笔记保存与同步" }).waitFor();
     const bounds = await menu.boundingBox();
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width + 1);
     assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= 901);
@@ -85,13 +85,12 @@ test("reader menu, durable offline draft, reconnect and recovery evidence", asyn
     await page.getByText("已保存在本机 · 等待联网", { exact: true }).scrollIntoViewIfNeeded();
     await captureStates(page, `${width}-offline-draft.png`);
     failSync = true;
-    await page.evaluate(() => { window.fixtureOnline = true; });
-    await menu.getByRole("button", { name: "立即同步", exact: true }).click();
+    await page.evaluate(() => { window.fixtureOnline = true; window.dispatchEvent(new Event("online")); });
     await menu.getByRole("button", { name: "重试同步", exact: true }).waitFor();
     await captureStates(page, `${width}-sync-failed.png`);
     failSync = false;
-    await page.evaluate(() => { window.dispatchEvent(new Event("online")); });
-    await page.getByText("已同步", { exact: true }).waitFor();
+    await menu.getByRole("button", { name: "重试同步", exact: true }).click();
+    await page.getByText("没有待上传的修改", { exact: true }).waitFor();
     assert.ok(pushes > 0);
     await captureStates(page, `${width}-synced.png`);
     await page.getByRole("button", { name: "关闭更多阅读选项" }).click();

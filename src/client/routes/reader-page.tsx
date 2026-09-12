@@ -1,3 +1,4 @@
+import { subscribeReaderSync } from "../reader/sync-reader";
 import { LocalPdfDownload } from "../reader/local-pdf-download";
 import { useReaderFullscreen } from "../reader/use-reader-fullscreen";
 import { clearGuestNotes, isLocalExperience } from "../annotations/guest-notes";
@@ -19,7 +20,7 @@ import { useReaderSession } from "../reader/use-reader-session";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   ArrowLeft, FileUp, HardDrive, Ellipsis, Layers, Maximize2, Minus, Pencil, Plus, BookOpen,
-  RefreshCw, Rows3, Check, X,
+  RefreshCw, Rows3, Check, X, Maximize, ChevronDown,
 } from "lucide-react";
 import {
   useEffect,
@@ -149,6 +150,13 @@ function ReaderPageContent() {
   }), [resolvedWorkspace?.scopeKey]);
   const [chromeVisible, setChromeVisible] = useReturnState("chrome", returnedPanel);
   const [readerPanel, setReaderPanel] = useReturnState<ReaderPanel | null>("panel", returnedPanel ? "layers" : null);
+  const [cloudCheck, setCloudCheck] = useState<{ scope: string; at: number } | null>(null);
+  useEffect(() => {
+    if (!resolvedWorkspace) return;
+    return subscribeReaderSync(resolvedWorkspace, result => {
+      if (result.state === "active") setCloudCheck({ scope: resolvedWorkspace.scopeKey, at: Date.now() });
+    });
+  }, [resolvedWorkspace]);
   const [moreOpen, setMoreOpen] = useState(false);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
   const moreTrigger = useRef<HTMLButtonElement>(null);
@@ -511,7 +519,7 @@ function ReaderPageContent() {
               </Button>
               {!editing && <><Button
                 ref={layersTrigger}
-                aria-label="看哪些笔记"
+                aria-label="笔记图层"
                 aria-expanded={readerPanel === "layers"}
                 className="reader-icon-button"
                 onPress={() => { if (editing) navigation.afterEditing(() => openReaderPanel("layers")); else openReaderPanel("layers"); }}
@@ -548,14 +556,14 @@ function ReaderPageContent() {
           {!editing && moreOpen ? (
             <Popover triggerRef={moreTrigger} isOpen={moreOpen} onOpenChange={setMoreOpen} isNonModal placement="bottom end" className="reader-more-popover">
             <Dialog className="reader-more-menu" aria-label="更多阅读选项">
+              <header className="reader-menu-heading"><strong>阅读选项</strong><Button className="icon-button" aria-label="关闭更多阅读选项" onPress={() => setMoreOpen(false)}><X size={20} aria-hidden="true" /></Button></header>
               <IdentityNotice identity={identity} />
               {guestExperience && <section aria-label="本机体验笔记"><h2>本机体验笔记</h2><p>仅保存在此浏览器，不上传、不修改公开内容。</p>
                 <Button onPress={() => { if (workspace) void clearGuestNotes(workspace).then(() => setSyncOutcome("local-saved")).catch(() => setSyncOutcome("failed")); }}>清除本谱体验笔记</Button>
               </section>}
-              <header className="reader-menu-heading"><strong>阅读选项</strong><Button aria-label="关闭更多阅读选项" onPress={() => setMoreOpen(false)}>关闭</Button></header>
               {!editing && <>
-              <section aria-label="页面布局与缩放"><h2>页面布局与缩放</h2>
-              {fullscreen.supported && <Button onPress={() => void fullscreen.toggle()}>{fullscreen.active ? "退出全屏" : "全屏阅读"}</Button>}
+              <section aria-label="页面布局与缩放" className="reader-options-display"><div className="reader-option-heading"><h2>阅读方式</h2>
+              {fullscreen.supported && <Button className="reader-option-action" onPress={() => void fullscreen.toggle()}><Maximize size={15} aria-hidden="true" />{fullscreen.active ? "退出全屏" : "全屏阅读"}</Button>}</div>
               {fullscreen.error && <p role="status">{fullscreen.error}</p>}
               <div className="segmented-control" aria-label="页面布局">
                 <Button
@@ -593,10 +601,10 @@ function ReaderPageContent() {
                 </Button>
               </div>
               </section>
-              <section aria-label="本机离线副本"><h2>离线使用</h2>
+              <section aria-label="本机离线副本"><div className="reader-option-heading reader-option-heading--status"><h2><HardDrive size={17} aria-hidden="true" />离线使用</h2>
               <p className="reader-more-menu__status" role="status">
                 {offlinePreparationDescription(preparation, offlineStatus ? { record: offline, invalid: offlineStatus.invalid, readFailed: offlineStatus.readFailed } : null, score.currentVersion.id)}
-              </p>
+              </p></div>
               {offlineStatus?.readFailed && <Button className="secondary-button" onPress={() => setInspectionAttempt(value => value + 1)}>重试校验</Button>}
               {!offlineStatus?.readFailed && (!offlineStatus || !offline || offlineStatus.invalid || hasNewOfflineVersion || preparation.phase === "failed" || downloading) && (
               <Button
@@ -609,17 +617,19 @@ function ReaderPageContent() {
               )}
               {downloadMessage && preparation.phase === "idle" && <p className="reader-more-menu__status" role="status">{downloadMessage}</p>}
               </section>
-              <section aria-label="笔记保存与同步"><h2>笔记保存与同步</h2>
-                <p className="reader-more-menu__status" data-kind={syncStatus.kind} role="status">{syncStatus.message}</p>
-                {!guestExperience && (syncStatus.kind === "failed" || syncStatus.kind === "pending") && (
-                <Button className="reader-sync-action" isDisabled={syncing || syncActivity === "running" || cloudState === "trashed"} onPress={() => void manualSync()}>
-                  <RefreshCw aria-hidden="true" size={18} />
-                  {syncing || syncActivity === "running" ? "同步中…" : syncStatus.kind === "failed" ? "重试同步" : "立即同步"}
-                </Button>
-                )}
+              <section aria-label="笔记保存与同步">
+                <div className="reader-option-heading"><h2><RefreshCw size={17} aria-hidden="true" />笔记同步</h2>
+                {!guestExperience && <Button className="reader-option-action" aria-label={!online ? "离线，联网后可同步" : syncing || syncActivity === "running" ? "同步中…" : syncStatus.kind === "failed" ? "重试同步" : "立即同步"} aria-description="获取成员最新笔记，并上传我的修改" isDisabled={!online || syncing || syncActivity === "running" || cloudState === "trashed" || !annotationActions} onPress={() => void manualSync()}>{syncing || syncActivity === "running" ? "同步中…" : syncStatus.kind === "failed" ? "重试" : "同步"}</Button>}
+                </div>
+                {guestExperience ? <p className="reader-more-menu__status" role="status">{syncStatus.message}</p> : <>
+                  <dl className="reader-sync-details">
+                    <div><dt>我的修改</dt><dd data-kind={syncStatus.kind} role="status">{syncStatus.message}</dd></div>
+                    <div><dt>上次检查云端</dt><dd>{cloudCheck?.scope === workspace.scopeKey ? new Date(cloudCheck.at).toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : "尚未确认"}</dd></div>
+                  </dl>
+                </>}
               </section>
               </>}
-              <details className="reader-help"><summary>阅读帮助</summary>
+              <details className="reader-help"><summary>阅读帮助<ChevronDown size={15} aria-hidden="true" /></summary>
                 <p className="reader-more-menu__status">轻点中央显示工具；点按两侧或左右滑动翻页。编辑时双指移动或缩放当前页，点勾号完成后继续翻页。笔记同步与离线副本分别准备。</p>
                 <Button onPress={() => { setMoreOpen(false); setDiagnosticOpen(true); }}>故障诊断</Button>
               </details>
@@ -678,9 +688,9 @@ function ReaderPageContent() {
         <ModalOverlay className="reader-panel-backdrop" isOpen isDismissable
           onOpenChange={(open) => { if (!open) setReaderPanel(null); }}>
           <Modal className="reader-panel reader-layers-dialog">
-            <Dialog preserveOnNavigate aria-label={"看哪些笔记"} className="reader-layers-content">
+            <Dialog preserveOnNavigate aria-label={"笔记图层"} className="reader-layers-content">
               <header className="reader-panel__header">
-                <strong>{"看哪些笔记"}</strong>
+                <strong>{"笔记图层"}</strong>
                 <Button className="icon-button" aria-label="关闭笔记显示" onPress={() => setReaderPanel(null)}>
                   <X aria-hidden="true" size={21} />
                 </Button>

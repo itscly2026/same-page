@@ -372,7 +372,7 @@ export const visualReportScenarios = [
     ready: { type: "selector", selector: ".layer-section--personal .layer-card" },
     actions: [
       { type: "clickCenter", selector: ".page-reader__viewport" },
-      { type: "clickRole", role: "button", name: "看哪些笔记" },
+      { type: "clickRole", role: "button", name: "笔记图层" },
     ],
     waitsForPdf: true,
   },
@@ -386,7 +386,7 @@ export const visualReportScenarios = [
     ready: { type: "selector", selector: ".layer-section--personal .layer-card" },
     actions: [
       { type: "clickCenter", selector: ".page-reader__viewport" },
-      { type: "clickRole", role: "button", name: "看哪些笔记" },
+      { type: "clickRole", role: "button", name: "笔记图层" },
     ],
     waitsForPdf: true,
   },

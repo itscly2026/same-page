@@ -85,18 +85,18 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
       await page.getByRole("button", { name: "更多", exact: true }).click();
       await page.getByRole("button", { name: "放大", exact: true }).click();
       await page.keyboard.press("Escape");
-      await page.getByRole("button", { name: "看哪些笔记", exact: true }).click();
+      await page.getByRole("button", { name: "笔记图层", exact: true }).click();
       await page.getByRole("link", { name: "设置此云盘的默认显示" }).click();
       await expect(page.getByRole("heading", { name: "阅读偏好", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "返回", exact: true }).click();
-      await expect(page.getByRole("dialog", { name: "看哪些笔记" })).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "笔记图层" })).toBeVisible();
       await expect(page.locator(".page-reader__viewport")).toHaveAttribute("data-zoom", "1.25");
       await page.getByRole("button", { name: "关闭笔记显示" }).click();
-      await expect(page.getByRole("button", { name: "看哪些笔记", exact: true })).toBeFocused();
+      await expect(page.getByRole("button", { name: "笔记图层", exact: true })).toBeFocused();
       await page.evaluate(() => history.replaceState({ ...history.state, usr: { ...history.state.usr, readerReturnPanel: "layers" } }, ""));
       await page.reload();
       await page.locator("canvas[data-pdf-canvas-active]").first().waitFor();
-      await expect(page.getByRole("dialog", { name: "看哪些笔记" })).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "笔记图层" })).toHaveCount(0);
     });
     await scenario("direct-help-fallback", async page => {
       await page.goto(`${app.origin}/help`);

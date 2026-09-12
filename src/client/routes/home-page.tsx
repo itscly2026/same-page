@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { CreateDrive } from "../drives/create-drive";
 import { activateGuestLocalOwner } from "../platform/local-workspace";
 import { FeatureAnimation } from "../components/feature-animation";
@@ -378,7 +379,7 @@ function HomeContent({ identity, startup, linkInvite, finishInvitation }: { iden
                     </Heading>
                   </div>
                   <Button className="icon-button" aria-label="关闭" onPress={close}>
-                    ×
+                    <X size={20} aria-hidden="true" />
                   </Button>
                 </div>
 
