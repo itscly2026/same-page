@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { ReadResource, getReadResource } from "./read-resource";
+import { ReadResource, getReadResource, revokeDriveReadResources } from "./read-resource";
 import { useReadResource } from "./use-read-resource";
 import { NAVIGATION_FRESH_MS, observeNavigationSession, observeNavigationResponse } from "./navigation-events";
 import { SettingsRequestError } from "./settings-request";
@@ -34,8 +34,8 @@ it("shares reads across consumers, including when the initiating consumer leaves
   const result = deferred<string>();
   let signal!: AbortSignal;
   const load = vi.fn((s: AbortSignal) => { signal = s; return result.promise; });
-  const first = renderHook(() => useReadResource("user:drive:management", load, undefined, NAVIGATION_FRESH_MS));
-  const second = renderHook(() => useReadResource("user:drive:management", load, undefined, NAVIGATION_FRESH_MS));
+  const first = renderHook(() => useReadResource({ owner: "user", driveId: "drive", kind: "management" }, load, undefined, NAVIGATION_FRESH_MS));
+  const second = renderHook(() => useReadResource({ owner: "user", driveId: "drive", kind: "management" }, load, undefined, NAVIGATION_FRESH_MS));
   await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
   first.unmount(); expect(signal.aborted).toBe(false);
   await act(async () => { result.resolve("name"); });
@@ -45,14 +45,14 @@ it("shares reads across consumers, including when the initiating consumer leaves
 });
 it("fences an old response on same-user session replacement and on a confirmed drive mutation", async () => {
   observeNavigationSession("user:session-one");
-  const resource = getReadResource<string>("user:drive:management");
+  const resource = getReadResource<string>({ owner: "user", driveId: "drive", kind: "management" });
   const old = deferred<string>();
   const read = resource.read(() => old.promise);
   await Promise.resolve();
   observeNavigationSession("user:session-two");
   old.resolve("old identity"); await read;
   expect(resource.getSnapshot().data).toBeNull();
-  const current = getReadResource<string>("user:drive:management");
+  const current = getReadResource<string>({ owner: "user", driveId: "drive", kind: "management" });
   current.confirm("name");
   const beforeWrite = deferred<string>();
   const pending = current.read(() => beforeWrite.promise);
@@ -63,9 +63,9 @@ it("fences an old response on same-user session replacement and on a confirmed d
 });
 
 it("invalidates only mutation dependencies and fences capabilities after a denied write", async () => {
-  const settings = getReadResource<string>("member:drive:settings");
-  const usage = getReadResource<string>("member:drive:usage");
-  const other = getReadResource<string>("member:other-drive:management");
+  const settings = getReadResource<string>({ owner: "member", driveId: "drive", kind: "settings" });
+  const usage = getReadResource<string>({ owner: "member", driveId: "drive", kind: "usage" });
+  const other = getReadResource<string>({ owner: "member", driveId: "other-drive", kind: "management" });
   settings.confirm("display name"); usage.confirm("old usage"); other.confirm("other drive");
   observeNavigationResponse("/api/choirs/drive/scores/score/restore", { method: "POST" }, Response.json({}));
   expect(settings.fresh(NAVIGATION_FRESH_MS)).toBe(true);
@@ -74,4 +74,20 @@ it("invalidates only mutation dependencies and fences capabilities after a denie
   observeNavigationResponse("/api/choirs/drive/name", { method: "PATCH" }, new Response(null, { status: 403 }));
   expect(settings.getSnapshot().authority).toBe("unconfirmed");
   expect(other.getSnapshot().authority).toBe("confirmed");
+});
+
+
+it("keeps identity fields distinct for reuse, dependency matching and revocation", () => {
+  const identity = { owner: "user:one", driveId: "drive", kind: "shared-layer", variant: "settings" } as const;
+  const layer = getReadResource<string>(identity);
+  expect(getReadResource({ ...identity })).toBe(layer);
+  expect(getReadResource({ ...identity, variant: "other" })).not.toBe(layer);
+  expect(getReadResource({ ...identity, owner: "user", driveId: "one:drive" })).not.toBe(layer);
+  const other = getReadResource<string>({ owner: "drive", driveId: "elsewhere", kind: "settings" });
+  layer.confirm("layer"); other.confirm("other");
+  observeNavigationResponse("/api/choirs/drive/name", { method: "PATCH" }, Response.json({}));
+  expect(layer.fresh(NAVIGATION_FRESH_MS)).toBe(true);
+  revokeDriveReadResources("drive");
+  expect(layer.getSnapshot()).toMatchObject({ data: null, authority: "revoked" });
+  expect(other.getSnapshot()).toMatchObject({ data: "other", authority: "confirmed" });
 });

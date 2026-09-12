@@ -22,7 +22,7 @@ export default function SharedLayerDetailsPage() {
 function SharedLayerDetails({ choirId, slotParam, userId }: { choirId: string; slotParam: string; userId: string | null }) {
   const parsedSlot = sharedLayerSlotSchema.safeParse(slotParam);
   const slot = parsedSlot.success ? parsedSlot.data : null;
-  const resource = useReadResource(`${userId}:${choirId}:shared-layer:${slotParam}`, async signal => {
+  const resource = useReadResource({ owner: userId, driveId: choirId, kind: "shared-layer", variant: slotParam }, async signal => {
     if (!slot) throw new Error("invalid_shared_layer");
     return sharedLayerManagementResponseSchema.parse(await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/shared-layers`, { signal })));
   });

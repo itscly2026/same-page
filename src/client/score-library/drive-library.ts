@@ -95,12 +95,12 @@ export class DriveLibrary {
     this.workspace = this.ownerKey.startsWith("user:")
       ? captureLocalWorkspaceSession(createLocalWorkspace(authenticatedLocalOwnerKey(this.ownerKey.slice(5)), this.choirId, "")).catch(() => null)
       : currentLocalOwnerKey().then(owner => owner?.startsWith("guest:") ? captureLocalWorkspaceSession(createLocalWorkspace(owner, this.choirId, "")) : null).catch(() => null);
-    this.stopObserving = onDriveChange((driveId, permissions, resource) => {
-      if ((resource === "display-name" && !permissions) || driveId !== this.choirId) return;
+    this.stopObserving = onDriveChange(impact => {
+      if (!impact.directory || impact.driveId !== this.choirId) return;
       this.confirmedAt = -Infinity;
       this.request?.controller.abort(); this.request = null;
       this.publish({ reading: { ...this.snapshot.reading, request: "idle" } });
-      if (permissions && this.snapshot.access.kind === "opened") this.publish({ access: localAccess(this.snapshot.access), reading: { request: "idle", authority: "unconfirmed" } });
+      if (impact.dropAuthority && this.snapshot.access.kind === "opened") this.publish({ access: localAccess(this.snapshot.access), reading: { request: "idle", authority: "unconfirmed" } });
     });
     const cached = readDriveLibrary(this.ownerKey, this.choirId);
     const confirmed = Boolean(cached && (this.authenticated || this.ownerKey.startsWith("guest:")));

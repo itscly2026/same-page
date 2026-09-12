@@ -36,9 +36,8 @@ let ownerController = new AbortController();
 let returningDrive: { ownerKey: DriveCacheOwnerKey; choirId: string } | null = null;
 
 onNavigationReset(clearDriveLibraryCache);
-onDriveChange((driveId, permissions, resource) => {
-  if (resource === "display-name" && !permissions) return;
-  if (activeOwner) invalidateDriveLibrary(activeOwner, driveId);
+onDriveChange(impact => {
+  if (impact.directory && activeOwner) invalidateDriveLibrary(activeOwner, impact.driveId);
 });
 
 onReaderIdentityChange(() => {

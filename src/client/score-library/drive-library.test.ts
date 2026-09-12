@@ -1,3 +1,5 @@
+import { getReadResource, clearReadResources } from "../settings/read-resource";
+import { NAVIGATION_FRESH_MS, observeNavigationResponse, type DriveReadKind } from "../settings/navigation-events";
 import { storeOfflineScore } from "../platform/local-database";
 import { Blob as NodeBlob } from "node:buffer";
 import { sha256Hex } from "../offline/offline-score-verification";
@@ -408,4 +410,63 @@ it("returns ten times without reading again, then quietly refreshes expired data
   await library.refresh();
   expect(library.getSnapshot()).toMatchObject({ access: { local: true, isMember: false }, reading: { authority: "signed-out" } });
   expect(readDriveLibrary(owner, choirId)).toBeNull();
+});
+
+
+describe("confirmed navigation changes across settings and directory consumers", () => {
+  const kinds: DriveReadKind[] = ["settings", "management", "permission-contacts", "memberships", "usage", "shared-layers", "shared-layer", "layer-access", "reading-defaults"];
+  it.each([
+    { path: "display-name", method: "PATCH", status: 200, affected: ["settings", "permission-contacts", "memberships"], directory: false, denied: false },
+    { path: "name", method: "PATCH", status: 200, affected: ["settings", "management"], directory: true, denied: false },
+    { path: "scores/score/restore", method: "POST", status: 200, affected: ["usage"], directory: true, denied: false },
+    { path: "shared-layers/slot", method: "PATCH", status: 200, affected: ["management", "shared-layers", "shared-layer", "layer-access", "reading-defaults"], directory: true, denied: false },
+    { path: "memberships/member", method: "DELETE", status: 200, affected: kinds, directory: true, denied: true },
+    { path: "ownership", method: "POST", status: 200, affected: kinds, directory: true, denied: true },
+    { path: "purge", method: "POST", status: 200, affected: kinds, directory: true, denied: false },
+    { path: "display-name", method: "PATCH", status: 403, affected: kinds, directory: true, denied: true },
+    { path: "name", method: "PATCH", status: 401, affected: kinds, directory: true, denied: true },
+    { path: "name", method: "PATCH", status: 500, affected: [], directory: false, denied: false },
+    { path: "name", method: "GET", status: 403, affected: [], directory: false, denied: false },
+    { path: "name", method: "HEAD", status: 200, affected: [], directory: false, denied: false },
+    ...["annotations", "layers", "preferences"].map(kind => ({ path: `scores/score/${kind}`, method: "PATCH", status: 403, affected: [], directory: false, denied: false })),
+  ])("$method $path ($status) preserves the intended read and directory effects", async ({ path, method, status, affected, directory, denied }) => {
+    clearReadResources();
+    const reads = kinds.map(kind => getReadResource<string>({ owner: "one", driveId: choirId, kind }));
+    reads.forEach(resource => resource.confirm("known"));
+    // A drive identifier in an owner or variant is not that resource's drive.
+    const other = getReadResource<string>({ owner: choirId, driveId: "other", kind: "settings", variant: choirId });
+    other.confirm("other drive");
+    const { library, transport } = create(async () => opened());
+    await library.refresh();
+    rememberDriveLibrary(owner, "other", opened());
+    library.prepareScoreOpen(20);
+    observeNavigationResponse(`/api/choirs/${choirId}/${path}`, { method }, new Response(null, { status }));
+    kinds.forEach((kind, index) => {
+      expect(reads[index].fresh(NAVIGATION_FRESH_MS), kind).toBe(!affected.includes(kind));
+      expect(reads[index].getSnapshot().authority, kind).toBe(denied ? "unconfirmed" : "confirmed");
+    });
+    expect(other.fresh(NAVIGATION_FRESH_MS)).toBe(true);
+    expect(readDriveLibrary(owner, choirId) === null).toBe(directory);
+    expect(readReturningDriveCacheOwner(choirId)).toBe(directory ? null : owner);
+    expect(readDriveLibrary(owner, "other")).not.toBeNull();
+    expect(library.getSnapshot().reading.authority).toBe(denied ? "unconfirmed" : "confirmed");
+    if (denied) expect(library.getSnapshot().access).toMatchObject({ local: true, isMember: false, result: { permissions: { capabilities: noCapabilities() } } });
+    const before = transport.load.mock.calls.length;
+    await library.refreshIfStale();
+    expect(transport.load).toHaveBeenCalledTimes(before + Number(directory));
+  });
+
+  it("discards a directory response started before a confirmed mutation", async () => {
+    const { library, transport } = create(async () => opened());
+    await library.refresh();
+    const old = deferred<Opened>();
+    transport.load.mockImplementationOnce(() => old.promise);
+    const pending = library.refresh();
+    await vi.waitFor(() => expect(transport.load).toHaveBeenCalledTimes(2));
+    observeNavigationResponse(new Request(`https://example.test/api/choirs/${choirId}/name`, { method: "PATCH" }), undefined, new Response(null, { status: 200 }));
+    old.resolve(opened("stale.pdf"));
+    await pending;
+    expect(library.getSnapshot().scores[0].fileName).toBe("秋日.pdf");
+    expect(readDriveLibrary(owner, choirId)).toBeNull();
+  });
 });

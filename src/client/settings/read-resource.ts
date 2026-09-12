@@ -1,5 +1,5 @@
 import { onReaderIdentityChange } from "../reader/reader-cache-events";
-import { affectsReadResource, onDriveChange, onNavigationReset } from "./navigation-events";
+import { type DriveReadIdentity, onDriveChange, onNavigationReset } from "./navigation-events";
 import { SettingsRequestError } from "./settings-request";
 
 export type ReadState<T> = { data: T | null; request: "idle" | "pending"; authority: "unconfirmed" | "confirmed" | "signed-out" | "revoked"; error: unknown };
@@ -51,31 +51,32 @@ export class ReadResource<T> {
   }
 }
 
-const resources = new Map<string, ReadResource<unknown>>();
-export function getReadResource<T>(key: string): ReadResource<T> {
-  let resource = resources.get(key);
+const resources = new Map<string, { identity: DriveReadIdentity; resource: ReadResource<unknown> }>();
+export function getReadResource<T>(identity: DriveReadIdentity): ReadResource<T> {
+  const key = JSON.stringify([identity.owner, identity.driveId, identity.kind, identity.variant ?? null]);
+  let resource = resources.get(key)?.resource;
   if (!resource) {
     resource = new ReadResource();
-    resources.set(key, resource);
+    resources.set(key, { identity: { ...identity }, resource });
   }
   if (resources.size > 40) {
-    for (const [oldKey, old] of resources) {
+    for (const [oldKey, { resource: old }] of resources) {
       if (oldKey !== key && !old.observed) { old.clear(); resources.delete(oldKey); break; }
     }
   }
   return resource as ReadResource<T>;
 }
-export function clearReadResources() { epoch++; for (const resource of resources.values()) resource.clear(); resources.clear(); }
+export function clearReadResources() { epoch++; for (const { resource } of resources.values()) resource.clear(); resources.clear(); }
 onReaderIdentityChange(clearReadResources);
 onNavigationReset(clearReadResources);
-onDriveChange((driveId, permissions, changedResource) => {
-  for (const [key, resource] of resources) if (key.split(":").includes(driveId) && affectsReadResource(key, changedResource, permissions)) resource.invalidate(permissions);
+onDriveChange(impact => {
+  for (const { identity, resource } of resources.values()) if (impact.affects(identity)) resource.invalidate(impact.dropAuthority);
 });
 export function revokeDriveReadResources(driveId: string) {
-  for (const [key, resource] of resources) if (key.split(":").includes(driveId)) resource.clear();
+  for (const { identity, resource } of resources.values()) if (identity.driveId === driveId) resource.clear();
 }
-export function readResource<T>(key: string): T | null { return getReadResource<T>(key).getSnapshot().data; }
-export function rememberResource<T>(key: string, data: T) { getReadResource<T>(key).restore(data); }
+export function readResource<T>(key: DriveReadIdentity): T | null { return getReadResource<T>(key).getSnapshot().data; }
+export function rememberResource<T>(key: DriveReadIdentity, data: T) { getReadResource<T>(key).restore(data); }
 export function failedRead<T>(previous: ReadState<T>, error: unknown): ReadState<T> {
   const status = error instanceof SettingsRequestError ? error.status : null;
   const authority = status === 401 ? "signed-out" : status === 403 || status === 404 ? "revoked" : previous.authority;
