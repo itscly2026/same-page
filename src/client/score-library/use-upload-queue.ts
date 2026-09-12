@@ -2,7 +2,7 @@ import { holdUpdate } from "../updates/update-safety";
 import { useLayoutEffect, useRef, useState } from "react";
 
 import { MAX_PDF_BYTES, scoreSummarySchema } from "../../shared/scores";
-import { diagnosticFetch } from "../diagnostics/diagnostics";
+import { uploadPdf, UPLOAD_TIMEOUT_MS, type UploadProgress } from "./upload-transport";
 import { uploadMessage } from "./library-format";
 
 type UploadStatus = "queued" | "uploading" | "success" | "error" | "unknown" | "cancelled";
@@ -13,6 +13,7 @@ export interface UploadItem {
   file: File | null;
   status: UploadStatus;
   message: string;
+  progress?: UploadProgress;
 }
 interface QueueState {
   items: UploadItem[];
@@ -20,7 +21,6 @@ interface QueueState {
   refreshFailed: boolean;
 }
 const initialState = (): QueueState => ({ items: [], paused: null, refreshFailed: false });
-const UPLOAD_TIMEOUT_MS = 10 * 60_000;
 
 // The caller keys the dialog by user and drive. One pump owns all batches in
 // that lifetime, including while the dialog is hidden. No persisted tasks.
@@ -64,13 +64,17 @@ export function useUploadQueue({ choirId, onComplete, onQuotaChange }: {
         const item = current.state.items.find((entry) => entry.status === "queued");
         if (!item?.file) break;
         publish({ ...current.state, items: current.state.items.map((entry) => entry.id === item.id
-          ? { ...entry, status: "uploading", message: "正在验证并上传…" } : entry) });
+          ? { ...entry, status: "uploading", message: "正在上传…", progress: undefined } : entry) });
         const controller = new AbortController();
         current.controller = controller;
         const timer = window.setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
         let outcome: UploadOutcome;
         try {
-          outcome = await uploadOne(choirId, item.file, controller.signal);
+          outcome = await uploadOne(choirId, item.file, controller.signal, (progress) => {
+            if (!isCurrent() || controller.signal.aborted) return;
+            publish({ ...current.state, items: current.state.items.map((entry) => entry.id === item.id
+              ? { ...entry, progress, message: progress.processing ? "传输完成，正在保存…" : "正在上传…" } : entry) });
+          });
         } catch {
           outcome = { status: "unknown", message: "网络中断或请求超时，结果待核对。请先查看文件库，不要直接重传。", pause: "uncertain" };
         } finally {
@@ -144,10 +148,10 @@ interface UploadOutcome {
   pause?: PauseReason;
 }
 
-async function uploadOne(choirId: string, file: File, signal: AbortSignal): Promise<UploadOutcome> {
+async function uploadOne(choirId: string, file: File, signal: AbortSignal, onProgress: (progress: UploadProgress) => void): Promise<UploadOutcome> {
   const form = new FormData();
   form.set("file", file);
-  const response = await diagnosticFetch(`/api/choirs/${choirId}/scores`, { method: "POST", body: form, signal });
+  const response = await uploadPdf(`/api/choirs/${choirId}/scores`, form, signal, onProgress);
   const payload: unknown = await response.json().catch(() => null);
   const error = payload && typeof payload === "object" && "error" in payload ? payload.error : null;
   if (response.ok) {

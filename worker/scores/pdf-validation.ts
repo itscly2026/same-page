@@ -39,22 +39,9 @@ export async function inspectPdf(data: ArrayBuffer): Promise<{
     }
 
     if (document.numPages > MAX_PDF_PAGES) throw new PdfValidationError("pdf_resource_limit");
-    // Parse every page and its drawing operators. This does not rasterize pixels
-    // or guarantee identical fonts/rendering on every client device.
-    let operations = 0;
-    for (let number = 1; number <= document.numPages; number += 1) {
-      const page = await document.getPage(number);
-      const viewport = page.getViewport({ scale: 1 });
-      if (!Number.isFinite(viewport.width) || !Number.isFinite(viewport.height) ||
-          viewport.width <= 0 || viewport.height <= 0 ||
-          viewport.width > 14400 || viewport.height > 14400) {
-        throw new PdfValidationError("pdf_resource_limit");
-      }
-      const operators = await page.getOperatorList();
-      operations += operators.fnArray.length;
-      if (operations > 1_000_000) throw new PdfValidationError("pdf_resource_limit");
-      page.cleanup();
-    }
+    // Upload admission needs page count, not proof that every page can render.
+    // Building operator lists here can exhaust the request before any resource
+    // count is available. Leave page content decoding to the reader.
 
     const digest = await crypto.subtle.digest("SHA-256", data);
     return {

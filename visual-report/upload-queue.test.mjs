@@ -87,3 +87,91 @@ for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {
     } finally { await context.close(); await browser.close(); }
   });
 }
+
+for (const [engine, width] of [[chromium, 390], [webkit, 834]]) {
+  for (const replacement of [false, true]) test(`real HTTP ${replacement ? "replacement" : "upload"} progress waits for save confirmation in ${engine.name()}`, async () => {
+    const { createServer, request: proxyRequest } = await import("node:http");
+    const { request: secureProxyRequest } = await import("node:https");
+    const { mkdir } = await import("node:fs/promises");
+    const uploadPath = `/api/choirs/visual-choir/scores${replacement ? "/visual-score/versions" : ""}`;
+    let respond;
+    let received = 0;
+    let posts = 0;
+    const receiver = createServer((request, response) => {
+      if (request.url !== uploadPath || request.method !== "POST") {
+        const target = new URL(request.url, deployedOrigin ?? server.origin);
+        const proxy = (target.protocol === "https:" ? secureProxyRequest : proxyRequest)(target, { method: request.method, headers: { ...request.headers, host: target.host } }, upstream => {
+          response.writeHead(upstream.statusCode, upstream.headers);
+          upstream.pipe(response);
+        });
+        proxy.on("error", () => { response.writeHead(502); response.end(); });
+        request.pipe(proxy);
+        return;
+      }
+      posts++;
+      request.on("data", chunk => {
+        received += chunk.length;
+        request.pause();
+        setTimeout(() => request.resume(), 15);
+      });
+      request.on("end", () => {
+        respond = () => {
+          response.writeHead(201, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          response.end(JSON.stringify(replacement ? { version: visualFixture.score.currentVersion } : { score: { ...visualFixture.score, fileName: "大谱.pdf" } }));
+        };
+      });
+    });
+    await new Promise(resolve => receiver.listen(0, "127.0.0.1", resolve));
+    const receiverOrigin = `http://127.0.0.1:${receiver.address().port}`;
+    const browser = await engine.launch({ headless: true });
+    const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: "block" });
+    const page = await context.newPage();
+    try {
+      await context.route("**/api/**", async route => {
+        const request = route.request();
+        const pathname = new URL(request.url()).pathname;
+        if (pathname === uploadPath && request.method() === "POST") {
+          await route.continue();
+          return;
+        }
+        if (replacement && pathname === uploadPath && request.method() === "GET") {
+          await route.fulfill({ json: { revision: 1, currentVersionId: visualFixture.score.currentVersion.id,
+            versions: [{ ...visualFixture.score.currentVersion, retentionExpiresAt: null }] } });
+          return;
+        }
+        await route.fulfill(resolveFixtureRequest({ pathname, method: request.method(), identity: "admin", cookie: "" }));
+      });
+      await page.goto(`${receiverOrigin}/choirs/visual-choir`, { waitUntil: "domcontentloaded" });
+      if (replacement) {
+        await page.getByRole("button", { name: "排练示例 · 秋日合唱 更多操作" }).click();
+        await page.getByRole("menuitem", { name: "替换 PDF" }).click();
+      } else {
+        await page.getByRole("button", { name: "上传 PDF", exact: true }).click();
+      }
+      await page.getByLabel(replacement ? "新的 PDF（最多 20 MB、500 页）" : "选择 PDF 文件").setInputFiles({ name: "大谱.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(12 * 1024 * 1024, 32) });
+      const progress = page.getByRole("progressbar", { name: "大谱.pdf 传输进度" });
+      await expect(page.getByText(/平均.*\/s/)).toBeVisible();
+      const value = Number(await progress.getAttribute("value"));
+      assert.ok(value > 0 && value < 100, `intermediate transfer progress: ${value}`);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await mkdir("artifacts/verification/upload-288", { recursive: true });
+      await page.screenshot({ path: `artifacts/verification/upload-288/${engine.name()}-${replacement ? "replacement" : "upload"}-transfer.png` });
+      await expect(page.getByText("传输完成，正在保存…")).toBeVisible({ timeout: 15000 });
+      await expect(progress).toHaveAttribute("value", "100");
+      await expect(page.getByText(/平均.*\/s/)).toHaveCount(0);
+      await expect(page.getByText("上传完成", { exact: true })).toHaveCount(0);
+      await page.screenshot({ path: `artifacts/verification/upload-288/${engine.name()}-${replacement ? "replacement" : "upload"}-saving.png` });
+      await expect.poll(() => typeof respond, { timeout: 15000 }).toBe("function");
+      assert.ok(received >= 12 * 1024 * 1024);
+      respond();
+      if (replacement) await expect(page.getByRole("button", { name: "确认替换" })).toBeVisible();
+      else await expect(page.getByText("上传完成", { exact: true })).toBeVisible();
+      await expect(progress).toHaveCount(0);
+      assert.equal(posts, 1);
+    } finally {
+      await context.close(); await browser.close();
+      receiver.closeAllConnections();
+      await new Promise(resolve => receiver.close(resolve));
+    }
+  });
+}

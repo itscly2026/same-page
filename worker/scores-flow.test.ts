@@ -401,7 +401,7 @@ describe("PDF file library and delivery", () => {
     expect((await callWorker(`${path}/versions/${winner.id}/pdf`, { headers })).status).toBe(404);
   });
 
-  it("rejects a broken middle page before reserving storage", async () => {
+  it("stores readable document metadata and original bytes without inspecting every page", async () => {
     const { adminCookie, choirId } = await createAdminChoir();
     const broken = new TextEncoder().encode(`%PDF-1.4
 1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
@@ -411,9 +411,16 @@ describe("PDF file library and delivery", () => {
 trailer << /Root 1 0 R >>
 %%EOF`);
     const response = await callWorker(`/api/choirs/${choirId}/scores`, uploadRequest(broken, adminCookie, "中间页损坏.pdf"));
-    expect(response.status).toBe(422);
+    expect(response.status).toBe(201);
+    const { score } = await response.json() as { score: { id: string; currentVersion: { pageCount: number } } };
+    expect(score.currentVersion.pageCount).toBeGreaterThan(0);
+    const path = `/api/choirs/${choirId}/scores/${score.id}`;
+    const original = await callWorker(`${path}/pdf`, { headers: { cookie: adminCookie } });
+    expect(new Uint8Array(await original.arrayBuffer())).toEqual(broken);
+    const replacement = await callWorker(`${path}/versions`, uploadRequest(broken, adminCookie, "候选.pdf", 1));
+    expect(replacement.status).toBe(201);
     const list = await callWorker(`/api/choirs/${choirId}/scores`, { headers: { cookie: adminCookie } });
-    expect(await list.json()).toMatchObject({ scores: [], storage: { usedBytes: 0 } });
+    expect(await list.json()).toMatchObject({ storage: { usedBytes: broken.byteLength * 2 } });
   });
 
   it("keeps member priority while enforcing guest and membership revocation", async () => {

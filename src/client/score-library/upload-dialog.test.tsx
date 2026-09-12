@@ -2,7 +2,13 @@ import { StrictMode, useState } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { uploadPdf, type UploadProgress } from "./upload-transport";
 import { UploadDialog } from "./upload-dialog";
+
+vi.mock("./upload-transport", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./upload-transport")>(),
+  uploadPdf: vi.fn((url: string, form: FormData, signal: AbortSignal) => fetch(url, { method: "POST", body: form, signal })),
+}));
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
@@ -201,4 +207,25 @@ describe("serial PDF uploads", () => {
     await waitFor(() => expect(row("a.pdf")).toHaveAttribute("data-status", "success"));
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
+});
+
+
+it("shows transfer speed and keeps 100 percent separate from confirmed success", async () => {
+  const result = deferred<Response>();
+  let report!: (progress: UploadProgress) => void;
+  vi.mocked(uploadPdf).mockImplementationOnce((_url, _form, _signal, onProgress) => {
+    report = onProgress;
+    return result.promise;
+  });
+  render(<Harness />);
+  select(pdf("progress.pdf"));
+  act(() => report({ percent: 50, bytesPerSecond: 1024, processing: false }));
+  expect(screen.getByRole("progressbar")).toHaveAttribute("value", "50");
+  expect(screen.getByText(/平均.*\/s/)).toBeInTheDocument();
+  act(() => report({ percent: 100, bytesPerSecond: 0, processing: true }));
+  expect(screen.getByText("传输完成，正在保存…")).toBeInTheDocument();
+  expect(row("progress.pdf")).toHaveAttribute("data-status", "uploading");
+  await act(async () => result.resolve(success("progress.pdf")));
+  expect(row("progress.pdf")).toHaveAttribute("data-status", "success");
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
 });

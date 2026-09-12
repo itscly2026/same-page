@@ -102,3 +102,6 @@
 
 .file-row__info { flex: 1; min-width: 0; }
 .file-row__size { display: block; color: var(--muted); font-size: .75rem; font-weight: 400; margin-top: .15rem; }
+
+.upload-progress { display: grid; gap: .25rem; width: 100%; }
+.upload-progress progress { width: 100%; accent-color: var(--brand); }
