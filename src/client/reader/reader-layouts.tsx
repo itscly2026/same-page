@@ -94,15 +94,6 @@ export function PageLayout({
   const pageItems: PagedReaderItem[] = showPageWindow
     ? pager.items
     : [{ page: currentPage, position: 0 }];
-  const gutterPositions = showPageWindow
-    ? pageItems
-      .slice(0, -1)
-      .filter((item, index) => pageItems[index + 1].position - item.position === 1)
-      .map((item, index) => ({
-        between: `${item.page}:${pageItems[index + 1].page}`,
-        position: (item.position + pageItems[index + 1].position) / 2,
-      }))
-    : [];
   const requestPage = (target: "previous" | "next") => {
     if (zoom > 1) onZoomChange(1);
     pager.request(target);
@@ -122,6 +113,7 @@ export function PageLayout({
     disabled: false,
     twoFingerOnly: annotationProps.editing,
     onNavigationStart: () => noteInteraction.current?.interrupt(),
+    isObjectGestureActive: () => noteInteraction.current?.ownsObjectGesture() ?? false,
     zoom,
     onZoomChange,
     onTap: onToggleChrome,
@@ -171,19 +163,6 @@ export function PageLayout({
                 }px`,
               } as CSSProperties}
             >
-              {gutterPositions.map((gutter) => (
-                <i
-                  aria-hidden="true"
-                  className="page-reader__gutter"
-                  data-between-pages={gutter.between}
-                  key={gutter.between}
-                  style={{
-                    "--page-turn-gutter-offset": `${
-                      gutter.position * pageTurnDistance
-                    }px`,
-                  } as CSSProperties}
-                />
-              ))}
               {pageItems.map((item) => (
                 <div
                   aria-hidden={item.position === 0 ? undefined : true}
@@ -322,6 +301,7 @@ export function ContinuousLayout({
     disabled: false,
     twoFingerOnly: annotationProps.editing,
     onNavigationStart: () => noteInteraction.current?.interrupt(),
+    isObjectGestureActive: () => noteInteraction.current?.ownsObjectGesture() ?? false,
     zoom,
     onZoomChange,
     onTap: onToggleChrome,

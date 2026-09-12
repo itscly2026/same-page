@@ -88,7 +88,7 @@ interface TextSelection {
   direction: "forward" | "backward" | "none";
 }
 
-export interface AnnotationInteractionHandle { interrupt(): void; }
+export interface AnnotationInteractionHandle { interrupt(): void; ownsObjectGesture(): boolean; }
 
 export function AnnotationOverlay({
   editor,
@@ -686,7 +686,7 @@ export function AnnotationOverlay({
     void notes.end("interrupt");
   };
   // Layout capture invokes this synchronously before the second touch can edit.
-  useImperativeHandle(handoffRef, () => ({ interrupt }));
+  useImperativeHandle(handoffRef, () => ({ interrupt, ownsObjectGesture: () => objectTransform.current !== null }));
 
   const previousTool = useRef(tool);
   useLayoutEffect(() => {

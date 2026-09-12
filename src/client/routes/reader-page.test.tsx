@@ -1545,7 +1545,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     const track = document.querySelector<HTMLElement>(".page-reader__pager-track");
     expect(track).toHaveAttribute("data-page-turn-phase", "dragging");
     expect(document.querySelectorAll(".page-reader__sheet")).toHaveLength(2);
-    expect(document.querySelector(".page-reader__gutter")).not.toBeNull();
+    expect(document.querySelector(".page-reader__gutter")).toBeNull();
     for (const page of [1, 2]) {
       const sheet = document.querySelector<HTMLElement>(
         `.page-reader__sheet[data-page-number="${page}"]`,

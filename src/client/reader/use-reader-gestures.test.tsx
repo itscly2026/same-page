@@ -417,3 +417,53 @@ function flushAnimationFrame() {
   frames.clear();
   for (const [, callback] of pending) callback(performance.now());
 }
+
+
+it.each([600, 1200, 1500])("divides a %ipx viewport into three equal tap zones", width => {
+  const tap = vi.fn();
+  const edge = vi.fn();
+  function TapHarness() {
+    const ref = useRef<HTMLDivElement>(null);
+    const handlers = useReaderGestures({ containerRef: ref, contentRef: ref, disabled: false, zoom: 1, onZoomChange: vi.fn(), onTap: tap, onEdgeTap: edge });
+    return <div ref={ref} data-testid="tap-zones" {...handlers} />;
+  }
+  render(<TapHarness />);
+  const viewport = screen.getByTestId("tap-zones");
+  vi.spyOn(viewport, "getBoundingClientRect").mockReturnValue(new DOMRect(50, 0, width, 700));
+  for (const [x, expected] of [[width / 3 - 1, "previous"], [width / 3, "chrome"], [width * 2 / 3 - 1, "chrome"], [width * 2 / 3, "next"]] as const) {
+    tap.mockClear(); edge.mockClear();
+    fireEvent.pointerDown(viewport, { pointerId: 1, clientX: 50 + x, clientY: 100 });
+    fireEvent.pointerUp(viewport, { pointerId: 1, clientX: 50 + x, clientY: 100 });
+    if (expected === "chrome") { expect(tap).toHaveBeenCalledOnce(); expect(edge).not.toHaveBeenCalled(); }
+    else { expect(edge).toHaveBeenCalledWith(expected); expect(tap).not.toHaveBeenCalled(); }
+  }
+});
+
+it("keeps a cancelled object sequence out of viewport navigation until all fingers leave", () => {
+  const zoom = vi.fn();
+  const navigate = vi.fn();
+  function OwnershipHarness() {
+    const ref = useRef<HTMLDivElement>(null);
+    const active = useRef(false);
+    const handlers = useReaderGestures({ containerRef: ref, contentRef: ref, disabled: false, twoFingerOnly: true, zoom: 1, onZoomChange: zoom, onTap: vi.fn(), onNavigationStart: navigate, isObjectGestureActive: () => active.current });
+    return <div ref={ref} data-testid="owner" {...handlers}><button onPointerDown={() => { active.current = true; }} onPointerCancel={() => { active.current = false; }}>object</button></div>;
+  }
+  render(<OwnershipHarness />);
+  const viewport = screen.getByTestId("owner");
+  const object = screen.getByRole("button", { name: "object" });
+  const sample = (pointerId: number, clientX = 200) => ({ pointerId, pointerType: "touch", clientX, clientY: 200 });
+  fireEvent.pointerDown(object, sample(1));
+  fireEvent.pointerDown(viewport, sample(2, 400));
+  fireEvent.pointerCancel(object, sample(1));
+  fireEvent.pointerDown(viewport, sample(3, 600));
+  fireEvent.pointerMove(viewport, sample(3, 700));
+  fireEvent.pointerUp(viewport, sample(2, 400));
+  fireEvent.pointerUp(viewport, sample(3, 700));
+  expect(navigate).not.toHaveBeenCalled();
+  expect(zoom).not.toHaveBeenCalled();
+  fireEvent.pointerDown(viewport, sample(4));
+  fireEvent.pointerDown(viewport, sample(5, 400));
+  expect(navigate).toHaveBeenCalledOnce();
+  fireEvent.pointerCancel(viewport, sample(4));
+  fireEvent.pointerCancel(viewport, sample(5));
+});
