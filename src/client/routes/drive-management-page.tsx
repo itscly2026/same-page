@@ -34,7 +34,7 @@ function DriveManagement({ choirId, section, userId }: { choirId: string; sectio
   const [purge, setPurge] = useState(false);
   const [dialog, setDialog] = useState<"name" | null>(null);
   const [locked, setLocked] = useState<Operation | null>(null);
-  const resource = useReadResource<Overview>(`${userId}:${choirId}:management`, async signal => {
+  const resource = useReadResource<Overview>({ owner: userId, driveId: choirId, kind: "management" }, async signal => {
     const overviewResponse = await diagnosticFetch(`/api/choirs/${choirId}/management`, { signal });
     if (!overviewResponse.ok) throw new SettingsRequestError(overviewResponse.status);
     return parseDiagnosticResponse(overviewResponse, driveManagementSchema);
@@ -89,7 +89,7 @@ function PermissionContacts({ userId, choirId, operation, isMember }: { userId: 
   return <div className="permission-lock-explanation" role="status"><p>需要“{operationLabels[operation]}”权限。</p>{isMember && <MemberContacts userId={userId} choirId={choirId} operation={operation} />}<Link to={`/choirs/${choirId}/memberships`}>查看权限分工</Link></div>;
 }
 function MemberContacts({ userId, choirId, operation }: { userId: string; choirId: string; operation: Operation }) {
-  const resource = useReadResource<Members>(`${userId}:${choirId}:permission-contacts`, async signal => {
+  const resource = useReadResource<Members>({ owner: userId, driveId: choirId, kind: "permission-contacts" }, async signal => {
     const response = await diagnosticFetch(`/api/choirs/${choirId}/memberships`, { signal });
     if (!response.ok) throw new SettingsRequestError(response.status);
     return parseDiagnosticResponse(response, managedMembershipsSchema);

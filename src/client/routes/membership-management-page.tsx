@@ -44,7 +44,7 @@ function MembershipManagement({ choirId, userId }: { choirId: string; userId: st
     if (!definitions.ok) throw new SettingsRequestError(definitions.status);
     return { next, layers: (await definitions.json()).layers as Layer[], overview };
   }, [choirId]);
-  const resource = useReadResource(`${userId}:${choirId}:memberships`, load);
+  const resource = useReadResource({ owner: userId, driveId: choirId, kind: "memberships" }, load);
   const state = resource.data?.next ?? null;
   const layers = resource.data?.layers ?? [];
   const loading = resource.request === "pending";

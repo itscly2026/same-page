@@ -23,7 +23,7 @@ export default function SharedLayerManagementPage() {
 }
 
 function SharedLayerAccess({ choirId, userId }: { choirId: string; userId: string | null }) {
-  const resource = useReadResource(`${userId}:${choirId}:layer-access`, async signal =>
+  const resource = useReadResource({ owner: userId, driveId: choirId, kind: "layer-access" }, async signal =>
     driveManagementSchema.parse(await settingsResponse(await diagnosticFetch(`/api/choirs/${choirId}/management`, { signal }))));
   const overview = resource.data;
   const error = resource.error ? settingsError(resource.error, "无法更新共享层，请重试。") : null;
@@ -41,7 +41,7 @@ function SharedLayerManagement({ choirId, userId, authorized, accessError, retry
   const [view, setView] = useState<"current" | "deleted">("current");
   const [deleting, setDeleting] = useState<SharedLayerManagementSummary | null>(null);
   const [newName, setNewName] = useState("");
-  const resource = useReadResource(`${userId}:${choirId}:shared-layers:${view}`, async signal => {
+  const resource = useReadResource({ owner: userId, driveId: choirId, kind: "shared-layers", variant: view }, async signal => {
     if (!userId) throw new Error("authentication_required");
     const workspace = await captureLocalWorkspaceSession(await resolveLocalWorkspace({ choirId, scoreId: "shared-layer-management", authenticatedUserId: userId, signal }));
     signal.throwIfAborted(); workspaceRef.current = workspace;

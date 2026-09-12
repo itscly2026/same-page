@@ -62,7 +62,7 @@ export function useReadingPreferences(workspace: LocalWorkspace, signedIn: boole
 // The page consumes display state and save intent; cache and reconciliation
 // knowledge stays with the reading preference implementation.
 export function useDriveReadingPreferences(workspace: LocalWorkspace, signedIn: boolean) {
-  const resource = useReadResource(`${workspace.ownerKey}:${workspace.choirId}:reading-defaults`,
+  const resource = useReadResource({ owner: workspace.ownerKey, driveId: workspace.choirId, kind: "reading-defaults" },
     signal => loadDriveReadingPreferences(workspace, signal),
     () => restoreDriveReadingPreferences(workspace));
   const preferences = useReadingPreferences(workspace, signedIn && resource.authority !== "revoked" && resource.authority !== "signed-out");

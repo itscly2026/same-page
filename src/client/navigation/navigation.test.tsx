@@ -105,7 +105,7 @@ it("asks before losing a changed form, keeps failed saves and returns after conf
 it("keeps the known drive display name while membership is being restored", async () => {
   const { DriveHeader } = await import("../score-library/drive-header");
   const { rememberResource, readResource } = await import("../settings/read-resource");
-  const key = "reader:one:settings";
+  const key = { owner: "reader", driveId: "one", kind: "settings" } as const;
   const settings = { name: "排练", nameRevision: 0, displayName: "林老师", membershipRevision: 2, canEditDriveInfo: false };
   rememberResource(key, settings);
   let confirmMembership!: () => void;

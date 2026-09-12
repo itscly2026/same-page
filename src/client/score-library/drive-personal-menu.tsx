@@ -10,7 +10,7 @@ type Props = { choirId: string; userId: string; displayName?: string; localOnly:
 
 export function DrivePersonalMenu(props: Props) {
   const { userId, choirId } = props;
-  const settings = useReadResource(`${userId}:${choirId}:settings`, async signal => {
+  const settings = useReadResource({ owner: userId, driveId: choirId, kind: "settings" }, async signal => {
     const response = await diagnosticFetch(`/api/choirs/${choirId}/settings`, { signal });
     if (!response.ok) throw new SettingsRequestError(response.status);
     return parseDiagnosticResponse(response, driveSettingsSchema);

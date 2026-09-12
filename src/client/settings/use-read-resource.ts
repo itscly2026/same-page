@@ -1,10 +1,11 @@
+import type { DriveReadIdentity } from "./navigation-events";
 import { useNetworkStatus } from "../platform/use-network-status";
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { captureReadIdentity, getReadResource } from "./read-resource";
 
 // Only explicitly selected, non-sensitive resources reuse a confirmation on
 // remount. Other settings still read on every mount, sharing concurrent reads.
-export function useReadResource<T>(key: string, load: (signal: AbortSignal) => Promise<T>, restore?: () => Promise<T | null>, staleTime = 0) {
+export function useReadResource<T>(key: DriveReadIdentity, load: (signal: AbortSignal) => Promise<T>, restore?: () => Promise<T | null>, staleTime = 0) {
   const online = useNetworkStatus();
   const resource = getReadResource<T>(key);
   const state = useSyncExternalStore(resource.subscribe, resource.getSnapshot);

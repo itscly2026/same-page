@@ -8,7 +8,7 @@ import { formatBytes } from "../score-library/library-format";
 const schema = z.object({ plan: z.enum(["free", "configured"]), usedBytes: z.number(), limitBytes: z.number(),
   scoreCount: z.number(), scoreLimit: z.number().nullable(), memberCount: z.number(), memberLimit: z.number().nullable() });
 export function DriveUsage({ choirId, userId }: { choirId: string; userId: string }) {
-  const resource = useReadResource(`${userId}:${choirId}:usage`, async signal => {
+  const resource = useReadResource({ owner: userId, driveId: choirId, kind: "usage" }, async signal => {
     const response = await diagnosticFetch(`/api/choirs/${choirId}/usage`, { signal });
     if (!response.ok) throw new SettingsRequestError(response.status);
     return parseDiagnosticResponse(response, schema);

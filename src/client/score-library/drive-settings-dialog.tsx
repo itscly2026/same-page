@@ -17,7 +17,7 @@ export function DriveSettingsDialog({ choirId, userId, field, onClose, onSaved }
     if (!response.ok) throw new SettingsRequestError(response.status);
     return parseDiagnosticResponse(response, driveSettingsSchema);
   };
-  const resource = useReadResource(`${userId}:${choirId}:settings`, load, undefined, NAVIGATION_FRESH_MS);
+  const resource = useReadResource({ owner: userId, driveId: choirId, kind: "settings" }, load, undefined, NAVIGATION_FRESH_MS);
   const fieldValue = (settings: Settings) => field === "name" ? settings.name : settings.displayName;
   const [value, setValue] = useState(() => resource.data ? fieldValue(resource.data) : "");
   const dirty = useRef(false);
