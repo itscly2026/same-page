@@ -2549,19 +2549,6 @@ h1 {
   height: max-content;
 }
 
-.page-reader__gutter {
-  position: absolute;
-  z-index: 1;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 14px;
-  background: #050505;
-  box-shadow: 0 0 0.7rem rgb(0 0 0 / 65%);
-  transform: translate3d(var(--page-turn-gutter-offset, 0px), 0, 0)
-    translateX(-50%);
-}
-
 .page-reader__content,
 .continuous-reader__inner {
   transform: translate(

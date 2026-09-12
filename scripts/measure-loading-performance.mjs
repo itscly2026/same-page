@@ -70,7 +70,8 @@ try {
   await page.locator("canvas[data-pdf-canvas-active]").first().waitFor({
     state: "visible",
   });
-  await page.locator(".page-reader__viewport").click({ position: { x: 250, y: 250 } });
+  // Chrome belongs to the middle third at every viewport size.
+  await page.locator(".page-reader__viewport").click();
   await page.getByRole("button", { name: "返回云盘", exact: true }).click();
   await page.locator(".file-list").waitFor({ state: "visible" });
   await page.waitForFunction(() =>

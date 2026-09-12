@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { mkdir } from "node:fs/promises";
 import { before, after, test } from "node:test";
 import { chromium } from "playwright";
 import { expect } from "@playwright/test";
@@ -137,4 +138,53 @@ for (const layout of ['page', 'continuous']) test(`${layout}: two fingers cancel
   await page.reload();
   await page.locator(layout === 'page' ? '.page-reader__sheet[data-page-turn-current] canvas[data-pdf-canvas-active]' : '.continuous-reader__page[data-index="0"] canvas[data-pdf-canvas-active]').waitFor();
   assert.equal(await page.locator('[data-ink-stroke]').count(), 0);
+});
+
+for (const layout of ['page', 'continuous']) test(`${layout}: text owns a second finger outside its bounds`, async context => {
+  const page = await open(context, 'guest');
+  if (layout === 'continuous') await page.getByRole('button', { name: '连续滚动', exact: true }).click();
+  else await page.getByRole('button', { name: '更多', exact: true }).click();
+  await page.getByRole('button', { name: '编辑', exact: true }).click();
+  await page.locator('.annotation-overlay').first().click({ position: { x: 180, y: 200 } });
+  await page.getByRole('textbox', { name: '笔记文本' }).fill('手势归属');
+  await page.getByRole('button', { name: '完成', exact: true }).click();
+  await page.getByRole('button', { name: '完成编辑', exact: true }).click();
+  await page.getByRole('button', { name: '编辑', exact: true }).click();
+  const text = page.getByRole('button', { name: '手势归属', exact: true });
+  const bounds = await text.boundingBox();
+  const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
+  const viewport = page.locator(layout === 'page' ? '.page-reader__viewport' : '.continuous-reader');
+  const before = await viewport.getAttribute('data-zoom');
+  const scroll = await viewport.evaluate(el => [el.scrollLeft, el.scrollTop]);
+  const font = await text.evaluate(el => parseFloat(getComputedStyle(el).fontSize));
+  const cdp = await page.context().newCDPSession(page);
+  const send = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y, id]) => ({ x, y, id })) });
+  await send('touchStart', [[x, y, 1]]);
+  await send('touchMove', [[x + 10, y, 1]]);
+  await send('touchStart', [[x + 10, y, 1], [x + 110, y, 2]]);
+  await send('touchMove', [[x + 10, y, 1], [x + 160, y, 2]]);
+  await expect.poll(() => text.evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThan(font * 1.3);
+  await send('touchEnd', []);
+  assert.equal(await viewport.getAttribute('data-zoom'), before);
+  assert.deepEqual(await viewport.evaluate(el => [el.scrollLeft, el.scrollTop]), scroll);
+  await page.getByRole('button', { name: '撤销', exact: true }).click();
+  await expect.poll(() => text.evaluate((el, original) => Math.abs(parseFloat(getComputedStyle(el).fontSize) - original), font), { timeout: 5000 }).toBeLessThan(0.1);
+  await page.getByRole('button', { name: '重做', exact: true }).click();
+  await expect.poll(() => text.evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThan(font * 1.3);
+  await page.getByRole('button', { name: '完成编辑', exact: true }).click();
+  await page.reload();
+  await expect(page.locator('.annotation-text').filter({ hasText: '手势归属' })).toBeVisible();
+});
+
+test('pinch preview has no foreground page gutters', async context => {
+  const page = await open(context);
+  await page.getByRole('button', { name: '关闭更多阅读选项', exact: true }).click();
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 450, y: 350, id: 1 }, { x: 650, y: 350, id: 2 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 350, y: 350, id: 1 }, { x: 750, y: 350, id: 2 }] });
+  await page.locator('.page-reader__content[data-gesture-preview]').waitFor();
+  assert.equal(await page.locator('.page-reader__gutter:visible').count(), 0);
+  await mkdir('artifacts/visual-report', { recursive: true });
+  await page.screenshot({ path: 'artifacts/visual-report/reader-289-pinch.png' });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 });

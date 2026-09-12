@@ -88,7 +88,7 @@ interface TextSelection {
   direction: "forward" | "backward" | "none";
 }
 
-export interface AnnotationInteractionHandle { interrupt(): void; }
+export interface AnnotationInteractionHandle { interrupt(): void; ownsObjectGesture(): boolean; }
 
 export function AnnotationOverlay({
   editor,
@@ -417,8 +417,8 @@ export function AnnotationOverlay({
     event.stopPropagation();
     if (textEditor) return;
     const active = objectTransform.current;
-    if (active && active.id !== annotation.id) return;
-    if (active?.id === annotation.id) {
+    // Subsequent fingers belong to the existing transform, even over another object.
+    if (active) {
       addTransformPointer(event, active);
       return;
     }
@@ -686,7 +686,7 @@ export function AnnotationOverlay({
     void notes.end("interrupt");
   };
   // Layout capture invokes this synchronously before the second touch can edit.
-  useImperativeHandle(handoffRef, () => ({ interrupt }));
+  useImperativeHandle(handoffRef, () => ({ interrupt, ownsObjectGesture: () => objectTransform.current !== null }));
 
   const previousTool = useRef(tool);
   useLayoutEffect(() => {

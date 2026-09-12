@@ -54,6 +54,7 @@ export function useReaderGestures({
   captureAnchor,
   constrainScroll,
   onNavigationStart,
+  isObjectGestureActive,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   contentRef: RefObject<HTMLElement | null>;
@@ -70,9 +71,11 @@ export function useReaderGestures({
   nativeTouchScroll?: boolean;
   constrainScroll?(): void;
   onNavigationStart?(): void;
+  isObjectGestureActive?(): boolean;
   captureAnchor?(center: Point): (zoom: number) => Point;
 }) {
   const constrain = useEffectEvent(() => constrainScroll?.());
+  const objectPointers = useRef(new Set<number>());
   const points = useRef(new Map<number, Point>());
   const primary = useRef<{
     id: number;
@@ -317,13 +320,13 @@ export function useReaderGestures({
     if (Math.abs(x) < 10 && Math.abs(y) < 10) {
       const bounds = containerRef.current?.getBoundingClientRect();
       if (bounds && bounds.width > 0 && onEdgeTap) {
-        const edgeWidth = Math.min(bounds.width * 0.18, 144);
+        const edgeWidth = bounds.width / 3;
         const relativeX = start.x - bounds.left;
-        if (relativeX <= edgeWidth) {
+        if (relativeX < edgeWidth) {
           onEdgeTap("previous");
           return;
         }
-        if (relativeX >= bounds.width - edgeWidth) {
+        if (relativeX >= bounds.width * 2 / 3) {
           onEdgeTap("next");
           return;
         }
@@ -378,6 +381,24 @@ export function useReaderGestures({
 
   const capture = (event: ReactPointerEvent<HTMLElement>, handle: (event: GesturePointer) => void) => {
     if (!twoFingerOnly || event.pointerType !== "touch" || !event.currentTarget.contains(event.target as Node)) return;
+    // The child claims an object on its first pointerdown (after capture).
+    // Keep that ownership through all releases, even if a cancellation clears
+    // the child's transform before the other fingers leave the screen.
+    const objectActive = isObjectGestureActive?.() ?? false;
+    if (objectPointers.current.size > 0 || objectActive) {
+      for (const id of points.current.keys()) objectPointers.current.add(id);
+      points.current.clear();
+      primary.current = null;
+      if (event.type === "pointerup" || event.type === "pointercancel") objectPointers.current.delete(event.pointerId);
+      else objectPointers.current.add(event.pointerId);
+      // A cancelled child no longer owns these events. Drain the sequence
+      // without letting a remaining/new finger start a fresh note.
+      if (!objectActive) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
     const suppress = pinched.current || points.current.size >= 2;
     handle(event);
     if (suppress || pinched.current) {
