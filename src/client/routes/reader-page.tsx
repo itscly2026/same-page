@@ -619,12 +619,12 @@ function ReaderPageContent() {
               </section>
               <section aria-label="笔记保存与同步">
                 <div className="reader-option-heading"><h2><RefreshCw size={17} aria-hidden="true" />笔记同步</h2>
-                {!guestExperience && <Button className="reader-option-action" aria-label={!online ? "离线，联网后可同步" : syncing || syncActivity === "running" ? "同步中…" : "立即同步"} aria-description="获取成员最新笔记，并上传我的修改" isDisabled={!online || syncing || syncActivity === "running" || cloudState === "trashed" || !annotationActions} onPress={() => void manualSync()}>{syncing || syncActivity === "running" ? "同步中…" : "同步"}</Button>}
+                {!guestExperience && <Button className="reader-option-action" aria-label={!online ? "离线，联网后可同步" : syncing || syncActivity === "running" ? "同步中…" : syncStatus.kind === "failed" ? "重试同步" : "立即同步"} aria-description="获取成员最新笔记，并上传我的修改" isDisabled={!online || syncing || syncActivity === "running" || cloudState === "trashed" || !annotationActions} onPress={() => void manualSync()}>{syncing || syncActivity === "running" ? "同步中…" : syncStatus.kind === "failed" ? "重试" : "同步"}</Button>}
                 </div>
                 {guestExperience ? <p className="reader-more-menu__status" role="status">{syncStatus.message}</p> : <>
                   <dl className="reader-sync-details">
-                    <div><dt>我的修改</dt><dd data-kind={syncStatus.kind} role="status">{syncStatus.message === "已同步" ? "已上传到云端" : syncStatus.message}</dd></div>
-                    <div><dt>上次检查云端</dt><dd>{cloudCheck?.scope === workspace.scopeKey ? new Date(cloudCheck.at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "尚未确认"}</dd></div>
+                    <div><dt>我的修改</dt><dd data-kind={syncStatus.kind} role="status">{syncStatus.message}</dd></div>
+                    <div><dt>上次检查云端</dt><dd>{cloudCheck?.scope === workspace.scopeKey ? new Date(cloudCheck.at).toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : "尚未确认"}</dd></div>
                   </dl>
                 </>}
               </section>

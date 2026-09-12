@@ -20,10 +20,10 @@ const quiet = {
 };
 
 describe("reader sync status", () => {
-  it("distinguishes an explicit completed sync from untouched local state", () => {
+  it("does not claim an upload when an empty score only checks the cloud", () => {
     expect(deriveReaderSyncStatus({ ...quiet, loaded: false }).message).toContain("尚未确认");
-    expect(deriveReaderSyncStatus({ ...quiet, outcome: "synced" }).message).toBe("已同步");
-    expect(deriveReaderSyncStatus({ ...quiet, acceptedCount: 2 }).message).toBe("已同步");
+    expect(deriveReaderSyncStatus({ ...quiet, outcome: "synced" }).message).toBe("尚无笔记修改");
+    expect(deriveReaderSyncStatus({ ...quiet, acceptedCount: 2 }).message).toBe("没有待上传的修改");
   });
 
   it("distinguishes local persistence, queued work and real requests", () => {

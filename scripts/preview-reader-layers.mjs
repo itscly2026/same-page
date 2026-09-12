@@ -1,3 +1,5 @@
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 // Local-only synthetic data; the actual reader, editor and IndexedDB are used.
 import { createServer } from "vite";
@@ -6,7 +8,8 @@ import react from "@vitejs/plugin-react";
 
 import { createVisualFixtureSession } from "../visual-report/fixtures.mjs";
 const fixture = createVisualFixtureSession({ dense: false });
-const statePath = new URL("../artifacts/layers-preview/server-state.json", import.meta.url);
+const statePath = process.env.SAME_PAGE_PREVIEW_STATE_PATH ? resolve(process.env.SAME_PAGE_PREVIEW_STATE_PATH) : fileURLToPath(new URL("../artifacts/layers-preview/server-state.json", import.meta.url));
+const port = Number(process.env.SAME_PAGE_PREVIEW_PORT ?? 4178);
 let state = { cursor: 2, objects: [] };
 try { state = JSON.parse(await readFile(statePath, "utf8")); } catch (error) { if (error.code !== "ENOENT") throw error; }
 for (const object of state.objects) if (object.payload?.kind === "ink" && !object.payload.nib) object.payload.nib = "round";
@@ -14,10 +17,15 @@ const stored = new Map(state.objects.map(object => [object.id, object]));
 const accepted = new Map();
 let cursor = state.cursor;
 const personalOverrides = new Map();
+const annotationSnapshot = base => {
+  const objects = new Map(base.objects.map(object => [object.id, object]));
+  for (const [id, object] of stored) objects.set(id, object);
+  return { ...base, cursor: Math.max(cursor, base.cursor), hasMore: false, objects: [...objects.values()] };
+};
 const server = await createServer({
   configFile: false,
   define: { __SAME_PAGE_BUILD_ID__: JSON.stringify("local-layers-preview"), __SAME_PAGE_BUILD_RUN_ID__: JSON.stringify("") },
-  server: { host: "127.0.0.1", port: 4178, strictPort: true },
+  server: { host: "127.0.0.1", port, strictPort: true },
   plugins: [react(), VitePWA({ registerType: "prompt" }), {
     name: "local-editor-fixtures",
     configureServer(server) {
@@ -37,7 +45,7 @@ const server = await createServer({
                 stored.set(object.id, object); cursor++;
                 const result = {opId:op.opId,status:"accepted",object}; accepted.set(op.opId,result); return result;
               });
-              await mkdir(new URL("../artifacts/layers-preview/", import.meta.url), { recursive: true });
+              await mkdir(dirname(statePath), { recursive: true });
               await writeFile(statePath, JSON.stringify({ cursor, objects: [...stored.values()] }));
               json({results});
             } catch { res.writeHead(400); res.end(); }
@@ -55,12 +63,11 @@ const server = await createServer({
         const result = fixture.resolve({ pathname, method: req.method, identity: "admin", cookie: req.headers.cookie ?? "" });
         if (pathname.endsWith("/annotations") && req.method === "GET") {
           const body = JSON.parse(result.body);
-          const objects = new Map(body.objects.map(object => [object.id,object]));
-          for (const [id,object] of stored) objects.set(id,object);
-          return json({cursor,objects:[...objects.values()]});
+          return json(annotationSnapshot(body));
         }
         if (pathname.endsWith("/sync") || pathname.endsWith("/layers")) {
           const payload = JSON.parse(result.body);
+          if (pathname.endsWith("/sync") && payload.annotations) payload.annotations = annotationSnapshot(payload.annotations);
           const group = pathname.endsWith("/sync") ? payload.layers : payload;
           if (group?.layers) {
             group.layers = group.layers.map(layer => layer.kind === "personal" ? { ...layer, canShare: true, sharing: false, revision: 1, ...personalOverrides.get(layer.id) } : layer);
@@ -75,4 +82,4 @@ const server = await createServer({
   }],
 });
 await server.listen();
-console.log("Reader layers preview: http://127.0.0.1:4178/choirs/visual-choir/scores/visual-score");
+console.log(`Reader layers preview: ${server.resolvedUrls.local[0]}choirs/visual-choir/scores/visual-score`);
