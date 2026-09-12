@@ -65,6 +65,21 @@ test("invited guest crosses isolated browsers and cold-starts with only the copi
   await expect(androidPage.getByText("添加时遇到问题？").locator("..")).not.toHaveAttribute("open");
   assert.equal(await androidPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await androidPage.screenshot({ path: "artifacts/verification/install-onboarding/04-android.png" });
+  await androidPage.evaluate(() => {
+    const event = new Event("beforeinstallprompt", { cancelable: true });
+    Object.defineProperty(event, "prompt", { value: async () => ({ outcome: "accepted" }) });
+    window.dispatchEvent(event);
+  });
+  await androidPage.getByRole("button", { name: "添加到主屏幕", exact: true }).click();
+  await expect(androidPage.getByRole("dialog").getByText("主屏幕没有合谱图标？")).toBeVisible();
+  await androidPage.evaluate(() => window.dispatchEvent(new Event("appinstalled")));
+  await androidPage.getByRole("button", { name: "关闭安装引导" }).click();
+  const recovery = androidPage.getByText("主屏幕没有合谱图标？");
+  await expect(recovery).toBeVisible();
+  await expect(recovery.locator("..")).not.toHaveAttribute("open");
+  await recovery.click();
+  await expect(androidPage.getByText(/允许“创建桌面快捷方式”/)).toBeVisible();
+  await androidPage.screenshot({ path: "artifacts/verification/install-onboarding/05-android-recovery.png" });
   await android.close();
   const owner = fixture.accounts[0];
   assert.equal((await fresh.request.post(`${fixture.origin}/api/auth/sign-in/email`, { headers: { origin: fixture.origin }, data: { email: owner.email, password: owner.password } })).status(), 200);

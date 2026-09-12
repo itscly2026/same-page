@@ -38,7 +38,7 @@ it("consumes a deferred prompt once and keeps help after cancellation", async ()
   expect(screen.getByRole("status")).toHaveTextContent("已取消安装");
   expect(screen.queryByRole("button", { name: "已了解，打开安装提示" })).not.toBeInTheDocument();
   act(() => { window.dispatchEvent(new Event("appinstalled")); });
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.getByText("主屏幕没有合谱图标？")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "添加到主屏幕" })).not.toBeInTheDocument();
 });
 
@@ -116,7 +116,24 @@ it("recovers from a failed prompt with manual help and consumes a newly offered 
   await act(async () => fireEvent.click(screen.getAllByRole("button", { name: "添加到主屏幕" })[0]));
   expect(failed).toHaveBeenCalledTimes(1);
   expect(accepted).toHaveBeenCalledTimes(1);
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.getByText("主屏幕没有合谱图标？")).toBeInTheDocument();
   act(() => window.dispatchEvent(new Event("appinstalled")));
   expect(screen.queryByRole("button", { name: "添加到主屏幕" })).not.toBeInTheDocument();
+});
+
+it("keeps Android permission recovery after acceptance and appinstalled", async () => {
+  vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Android Chrome");
+  mount();
+  const prompt = vi.fn().mockResolvedValue({ outcome: "accepted" });
+  const event = new Event("beforeinstallprompt", { cancelable: true });
+  Object.defineProperty(event, "prompt", { value: prompt });
+  act(() => window.dispatchEvent(event));
+  await act(async () => fireEvent.click(screen.getAllByRole("button", { name: "添加到主屏幕" })[0]));
+  const help = screen.getByText("主屏幕没有合谱图标？").closest("details");
+  expect(help).not.toHaveAttribute("open");
+  expect(help).toHaveTextContent("创建桌面快捷方式");
+  act(() => window.dispatchEvent(new Event("appinstalled")));
+  expect(screen.getByText("主屏幕没有合谱图标？")).toBeInTheDocument();
+  expect(screen.queryByText("现在已从合谱应用打开，可以继续看谱。")).not.toBeInTheDocument();
+  expect(prompt).toHaveBeenCalledTimes(1);
 });

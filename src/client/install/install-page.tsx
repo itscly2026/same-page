@@ -1,3 +1,4 @@
+import { InstallCompletion } from "./install-completion";
 import { prepareInstallLink } from "./install-transfer";
 import { useLiveQuery } from "dexie-react-hooks";
 import { localDatabase } from "../platform/local-database";
@@ -94,7 +95,7 @@ export default function InstallPage() {
         {external || !install?.nativeAvailable ? <InstallSteps guide={guide} /> : <InstallButton className="primary-button install-native" />}
         {external ? <><p className="install-note">{needsLogin ? "已保留云盘入口。换到浏览器后，可能需要重新登录或使用原邀请。" : "浏览器打开后会接回当前云盘。不用重新找邀请。"}</p><details className="install-fallback"><summary>找不到“在浏览器中打开”？</summary><p>复制链接，粘贴到{guide === "ios-external" ? " Safari " : "浏览器"}打开。</p><CopyInstallLink url={link} /></details>{hasNotes && <p className="install-note">你试写的笔记留在当前 App 里，不会随这次添加转移。</p>}</> : <><p className="install-note">添加后，回到主屏幕，点合谱图标打开这个云盘。</p><details className="install-fallback"><summary>添加时遇到问题？</summary><p>没有看到添加选项？iPhone / iPad 可用 Safari 的分享菜单；Android 可换浏览器尝试。</p><p>Android 添加后没有图标？在系统设置中找到当前浏览器的权限，允许“创建桌面快捷方式”（如有）。Chrome 安装也可能受 Google Play 服务或网络影响。</p></details></>}
       </>}
-      {install?.hidden ? <p>现在已从合谱应用打开，可以继续看谱。</p> : install?.requested && <p role="status">已提交添加请求，请回到主屏幕，点合谱图标打开。</p>}
+      {install?.runningInApp ? <p>现在已从合谱应用打开，可以继续看谱。</p> : (install?.requested || install?.hidden) && <InstallCompletion guide={guide} />}
       <Link className="install-skip" to={destination ?? (driveId ? `/choirs/${encodeURIComponent(driveId)}` : "/")} state={{ home: true }}>先看乐谱</Link>
     </div>
   </main>;
