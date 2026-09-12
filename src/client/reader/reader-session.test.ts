@@ -122,3 +122,25 @@ it.each([
     expect(fetchMock.mock.calls.map(([url]) => url).filter(url => !/\/(sync|layers|annotations)(\?|$)/.test(url))).toEqual([]);
   } finally { session.dispose(); }
 });
+
+it("a hidden open retains its foreground deadline and still times out when visibly stalled", async () => {
+  const workspace = await resolveLocalWorkspace({ authenticatedUserId: null, choirId: "hidden-timeout-drive", scoreId: "score" });
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "active", layers: { layers: [], sharedLayerRevision: 0, permissions: { canManageLayers: false } }, annotations: { cursor: 0, objects: [] }, permissions: { capabilities: noCapabilities() }, score: { id: "score", choirId: "hidden-timeout-drive", fileName: "test.pdf", updatedAt: 1,
+    currentVersion: { id: "version", versionNumber: 1, sizeBytes: 10, sha256: "a".repeat(64), etag: "test", pageCount: 1, createdAt: 1 } } })));
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  vi.useFakeTimers();
+  const session = new ReaderSession(workspace, null);
+  try {
+    session.open();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(session.getSnapshot().status).toBe("loading");
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new Event("pageshow"));
+    await vi.advanceTimersByTimeAsync(44_999);
+    expect(session.getSnapshot()).toMatchObject({status: "loading", error: null});
+    await vi.advanceTimersByTimeAsync(1);
+    expect(session.getSnapshot().status).toBe("error");
+  } finally { session.dispose(); vi.useRealTimers(); }
+});

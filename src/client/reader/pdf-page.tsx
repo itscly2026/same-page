@@ -1,7 +1,8 @@
+import { foregroundDeadline, waitForForeground } from "./foreground-deadline";
 import { pdfFailureCategory, pdfFailureReason, pdfEngineVersion, recordFailure } from "../diagnostics/diagnostics";
 import { acquireRenderSlot, sizeRenderCanvas, releaseRenderCanvas } from "./render-budget";
 import { usePagePresentation } from "./use-reader-presentation";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { PDFDocumentProxy } from "./pdf-document";
 import { completeLoadingJourney } from "../performance/loading-performance";
@@ -26,6 +27,7 @@ export function PdfPageCanvas({
   const [attempt, setAttempt] = useState(0);
   const canvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
   const frontCanvas = useRef(0);
+  const currentDraw = useRef<{ canvas: HTMLCanvasElement; cancel(): void } | null>(null);
   const source = useRef({ document, pageNumber });
   const renderLease = useRef<PdfPageRenderLease | null>(null);
   const [painted, setPainted] = useState<{ canvas: number; document: PDFDocumentProxy; pageNumber: number } | null>(null);
@@ -33,6 +35,12 @@ export function PdfPageCanvas({
   const [error, setError] = useState(false);
 
   const reportFailure = usePagePresentation(document, pageNumber, painted, error, presentation);
+  // A retry uses fresh backing stores, including when the browser never restores
+  // a lost context. Do not expose an old bitmap identity on the new elements.
+  const retry = useCallback(() => {
+    setPainted(null);
+    setAttempt(value => value + 1);
+  }, []);
 
   useLayoutEffect(() => {
     const lease = onRenderStart?.(pageNumber) ?? null;
@@ -50,7 +58,37 @@ export function PdfPageCanvas({
     releaseRenderCanvas(previous);
   }, [visibleCanvas]);
 
-  useLayoutEffect(() => { const canvases = [...canvasRefs.current]; return () => { canvases.forEach(canvas => { if (canvas) releaseRenderCanvas(canvas); }); }; }, []);
+  useLayoutEffect(() => { const canvases = [...canvasRefs.current]; return () => { canvases.forEach(canvas => { if (canvas) releaseRenderCanvas(canvas); }); }; }, [attempt]);
+
+  useEffect(() => {
+    const canvases = canvasRefs.current.filter((canvas): canvas is HTMLCanvasElement => canvas !== null);
+    const lost = new Set<HTMLCanvasElement>();
+    const onLost = (event: Event) => {
+      const canvas = event.currentTarget as HTMLCanvasElement;
+      if (lost.has(canvas)) return;
+      lost.add(canvas);
+      if (canvas !== canvasRefs.current[frontCanvas.current] && canvas !== currentDraw.current?.canvas) return;
+      // Invalidate synchronously: React effect cleanup can run after a queued
+      // render Promise, which must never publish the lost backing store.
+      currentDraw.current?.cancel();
+      setPainted(null);
+      setError(true);
+      reportFailure(new Error("canvas_context_lost"));
+      renderLease.current?.failed?.();
+    };
+    const onRestored = (event: Event) => {
+      const canvas = event.currentTarget as HTMLCanvasElement;
+      if (lost.delete(canvas) && (canvas === canvasRefs.current[frontCanvas.current] || canvas === currentDraw.current?.canvas)) retry();
+    };
+    canvases.forEach(canvas => {
+      canvas.addEventListener("contextlost", onLost);
+      canvas.addEventListener("contextrestored", onRestored);
+    });
+    return () => canvases.forEach(canvas => {
+      canvas.removeEventListener("contextlost", onLost);
+      canvas.removeEventListener("contextrestored", onRestored);
+    });
+  }, [attempt, reportFailure, retry]);
 
   useEffect(() => {
     const sourceChanged =
@@ -70,17 +108,25 @@ export function PdfPageCanvas({
     const lease = renderLease.current;
 
     const abort = new AbortController();
+    const drawingLease = { canvas, cancel: () => {
+      active = false;
+      abort.abort();
+      cancelRender?.();
+    } };
+    currentDraw.current = drawingLease;
     const draw = async () => {
+      await waitForForeground(abort.signal);
       const release = await acquireRenderSlot(abort.signal);
       try {
         for (let resolution = 1; resolution >= 0.5; resolution /= 2) {
           let drawing = true;
           let onAbort: (() => void) | undefined;
-          let timer: ReturnType<typeof setTimeout> | undefined;
+          let cancelDeadline: (() => void) | undefined;
           try {
             await Promise.race([
               (async () => {
                 const page = await document.getPage(pageNumber);
+                await waitForForeground(abort.signal);
                 abort.signal.throwIfAborted();
                 if (!drawing) throw new DOMException("cancelled", "AbortError");
                 const unscaled = page.getViewport({ scale: 1 });
@@ -96,20 +142,21 @@ export function PdfPageCanvas({
               new Promise<never>((_, reject) => {
                 onAbort = () => reject(abort.signal.reason);
                 abort.signal.addEventListener("abort", onAbort, { once: true });
-                timer = setTimeout(() => reject(Object.assign(new Error("page_render_timeout"), { name: "TimeoutError" })), 20_000);
+                cancelDeadline = foregroundDeadline(() => reject(Object.assign(new Error("page_render_timeout"), { name: "TimeoutError" })), 20_000);
               }),
             ]);
             return;
           } catch (error) {
             cancelRender?.();
             if (abort.signal.aborted || resolution === 0.5 || (error instanceof Error && error.name === "TimeoutError")) throw error;
-          } finally { drawing = false; if (onAbort) abort.signal.removeEventListener("abort", onAbort); if (timer) clearTimeout(timer); }
+          } finally { drawing = false; if (onAbort) abort.signal.removeEventListener("abort", onAbort); cancelDeadline?.(); }
         }
       } finally { release(); }
     };
     void draw()
       .then(() => {
         if (!active) return;
+        if (currentDraw.current === drawingLease) currentDraw.current = null;
         frontCanvas.current = nextFront;
         setPainted({ canvas: nextFront, document, pageNumber });
         setError(false);
@@ -128,9 +175,8 @@ export function PdfPageCanvas({
       });
 
     return () => {
-      active = false;
-      abort.abort();
-      cancelRender?.();
+      drawingLease.cancel();
+      if (currentDraw.current === drawingLease) currentDraw.current = null;
     };
   }, [document, onRenderStart, pageNumber, width, attempt, reportFailure]);
 
@@ -150,13 +196,13 @@ export function PdfPageCanvas({
           aria-hidden="true"
           data-pdf-canvas-active={index === visibleCanvas ? "" : undefined}
           hidden={index !== visibleCanvas}
-          key={index}
+          key={`${attempt}-${index}`}
           ref={(node) => {
             canvasRefs.current[index] = node;
           }}
         />
       ))}
-      {error ? <div className="page-render-recovery"><p role="alert">这一页暂时无法显示</p><button onClick={() => setAttempt(value => value + 1)}>重试本页</button></div> : null}
+      {error ? <div className="page-render-recovery"><p role="alert">这一页暂时无法显示</p><button onClick={retry}>重试本页</button></div> : null}
     </div>
   );
 }
