@@ -409,7 +409,7 @@ export const visualReportScenarios = [
   {
     id: "reader-text-ready",
     title: "阅读器 · 编辑个人层",
-    description: "进入编辑模式后默认选择 我的笔记，谱面只显示个人层笔记。",
+    description: "进入编辑模式后默认选择 我的笔记，其他已显示的层淡化供参考。",
     device: "landscape",
     identity: "member",
     route: "/choirs/visual-choir/scores/visual-score",
@@ -423,7 +423,7 @@ export const visualReportScenarios = [
   {
     id: "reader-edit-shared-layer",
     title: "阅读器 · 编辑已订阅共享层",
-    description: "选择 Ensemble 后只显示该共享层的笔记。",
+    description: "选择 Ensemble 后突出该层，其他已显示的层淡化且只读。",
     device: "landscape",
     identity: "admin",
     route: "/choirs/visual-choir/scores/visual-score",
@@ -439,7 +439,7 @@ export const visualReportScenarios = [
   {
     id: "reader-edit-unsubscribed-layer",
     title: "阅读器 · 编辑未订阅共享层",
-    description: "E 未订阅但有编辑权时仍可直接编辑，谱面只显示 E 层。",
+    description: "E 未订阅但有编辑权时仍可直接编辑，其他已显示的层淡化供参考。",
     device: "landscape",
     identity: "admin",
     route: "/choirs/visual-choir/scores/visual-score",

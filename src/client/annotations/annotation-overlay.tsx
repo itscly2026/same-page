@@ -178,7 +178,7 @@ export function AnnotationOverlay({
   const canMoveObjects = canStartEdit && ["select", "text", "rectangle", "ellipse"].includes(tool);
   const visibleLayerIds = new Set(
     layers
-      .filter((layer) => (editing ? layer.id === activeLayerId : layer.subscribed))
+      .filter((layer) => (layer.subscribed || (editing && layer.id === activeLayerId)))
       .map((layer) => layer.id),
   );
   const layerColors = new Map(
@@ -199,7 +199,7 @@ export function AnnotationOverlay({
       visibleLayerIds.has(annotation.layerId),
   );
 
-  const selected = pageAnnotations.find(annotation => annotation.id === selectedId && !annotation.deleted);
+  const selected = pageAnnotations.find(annotation => annotation.id === selectedId && annotation.layerId === activeLayerId && !annotation.deleted);
 
   useEffect(() => {
     const element = overlayRef.current;
@@ -584,7 +584,7 @@ export function AnnotationOverlay({
     }
     if (tool === "select") {
       const bounds = event.currentTarget.getBoundingClientRect();
-      const found = [...pageAnnotations].reverse().find(annotation => annotation.payload?.kind === "ink" && inkHit(annotation.payload, bounds.width, bounds.height, event.clientX - bounds.left, event.clientY - bounds.top, 8));
+      const found = [...pageAnnotations].reverse().find(annotation => annotation.layerId === activeLayerId && annotation.payload?.kind === "ink" && inkHit(annotation.payload, bounds.width, bounds.height, event.clientX - bounds.left, event.clientY - bounds.top, 8));
       setSelectedId(found?.id ?? null);
       return;
     }
@@ -827,14 +827,16 @@ export function AnnotationOverlay({
           if (erasedPreview.has(annotation.id)) return null;
           const payload = annotation.payload;
           const color = layerColors.get(annotation.layerId) ?? payload?.color ?? "#dc2626";
+          const reference = editing && annotation.layerId !== activeLayerId;
+          const selectable = canStartEdit && !reference && tool === "select";
           if (payload?.kind === "shape") {
             const position = objectTransformPreview?.id === annotation.id && objectTransformPreview.payload.kind === "shape"
               ? objectTransformPreview.payload : payload;
-            return <ShapePreview key={annotation.id} payload={position} color={color} />;
+            return <g key={annotation.id} opacity={reference ? 0.45 : 1} pointerEvents={reference ? "none" : undefined}><ShapePreview payload={position} color={color} /></g>;
           }
           if (payload?.kind !== "ink" || annotation.id === draftId) return null;
           return (
-            <g key={annotation.id} role={canStartEdit && tool === "select" ? "button" : undefined} tabIndex={canStartEdit && tool === "select" ? 0 : undefined} aria-label={canStartEdit && tool === "select" ? payload.brush === "highlighter" ? "荧光笔笔记" : "画笔笔记" : undefined} onKeyDown={event => { if (tool === "select" && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setSelectedId(annotation.id); } }}>
+            <g key={annotation.id} opacity={reference ? 0.45 : 1} pointerEvents={reference ? "none" : undefined} role={selectable ? "button" : undefined} tabIndex={selectable ? 0 : undefined} aria-label={selectable ? payload.brush === "highlighter" ? "荧光笔笔记" : "画笔笔记" : undefined} onKeyDown={event => { if (selectable && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setSelectedId(annotation.id); } }}>
               {editing && tool === "eraser" && annotation.layerId === activeLayerId ? (
                 <polyline
                   aria-hidden="true"
@@ -888,6 +890,7 @@ export function AnnotationOverlay({
             className={payload.kind === "text" ? "annotation-text" : "annotation-shape"}
             aria-label={payload.kind === "shape" ? payload.shape === "rectangle" ? "矩形笔记" : "椭圆笔记" : undefined}
             style={{
+              opacity: editing && annotation.layerId !== activeLayerId ? 0.45 : 1,
               left: `${position.x * 100}%`,
               top: `${position.y * 100}%`,
               color: layerColors.get(annotation.layerId) ?? payload.color ?? "#dc2626",
