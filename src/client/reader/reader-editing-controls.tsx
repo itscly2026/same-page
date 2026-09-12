@@ -69,7 +69,7 @@ export function ReaderEditingControls({
   return (
     <section className="annotation-controls" aria-label="笔记工具">
       {showHint && <div className="reader-edit-first-hint" role="status">
-        <span>编辑时仅显示当前层，并锁定本页。点勾号完成后恢复。</span>
+        <span>仅当前层可编辑，其他层淡化供参考。点勾号完成后恢复阅读。</span>
         <Button aria-label="关闭编辑提示" onPress={() => { setShowHint(false); try { localStorage.setItem("reader-edit-hint-seen", "true"); } catch { /* Optional hint preference. */ } }}><X aria-hidden="true" size={18} /></Button>
       </div>}
       <DialogTrigger isOpen={choosingLayer} onOpenChange={setChoosingLayer}>
@@ -100,7 +100,7 @@ export function ReaderEditingControls({
             <div className="annotation-layer-switcher">
               {personalLayers.map(layer => <LayerSlotButton key={layer.id} isDisabled={isDisabled} layer={layer} activeLayerId={activeLayerId} onLayerChange={chooseLayer} />)}
             </div>
-            <p>编辑时只显示所选层；双指移动或缩放当前页，单指或笔编辑。</p>
+            <p>仅所选层可编辑，其他已显示的层淡化供参考；双指移动或缩放当前页，单指或笔编辑。</p>
           </Dialog>
         </Popover>
       </DialogTrigger>

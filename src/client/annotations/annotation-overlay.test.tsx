@@ -830,12 +830,31 @@ describe("AnnotationOverlay", () => {
     expect(await localDatabase.annotations.get(otherInk.key)).toMatchObject({ deleted: false });
   });
 
-  it("shows only the active layer while editing even when it is unsubscribed", () => {
+  it("does not select reference ink by pointer or keyboard", () => {
+    const otherInk = annotation("reference-ink", otherLayerId, {
+      kind: "ink", brush: "pen", nib: "round", pressureMode: "uniform",
+      pageNumber: 1, points: [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }],
+      strokeWidth: 0.003,
+    });
+    const { container } = renderOverlay([otherInk], "select");
+    const overlay = screen.getByLabelText("第 1 页笔记层");
+    mockBounds(overlay);
+    const reference = container.querySelector("[data-ink-stroke]")!.parentElement!;
+    expect(reference).not.toHaveAttribute("tabindex");
+    expect(reference).toHaveAttribute("opacity", "0.45");
+    fireEvent.pointerDown(overlay, { pointerId: 4, clientX: 50, clientY: 50 });
+    fireEvent.keyDown(reference, { key: "Enter" });
+    expect(container.querySelector('[stroke-dasharray="4 3"]')).toBeNull();
+  });
+
+  it("keeps subscribed reference layers dimmed and read-only while editing an unsubscribed layer", () => {
     const active = annotation("active", activeLayerId, textPayload("E 内容", 0.2, 0.2));
     const other = annotation("other", otherLayerId, textPayload("B 内容", 0.4, 0.4));
     const view = renderOverlay([active, other], "text");
     expect(screen.getByRole("button", { name: "E 内容" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "B 内容" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "B 内容" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "B 内容" })).toHaveStyle({ opacity: "0.45" });
+    expect(screen.getByRole("button", { name: "E 内容" })).toHaveStyle({ opacity: "1" });
 
     view.rerender(
       <AnnotationOverlay
