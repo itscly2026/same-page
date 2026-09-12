@@ -39,3 +39,25 @@ describe("invite credentials", () => {
     await expect(verifyGuestSessionToken(token, secret, 2_001)).resolves.toBeNull();
   });
 });
+
+// A bridge is neither a session cookie nor a shared invitation.
+describe("installation handoff", () => {
+  it("is limited to ten minutes and keeps the original session expiry", async () => {
+    const { createInstallHandoff, verifyInstallHandoff } = await import("./install-handoff");
+    const claims = { choirId: "drive", guestSessionVersion: 3, expiresAt: 9_000_000 };
+    const token = await createInstallHandoff(claims, "secret", 1_000);
+    expect(await verifyInstallHandoff(token, "secret", 600_999)).toEqual(claims);
+    expect(await verifyInstallHandoff(token, "secret", 601_000)).toBeNull();
+    expect(await verifyInstallHandoff(token, "other", 1_001)).toBeNull();
+    expect(await verifyGuestSessionToken(token, "secret", 1_001)).toBeNull();
+    const cookie = await createGuestSessionToken(claims, "secret");
+    expect(await verifyInstallHandoff(cookie, "secret", 1_001)).toBeNull();
+  });
+  it("cannot outlive the source session or accept malformed input", async () => {
+    const { createInstallHandoff, verifyInstallHandoff } = await import("./install-handoff");
+    const token = await createInstallHandoff({ choirId: "drive", guestSessionVersion: 1, expiresAt: 2_000 }, "secret", 1_000);
+    expect(await verifyInstallHandoff(token, "secret", 2_000)).toBeNull();
+    expect(await verifyInstallHandoff(token + ".extra", "secret", 1_001)).toBeNull();
+    expect(await verifyInstallHandoff("malformed", "secret", 1_001)).toBeNull();
+  });
+});

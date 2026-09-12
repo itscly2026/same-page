@@ -1,3 +1,4 @@
+import { InstallButton } from "../install/install-entry";
 import { RefreshCw } from "lucide-react";
 import { useReturnViewport } from "../navigation/use-return-viewport";
 import { Menu as MenuIcon, List, X } from "lucide-react";
@@ -34,7 +35,7 @@ export function DriveHeader({ choirId, choirName, userId, search, onSearch, onRe
       <Modal className="drive-drawer"><Dialog preserveOnNavigate aria-label="云盘菜单">{({ close }) => <DrawerBody>
         <div className="dialog-heading"><Heading slot="title">{choirName}</Heading><Button className="icon-button" aria-label="关闭云盘菜单" onPress={close}><X size={22} aria-hidden="true" /></Button></div>
         {management?.(close)}
-        <footer className="drive-drawer-footer"><Link className="drive-drawer-switch" to="/drives"><List size={18} aria-hidden="true" />云盘列表</Link></footer>
+        <footer className="drive-drawer-footer"><InstallButton /><Link className="drive-drawer-switch" to="/drives"><List size={18} aria-hidden="true" />云盘列表</Link></footer>
       </DrawerBody>}</Dialog></Modal>
     </ModalOverlay>
   </>;

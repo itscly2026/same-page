@@ -5,8 +5,6 @@
 .install-intro img, .install-suggestion img { border-radius: 12px; flex-shrink: 0; }
 .install-intro strong { font-size: 17px; }
 .install-intro p, .install-suggestion p { margin: 5px 0 0; color: #52666b; font-size: 14px; line-height: 1.6; }
-.install-selector { display: grid; gap: 8px; color: #52666b; font-size: 13px; }
-.install-selector select { width: 100%; padding: 11px 12px; background: white; border: 1px solid #cbd8d9; border-radius: 10px; color: #173d44; font: inherit; font-size: 15px; }
 .install-steps { list-style: none; padding: 0; margin: 22px 0; display: grid; gap: 18px; }
 .install-steps li { display: flex; gap: 12px; align-items: flex-start; }
 .install-steps li > span { display: grid; place-items: center; width: 30px; height: 30px; flex-shrink: 0; border-radius: 50%; color: #014653; background: #eaf2f1; font-weight: 600; }
@@ -30,11 +28,28 @@
   .marketing-hero .hero-actions .hero-preview-link,
   .marketing-hero .hero-actions .install-button { flex: 1; min-height: 44px; justify-content: center; text-align: center; }
 }
-.install-advice { background: #f0f7f4; border: 1px solid #d1e3df; border-radius: 12px; padding: 16px; margin: 16px 0; font-size: 14px; line-height: 1.65; }
-.install-advice strong { font-size: 15px; }
-.install-advice p { margin: 8px 0 0; }
-.install-advice .install-network-note { padding-top: 10px; margin-top: 12px; border-top: 1px solid #d1e3df; color: #52666b; font-size: 13px; }
 .install-copy { display: grid; gap: 10px; margin-top: 12px; }
 .install-copy input { min-width: 0; width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cbd8d9; border-radius: 8px; background: white; color: #52666b; }
 .install-copy p { font-size: 13px; }
 .install-platform-note { font-size: 14px; line-height: 1.65; color: #52666b; }
+.install-page { max-width: 520px; padding-top: 28px; padding-bottom: 40px; }
+.install-brand { display: inline-flex; gap: 12px; align-items: center; color: #014653; font-size: 20px; font-weight: 650; text-decoration: none; }
+.install-brand img { border-radius: 12px; }
+.install-page-card { margin-top: 28px; padding: 28px; border: 1px solid #d1e3df; border-radius: 20px; background: #fff; }
+.install-eyebrow { color: #52666b; font-size: 13px; margin: 0 0 12px; }
+.install-page h1 { font-size: 25px; line-height: 1.4; margin: 0 0 24px; text-wrap: balance; }
+.install-page .install-steps { margin: 28px 0; gap: 24px; }
+.install-steps li > span { width: 44px; height: 44px; border-radius: 12px; }
+.install-steps strong { font-size: 16px; color: #173d44; }
+.install-steps p { color: #52666b; font-size: 14px; }
+.install-skip { display: block; text-align: center; margin-top: 24px; padding: 12px; color: #52666b; }
+.install-page .install-fallback { margin-top: 24px; }
+.install-fallback summary { padding: 8px 0; min-height: 28px; }
+.install-suggestion .install-button { min-height: 44px; }
+@media (max-width: 600px) {
+  .install-page { padding: 20px 16px; }
+  .install-page-card { padding: 24px 20px; margin-top: 20px; }
+  .install-dialog { padding: 20px; }
+  .install-page h1 { font-size: 23px; }
+}
+.install-suggestion .install-button { padding: 8px 14px; }
