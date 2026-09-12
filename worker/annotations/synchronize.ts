@@ -43,7 +43,7 @@ export async function synchronizeOperations(db: D1Database, scope: Scope, operat
     const payloadJson = op.payload === null ? null : JSON.stringify(op.payload);
     const hash = await sha256(`${op.type}:${payloadJson ?? ""}`);
     const p = op.payload;
-    const legacyHash = p?.kind === "text" && p.fontScale === DEFAULT_TEXT_FONT_SCALE
+    const legacyHash = p?.kind === "text" && p.textAlign === undefined && p.fontScale === DEFAULT_TEXT_FONT_SCALE
       ? await sha256(`${op.type}:${JSON.stringify({ pageNumber: p.pageNumber, kind: p.kind, x: p.x, y: p.y, text: p.text })}`)
       : hash;
     return { ...op, payloadJson, hash, legacyHash };
@@ -78,7 +78,13 @@ export async function synchronizeOperations(db: D1Database, scope: Scope, operat
         FROM annotation_sync_operations o JOIN input i ON o.op_id = json_extract(i.op, '$.opId') JOIN scope
         LEFT JOIN memberships m ON m.choir_id = scope.choir AND m.user_id = scope.actor AND m.status = 'active'
         WHERE o.status = 'processing' AND o.resulting_version IS NOT NULL AND ${identity}
-        ON CONFLICT(id) DO UPDATE SET version = excluded.version, deleted = excluded.deleted, payload_json = excluded.payload_json,
+        ON CONFLICT(id) DO UPDATE SET version = excluded.version, deleted = excluded.deleted, payload_json = CASE
+          WHEN json_extract(excluded.payload_json, '$.kind') = 'text'
+            AND json_extract(annotation_objects.payload_json, '$.kind') = 'text'
+            AND json_type(excluded.payload_json, '$.textAlign') IS NULL
+            AND json_type(annotation_objects.payload_json, '$.textAlign') IS NOT NULL
+          THEN json_set(excluded.payload_json, '$.textAlign', json_extract(annotation_objects.payload_json, '$.textAlign'))
+          ELSE excluded.payload_json END,
           updated_by_user_id = excluded.updated_by_user_id, updated_by_display_name = excluded.updated_by_display_name, updated_at = excluded.updated_at`),
       query(`UPDATE annotation_sync_operations AS o SET status = CASE WHEN resulting_version IS NULL THEN 'conflict' ELSE 'accepted' END, payload_json = NULL
         WHERE status = 'processing' AND EXISTS (SELECT 1 FROM input i JOIN scope WHERE o.op_id = json_extract(i.op, '$.opId') AND ${identity})`),

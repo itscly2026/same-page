@@ -2611,17 +2611,18 @@ h1 {
 
 .annotation-text {
   position: absolute;
-  max-inline-size: 50cqi;
+  inline-size: max-content;
+  max-inline-size: none;
   border: 0;
   padding: 0;
   color: #a12652;
   background: transparent;
   font-weight: 700;
   line-height: 1.25;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
   text-align: center;
   transform: translate(-50%, -50%);
-  white-space: pre-wrap;
+  white-space: pre;
   touch-action: none;
 }
 
@@ -2715,6 +2716,8 @@ h1 {
   top: 50%;
   left: 50%;
   width: min(70%, 42rem);
+  white-space: pre;
+  overflow-wrap: normal;
   overflow: auto;
   border: 0;
   outline: 0;
@@ -3230,3 +3233,31 @@ h1 {
 .manual-topic h3 { margin: 0 0 .75rem; font-size: 1.05rem; color: var(--ink); }
 .manual-topic p { margin: .75rem 0 0; }
 .manual-topic ol { padding-left: 1.5rem; }
+
+.annotation-text-size-field input { width: 4.5rem; margin-left: .5rem; }
+.annotation-font-scale__value { width: 3.5rem; }
+.annotation-text-composer header .annotation-pressure-options { display: flex; gap: .25rem; }
+.annotation-text-composer header .annotation-pressure-options button { min-width: 0; padding: .5rem; }
+.annotation-text-composer header [aria-pressed="true"] { outline: 2px solid #014653; }
+.annotation-overlay[data-editing] button[data-transforming]::before,
+.annotation-overlay[data-editing] .annotation-text:not(:disabled):hover::before,
+.annotation-overlay[data-editing] .annotation-shape:not(:disabled):hover::before {
+  outline: 1px dashed currentColor; opacity: .45; border-radius: 3px;
+}
+.annotation-overlay[data-editing] button[data-transforming] { cursor: grabbing; }
+
+[data-edit-page-turn]::after {
+  content: "松开翻页"; position: fixed; top: 50%; right: 1rem;
+  color: white; background: rgb(0 0 0 / 65%); padding: .5rem .75rem;
+  border-radius: 1rem; pointer-events: none; z-index: 40; font-size: .8rem;
+}
+[data-edit-page-turn="previous"]::after { right: auto; left: 1rem; }
+
+.annotation-text-alignment { display: flex; gap: 4px; }
+.annotation-text-alignment button,
+.annotation-text-composer header .annotation-text-alignment button {
+  display: grid; place-items: center; width: 44px; min-width: 44px; height: 44px; padding: 8px;
+}
+.annotation-text-composer header .annotation-text-alignment button[aria-pressed="true"] {
+  color: white; background: var(--brand);
+}

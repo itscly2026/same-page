@@ -9,6 +9,7 @@ export function paintExportText(context: CanvasRenderingContext2D, payload: Extr
   text.disabled = true;
   text.style.left = `${payload.x * 100}%`; text.style.top = `${payload.y * 100}%`;
   text.style.fontSize = `${payload.fontScale * 100}cqw`;
+  text.style.textAlign = payload.textAlign ?? "center";
   const node = document.createTextNode(payload.text);
   text.append(node); container.append(text); document.body.append(container);
   try {

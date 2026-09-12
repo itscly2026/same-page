@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useReaderGestures } from "./use-reader-gestures";
+import { editingTurnDirection, useReaderGestures } from "./use-reader-gestures";
 import { PdfPageCanvas } from "./pdf-page";
 import type { PDFDocumentProxy } from "./pdf-document";
 import type { PageTurnGesture } from "./use-paged-reader";
@@ -32,6 +32,37 @@ afterEach(() => {
 });
 
 describe("useReaderGestures", () => {
+  it.each(["turn", "cancel", "pinch"] as const)("handles editing %s without confusing object ownership or sequential finger samples", kind => {
+    const turn = vi.fn();
+    const zoom = vi.fn();
+    render(<GestureHarness onZoomChange={zoom} onEditingPageTurn={turn} />);
+    const viewport = screen.getByTestId("gesture-viewport");
+    mockGeometry(viewport, screen.getByTestId("gesture-content"));
+    const sample = (pointerId: number, clientX: number) => ({ pointerId, clientX, clientY: 200, pointerType: "touch" });
+    fireEvent.pointerDown(viewport, sample(1, 300));
+    fireEvent.pointerDown(viewport, sample(2, 400));
+    // Separate events in one frame temporarily change the distance by 100%.
+    fireEvent.pointerMove(viewport, sample(1, 200));
+    fireEvent.pointerMove(viewport, sample(2, kind === "pinch" ? 400 : 300));
+    flushAnimationFrame();
+    if (kind === "turn") expect(viewport).toHaveAttribute("data-edit-page-turn", "next");
+    if (kind === "cancel") fireEvent.pointerCancel(viewport, sample(1, 200));
+    else fireEvent.pointerUp(viewport, sample(1, 200));
+    fireEvent.pointerUp(viewport, sample(2, 300));
+    expect(turn.mock.calls).toEqual(kind === "turn" ? [["next"]] : []);
+    expect(viewport).not.toHaveAttribute("data-edit-page-turn");
+    if (kind !== "pinch") expect(zoom).not.toHaveBeenCalled();
+  });
+
+  it("requires extra horizontal travel past the paper edge and rejects vertical or scaled gestures", () => {
+    const session = { center: { x: 500, y: 200 }, bounds: { left: -300, right: 1700 }, viewport: { left: 0, right: 1000 }, scaled: false };
+    expect(editingTurnDirection(session, { x: 879, y: 200 })).toBeNull();
+    expect(editingTurnDirection(session, { x: 880, y: 200 })).toBe("previous");
+    expect(editingTurnDirection(session, { x: -280, y: 200 })).toBe("next");
+    expect(editingTurnDirection(session, { x: 880, y: 500 })).toBeNull();
+    expect(editingTurnDirection({ ...session, scaled: true }, { x: 880, y: 200 })).toBeNull();
+  });
+
   it("previews around the midpoint and commits one settled zoom", () => {
     const onZoomChange = vi.fn();
     render(<GestureHarness onZoomChange={onZoomChange} />);
@@ -316,9 +347,11 @@ describe("useReaderGestures", () => {
 function GestureHarness({
   onZoomChange,
   pageTurn,
+  onEditingPageTurn,
 }: {
   onZoomChange: (zoom: number) => void;
   pageTurn?: PageTurnGesture;
+  onEditingPageTurn?(direction: "previous" | "next"): void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -329,6 +362,8 @@ function GestureHarness({
     contentRef,
     previewBoundaryRef,
     disabled: false,
+    twoFingerOnly: !!onEditingPageTurn,
+    onEditingPageTurn,
     zoom,
     onZoomChange: (value) => {
       onZoomChange(value);
@@ -345,7 +380,7 @@ function GestureHarness({
       {...handlers}
     >
       <div ref={previewBoundaryRef} data-testid="gesture-boundary">
-        <div ref={contentRef} data-testid="gesture-content" />
+        <div ref={contentRef} data-testid="gesture-content"><button className="annotation-text">对象</button></div>
       </div>
     </div>
   );

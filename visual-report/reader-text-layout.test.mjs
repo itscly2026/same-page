@@ -11,7 +11,7 @@ const styles = await readFile(
 const sampleText = "第一排男高音这里请统一";
 const longChineseText = "第一排男高音这里请统一提前吸气并保持轻声进入";
 
-test("text wrapping and readable bounds remain proportional across zoom", async context => {
+test("only explicit line breaks remain proportional across zoom", async context => {
   const browser = await testBrowser(context);
   const page = await browser.newPage({ viewport: { width: 1800, height: 1800 } });
   for (const [name, text, font] of [
@@ -26,7 +26,7 @@ test("text wrapping and readable bounds remain proportional across zoom", async 
     const layouts = await measureTextLayouts(page);
     // Font metrics vary by OS. Preserve wrapping through our responsive CSS,
     // without prescribing an exact number of Chinese glyphs on each line.
-    if (name === "explicit-break" || name === "unbroken-url") assert.ok(layouts[0].lineCount > 1, name);
+    assert.equal(layouts[0].lineCount, name === "explicit-break" ? 2 : 1, name);
     assert.deepEqual(layouts.map(layout => layout.lineCount), layouts.map(() => layouts[0].lineCount), name);
     if (name === "chinese") assertNormalizedLayouts(layouts);
     assert.ok(layouts.every(layout => layout.contentFits), name + ": content is clipped");
@@ -67,6 +67,35 @@ test("gives short editable text a 44px hit target without enlarging its visual b
   ]);
 });
 
+test("aligns explicit lines around the same anchor and lets long lines extend past the page", async context => {
+  const browser = await testBrowser(context);
+  const page = await browser.newPage({ viewport: { width: 1000, height: 800 } });
+  for (const align of ["left", "center", "right"]) {
+    await setFixture(page, annotationPage("aligned", 600, "长的一行提示\n短句", 2.4));
+    const result = await page.locator("#aligned").evaluate((element, align) => {
+      element.style.textAlign = align;
+      const node = element.firstChild;
+      const index = node.textContent.indexOf("\n");
+      const range = document.createRange();
+      range.setStart(node, 0); range.setEnd(node, index);
+      const first = range.getBoundingClientRect();
+      range.setStart(node, index + 1); range.setEnd(node, node.textContent.length);
+      const second = range.getBoundingClientRect();
+      const value = box => align === "left" ? box.left : align === "right" ? box.right : (box.left + box.right) / 2;
+      const box = element.getBoundingClientRect();
+      const parent = element.parentElement.getBoundingClientRect();
+      return { lineDelta: value(first) - value(second), anchorDelta: (box.left + box.right) / 2 - (parent.left + parent.right) / 2 };
+    }, align);
+    assert.ok(Math.abs(result.lineDelta) < 1, align);
+    assert.ok(Math.abs(result.anchorDelta) < 1, align);
+  }
+  await setFixture(page, annotationPage("overflow", 600, "不自动换行".repeat(30), 2.4));
+  await page.locator("#overflow").evaluate(element => { element.style.left = "98%"; });
+  const [layout] = await measureTextLayouts(page);
+  assert.equal(layout.lineCount, 1);
+  assert.ok(layout.width > 600);
+});
+
 async function testBrowser(context) {
   const browser = await webkit.launch({ headless: true });
   context.after(() => browser.close());
@@ -89,6 +118,7 @@ async function measureTextLayouts(page) {
       const lineRects = [...range.getClientRects()];
       return {
         id: element.id,
+        fontRatio: parseFloat(getComputedStyle(element).fontSize) / pageBounds.width,
         lineCount: new Set(
           lineRects.map((line) => Math.round(line.top * 10)),
         ).size,
@@ -105,7 +135,10 @@ async function measureTextLayouts(page) {
 function assertNormalizedLayouts(layouts) {
   const baseline = layouts[0];
   for (const layout of layouts.slice(1)) {
-    assert.ok(Math.abs(layout.widthRatio - baseline.widthRatio) < 0.002);
+    // Natural text width includes OS font optical sizing. The baseline stylesheet
+    // with no-wrap produces the same 1.4% CJK width variation on macOS WebKit.
+    // Check the actual scalable inputs, not a formerly fixed CSS box width.
+    assert.ok(Math.abs(layout.fontRatio - baseline.fontRatio) < 0.00001);
     assert.ok(Math.abs(layout.heightRatio - baseline.heightRatio) < 0.002);
   }
 }

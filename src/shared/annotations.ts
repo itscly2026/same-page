@@ -38,6 +38,7 @@ export const textAnnotationPayloadSchema = annotationBaseSchema.extend({
   y: normalizedCoordinateSchema,
   fontScale: textFontScaleSchema.default(DEFAULT_TEXT_FONT_SCALE),
   text: z.string().trim().min(1).max(1_000),
+  textAlign: z.enum(["left", "center", "right"]).optional(),
 });
 
 export const inkPointSchema = z.object({

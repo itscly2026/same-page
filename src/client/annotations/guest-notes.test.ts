@@ -27,7 +27,7 @@ it("retains guest notes across reopening and layer refresh, never queues or push
   await cacheAnnotationLayers(workspace, []);
   const saved = await readScoreAnnotationState(workspace);
   expect(saved.layersReady).toBe(true);
-  expect(saved.annotations[0]?.payload).toEqual(note.payload);
+  expect(saved.annotations[0]?.payload).toEqual({ ...note.payload, textAlign: "center" });
   expect(saved.pendingCount).toBe(0);
   await expect(saveAnnotationDraft(workspace, { ...note, id: crypto.randomUUID(), layerId: crypto.randomUUID() })).rejects.toThrow("guest_notes_are_local_only");
   await activateAuthenticatedLocalOwner("member");

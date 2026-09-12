@@ -47,6 +47,7 @@ export interface AnnotationPageProps {
   tool: AnnotationTool;
   toolColor?: string;
   toolStyle?: ToolStyle;
+  onTextStyleChange?(style: Pick<ToolStyle, "fontScale" | "textAlign">): void;
   activeLayerId: string | null;
   onInteractionChange(interaction: AnnotationOverlayInteraction): void;
   editor: AnnotationEditor | null;
@@ -90,10 +91,16 @@ export function PageLayout({
     renderedWidth,
     PAGE_TURN_GUTTER_PX,
   );
-  const showPageWindow = !annotationProps.editing && zoom <= 1;
+  const showPageWindow = zoom <= 1 && (!annotationProps.editing || pager.phase !== "idle");
   const pageItems: PagedReaderItem[] = showPageWindow
     ? pager.items
     : [{ page: currentPage, position: 0 }];
+  const previousPage = useRef(currentPage);
+  useLayoutEffect(() => {
+    if (previousPage.current === currentPage) return;
+    previousPage.current = currentPage;
+    if (containerRef.current) { containerRef.current.scrollLeft = 0; containerRef.current.scrollTop = 0; }
+  }, [currentPage]);
   const requestPage = (target: "previous" | "next") => {
     if (zoom > 1) onZoomChange(1);
     pager.request(target);
@@ -120,6 +127,12 @@ export function PageLayout({
     onEdgeTap: !annotationProps.editing && zoom <= 1 ? requestPage : undefined,
     pageTurn: !annotationProps.editing && zoom <= 1 ? pager.gesture : undefined,
     pageTurnExtent: pageTurnDistance,
+    onEditingPageTurn: annotationProps.editing ? direction => {
+      const next = currentPage + (direction === "next" ? 1 : -1);
+      if (next < 1 || next > document.numPages || annotationProps.editor?.getSnapshot() !== "idle") return;
+      onZoomChange(1);
+      pager.request(direction);
+    } : undefined,
   });
 
   return (
@@ -184,8 +197,8 @@ export function PageLayout({
                       pageNumber={item.page}
                       width={renderedWidth}
                       aspectRatio={item.page === currentPage ? pageRatio : undefined}
-                      annotationProps={annotationProps}
-                      interactionRef={annotationProps.editing ? noteInteraction : undefined}
+                      annotationProps={item.position === 0 ? annotationProps : { ...annotationProps, editing: false }}
+                      interactionRef={annotationProps.editing && item.position === 0 ? noteInteraction : undefined}
                       onPageRenderStart={pager.beginPageRender}
                     />
                   </div>
@@ -237,6 +250,13 @@ export function ContinuousLayout({
   const pageWidth = Math.max(1, size.width * zoom);
   const ratios = usePageAspectRatios(document);
   const geometryReady = ratios.length === document.numPages;
+  const [fitPadding, setFitPadding] = useState(false);
+  const startPadding = fitPadding ? Math.max(0, (size.height - pageWidth / (ratios[0] ?? 0.707)) / 2) : 0;
+  const previousPadding = useRef(startPadding);
+  useLayoutEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop += startPadding - previousPadding.current;
+    previousPadding.current = startPadding;
+  }, [startPadding]);
   const fitted = useRef({ request: 0, zoom: 1 });
   const pendingFit = useRef<{ page: number; zoom: number } | null>(null);
   useEffect(() => {
@@ -261,6 +281,10 @@ export function ContinuousLayout({
     estimateSize: (index) => pageWidth / (ratios[index] ?? 0.707) + 8,
     getItemKey,
     overscan: 2,
+    // Editing hides neighbours; padding lets even the first and last short
+    // pages sit at the viewport center after a fit-and-turn.
+    paddingStart: startPadding,
+    paddingEnd: fitPadding ? Math.max(0, (size.height - pageWidth / (ratios[document.numPages - 1] ?? 0.707)) / 2) : 0,
     rangeExtractor: range => annotationProps.editing
       ? [...new Set([...defaultRangeExtractor(range), currentPage - 1])].sort((a, b) => a - b)
       : defaultRangeExtractor(range),
@@ -269,7 +293,7 @@ export function ContinuousLayout({
   useEffect(() => {
     if (pendingFit.current) {
       if (Math.abs(zoom - pendingFit.current.zoom) > 0.001) return;
-      virtualizer.scrollToIndex(pendingFit.current.page - 1, { align: "start" });
+      virtualizer.scrollToIndex(pendingFit.current.page - 1, { align: "center" });
       alignedPage.current = { page: pendingFit.current.page, geometryReady };
       pendingFit.current = null;
       return;
@@ -309,8 +333,20 @@ export function ContinuousLayout({
       const element = scrollRef.current;
       if (!element || !annotationProps.editing) return;
       const page = virtualizer.getVirtualItems().find(item => item.index === currentPage - 1);
-      if (page) element.scrollTop = Math.max(page.start, Math.min(element.scrollTop, Math.max(page.start, page.end - 8 - element.clientHeight)));
+      if (page) {
+        const centeredStart = page.start - Math.max(0, (element.clientHeight - (page.size - 8)) / 2);
+        element.scrollTop = Math.max(centeredStart, Math.min(element.scrollTop, Math.max(centeredStart, page.end - 8 - element.clientHeight)));
+      }
     },
+    onEditingPageTurn: annotationProps.editing ? direction => {
+      const nextPage = currentPage + (direction === "next" ? 1 : -1);
+      if (nextPage < 1 || nextPage > document.numPages || annotationProps.editor?.getSnapshot() !== "idle") return;
+      const nextZoom = calculateFittedPageWidth(size.width, size.height, ratios[nextPage - 1] ?? 0.707) / Math.max(1, size.width);
+      setFitPadding(true);
+      pendingFit.current = { page: nextPage, zoom: nextZoom };
+      if (scrollRef.current) scrollRef.current.scrollLeft = 0;
+      onZoomChange(nextZoom); onPageChange(nextPage);
+    } : undefined,
     nativeTouchScroll: !annotationProps.editing,
     minimumZoom: Math.min(1, calculateFittedPageWidth(size.width, size.height, ratios[currentPage - 1] ?? 0.707) / Math.max(1, size.width)),
     captureAnchor: (center) => {
@@ -322,7 +358,8 @@ export function ContinuousLayout({
       const gaps = (page?.index ?? 0) * 8;
       return nextZoom => ({
         x: point.x * nextZoom / zoom,
-        y: (point.y - gaps) * nextZoom / zoom + gaps,
+        y: (point.y - gaps - startPadding) * nextZoom / zoom + gaps + (fitPadding
+          ? Math.max(0, (size.height - size.width * nextZoom / (ratios[0] ?? 0.707)) / 2) : 0),
       });
     },
   });
