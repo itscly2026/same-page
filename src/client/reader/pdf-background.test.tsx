@@ -83,3 +83,43 @@ it('ignores a late old-page render after the hidden target changes', async () =>
   expect(view.getByRole('img', {name: '第 2 页'})).toBeInTheDocument();
   expect(view.container.querySelector('[data-pdf-canvas-active]')).not.toBeNull();
 });
+
+it('does not publish a bitmap whose context was lost during rendering', async () => {
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({} as CanvasRenderingContext2D);
+  let finish!: () => void;
+  const pdf = { getPage: vi.fn().mockResolvedValue({getViewport: () => ({width:600,height:800}), render: () => ({promise: new Promise<void>(r => { finish=r; }), cancel: vi.fn()})}) } as unknown as PDFDocumentProxy;
+  const view = render(<PdfPageCanvas document={pdf} pageNumber={1} width={600}/>);
+  await act(async () => {});
+  const drawing = view.container.querySelectorAll('canvas')[1];
+  act(() => { drawing.dispatchEvent(new Event('contextlost')); });
+  await act(async () => { finish(); });
+  expect(view.container.querySelector('[data-pdf-canvas-active]')).toBeNull();
+});
+
+it('lost displayed canvas offers recovery when restoration never arrives', async () => {
+  vi.useFakeTimers();
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({} as CanvasRenderingContext2D);
+  const pdf = { getPage: vi.fn().mockResolvedValue({getViewport: () => ({width:600,height:800}), render: () => ({promise: Promise.resolve(), cancel: vi.fn()})}) } as unknown as PDFDocumentProxy;
+  const view = render(<PdfPageCanvas document={pdf} pageNumber={1} width={600}/>);
+  await act(async () => {});
+  const canvas = view.container.querySelector('[data-pdf-canvas-active]')!;
+  act(() => { canvas.dispatchEvent(new Event('contextlost')); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+  expect(view.queryByRole('button', {name:'重试本页'})).not.toBeNull();
+});
+
+it('keeps the healthy front bitmap when an idle spare context is restored', async () => {
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({} as CanvasRenderingContext2D);
+  const draw = vi.fn(() => ({promise: Promise.resolve(), cancel: vi.fn()}));
+  const pdf = { getPage: vi.fn().mockResolvedValue({getViewport: () => ({width:600,height:800}), render: draw}) } as unknown as PDFDocumentProxy;
+  const view = render(<PdfPageCanvas document={pdf} pageNumber={1} width={600}/>);
+  await act(async () => {});
+  const front = view.container.querySelector('[data-pdf-canvas-active]');
+  const spare = view.container.querySelector('canvas:not([data-pdf-canvas-active])')!;
+  await act(async () => {
+    spare.dispatchEvent(new Event('contextlost'));
+    spare.dispatchEvent(new Event('contextrestored'));
+  });
+  expect(view.container.querySelector('[data-pdf-canvas-active]')).toBe(front);
+  expect(draw).toHaveBeenCalledTimes(1);
+});
