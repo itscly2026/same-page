@@ -101,7 +101,10 @@ it.each([503, 200])("blocks another candidate POST after an unconfirmed %s respo
   const input = screen.getByLabelText("新的 PDF（最多 20 MB、500 页）");
   await waitFor(() => expect(input).not.toBeDisabled());
   fireEvent.change(input, { target: { files: [new File(["pdf"], "new.pdf")] } });
-  await screen.findByText(/未能确认候选 PDF/);
+  const message = await screen.findByText(/未能确认候选 PDF/);
+  expect(message).toHaveTextContent("当前 PDF 未改变");
+  expect(message).toHaveTextContent("24 小时后到期并由系统回收");
+  expect(message).not.toHaveTextContent("核对版本信息");
   expect(input).toBeDisabled();
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/publish"))).toBe(false);
 });

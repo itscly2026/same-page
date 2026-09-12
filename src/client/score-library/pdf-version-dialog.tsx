@@ -12,6 +12,8 @@ import { LibraryDialogHeading } from "./library-dialog-heading";
 import { uploadMessage } from "./library-format";
 import { PdfVersionPreview } from "./pdf-version-preview";
 
+const unconfirmedUploadMessage = "未能确认候选 PDF 的上传结果，当前 PDF 未改变。请关闭窗口，不要直接重传；可能已保存的候选文件会在 24 小时后到期并由系统回收。";
+
 type Version = ScoreSummary["currentVersion"];
 export function PdfVersionDialog({ choirId, score, historyOnly, canPurge = false, onClose, onComplete }: {
   canPurge?: boolean; choirId: string; score: ScoreSummary; historyOnly: boolean;
@@ -38,7 +40,7 @@ export function PdfVersionDialog({ choirId, score, historyOnly, canPurge = false
       uploadController.current.abort();
       uploadController.current = null;
       setBusy(false); setTransfer(null); setUncertain(true);
-      setMessage("上传已中断，结果待核对，请关闭窗口后核对版本信息。");
+      setMessage(unconfirmedUploadMessage);
     }
   }, [initialUser, session.data?.user.id, session.isPending]);
   useLayoutEffect(() => () => {
@@ -101,7 +103,7 @@ export function PdfVersionDialog({ choirId, score, historyOnly, canPurge = false
     } catch {
       if (isCurrent()) {
         setUncertain(true);
-        setMessage("未能确认候选 PDF 的上传结果，请关闭窗口并核对版本信息，不要直接重传。未确认的候选文件将在 24 小时后到期，当前 PDF 保持不变。");
+        setMessage(unconfirmedUploadMessage);
       }
     } finally {
       window.clearTimeout(timer);
