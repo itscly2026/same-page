@@ -115,9 +115,10 @@ test('fitting the second continuous page keeps that page selected after rotation
   await expect.poll(() => paper.evaluate(el => el.getBoundingClientRect().height)).toBeLessThanOrEqual(1194);
   await expect(page.getByRole('slider', { name: '跳转页码' })).toHaveValue('2');
 });
-test('two fingers cancel an ink checkpoint instead of saving an accidental stroke', async context => {
+for (const layout of ['page', 'continuous']) test(`${layout}: two fingers cancel an ink checkpoint instead of saving an accidental stroke`, async context => {
   const page = await open(context, 'guest');
-  await page.getByRole('button', { name: '更多', exact: true }).click();
+  if (layout === 'continuous') await page.getByRole('button', { name: '连续滚动', exact: true }).click();
+  else await page.getByRole('button', { name: '更多', exact: true }).click();
   await page.getByRole('button', { name: '编辑', exact: true }).click();
   await page.getByRole('button', { name: '画笔', exact: true }).click();
   const cdp = await page.context().newCDPSession(page);
@@ -134,6 +135,6 @@ test('two fingers cancel an ink checkpoint instead of saving an accidental strok
   await send('touchEnd', []);
   await page.getByRole('button', { name: '完成编辑', exact: true }).click();
   await page.reload();
-  await page.locator('.page-reader__sheet[data-page-turn-current] canvas[data-pdf-canvas-active]').waitFor();
+  await page.locator(layout === 'page' ? '.page-reader__sheet[data-page-turn-current] canvas[data-pdf-canvas-active]' : '.continuous-reader__page[data-index="0"] canvas[data-pdf-canvas-active]').waitFor();
   assert.equal(await page.locator('[data-ink-stroke]').count(), 0);
 });

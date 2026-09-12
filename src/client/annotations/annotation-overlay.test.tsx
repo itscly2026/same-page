@@ -1,3 +1,4 @@
+import { createRef } from "react";
 import Dexie from "dexie";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,6 +19,7 @@ import { AnnotationEditor } from "./annotation-editor";
 import {
   AnnotationOverlay,
   type AnnotationOverlayInteraction,
+  type AnnotationInteractionHandle,
   type AnnotationTool,
 } from "./annotation-overlay";
 
@@ -652,6 +654,26 @@ describe("AnnotationOverlay", () => {
     const saved = (await localDatabase.annotations.get(text.key))!;
     view.rerender(<AnnotationOverlay editor={editor} pageNumber={1} layers={layers} annotations={[saved]} editing tool="text" activeLayerId={activeLayerId} />);
     expect(Number.parseFloat(button.style.left)).toBeCloseTo(20);
+  });
+
+  it("explicit navigation handoff rolls back only the active transform without a layout ancestor", async () => {
+    const text = annotation("handoff-text", activeLayerId, { kind: "text", pageNumber: 1, text: "保留", x: .2, y: .3, fontScale: .024 });
+    await localDatabase.annotations.put(text);
+    const interactionRef = createRef<AnnotationInteractionHandle>();
+    render(<AnnotationOverlay editor={editor} pageNumber={1} layers={layers} annotations={[text]} editing tool="text" activeLayerId={activeLayerId} interactionRef={interactionRef} />);
+    const button = screen.getByRole("button", { name: "保留" });
+    mockBounds(button.parentElement!);
+    fireEvent.pointerDown(button, { pointerId: 1, clientX: 20, clientY: 30 });
+    fireEvent.pointerMove(button, { pointerId: 1, clientX: 50, clientY: 60 });
+    fireEvent.pointerUp(button, { pointerId: 1, clientX: 50, clientY: 60 });
+    await waitFor(async () => expect((await localDatabase.annotations.get(text.key))?.payload).toMatchObject({ x: .5, y: .6 }));
+    fireEvent.pointerDown(button, { pointerId: 2, clientX: 50, clientY: 60 });
+    fireEvent.pointerMove(button, { pointerId: 2, clientX: 70, clientY: 80 });
+    act(() => interactionRef.current!.interrupt());
+    fireEvent.pointerUp(button, { pointerId: 2, clientX: 70, clientY: 80 });
+    await act(async () => { expect(await editor.finish()).toBe("local-saved"); });
+    expect((await localDatabase.annotations.get(text.key))?.payload).toMatchObject({ x: .5, y: .6 });
+    expect(Number.parseFloat(button.style.left)).toBeCloseTo(50);
   });
 
   it("cancels an unfinished stroke on tool change without remounting saved ink", async () => {

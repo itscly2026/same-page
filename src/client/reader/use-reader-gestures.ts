@@ -53,6 +53,7 @@ export function useReaderGestures({
   nativeTouchScroll = false,
   captureAnchor,
   constrainScroll,
+  onNavigationStart,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   contentRef: RefObject<HTMLElement | null>;
@@ -68,6 +69,7 @@ export function useReaderGestures({
   pageTurnExtent?: number;
   nativeTouchScroll?: boolean;
   constrainScroll?(): void;
+  onNavigationStart?(): void;
   captureAnchor?(center: Point): (zoom: number) => Point;
 }) {
   const constrain = useEffectEvent(() => constrainScroll?.());
@@ -179,7 +181,7 @@ export function useReaderGestures({
     }
     const content = contentRef.current;
     if (!content) return;
-    if (twoFingerOnly) container?.dispatchEvent(new Event("reader-navigation-start"));
+    if (twoFingerOnly) onNavigationStart?.();
     const [first, second] = [...points.current.values()];
     const center = midpoint(first, second);
     const contentBounds = content.getBoundingClientRect();
