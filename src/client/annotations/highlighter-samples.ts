@@ -1,4 +1,3 @@
-import { ramerDouglasPeuckerD, type PointD } from "clipper2-ts";
 import type { AnnotationPayload } from "../../shared/annotations";
 
 type Ink = Extract<AnnotationPayload, { kind: "ink" }>;
@@ -14,9 +13,23 @@ export function highlighterSamples(ink: Ink, aspectRatio: number): Ink["points"]
   const result: Ink["points"] = [];
   let start = 0;
   const flush = (end: number) => {
-    const path = points.slice(start, end + 1).map(point => ({ x: point.x, y: point.y / aspectRatio, source: point }));
-    const sources = new Map<PointD, Ink["points"][number]>(path.map(point => [point, point.source]));
-    const simplified = ramerDouglasPeuckerD(path, tolerance).map(point => sources.get(point)!);
+    const keep = new Set([start, end]);
+    const pending = [[start, end]];
+    while (pending.length) {
+      const [left, right] = pending.pop()!;
+      const a = points[left!]!, b = points[right!]!;
+      const dx = b.x - a.x, dy = (b.y - a.y) / aspectRatio;
+      let farthest = -1, distance = tolerance * tolerance;
+      for (let i = left! + 1; i < right!; i++) {
+        const px = points[i]!.x - a.x, py = (points[i]!.y - a.y) / aspectRatio;
+        // Clamp to the segment: a smooth U-turn can extend beyond either endpoint.
+        const t = Math.max(0, Math.min(1, (px * dx + py * dy) / (dx * dx + dy * dy || 1)));
+        const squared = (px - t * dx) ** 2 + (py - t * dy) ** 2;
+        if (squared > distance) { distance = squared; farthest = i; }
+      }
+      if (farthest >= 0) { keep.add(farthest); pending.push([left!, farthest], [farthest, right!]); }
+    }
+    const simplified = [...keep].sort((a, b) => a - b).map(i => points[i]!);
     result.push(...simplified.slice(result.length ? 1 : 0));
     start = end;
   };

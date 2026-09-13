@@ -75,3 +75,60 @@ it("bounds pathological retracing and keeps its source intact when falling back"
   expect(inkSvgPaths(ink,1)).toBe(inkSvgPaths(ink,1));
   clearDiagnostics();
 });
+
+it("preserves a smooth narrow U-turn beyond the final endpoint", () => {
+  const points = [{ x: .1, y: .5 }, ...Array.from({ length: 7 }, (_, i) => ({
+    x: .9 + Math.cos(-Math.PI / 2 + i * Math.PI / 6) * .00002,
+    y: .50002 + Math.sin(-Math.PI / 2 + i * Math.PI / 6) * .00002,
+  })), { x: .8, y: .50004 }];
+  const ink = { ...regressionHighlighter(), points };
+  expect(Math.max(...highlighterSamples(ink, 1).map(point => point.x))).toBeGreaterThan(.8999);
+  expect(inkHit(ink, 1000, 1000, 890, 500, 0)).toBe(true);
+  expect(highlighterPasses(ink, 1).length).toBeGreaterThan(1);
+});
+
+it("reuses immutable live prefixes without changing fresh geometry or prior snapshots", async () => {
+  const module = await import("./coverage-clipping");
+  const original = module.createCoverageClipping;
+  let submitted = 0;
+  const spy = vi.spyOn(module, "createCoverageClipping").mockImplementation((initial = 0) => {
+    const clipping = original(initial);
+    return { get work() { return clipping.work; },
+      difference: (...args) => { submitted++; return clipping.difference(...args); },
+      intersection: (...args) => { submitted++; return clipping.intersection(...args); },
+      union: (...args) => { submitted++; return clipping.union(...args); } };
+  });
+  try {
+    const points = Array.from({ length: 200 }, (_, i) => ({ x: .1 + .8 * i / 499, y: .5 + Math.sin(i / 499 * 20) * .1, twist: i % 180 }));
+    let liveWork = 0, freshWork = 0;
+    for (let n = 10; n <= points.length; n += 10) {
+      const ink = { ...regressionHighlighter(), points: points.slice(0, n) };
+      submitted = 0;
+      const live = highlighterPasses(ink, .714), saved = structuredClone(live);
+      liveWork += submitted;
+      submitted = 0;
+      const fresh = highlighterPasses({ ...ink, points: structuredClone(ink.points) }, .714);
+      freshWork += submitted;
+      expect(live).toEqual(fresh);
+      highlighterPasses({ ...ink, points: points.slice(0, n + 1) }, .714);
+      expect(live).toEqual(saved);
+    }
+    expect(liveWork).toBeLessThan(freshWork / 4);
+    // A changed simplified prefix must invalidate the previously computed tail.
+    const changed = { ...regressionHighlighter(), points: [points[0]!, { x: .2, y: .9 }, points[199]!] };
+    expect(highlighterPasses(changed, .714)).toEqual(highlighterPasses({ ...changed, points: structuredClone(changed.points) }, .714));
+  } finally { spy.mockRestore(); }
+});
+
+it("does not repeat exhausted prefix work in the next live snapshot", async () => {
+  const module = await import("./coverage-clipping");
+  const spy = vi.spyOn(module, "createCoverageClipping");
+  try {
+    const points = Array.from({ length: 1000 }, (_, i) => ({ x: i % 2 ? .8 : .2, y: .5 }));
+    const ink = { ...regressionHighlighter(), points };
+    expect(inkRenderingDegraded(ink, 1)).toBe(true);
+    spy.mockClear();
+    expect(inkRenderingDegraded({ ...ink, points: [...points, { x: .9, y: .5 }] }, 1)).toBe(true);
+    expect(spy).not.toHaveBeenCalled();
+  } finally { spy.mockRestore(); }
+});

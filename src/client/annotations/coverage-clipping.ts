@@ -23,14 +23,15 @@ function operation(kind: ClipType, subject: MultiPolygon, clip: MultiPolygon): M
   return result;
 }
 // Bound total submitted vertices, not elapsed time: deterministic on every device.
-export function createCoverageClipping() {
-  let work = 0;
+export function createCoverageClipping(initialWork = 0) {
+  let work = initialWork;
   const run = (kind: ClipType, subject: MultiPolygon, clip: MultiPolygon) => {
     for (const polygons of [subject, clip]) for (const polygon of polygons) for (const ring of polygon) work += ring.length;
     if (work > 500_000) throw new RangeError("ink_geometry_budget");
     return operation(kind, subject, clip);
   };
   return {
+    get work() { return work; },
     difference: (subject: MultiPolygon, clip: MultiPolygon) => run(ClipType.Difference, subject, clip),
     intersection: (subject: MultiPolygon, clip: MultiPolygon) => run(ClipType.Intersection, subject, clip),
     union: (subject: MultiPolygon, clip: MultiPolygon) => run(ClipType.Union, subject, clip),
