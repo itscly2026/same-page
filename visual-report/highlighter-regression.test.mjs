@@ -8,8 +8,8 @@ import { resolveFixtureRequest } from "./fixtures.mjs";
 import { startVisualServer } from "./setup.mjs";
 import { regressionHighlighter } from "../src/test/highlighter-fixture.ts";
 
-for (const [name, engine] of Object.entries({chromium,webkit})) {
-  test(`${name}: reading turns survive the highlighter ring regression`, async t => {
+for (const [name, engine] of Object.entries({chromium,webkit})) for (const sample of ["regression", "budget"]) {
+  test(`${name}: reading turns survive highlighter ${sample}`, async t => {
     const app = await startVisualServer({script:"dev"}), browser=await engine.launch();
     t.after(async()=>{await browser.close();await app.stop();});
     const page=await browser.newPage({viewport:{width:820,height:1148},reducedMotion:"reduce"});
@@ -24,7 +24,9 @@ for (const [name, engine] of Object.entries({chromium,webkit})) {
       if (pathname.endsWith("/sync") || pathname.endsWith("/annotations")) {
         const body=JSON.parse(response.body), data=body.annotations ?? body;
         const template=data.objects[0];
-        data.objects=[{...template,payload:regressionHighlighter()}];
+        const payload=regressionHighlighter();
+        if(sample === "budget") payload.points=Array.from({length:5000},(_,i)=>({x:i%2 ? .8 : .2,y:.5}));
+        data.objects=[{...template,payload}];
         response.body=JSON.stringify(body);
       }
       await route.fulfill(response);
@@ -36,9 +38,9 @@ for (const [name, engine] of Object.entries({chromium,webkit})) {
     for(let i=0;i<4;i++){
       await viewport.click({position:{x:bounds.width*.9,y:bounds.height*.5}});
       await page.locator('.page-reader__sheet[data-page-turn-current][data-page-number="2"] [data-ink-stroke]').first().waitFor();
-      assert.equal(await page.getByText("此笔迹已简化显示").count(),0);
+      assert.equal(await page.getByText("此笔迹已简化显示").count(),sample === "budget" ? 1 : 0);
       assert.equal(await page.getByRole("alert").count(),0);
-      if(i===0){await mkdir("artifacts/editor-preview",{recursive:true});await page.screenshot({path:`artifacts/editor-preview/${name}-highlighter-regression.png`});}
+      if(i===0){await mkdir("artifacts/editor-preview",{recursive:true});await page.screenshot({path:`artifacts/editor-preview/${name}-highlighter-${sample}.png`});}
       await viewport.click({position:{x:bounds.width*.1,y:bounds.height*.5}});
       await page.locator('.page-reader__sheet[data-page-turn-current][data-page-number="1"]').waitFor();
     }

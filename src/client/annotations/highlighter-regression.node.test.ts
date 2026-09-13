@@ -70,6 +70,7 @@ it("bounds pathological retracing and keeps its source intact when falling back"
   const original = structuredClone(ink);
   expect(inkSvgPaths(ink,1).length).toBeGreaterThan(0);
   expect(inkRenderingDegraded(ink,1)).toBe(true);
+  expect(inkPaints(ink,1000,1000).flat(3).length).toBeLessThan(2000);
   expect(ink).toEqual(original);
   expect(inkSvgPaths(ink,1)).toBe(inkSvgPaths(ink,1));
   clearDiagnostics();

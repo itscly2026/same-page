@@ -19,9 +19,9 @@ function geometry(ink: Ink, ratio: number): Geometry {
   try {
     paints = highlighterPasses(ink, ratio);
   } catch (error) {
-    // Retain the centerline and width, in one uniform coat. Never rewrite or
+    // Approximate the centerline at the original width, in one uniform coat. Never rewrite or
     // discard the source annotation, and never retry a failed geometry on render.
-    paints = [[[inkOutline(ink, 1000, 1000 / ratio).map(([x, y]) => [x! / 1000, y! / 1000] as Pair)]]];
+    paints = [[[inkOutline({ ...ink, points: fallbackSamples(ink.points) }, 1000, 1000 / ratio).map(([x, y]) => [x! / 1000, y! / 1000] as Pair)]]];
     degraded = true;
     recordFailure({ operation: "other", category: "internal", stage: "decode",
       step: "annotation-geometry", errorType: diagnosticErrorType(error) });
@@ -29,6 +29,27 @@ function geometry(ink: Ink, ratio: number): Geometry {
   const result = { ratio, paints, degraded };
   geometries.set(ink, result);
   return result;
+}
+
+// A degraded stroke must also have bounded SVG/export cost. Retain temporal
+// order and each block's extrema, rather than aliasing repeated backtracking
+// with a fixed stride. Original samples remain in the annotation unchanged.
+function fallbackSamples(points: Ink["points"]): Ink["points"] {
+  if (points.length <= 80) return points;
+  const keep = new Set([0, points.length - 1]);
+  const stride = Math.ceil(points.length / 16);
+  for (let start = 0; start < points.length; start += stride) {
+    const end = Math.min(points.length, start + stride);
+    let minX = start, maxX = start, minY = start, maxY = start;
+    for (let i = start + 1; i < end; i++) {
+      if (points[i]!.x < points[minX]!.x) minX = i;
+      if (points[i]!.x > points[maxX]!.x) maxX = i;
+      if (points[i]!.y < points[minY]!.y) minY = i;
+      if (points[i]!.y > points[maxY]!.y) maxY = i;
+    }
+    for (const i of [minX, maxX, minY, maxY, end - 1]) keep.add(i);
+  }
+  return [...keep].sort((a, b) => a - b).map(i => points[i]!);
 }
 
 // Compute in page coordinates, never in a stretched square: width is relative
