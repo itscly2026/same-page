@@ -89,6 +89,7 @@ for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]]) {
     await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 834, height: 1000 });
     await setInsets(page);
+    await page.evaluate(() => { document.activeElement?.blur(); window.scrollTo(0, 0); });
     await mkdir('artifacts/verification/safe-area', { recursive: true });
     await page.screenshot({ path: `artifacts/verification/safe-area/${name}-home.png` });
   });
