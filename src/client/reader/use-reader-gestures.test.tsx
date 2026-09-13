@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { editingTurnDirection, useReaderGestures } from "./use-reader-gestures";
+import { useReaderGestures } from "./use-reader-gestures";
 import { PdfPageCanvas } from "./pdf-page";
 import type { PDFDocumentProxy } from "./pdf-document";
 import type { PageTurnGesture } from "./use-paged-reader";
@@ -32,35 +32,42 @@ afterEach(() => {
 });
 
 describe("useReaderGestures", () => {
-  it.each(["turn", "cancel", "pinch"] as const)("handles editing %s without confusing object ownership or sequential finger samples", kind => {
-    const turn = vi.fn();
-    const zoom = vi.fn();
-    render(<GestureHarness onZoomChange={zoom} onEditingPageTurn={turn} />);
+  it.each(["turn", "cancel", "pinch"] as const)("shares two-finger %s with the pager using a combined frame", kind => {
+    const pageTurn: PageTurnGesture = { begin: vi.fn(), move: vi.fn(() => true), end: vi.fn(() => true), cancel: vi.fn(() => true) };
+    render(<GestureHarness onZoomChange={vi.fn()} pageTurn={pageTurn} twoFingerOnly />);
     const viewport = screen.getByTestId("gesture-viewport");
     mockGeometry(viewport, screen.getByTestId("gesture-content"));
     const sample = (pointerId: number, clientX: number) => ({ pointerId, clientX, clientY: 200, pointerType: "touch" });
     fireEvent.pointerDown(viewport, sample(1, 300));
     fireEvent.pointerDown(viewport, sample(2, 400));
-    // Separate events in one frame temporarily change the distance by 100%.
     fireEvent.pointerMove(viewport, sample(1, 200));
     fireEvent.pointerMove(viewport, sample(2, kind === "pinch" ? 400 : 300));
     flushAnimationFrame();
-    if (kind === "turn") expect(viewport).toHaveAttribute("data-edit-page-turn", "next");
+    expect(pageTurn.move).toHaveBeenCalledTimes(kind === "pinch" ? 0 : 1);
     if (kind === "cancel") fireEvent.pointerCancel(viewport, sample(1, 200));
     else fireEvent.pointerUp(viewport, sample(1, 200));
     fireEvent.pointerUp(viewport, sample(2, 300));
-    expect(turn.mock.calls).toEqual(kind === "turn" ? [["next"]] : []);
-    expect(viewport).not.toHaveAttribute("data-edit-page-turn");
-    if (kind !== "pinch") expect(zoom).not.toHaveBeenCalled();
+    expect(pageTurn.end).toHaveBeenCalledTimes(kind === "turn" ? 1 : 0);
   });
 
-  it("requires extra horizontal travel past the paper edge and rejects vertical or scaled gestures", () => {
-    const session = { center: { x: 500, y: 200 }, bounds: { left: -300, right: 1700 }, viewport: { left: 0, right: 1000 }, scaled: false };
-    expect(editingTurnDirection(session, { x: 879, y: 200 })).toBeNull();
-    expect(editingTurnDirection(session, { x: 880, y: 200 })).toBe("previous");
-    expect(editingTurnDirection(session, { x: -280, y: 200 })).toBe("next");
-    expect(editingTurnDirection(session, { x: 880, y: 500 })).toBeNull();
-    expect(editingTurnDirection({ ...session, scaled: true }, { x: 880, y: 200 })).toBeNull();
+  it.each(["move", "up", "cancel"] as const)("ignores mouse %s with the same numeric id as an active native touch", phase => {
+    const pageTurn: PageTurnGesture = { begin: vi.fn(), move: vi.fn(() => true), end: vi.fn(() => true), cancel: vi.fn(() => true) };
+    render(<GestureHarness onZoomChange={vi.fn()} pageTurn={pageTurn} nativeTouchScroll />);
+    const viewport = screen.getByTestId("gesture-viewport");
+    mockGeometry(viewport, screen.getByTestId("gesture-content"));
+    const touch = (clientX: number) => ({ identifier: 1, clientX, clientY: 200, target: viewport });
+    fireEvent.touchStart(viewport, { touches: [touch(500)], changedTouches: [touch(500)] });
+    const mouse = { pointerId: 1, pointerType: "mouse", clientX: 400, clientY: 200 };
+    if (phase === "move") fireEvent.pointerMove(viewport, mouse);
+    else if (phase === "up") fireEvent.pointerUp(viewport, mouse);
+    else fireEvent.pointerCancel(viewport, mouse);
+    expect(pageTurn.move).not.toHaveBeenCalled();
+    expect(pageTurn.end).not.toHaveBeenCalled();
+    expect(pageTurn.cancel).not.toHaveBeenCalled();
+    fireEvent.touchMove(viewport, { touches: [touch(300)], changedTouches: [touch(300)] });
+    expect(pageTurn.move).toHaveBeenCalledWith(expect.objectContaining({ x: -200 }));
+    fireEvent.touchEnd(viewport, { touches: [], changedTouches: [touch(300)] });
+    expect(pageTurn.end).toHaveBeenCalledOnce();
   });
 
   it("previews around the midpoint and commits one settled zoom", () => {
@@ -122,7 +129,7 @@ describe("useReaderGestures", () => {
     fireEvent.pointerDown(viewport, { pointerId: 2, clientX: 400, clientY: 200 });
     fireEvent.pointerMove(viewport, { pointerId: 2, clientX: 600, clientY: 200 });
 
-    expect(pageTurn.cancel).toHaveBeenCalledWith(1, true);
+    expect(pageTurn.cancel).toHaveBeenCalledWith(0, true);
     expect(boundary).not.toHaveAttribute("data-gesture-preview");
     expect(frames).toHaveLength(0);
   });
@@ -347,11 +354,13 @@ describe("useReaderGestures", () => {
 function GestureHarness({
   onZoomChange,
   pageTurn,
-  onEditingPageTurn,
+  twoFingerOnly = false,
+  nativeTouchScroll = false,
 }: {
   onZoomChange: (zoom: number) => void;
   pageTurn?: PageTurnGesture;
-  onEditingPageTurn?(direction: "previous" | "next"): void;
+  twoFingerOnly?: boolean;
+  nativeTouchScroll?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -362,8 +371,8 @@ function GestureHarness({
     contentRef,
     previewBoundaryRef,
     disabled: false,
-    twoFingerOnly: !!onEditingPageTurn,
-    onEditingPageTurn,
+    twoFingerOnly,
+    nativeTouchScroll,
     zoom,
     onZoomChange: (value) => {
       onZoomChange(value);

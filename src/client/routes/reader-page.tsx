@@ -111,6 +111,7 @@ function ReaderPageContent() {
   const workspace = opening.state.status === "ready" ? opening.state.workspace : null;
   const navigation = useAppNavigation();
   const [fitRequest, setFitRequest] = useState(0);
+  const [navigationRequest, setNavigationRequest] = useState(0);
   const [zoom, setZoom] = useReturnState("zoom", 1);
   const [editingEditor, setEditingEditor] = useState<AnnotationEditor | null>(null);
   const [annotationInteraction, setAnnotationInteraction] =
@@ -199,8 +200,14 @@ function ReaderPageContent() {
     currentPage,
     pageCount: document?.numPages ?? 1,
     documentKey: `${documentScopeKey ?? "none"}:${score?.currentVersion.id ?? "none"}`,
-    enabled: layout === "page" && document !== null,
-    onPageChange: setCurrentPage,
+    enabled: document !== null,
+    beforePageChange: editing ? () => editor.prepareNavigation() : undefined,
+    canCompletePage: editing ? editor.canNavigate : undefined,
+    onPageChange: page => {
+      if (layout === "page") setZoom(1);
+      else setNavigationRequest(value => value + 1);
+      setCurrentPage(page);
+    },
   });
   const requestPage = pager.request;
 
@@ -230,12 +237,10 @@ function ReaderPageContent() {
       }
       if (event.key === "ArrowLeft" || event.key === "PageUp") {
         event.preventDefault();
-        setZoom(1);
         requestPage("previous");
       }
       if (event.key === "ArrowRight" || event.key === "PageDown") {
         event.preventDefault();
-        setZoom(1);
         requestPage("next");
       }
     };
@@ -355,10 +360,7 @@ function ReaderPageContent() {
   const hasNewOfflineVersion =
     offline && offline.versionId !== score.currentVersion.id;
   const goToPage = (page: number) => {
-    setZoom(1);
-    const targetPage = clamp(page, 1, document.numPages);
-    if (layout === "page" && !editing) requestPage(targetPage);
-    else setCurrentPage(targetPage);
+    requestPage(clamp(page, 1, document.numPages));
   };
   const selectLayout = (value: ReaderLayout) => {
     setZoom(1);
@@ -584,7 +586,7 @@ function ReaderPageContent() {
             key={score.currentVersion.id}
             document={document}
             currentPage={currentPage}
-            onSelect={page => { setZoom(1); setCurrentPage(page); }}
+            onSelect={goToPage}
           />
         </>
       ) : null}
@@ -711,6 +713,8 @@ function ReaderPageContent() {
           />
         ) : (
           <ContinuousLayout
+            pager={pager}
+            navigationRequest={navigationRequest}
             fitRequest={fitRequest}
             document={document}
             currentPage={currentPage}

@@ -2513,7 +2513,7 @@ h1 {
 
 .page-reader__pager-window {
   position: relative;
-  overflow: clip;
+  overflow: visible;
 }
 
 .page-reader__canvas-stage:has([data-gesture-preview]),
@@ -2533,11 +2533,14 @@ h1 {
 }
 
 .page-reader__pager-track[data-page-turn-phase="dragging"],
-.page-reader__pager-track[data-page-turn-phase="settling"] {
+.page-reader__pager-track[data-page-turn-phase="settling"],
+.continuous-reader__page[data-page-turn-phase="settling"] {
   will-change: transform;
 }
 
-.page-reader__pager-track[data-page-turn-phase="settling"] {
+.page-reader__pager-track[data-page-turn-phase="settling"],
+.continuous-reader__page[data-page-turn-phase="settling"],
+[data-page-turn-phase="settling"] .annotated-pdf-page {
   transition: transform 240ms cubic-bezier(0.22, 0.72, 0.18, 1);
 }
 
@@ -2882,7 +2885,7 @@ h1 {
   height: 100%;
   overflow: auto;
   overscroll-behavior: contain;
-  touch-action: pan-x pan-y;
+  touch-action: pan-y;
   overflow-anchor: none;
 }
 
@@ -3256,12 +3259,7 @@ h1 {
 }
 .annotation-overlay[data-editing] button[data-transforming] { cursor: grabbing; }
 
-[data-edit-page-turn]::after {
-  content: "松开翻页"; position: fixed; top: 50%; right: 1rem;
-  color: white; background: rgb(0 0 0 / 65%); padding: .5rem .75rem;
-  border-radius: 1rem; pointer-events: none; z-index: 40; font-size: .8rem;
-}
-[data-edit-page-turn="previous"]::after { right: auto; left: 1rem; }
+
 
 .annotation-text-alignment { display: flex; gap: 4px; }
 .annotation-text-alignment button,
