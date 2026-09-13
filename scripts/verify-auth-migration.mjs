@@ -45,6 +45,20 @@ try {
   assert.throws(() => query(`INSERT INTO account(id,account_id,provider_id,user_id,updated_at)
     VALUES ('duplicate','u2','google','u1',200)`));
   assert.equal(query("SELECT issuer FROM account WHERE id='new-write'")[0][0].issuer, null);
+  const rollback = readFileSync(new URL("./sql/auth-1.7.2-rollback.sql", import.meta.url), "utf8");
+  query("INSERT INTO account(id,account_id,provider_id,user_id,updated_at) VALUES ('unsupported','subject','unsupported','u2',200)");
+  const beforeRollback = query("SELECT * FROM account ORDER BY id")[0];
+  assert.throws(() => apply(rollback), "Unknown providers must stop rollback without partial updates");
+  assert.deepEqual(query("SELECT * FROM account ORDER BY id")[0], beforeRollback);
+  query("DELETE FROM account WHERE id='unsupported'");
+  const rollbackSnapshot = query(snapshotSql);
+  apply(rollback);
+  const afterRollback = query(snapshotSql);
+  assert.deepEqual(afterRollback[0].map((row) => ({ ...row, issuer: null })), rollbackSnapshot[0].map((row) => ({ ...row, issuer: null })));
+  assert.deepEqual(afterRollback.slice(1), rollbackSnapshot.slice(1));
+  assert.equal(query("SELECT COUNT(*) AS count FROM account WHERE issuer IS NULL")[0][0].count, 0);
+  apply(rollback);
+  assert.deepEqual(query(snapshotSql), afterRollback, "Rollback preparation must be idempotent");
   query("DELETE FROM user WHERE id='u2'");
   assert.equal(query("SELECT id FROM account WHERE user_id='u2'")[0].length, 0);
   assert.equal(query("PRAGMA foreign_key_check")[0].length, 0);

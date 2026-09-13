@@ -39,9 +39,9 @@
     "diagnostics:inbox": "node scripts/diagnostic-reports.mjs"
   },
   "dependencies": {
-    "@better-auth/drizzle-adapter": "^1.7.2",
+    "@better-auth/drizzle-adapter": "1.7.3",
     "@tanstack/react-virtual": "^3.14.11",
-    "better-auth": "^1.7.2",
+    "better-auth": "1.7.3",
     "clipper2-ts": "2.0.1-18",
     "d3-polygon": "^3.0.1",
     "dexie": "^4.4.5",
@@ -76,7 +76,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.1",
-    "auth": "^1.7.2",
+    "auth": "1.7.3",
     "eslint": "^10.9.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.6",
@@ -92,5 +92,8 @@
     "vitest": "^4.1.11",
     "wrangler": "^4.127.1"
   },
-  "license": "AGPL-3.0-only"
+  "license": "AGPL-3.0-only",
+  "overrides": {
+    "@better-auth/core": "$better-auth"
+  }
 }

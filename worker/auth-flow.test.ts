@@ -1,3 +1,4 @@
+import authRollbackSql from "../scripts/sql/auth-1.7.2-rollback.sql?raw";
 import { effectiveCapabilities, emptyPermissions, noCapabilities } from "../src/shared/drive-permissions";
 import { setupNetwork } from "@msw/cloudflare";
 import { hashPassword } from "better-auth/crypto";
@@ -425,6 +426,30 @@ describe("authentication and choir boundaries", () => {
       body: JSON.stringify({ email: "one-more@example.test" }),
     });
     expect(ipLimited.status).toBe(429);
+  });
+
+  it("preserves identity and credentials when preparing post-upgrade accounts for rollback", async () => {
+    const registration = await registerWithPassword({ callWorker, email: "rollback@example.test", latestOtp });
+    const profile = { subject: "rollback-google", email: "rollback@example.test", name: "Rollback" };
+    await completeGoogleAuthentication(profile);
+    const database = createDatabase(env.DB);
+    const before = await database.select().from(account);
+    // 1.7.3 writes NULL, including when the same test is run with the 1.7.2 baseline.
+    await env.DB.prepare("UPDATE account SET issuer = NULL").run();
+    const statements = authRollbackSql.split(";").filter((sql) => sql.trim());
+    await env.DB.batch(statements.map((sql) => env.DB.prepare(sql)));
+    const after = await database.select().from(account);
+    expect(after.map((row) => ({ ...row, issuer: null }))).toEqual(before.map((row) => ({ ...row, issuer: null })));
+    expect(after.find((row) => row.providerId === "credential")?.issuer).toBe("local:credential");
+    expect(after.find((row) => row.providerId === "google")?.issuer).toBe("https://accounts.google.com");
+    const login = await signInWithPassword({ callWorker, email: profile.email });
+    expect(login.status).toBe(200);
+    await completeGoogleAuthentication(profile);
+    expect(await database.select().from(account)).toHaveLength(2);
+    expect(await database.select().from(user)).toHaveLength(1);
+    const session = await callWorker("/api/auth/get-session", { headers: { cookie: registration.cookie } });
+    expect(session.status).toBe(200);
+    expect((await session.json() as { user: { id: string } }).user.id).toBe(before[0].userId);
   });
 
   it("runs verified registration, password login, guest access, rotation and member authorization", async () => {

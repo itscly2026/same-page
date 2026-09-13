@@ -20,4 +20,12 @@
 
 阶段 B 发布须带有受测回滚流程：暂时停止认证写入（包括 Google 回调、注册、设密、重置和在途请求），按当前仅支持的 credential/Google provider 回填缺失 issuer，校验旧身份唯一性，再部署阶段 A 的应用，确认密码与 Google 登录成功才恢复认证入口。不得在新 Worker 仍可能创建身份时执行回填后直接切换。
 
-回填工具/演练随阶段 B 升级 PR 提供。该发布条件未满足前不得发布阶段 B。不要自动还原上线前数据库备份，它会丢弃上线后的合法写入；Time Travel 只是灾难恢复手段。
+回填命令为 `node scripts/prepare-auth-rollback.mjs --remote --auth-writes-paused`。该参数是操作人员对已停写并排空请求的声明，工具本身不创建维护窗口。先通过维护 Worker 暂停整个 `/api/auth/*` 路径、等待在途请求结束并确认流量停止，保留其他业务服务；回填后部署阶段 A 版本再恢复入口。在入口恢复前以受控请求验证密码与 Google 登录。没有可验证的停写窗口时不得执行此回滚，维持新版应用并向前修复。
+
+SQL 仅支持 credential/Google，拒绝未知 provider 或不匹配的既有 issuer。它只更新 NULL issuer，保留所有升级后写入，不逆转 migration 0026。本地 D1 测试覆盖拒绝时原子回滚、字段保留与幂等；同一认证测试在 1.7.2/新版本分别验证回填后密码与 Google 登录、原 user ID 和会话。不要自动还原上线前数据库备份，它会丢弃上线后的合法写入；Time Travel 只是灾难恢复手段。
+
+## 本次验证记录
+
+Node 24.21.0：阶段 A 的 21 项认证测试通过。回滚认证用例在阶段 A（1.7.2，NULL issuer 模拟新版记录）以及阶段 B（1.7.3 实际创建记录）分别执行通过。阶段 B 完整 Worker 测试 125 项通过，local D1 执行真实 migration/rollback SQL 并验证拒绝未知 provider 时不发生部分更新。生产停写、真实 Google OAuth 和真实发布回滚尚未执行。
+
+依赖固定在 1.7.3，`@better-auth/core` override 跟随 `$better-auth`，避免 adapter 的 peer range 自动引入另一个 core 版本。Dependabot 将认证包和 CLI 分组更新。`auth:schema` 重新生成后须保留本项目额外的 nullable issuer 过渡列与 provider 联合唯一索引定义，不可将 CLI 输出直接作为生产迁移。
