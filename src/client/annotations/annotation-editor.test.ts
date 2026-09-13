@@ -318,3 +318,11 @@ it("does not retry failed local writes or discard composing text to navigate", a
   expect(await editor.prepareNavigation()).toBe(false);
   expect(await savedText()).toMatchObject({ text: "retained" });
 });
+
+it("lets an active object retain ownership instead of interrupting it for a pending page", async () => {
+  editor.registerNavigationInterrupt(() => false);
+  const commit = vi.fn(async () => true);
+  editor.registerFinishCommit(commit);
+  expect(await editor.prepareNavigation()).toBe(false);
+  expect(commit).not.toHaveBeenCalled();
+});

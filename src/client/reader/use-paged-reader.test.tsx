@@ -40,6 +40,38 @@ describe("usePagedReader", () => {
     expect(onPageChange).not.toHaveBeenCalled();
   });
 
+  it("invalidates pending local admission when the document changes", async () => {
+    let admit!: (allowed: boolean) => void;
+    const beforePageChange = () => new Promise<boolean>(resolve => { admit = resolve; });
+    const onPageChange = vi.fn();
+    const { result, rerender } = renderHook(({ documentKey }) => usePagedReader({ currentPage: 2,
+      pageCount: 4, documentKey, enabled: true, beforePageChange, onPageChange }), { initialProps: { documentKey: "old" } });
+    finishRenders(result.current.beginPageRender, 3);
+    act(() => result.current.request("next"));
+    flushFrame();
+    rerender({ documentKey: "new" });
+    await act(async () => admit(true));
+    expect(result.current.phase).toBe("idle");
+    expect(result.current.anchorPage).toBe(2);
+    expect(onPageChange).not.toHaveBeenCalled();
+  });
+
+  it("rebounds if local admission changes during settling", () => {
+    let allowed = true;
+    const onPageChange = vi.fn();
+    const { result } = renderHook(() => usePagedReader({ currentPage: 2, pageCount: 4,
+      documentKey: "guard", enabled: true, onPageChange, canCompletePage: () => allowed }));
+    finishRenders(result.current.beginPageRender, 3);
+    act(() => result.current.request("next"));
+    flushFrame();
+    allowed = false;
+    act(() => result.current.finishTransition());
+    expect(result.current.progress).toBe(0);
+    expect(onPageChange).not.toHaveBeenCalled();
+    act(() => result.current.finishTransition());
+    expect(result.current.anchorPage).toBe(2);
+  });
+
   it("keeps the current page when a prefetched target fails and retries its render", () => {
     const { result } = renderPager(vi.fn());
     let render!: PageRenderLease;

@@ -2539,7 +2539,8 @@ h1 {
 }
 
 .page-reader__pager-track[data-page-turn-phase="settling"],
-.continuous-reader__page[data-page-turn-phase="settling"] {
+.continuous-reader__page[data-page-turn-phase="settling"],
+[data-page-turn-phase="settling"] .annotated-pdf-page {
   transition: transform 240ms cubic-bezier(0.22, 0.72, 0.18, 1);
 }
 

@@ -181,6 +181,7 @@ export function PageLayout({
                       pageNumber={item.page}
                       width={item.position === 0 ? renderedWidth : undefined}
                       fitViewport={item.position === 0 ? undefined : size}
+                      turn={item.position === 0 ? undefined : { position: item.position, progress: pager.progress }}
                       aspectRatio={item.page === currentPage ? pageRatio : undefined}
                       annotationProps={item.position === 0 ? annotationProps : { ...annotationProps, editing: false }}
                       interactionRef={annotationProps.editing && item.position === 0 ? noteInteraction : undefined}
@@ -281,6 +282,7 @@ export function ContinuousLayout({
           const hidden = (annotationProps.editing || active) && !current && !target;
           const top = target ? (viewportPosition.y) + Math.max(0, ((size.height) - targetWidth / item.aspectRatio) / 2) : item.start;
           const position = target ? (page > currentPage ? 1 : -1) : 0;
+          const presentation = pageTurnPresentation(pager, extent, position, top, active && (current || target));
           return <div
             className="continuous-reader__page"
             key={item.index}
@@ -289,14 +291,16 @@ export function ContinuousLayout({
             data-page-turn-target={target || undefined}
             data-edit-hidden={hidden || undefined}
             inert={hidden || target}
-            {...pageTurnPresentation(pager, extent, position, top, active && (current || target))}
-            style={{ ...pageTurnPresentation(pager, extent, position, top, active && (current || target)).style,
+            {...presentation}
+            style={{ ...presentation.style,
               ...(target ? { left: viewportPosition.x, width: extent } : {}) }}
           >
             <AnnotatedPdfPage
               document={document}
               pageNumber={page}
               width={target ? targetWidth : item.width}
+              fitViewport={target ? size : undefined}
+              turn={target ? { position, progress: pager.progress } : undefined}
               aspectRatio={item.aspectRatio}
               onPageRenderStart={target ? pager.beginPageRender : undefined}
               interactionRef={annotationProps.editing && current ? noteInteraction : undefined}
@@ -452,6 +456,7 @@ function AnnotatedPdfPage({
   pageNumber,
   width,
   fitViewport,
+  turn,
   aspectRatio,
   annotationProps,
   onPageRenderStart,
@@ -461,6 +466,7 @@ function AnnotatedPdfPage({
   pageNumber: number;
   width?: number;
   fitViewport?: { width: number; height: number };
+  turn?: { position: number; progress: number };
   aspectRatio?: number;
   annotationProps: AnnotationPageProps;
   onPageRenderStart?(page: number): PdfPageRenderLease;
@@ -478,6 +484,9 @@ function AnnotatedPdfPage({
       style={{
         width: renderedWidth,
         height: renderedWidth / resolvedAspectRatio,
+        // Enter at the paper edge, then arrive centered even when the target
+        // has a different aspect ratio from the zoomed current page.
+        transform: turn && fitViewport ? `translateX(${turn.position * (Math.abs(turn.progress) - 1) * Math.max(0, (fitViewport.width - renderedWidth) / 2)}px)` : undefined,
       }}
     >
       <PdfPageCanvas
@@ -501,12 +510,14 @@ function AnnotatedPdfPage({
 }
 
 
+const pageAspectRatios = new WeakMap<PDFDocumentProxy, Map<number, number>>();
+
 function usePdfPageAspectRatio(
   document: PDFDocumentProxy,
   pageNumber: number,
   knownRatio?: number,
 ) {
-  const [ratio, setRatio] = useState(knownRatio ?? 0.707);
+  const [geometry, setGeometry] = useState<{ document: PDFDocumentProxy; pageNumber: number; ratio: number } | null>(null);
   useEffect(() => {
     if (knownRatio !== undefined) {
       return;
@@ -517,7 +528,11 @@ function usePdfPageAspectRatio(
       .then((page) => {
         const viewport = page.getViewport({ scale: 1 });
         if (active && viewport.height > 0) {
-          setRatio(viewport.width / viewport.height);
+          const ratio = viewport.width / viewport.height;
+          const ratios = pageAspectRatios.get(document) ?? new Map<number, number>();
+          ratios.set(pageNumber, ratio);
+          pageAspectRatios.set(document, ratios);
+          setGeometry({ document, pageNumber, ratio });
         }
       })
       .catch(() => undefined);
@@ -525,5 +540,6 @@ function usePdfPageAspectRatio(
       active = false;
     };
   }, [document, knownRatio, pageNumber]);
-  return knownRatio ?? ratio;
+  return knownRatio ?? pageAspectRatios.get(document)?.get(pageNumber) ??
+    (geometry?.document === document && geometry.pageNumber === pageNumber ? geometry.ratio : 0.707);
 }

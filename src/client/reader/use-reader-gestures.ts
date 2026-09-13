@@ -25,6 +25,7 @@ interface PinchSession {
   zoom: number;
   contentBounds: DOMRect;
   contentPoint: Point;
+  scroll: Point;
   resolveAnchor?: (zoom: number) => Point;
 }
 
@@ -191,6 +192,16 @@ export function useReaderGestures({
     drained.current = points.current.size > 0;
   }, [pageTurn, disabled, cancelPairFrame, clearPreview]);
 
+  const drainSequence = () => {
+    cancelPairFrame();
+    clearPreview();
+    preview.current = null;
+    pendingCommit.current = null;
+    navigation.current = null;
+    pinch.current = null;
+    drained.current = points.current.size > 0;
+  };
+
   const pointerDown = (event: GesturePointer) => {
     if (disabled || (twoFingerOnly && event.pointerType !== "touch")) return;
     if (!twoFingerOnly && !(nativeTouchScroll && event.pointerType === "touch")) {
@@ -212,13 +223,12 @@ export function useReaderGestures({
     }
     if (points.current.size > 2) {
       pageTurn?.cancel(0, true);
-      drained.current = true;
-      cancelPairFrame(); clearPreview(); preview.current = null;
+      drainSequence();
       return;
     }
     if (points.current.size !== 2) return;
-    if (nativeAxis.current === "vertical") { drained.current = true; return; }
-    if (!twoFingerOnly && pageTurn && !pageTurn.cancel(0, true)) { drained.current = true; return; }
+    if (nativeAxis.current === "vertical") { drainSequence(); return; }
+    if (!twoFingerOnly && pageTurn && !pageTurn.cancel(0, true)) { drainSequence(); return; }
     const content = contentRef.current;
     if (!content) return;
     if (twoFingerOnly) onNavigationStart?.();
@@ -230,6 +240,7 @@ export function useReaderGestures({
       distance: distance(first, second),
       zoom,
       contentBounds,
+      scroll: { x: containerRef.current?.scrollLeft ?? 0, y: containerRef.current?.scrollTop ?? 0 },
       contentPoint: {
         x: center.x - contentBounds.left,
         y: center.y - contentBounds.top,
@@ -264,11 +275,11 @@ export function useReaderGestures({
         x:
           center.x -
           pinch.current.contentBounds.left -
-          pinch.current.contentPoint.x * scale,
+          pinch.current.contentPoint.x * scale + (containerRef.current?.scrollLeft ?? 0) - pinch.current.scroll.x,
         y:
           center.y -
           pinch.current.contentBounds.top -
-          pinch.current.contentPoint.y * scale,
+          pinch.current.contentPoint.y * scale + (containerRef.current?.scrollTop ?? 0) - pinch.current.scroll.y,
       },
       center,
       contentRatio: {

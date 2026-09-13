@@ -72,3 +72,50 @@ for (const editing of [false, true]) {
     });
   }
 }
+
+it("drains replaced pinch contacts without leaving an uncommitted transform", () => {
+  render(<Harness editing={false} initialZoom={1} />);
+  const viewport = screen.getByTestId("viewport");
+  const paper = screen.getByTestId("paper");
+  viewport.getBoundingClientRect = () => new DOMRect(0, 0, 1000, 800);
+  paper.getBoundingClientRect = () => new DOMRect(0, 0, 1000, 800);
+  const point = (pointerId: number, clientX: number) => ({ pointerId, clientX, clientY: 200, pointerType: "touch" });
+  fireEvent.pointerDown(viewport, point(1, 200));
+  fireEvent.pointerDown(viewport, point(2, 400));
+  fireEvent.pointerMove(viewport, point(2, 600));
+  flush();
+  expect(paper).toHaveAttribute("data-gesture-preview");
+  fireEvent.pointerUp(viewport, point(2, 600));
+  fireEvent.pointerDown(viewport, point(3, 450));
+  fireEvent.pointerUp(viewport, point(1, 200));
+  fireEvent.pointerUp(viewport, point(3, 450));
+  expect(paper).not.toHaveAttribute("data-gesture-preview");
+  expect(paper.style.getPropertyValue("--reader-gesture-scale")).toBe("");
+  expect(viewport).toHaveAttribute("data-zoom", "1");
+  expect(viewport).toHaveAttribute("data-page", "2");
+});
+
+it("does not apply consumed pan twice when two-finger translation becomes pinch", () => {
+  render(<Harness editing={false} initialZoom={2} />);
+  const viewport = screen.getByTestId("viewport");
+  const paper = screen.getByTestId("paper");
+  viewport.getBoundingClientRect = () => new DOMRect(0, 0, 1000, 800);
+  paper.getBoundingClientRect = () => new DOMRect(-viewport.scrollLeft, 0, 2000, 1600);
+  const point = (pointerId: number, clientX: number) => ({ pointerId, clientX, clientY: 200, pointerType: "touch" });
+  fireEvent.pointerDown(viewport, point(1, 400));
+  fireEvent.pointerDown(viewport, point(2, 600));
+  fireEvent.pointerMove(viewport, point(1, 300));
+  fireEvent.pointerMove(viewport, point(2, 500));
+  flush();
+  expect(viewport.scrollLeft).toBe(100);
+  fireEvent.pointerMove(viewport, point(2, 600));
+  flush();
+  // The original content anchor 500 maps to center 450 with scale 1.5,
+  // including the already consumed scroll of 100.
+  expect(paper.style.getPropertyValue("--reader-gesture-x")).toBe("-200px");
+  expect(paper.style.getPropertyValue("--reader-gesture-scale")).toBe("1.5");
+  fireEvent.pointerCancel(viewport, point(1, 300));
+  fireEvent.pointerUp(viewport, point(2, 600));
+  expect(viewport).toHaveAttribute("data-zoom", "2");
+  expect(viewport).toHaveAttribute("data-page", "2");
+});

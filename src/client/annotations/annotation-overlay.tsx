@@ -698,7 +698,11 @@ export function AnnotationOverlay({
     void notes.end("interrupt");
   };
   // Layout capture invokes this synchronously before the second touch can edit.
-  useEffect(() => editing ? editor?.registerNavigationInterrupt(interrupt) : undefined);
+  useEffect(() => editing ? editor?.registerNavigationInterrupt(() => {
+    if (objectTransform.current) return false;
+    interrupt();
+    return true;
+  }) : undefined);
   useEffect(() => editing ? editor?.registerNavigationGuard(() => !composingText.current && !textSavingRef.current) : undefined, [editing, editor]);
   useImperativeHandle(handoffRef, () => ({ interrupt, ownsObjectGesture: () => objectTransform.current !== null }));
 

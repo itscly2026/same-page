@@ -1151,7 +1151,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     fireEvent.pointerUp(viewport, sample(1, 100));
     expect(viewport).toHaveAttribute("data-zoom", "2");
     expect(screen.getByLabelText("第 1 页笔记层").closest(".annotation-overlay")).toHaveAttribute("data-editing");
-    // Pan the remaining 1000px of paper, then cross the 80px turn threshold.
+    // Consume the remaining paper pan, then use the shared swipe completion.
     viewport.scrollTop = 80;
     fireEvent.pointerDown(viewport, sample(3, 1500));
     fireEvent.pointerDown(viewport, sample(4, 1600));
@@ -1161,7 +1161,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     fireEvent.pointerUp(viewport, sample(3, 400));
     if (layout === "page") await finishPageTurn();
     await waitFor(() => expect(screen.getByLabelText("第 2 页笔记层").closest(".annotation-overlay")).toHaveAttribute("data-editing"));
-    expect(Number(viewport.dataset.zoom)).toBeLessThanOrEqual(1);
+    await waitFor(() => expect(Number(viewport.dataset.zoom)).toBeLessThanOrEqual(1));
     expect(screen.getByLabelText("第 2 页笔记层").closest(".annotation-overlay")).toHaveAttribute("data-tool", "text");
     if (layout === "page") expect(viewport.scrollTop).toBe(0);
     else expect(virtualTestState.scrollToIndex).toHaveBeenCalledWith(1, { align: "center" });
@@ -1511,7 +1511,7 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(activateVerifiedOfflineScore).not.toHaveBeenCalled();
   });
 
-  it("swipes between fitted pages and pans instead of turning after pinch zoom", async () => {
+  it("swipes fitted pages, consumes zoomed pan and allows zoomed edge taps", async () => {
     render(
       <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
         <Routes>
@@ -1633,6 +1633,8 @@ it("keeps a single exit while the PDF never settles", async () => {
     fireEvent.pointerUp(viewport, { pointerId: 3, pointerType: "touch" });
     fireEvent.pointerUp(viewport, { pointerId: 2, pointerType: "touch" });
 
+    const zoomedPaper = document.querySelector<HTMLElement>("[data-page-turn-current] .page-reader__content")!;
+    vi.spyOn(zoomedPaper, "getBoundingClientRect").mockImplementation(() => new DOMRect(-viewport.scrollLeft, 0, 2000, 1600));
     fireEvent.pointerDown(viewport, {
       pointerId: 4,
       pointerType: "touch",
@@ -1652,7 +1654,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       clientY: 100,
     });
     expect(currentRenderedPage()).toBe("2");
-    expect(track).toHaveAttribute("data-page-turn-phase", "disabled");
+    expect(track).toHaveAttribute("data-page-turn-phase", "idle");
 
     toggleChrome();
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
@@ -1779,6 +1781,8 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(Number.parseFloat(continuousContent?.style.width ?? "0")).toBeGreaterThan(
       continuousReader.clientWidth,
     );
+    vi.spyOn(continuousReader, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1000, 800));
+    vi.spyOn(continuousContent!, "getBoundingClientRect").mockImplementation(() => new DOMRect(-continuousReader.scrollLeft, 0, 2000, 1600));
     fireEvent.pointerDown(continuousReader, {
       pointerId: 1,
       clientX: 700,

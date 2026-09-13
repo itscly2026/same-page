@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { PDFDocument, degrees } from "pdf-lib";
 import { mkdir } from "node:fs/promises";
 import { after, before, test } from "node:test";
 import { chromium, webkit } from "playwright";
@@ -6,7 +8,18 @@ import { expect } from "@playwright/test";
 import { startVisualServer } from "./setup.mjs";
 import { resolveFixtureRequest } from "./fixtures.mjs";
 let server;
-before(async () => { server = await startVisualServer({ script: "dev" }); });
+let variedPdf;
+let selectedScore;
+before(async () => {
+  server = await startVisualServer({ script: "dev" });
+  const source = resolveFixtureRequest({ pathname: "/api/choirs/visual-choir/scores/visual-score/pdf", identity: "member" });
+  const pdf = await PDFDocument.load(source.body);
+  pdf.getPage(1).setSize(900, 500);
+  pdf.getPage(1).setRotation(degrees(90));
+  variedPdf = Buffer.from(await pdf.save());
+  selectedScore = JSON.parse(resolveFixtureRequest({ pathname: "/api/choirs/visual-choir/scores/visual-score/sync", identity: "member" }).body).score;
+  selectedScore.currentVersion = { ...selectedScore.currentVersion, sizeBytes: variedPdf.length, sha256: createHash("sha256").update(variedPdf).digest("hex") };
+});
 after(async () => server?.stop());
 
 for (const [name, engine] of Object.entries({ chromium, webkit })) {
@@ -14,15 +27,17 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
     const browser = await engine.launch({ headless: true });
     t.after(() => browser.close());
     for (const layout of ["page", "continuous"]) for (const editing of [false, true]) for (const zoom of [1, 2]) {
-      t.diagnostic(`${layout}, editing=${editing}, zoom=${zoom}`);
+      const scenario = `${layout}-${editing ? "edit" : "read"}-${zoom}`;
+      if (process.env.NAVIGATION_CASE && process.env.NAVIGATION_CASE !== scenario) continue;
+      t.diagnostic(scenario);
       const context = await browser.newContext({ viewport: { width: 834, height: 800 }, hasTouch: true,
         serviceWorkers: "block", reducedMotion: "no-preference" });
       await context.route("**/api/**", async route => route.fulfill(resolveFixtureRequest({
         pathname: new URL(route.request().url()).pathname, method: route.request().method(),
-        identity: "member", scenarioId: "reader-controls-narrow", cookie: "" })));
+        identity: "member", scenarioId: "reader-controls-narrow", cookie: "", pdf: variedPdf, selectedScore })));
       await context.addInitScript(() => localStorage.setItem("reader-gesture-hint-seen", "true"));
       const page = await context.newPage();
-      await page.goto(`${server.origin}/choirs/visual-choir/scores/visual-score`);
+      await page.goto(`${server.origin}/choirs/visual-choir/scores/visual-score`, { waitUntil: "domcontentloaded" });
       await page.locator("[data-page-turn-current] [data-pdf-canvas-active]").waitFor();
       await page.locator(".page-reader__viewport").click({ position: { x: 417, y: 400 } });
       if (layout === "continuous") {
@@ -51,6 +66,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       await send(viewport, touch, "move", xs(allowance + 100));
       const surface = viewport.locator('[data-page-turn-phase="dragging"]').first();
       await expect(surface).toHaveAttribute("data-page-turn-progress", /-0\./);
+
       await viewport.locator("[data-page-turn-target] [data-pdf-canvas-active]").waitFor();
       await send(viewport, touch, "move", xs(allowance + 105));
       const directory = "artifacts/verification/302";
@@ -69,6 +85,13 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       await send(viewport, touch, "up", xs(nextAllowance + 300));
       await expect.poll(() => currentPage(viewport)).toBe(2);
       await expect.poll(async () => Number(await viewport.getAttribute("data-zoom"))).toBeLessThanOrEqual(1);
+      await expect.poll(() => viewport.evaluate(node => {
+        const current = node.querySelector("[data-page-turn-current] .annotated-pdf-page");
+        const paper = current.getBoundingClientRect(), bounds = node.getBoundingClientRect();
+        return Math.abs(paper.width / paper.height - 500 / 900) < 0.001 &&
+          Math.abs((paper.left + paper.right - bounds.left - bounds.right) / 2) < 2 &&
+          Math.abs((paper.top + paper.bottom - bounds.top - bounds.bottom) / 2) < 5;
+      })).toBe(true);
       assert.equal(await viewport.locator('[data-edit-page-turn]').count(), 0);
       if (editing) await expect(viewport.locator('.annotation-overlay[data-editing]')).toHaveAttribute("data-tool", "text");
       if (editing && zoom === 2) await page.screenshot({ path: `${directory}/${name}-${layout}-complete.png` });
@@ -85,9 +108,13 @@ async function currentPage(viewport) {
 async function send(viewport, touch, phase, xs) {
   await viewport.evaluate((node, { touch, phase, xs }) => {
     if (touch) {
-      const samples = xs.map((clientX, identifier) => new Touch({ identifier: identifier + 1, target: node, clientX, clientY: 300 }));
-      node.dispatchEvent(new TouchEvent(`touch${{ down: "start", move: "move", up: "end" }[phase]}`,
-        { bubbles: true, cancelable: true, changedTouches: samples, touches: phase === "up" ? [] : samples, targetTouches: phase === "up" ? [] : samples }));
+      // Desktop WebKit does not expose a constructible Touch. Exercise the
+      // native listener's complete contact snapshot; trusted touch/momentum is
+      // covered separately through Chromium's input protocol below.
+      const samples = xs.map((clientX, identifier) => ({ identifier: identifier + 1, target: node, clientX, clientY: 300 }));
+      const event = new Event(`touch${{ down: "start", move: "move", up: "end" }[phase]}`, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, { changedTouches: { value: samples }, touches: { value: phase === "up" ? [] : samples } });
+      node.dispatchEvent(event);
     } else xs.forEach((clientX, index) => node.dispatchEvent(new PointerEvent(`pointer${phase}`,
       { bubbles: true, pointerType: "touch", pointerId: index + 1, clientX, clientY: 300 })));
     return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -104,7 +131,7 @@ test("Chromium native touch keeps vertical momentum and reserves horizontal navi
     identity: "member", scenarioId: "reader-controls-narrow", cookie: "" })));
   await context.addInitScript(() => localStorage.setItem("reader-gesture-hint-seen", "true"));
   const page = await context.newPage();
-  await page.goto(`${server.origin}/choirs/visual-choir/scores/visual-score`);
+  await page.goto(`${server.origin}/choirs/visual-choir/scores/visual-score`, { waitUntil: "domcontentloaded" });
   await page.locator("[data-page-turn-current] [data-pdf-canvas-active]").waitFor();
   await page.locator(".page-reader__viewport").click({ position: { x: 417, y: 400 } });
   await page.getByRole("button", { name: "更多", exact: true }).click();
@@ -115,12 +142,13 @@ test("Chromium native touch keeps vertical momentum and reserves horizontal navi
     document.addEventListener("touchmove", event => node.touchDecisions.push(event.defaultPrevented));
   });
   const cdp = await context.newCDPSession(page);
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 400, y: 650 }] });
+  let timestamp = Date.now() / 1000;
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", timestamp, touchPoints: [{ x: 400, y: 650 }] });
   for (const y of [610, 560, 500, 430, 350]) {
-    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 400, y }] });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", timestamp: timestamp += 0.016, touchPoints: [{ x: 400, y }] });
     await page.waitForTimeout(16);
   }
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", timestamp: timestamp + 0.008, touchPoints: [] });
   const releasedTop = await viewport.evaluate(node => node.scrollTop);
   await expect.poll(() => viewport.evaluate(node => node.scrollTop)).toBeGreaterThan(releasedTop + 10);
   assert.ok((await viewport.evaluate(node => node.touchDecisions)).every(value => !value));

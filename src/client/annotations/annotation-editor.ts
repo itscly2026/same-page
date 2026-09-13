@@ -55,8 +55,8 @@ export class AnnotationEditor {
     this.finishCommits.add(commit);
     return () => { this.finishCommits.delete(commit); };
   }
-  private readonly navigationInterrupts = new Set<() => void>();
-  registerNavigationInterrupt(interrupt: () => void) {
+  private readonly navigationInterrupts = new Set<() => boolean>();
+  registerNavigationInterrupt(interrupt: () => boolean) {
     this.navigationInterrupts.add(interrupt);
     return () => { this.navigationInterrupts.delete(interrupt); };
   }
@@ -70,7 +70,7 @@ export class AnnotationEditor {
     if (!this.active || this.getSnapshot() !== "idle") return false;
     const signal = this.lifetime.signal;
     try {
-      for (const interrupt of this.navigationInterrupts) interrupt();
+      for (const interrupt of this.navigationInterrupts) { if (!interrupt()) return false; }
       for (const commit of [...this.finishCommits]) {
         if (!await untilAborted(commit(), signal)) return false;
       }
