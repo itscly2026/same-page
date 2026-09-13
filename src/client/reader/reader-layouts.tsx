@@ -1,12 +1,11 @@
 import { useReturnViewport } from "../navigation/use-return-viewport";
-import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
+import { useContinuousReaderLayout } from "./use-continuous-reader-layout";
 import {
   type CSSProperties,
   lazy,
   type RefObject,
   Suspense,
   type TransitionEvent as ReactTransitionEvent,
-  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -242,126 +241,22 @@ export function ContinuousLayout({
   onToggleChrome,
   annotationProps,
 }: ReaderLayoutProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
   const noteInteraction = useRef<AnnotationInteractionHandle>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const alignedPage = useRef<{ page: number; geometryReady: boolean } | null>(null);
-  const size = useElementSize(scrollRef);
-  const pageWidth = Math.max(1, size.width * zoom);
-  const ratios = usePageAspectRatios(document);
-  const geometryReady = ratios.length === document.numPages;
-  const [fitPadding, setFitPadding] = useState(false);
-  const startPadding = fitPadding ? Math.max(0, (size.height - pageWidth / (ratios[0] ?? 0.707)) / 2) : 0;
-  const previousPadding = useRef(startPadding);
-  useLayoutEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop += startPadding - previousPadding.current;
-    previousPadding.current = startPadding;
-  }, [startPadding]);
-  const fitted = useRef({ request: 0, zoom: 1 });
-  const pendingFit = useRef<{ page: number; zoom: number; center?: boolean } | null>(null);
-  useEffect(() => {
-    if (!fitRequest || !geometryReady || size.width <= 0 || size.height <= 0) return;
-    if (fitted.current.request === fitRequest && Math.abs(zoom - fitted.current.zoom) > 0.001) return;
-    const next = calculateFittedPageWidth(size.width, size.height, ratios[currentPage - 1]) / size.width;
-    if (Math.abs(next - zoom) > 0.001 || fitted.current.request !== fitRequest) {
-      alignedPage.current = null;
-      pendingFit.current = { page: currentPage, zoom: next };
-    }
-    fitted.current = { request: fitRequest, zoom: next };
-    onZoomChange(next);
-  }, [fitRequest, geometryReady, size.width, size.height, ratios, currentPage, zoom, onZoomChange]);
-  // PDF page geometry is known independently of canvas rendering. Key the
-  // virtual measurements by that geometry, so zoom never reuses old heights.
-  const getItemKey = useCallback((index: number) => `${index}:${pageWidth}:${ratios[index] ?? 0.707}`, [pageWidth, ratios]);
-  // TanStack Virtual intentionally exposes mutable measurement functions.
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const virtualizer = useVirtualizer({
-    count: document.numPages,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: (index) => pageWidth / (ratios[index] ?? 0.707) + 8,
-    getItemKey,
-    overscan: 2,
-    // Editing hides neighbours; padding lets even the first and last short
-    // pages sit at the viewport center after a fit-and-turn.
-    paddingStart: startPadding,
-    paddingEnd: fitPadding ? Math.max(0, (size.height - pageWidth / (ratios[document.numPages - 1] ?? 0.707)) / 2) : 0,
-    rangeExtractor: range => annotationProps.editing
-      ? [...new Set([...defaultRangeExtractor(range), currentPage - 1])].sort((a, b) => a - b)
-      : defaultRangeExtractor(range),
+  const { scrollRef, contentRef, onScroll, geometryGestures, width, height, items } = useContinuousReaderLayout({
+    document, currentPage, zoom, fitRequest,
+    editing: annotationProps.editing,
+    canTurnEditingPage: () => annotationProps.editor?.getSnapshot() === "idle",
+    onZoomChange, onPageChange,
   });
-
-  useEffect(() => {
-    if (pendingFit.current) {
-      if (Math.abs(zoom - pendingFit.current.zoom) > 0.001) return;
-      virtualizer.scrollToIndex(pendingFit.current.page - 1, { align: pendingFit.current.center ? "center" : "start" });
-      alignedPage.current = { page: pendingFit.current.page, geometryReady };
-      pendingFit.current = null;
-      return;
-    }
-    // Initial zero-width measurements cannot establish the saved page position.
-    if (size.width <= 0 || size.height <= 0 || annotationProps.editing ||
-      (alignedPage.current?.page === currentPage && alignedPage.current.geometryReady === geometryReady)) return;
-    // Correct estimated offsets once the real geometry has committed.
-    alignedPage.current = { page: currentPage, geometryReady };
-    const scrollElement = scrollRef.current;
-    const target = virtualizer
-      .getVirtualItems()
-      .find((item) => item.index === currentPage - 1);
-    const visible =
-      scrollElement &&
-      target &&
-      target.start >= scrollElement.scrollTop &&
-      target.end <= scrollElement.scrollTop + scrollElement.clientHeight;
-    if (!visible) {
-      virtualizer.scrollToIndex(currentPage - 1, { align: "start" });
-    }
-  }, [annotationProps.editing, currentPage, virtualizer, size.width, size.height, geometryReady, pageWidth, fitRequest, zoom]);
-
-  useReturnViewport(scrollRef, "continuous", size.width > 0);
-
   const gestureHandlers = useReaderGestures({
     containerRef: scrollRef,
-    contentRef,
+    contentRef: contentRef,
     disabled: false,
     twoFingerOnly: annotationProps.editing,
     onNavigationStart: () => noteInteraction.current?.interrupt(),
     isObjectGestureActive: () => noteInteraction.current?.ownsObjectGesture() ?? false,
-    zoom,
-    onZoomChange,
-    onTap: onToggleChrome,
-    constrainScroll: () => {
-      const element = scrollRef.current;
-      if (!element || !annotationProps.editing) return;
-      const page = virtualizer.getVirtualItems().find(item => item.index === currentPage - 1);
-      if (page) {
-        const centeredStart = page.start - Math.max(0, (element.clientHeight - (page.size - 8)) / 2);
-        element.scrollTop = Math.max(centeredStart, Math.min(element.scrollTop, Math.max(centeredStart, page.end - 8 - element.clientHeight)));
-      }
-    },
-    onEditingPageTurn: annotationProps.editing ? direction => {
-      const nextPage = currentPage + (direction === "next" ? 1 : -1);
-      if (nextPage < 1 || nextPage > document.numPages || annotationProps.editor?.getSnapshot() !== "idle") return;
-      const nextZoom = calculateFittedPageWidth(size.width, size.height, ratios[nextPage - 1] ?? 0.707) / Math.max(1, size.width);
-      setFitPadding(true);
-      pendingFit.current = { page: nextPage, zoom: nextZoom, center: true };
-      if (scrollRef.current) scrollRef.current.scrollLeft = 0;
-      onZoomChange(nextZoom); onPageChange(nextPage);
-    } : undefined,
-    nativeTouchScroll: !annotationProps.editing,
-    minimumZoom: Math.min(1, calculateFittedPageWidth(size.width, size.height, ratios[currentPage - 1] ?? 0.707) / Math.max(1, size.width)),
-    captureAnchor: (center) => {
-      const bounds = contentRef.current!.getBoundingClientRect();
-      const point = { x: center.x - bounds.left, y: center.y - bounds.top };
-      const page = virtualizer.getVirtualItems().find(item => item.end > point.y);
-      // Page gaps remain 8px at every zoom; anchor within the actual page,
-      // rather than treating the whole virtual list as one scalable image.
-      const gaps = (page?.index ?? 0) * 8;
-      return nextZoom => ({
-        x: point.x * nextZoom / zoom,
-        y: (point.y - gaps - startPadding) * nextZoom / zoom + gaps + (fitPadding
-          ? Math.max(0, (size.height - size.width * nextZoom / (ratios[0] ?? 0.707)) / 2) : 0),
-      });
-    },
+    zoom, onZoomChange, onTap: onToggleChrome,
+    ...geometryGestures,
   });
 
   return (
@@ -372,32 +267,18 @@ export function ContinuousLayout({
       data-editing={annotationProps.editing || undefined}
       ref={scrollRef}
       {...gestureHandlers}
-      onScroll={() => {
-        // An estimated scroll event can queue an obsolete page update before
-        // real geometry is aligned. Do not turn that estimate into user intent.
-        if (annotationProps.editing || pendingFit.current || !geometryReady || !alignedPage.current?.geometryReady) return;
-        const scrollTop = scrollRef.current?.scrollTop ?? 0;
-        // Editing and preview follow the page at the viewport center.
-        const threshold = scrollTop + (scrollRef.current?.clientHeight ?? 0) / 2;
-        // Scroll events can precede the virtual window update; use full geometry.
-        const first = virtualizer.getVirtualItemForOffset(threshold);
-        if (first) {
-          const page = first.index + 1;
-          alignedPage.current = { page, geometryReady: true };
-          onPageChange(page);
-        }
-      }}
+      onScroll={onScroll}
       aria-label={annotationProps.editing ? "当前页编辑" : "连续滚动阅读"}
     >
       <div
         className="continuous-reader__inner"
         ref={contentRef}
         style={{
-          width: Math.max(size.width, pageWidth),
-          height: virtualizer.getTotalSize(),
+          width: width,
+          height: height,
         }}
       >
-        {virtualizer.getVirtualItems().map((item) => (
+        {items.map((item) => (
           <div
             className="continuous-reader__page"
             key={item.index}
@@ -409,8 +290,8 @@ export function ContinuousLayout({
             <AnnotatedPdfPage
               document={document}
               pageNumber={item.index + 1}
-              width={pageWidth}
-              aspectRatio={ratios[item.index] ?? 0.707}
+              width={item.width}
+              aspectRatio={item.aspectRatio}
               interactionRef={annotationProps.editing && item.index + 1 === currentPage ? noteInteraction : undefined}
               annotationProps={item.index + 1 === currentPage ? annotationProps : { ...annotationProps, editing: false }}
             />
@@ -622,21 +503,4 @@ function usePdfPageAspectRatio(
     };
   }, [document, knownRatio, pageNumber]);
   return knownRatio ?? ratio;
-}
-
-function usePageAspectRatios(document: PDFDocumentProxy) {
-  const [geometry, setGeometry] = useState<{ document: PDFDocumentProxy; ratios: number[] } | null>(null);
-  useEffect(() => {
-    let active = true;
-    // Metadata only: this does not render or retain canvases for offscreen pages.
-    void Promise.all(Array.from({ length: document.numPages }, async (_, index) => {
-      try {
-        const page = await document.getPage(index + 1);
-        const viewport = page.getViewport({ scale: 1 });
-        return viewport.width / viewport.height;
-      } catch { return 0.707; }
-    })).then(ratios => { if (active) setGeometry({ document, ratios }); });
-    return () => { active = false; };
-  }, [document]);
-  return geometry?.document === document ? geometry.ratios : [];
 }

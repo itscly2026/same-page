@@ -1118,6 +1118,8 @@ it("keeps a single exit while the PDF never settles", async () => {
   });
 
   it.each(["page", "continuous"] as const)("turns while editing %s and fits the destination after zooming", async layout => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1000);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(800);
     vi.mocked(fetch).mockImplementation((input: string | URL | Request) => Promise.resolve(
       (String(input).includes("/layers") || String(input).includes("/sync?"))
         ? readerLayersResponse(String(input), { layers: completeReaderLayers().map(layer => ({ ...layer, canEdit: layer.kind === "personal" })), sharedLayerRevision: 0, permissions: { canManageLayers: false } })
