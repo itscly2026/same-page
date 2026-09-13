@@ -26,7 +26,7 @@ import { NoteInteraction } from "./note-interaction";
 import { useEditorPersistence } from "./use-annotation-editor";
 import { calculateTextEditorLayout } from "./text-editor-layout";
 
-import { inkSvgPaths, inkHit, inkFillRule } from "./ink-geometry";
+import { inkSvgPaths, inkHit, inkFillRule, inkRenderingDegraded } from "./ink-geometry";
 import { defaultToolStyle, type ToolStyle } from "./tool-style";
 import { highlighterNibPath } from "./highlighter-geometry";
 import { TextAlignment, TextSizeInput } from "./style-fields";
@@ -756,7 +756,8 @@ export function AnnotationOverlay({
                   vectorEffect="non-scaling-stroke"
                 />
               ) : null}
-              {inkSvgPaths(payload, aspectRatio).map((path, index) => <path key={index} data-ink-stroke d={path} fill={color} fillRule={inkFillRule(payload)} opacity={payload.opacity ?? 1} />)}
+              {inkSvgPaths(payload, aspectRatio).map((path, index) => <path key={index} data-ink-stroke d={path} fill={color} fillRule={inkFillRule(payload, aspectRatio)} opacity={payload.opacity ?? 1} />)}
+              {inkRenderingDegraded(payload, aspectRatio) && <text x={payload.points[0]!.x * 1000} y={payload.points[0]!.y * 1000 - 12} fontSize="14" fill="#92400e" role="status">此笔迹已简化显示</text>}
               {selectedId === annotation.id && tool === "select" && <path d={inkSvgPaths(payload, aspectRatio).join("")} fill="none" stroke="#014653" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray="4 3" />}
 
             </g>
@@ -764,7 +765,7 @@ export function AnnotationOverlay({
         })}
         {editing && draftShape ? <ShapePreview payload={draftShape} color={activeLayerColor} /> : null}
         {editing && draftStroke ? (
-          <g>{inkSvgPaths(draftStroke, aspectRatio).map((path, index) => <path key={index} data-ink-draft d={path} fill={activeLayerColor} fillRule={inkFillRule(draftStroke)} opacity={draftStroke.opacity ?? 1} />)}</g>
+          <g>{inkSvgPaths(draftStroke, aspectRatio).map((path, index) => <path key={index} data-ink-draft d={path} fill={activeLayerColor} fillRule={inkFillRule(draftStroke, aspectRatio)} opacity={draftStroke.opacity ?? 1} />)}</g>
         ) : null}
         {hover && canStartEdit && <g pointerEvents="none" aria-label="笔尖预览">
           {tool === "eraser" && <defs>

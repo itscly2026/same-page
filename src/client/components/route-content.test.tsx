@@ -33,3 +33,18 @@ it("shows only the content-first reader shell while the module loads", () => {
   expect(screen.queryByText("重新加载页面")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "返回云盘" })).toBeInTheDocument();
 });
+
+it("records render failures without serializing private messages or component stacks", async () => {
+  const { clearDiagnostics, exportDiagnostics } = await import("../diagnostics/diagnostics");
+  clearDiagnostics();
+  const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+  function Failed(): never { throw new RangeError("private score name and points"); }
+  try {
+    render(<MemoryRouter initialEntries={["/choirs/drive/scores/score"]}><RouteContent><Failed /></RouteContent></MemoryRouter>);
+    expect(screen.getByRole("alert")).toHaveTextContent("乐谱阅读器加载失败");
+    const report = exportDiagnostics();
+    expect(report).toContain('"route-render"');
+    expect(report).toContain('"RangeError"');
+    expect(report).not.toMatch(/private score|points|Failed|\/choirs/);
+  } finally { quiet.mockRestore(); clearDiagnostics(); }
+});

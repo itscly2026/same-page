@@ -5,9 +5,9 @@ export type DiagnosticCategory = typeof diagnosticCategories[number];
 export const diagnosticStages = ["request", "prepare", "decode", "push", "cleanup"] as const;
 export type DiagnosticStage = typeof diagnosticStages[number];
 
-export const diagnosticSteps = ["outbox-scan", "sync-lock", "sync-layers", "sync-layers-request", "sync-layers-response", "sync-layers-identity", "sync-layers-cache", "sync-layers-snapshot", "reader-source", "reader-document", "reader-presentation", "sync-push", "sync-pull", "sync-apply", "draft-save", "sync-retry", "conflict-resolve", "offline-read", "offline-file", "offline-manifest", "offline-snapshot"] as const;
+export const diagnosticSteps = ["route-render", "annotation-geometry", "outbox-scan", "sync-lock", "sync-layers", "sync-layers-request", "sync-layers-response", "sync-layers-identity", "sync-layers-cache", "sync-layers-snapshot", "reader-source", "reader-document", "reader-presentation", "sync-push", "sync-pull", "sync-apply", "draft-save", "sync-retry", "conflict-resolve", "offline-read", "offline-file", "offline-manifest", "offline-snapshot"] as const;
 export type DiagnosticStep = typeof diagnosticSteps[number];
-export const diagnosticErrorTypes = ["BulkError", "ModifyError", "TimeoutError", "UnknownError", "NotReadableError", "DatabaseClosedError", "TransactionInactiveError", "QuotaExceededError", "DataError", "SchemaError", "InvalidStateError", "AbortError", "SecurityError", "NotFoundError", "ConstraintError", "TypeError", "ValidationError", "OtherError"] as const;
+export const diagnosticErrorTypes = ["RangeError", "BulkError", "ModifyError", "TimeoutError", "UnknownError", "NotReadableError", "DatabaseClosedError", "TransactionInactiveError", "QuotaExceededError", "DataError", "SchemaError", "InvalidStateError", "AbortError", "SecurityError", "NotFoundError", "ConstraintError", "TypeError", "ValidationError", "OtherError"] as const;
 export type DiagnosticErrorType = typeof diagnosticErrorTypes[number];
 
 export function categoryForStatus(status: number): DiagnosticCategory {

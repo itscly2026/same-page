@@ -33,7 +33,7 @@ export async function exportAnnotatedPdf(source: PDFDocumentProxy, annotations: 
             ring.forEach(([x, y], index) => { if (index === 0) context.moveTo(x, y); else context.lineTo(x, y); });
             context.closePath();
           }
-          context.fill(inkFillRule(payload));
+          context.fill(inkFillRule(payload, viewport.width / viewport.height));
         }
       } else if (payload.kind === "shape") {
         context.lineWidth = payload.strokeWidth * viewport.width;
