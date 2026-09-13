@@ -1,4 +1,6 @@
-import clipping, { type MultiPolygon, type Pair } from "polygon-clipping";
+import type { MultiPolygon, Pair } from "./coverage-clipping";
+import { createCoverageClipping } from "./coverage-clipping";
+import { highlighterSamples } from "./highlighter-samples";
 import { polygonHull } from "d3-polygon";
 import type { AnnotationPayload } from "../../shared/annotations";
 
@@ -26,24 +28,20 @@ function footprint(pose: Pose, round: boolean): Pair[] {
 const rounded = (value: number) => Math.round(value * 1e8) / 1e8;
 const asMulti = (ring: Pair[]): MultiPolygon => [[ring]];
 
-type State = { key: string; count: number; last: Point; pose: Pose; nib: Pair[]; coats: MultiPolygon[] };
-// Retain only the most recent prefix per stroke. React's live snapshots share
-// immutable point objects; completed/edited snapshots naturally invalidate it.
-const cache = new WeakMap<Point, State>();
+type State = { pose: Pose; nib: Pair[]; coats: MultiPolygon[] };
+// Payloads are immutable. Retain only one intrinsic aspect ratio per payload.
+const cache = new WeakMap<Ink, { ratio: number; coats: MultiPolygon[] }>();
 export function highlighterPasses(ink: Ink, aspectRatio: number): MultiPolygon[] {
-  const first = ink.points[0];
+  const cached = cache.get(ink);
+  if (cached?.ratio === aspectRatio) return cached.coats;
+  const points = highlighterSamples(ink, aspectRatio);
+  const first = points[0];
   if (!first) return [];
-  const key = `${aspectRatio}:${ink.nib}:${ink.strokeWidth}`;
-  const cached = cache.get(first);
-  let state: State;
-  if (cached?.key === key && cached.count <= ink.points.length && cached.last === ink.points[cached.count - 1]) {
-    state = { ...cached, coats: [...cached.coats] };
-  } else {
-    const pose = highlighterPose(ink, first, aspectRatio), nib = footprint(pose, ink.nib === "round");
-    state = { key, count: 1, last: first, pose, nib, coats: [asMulti(nib)] };
-  }
-  for (let index = state.count; index < ink.points.length; index++) {
-    const point = ink.points[index]!, end = highlighterPose(ink, point, aspectRatio), start = state.pose;
+  const clipping = createCoverageClipping();
+  const pose = highlighterPose(ink, first, aspectRatio), nib = footprint(pose, ink.nib === "round");
+  const state: State = { pose, nib, coats: [asMulti(nib)] };
+  for (let index = 1; index < points.length; index++) {
+    const point = points[index]!, end = highlighterPose(ink, point, aspectRatio), start = state.pose;
     // A flat nib has 180-degree symmetry. Interpolate a rotation so low-rate
     // pen events do not replace the swept footprint with a large bounding box.
     const delta = Math.atan2(Math.sin(2 * (end.angle - start.angle)), Math.cos(2 * (end.angle - start.angle))) / 2;
@@ -67,10 +65,8 @@ export function highlighterPasses(ink: Ink, aspectRatio: number): MultiPolygon[]
       state.nib = nib;
     }
     state.pose = end;
-    state.count = index + 1;
-    state.last = point;
   }
-  cache.set(first, state);
+  cache.set(ink, { ratio: aspectRatio, coats: state.coats });
   return state.coats;
 }
 export function highlighterNibPath(ink: Pick<Ink, "nib" | "strokeWidth">, point: Point, aspectRatio: number): string {

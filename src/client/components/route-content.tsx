@@ -1,3 +1,4 @@
+import { diagnosticErrorType, recordFailure } from "../diagnostics/diagnostics";
 import { ReaderLoading } from "../navigation/reader-loading";
 import { Component, Suspense, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -40,5 +41,9 @@ function RouteFeedback({ failed = false }: { failed?: boolean }) {
 class RouteErrorBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(error: unknown) {
+    recordFailure({ operation: "other", category: "internal", stage: "decode",
+      step: "route-render", errorType: diagnosticErrorType(error) });
+  }
   render() { return this.state.failed ? this.props.fallback : this.props.children; }
 }
