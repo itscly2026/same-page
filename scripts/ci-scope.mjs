@@ -100,6 +100,8 @@ function selectChecks(files) {
 
 function checksForPath(file) {
   if (isDocumentation(file)) return [];
+  // Android has its own build workflow; shell-only changes never deploy the web app.
+  if (file.startsWith("android/")) return [];
   if (file.startsWith(".github/")) {
     return checkNames.filter((name) => name !== "deploy");
   }

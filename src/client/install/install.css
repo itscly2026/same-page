@@ -53,3 +53,6 @@
   .install-page h1 { font-size: 23px; }
 }
 .install-suggestion .install-button { padding: 8px 14px; }
+
+.install-apk { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--border, #dce3e2); }
+.install-apk > a { display: inline-flex; text-decoration: none; }

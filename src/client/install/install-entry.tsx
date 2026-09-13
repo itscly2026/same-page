@@ -2,12 +2,12 @@ import { prepareInstallLink } from "./install-transfer";
 import { useEffect, useState } from "react";
 import { Button } from "react-aria-components";
 import { Download, X } from "lucide-react";
-import { useInstall } from "./install-context";
+import { detectInstallGuide, useInstall } from "./install-context";
 
 export function InstallButton({ className }: { className?: string }) {
   const install = useInstall();
   if (!install || install.hidden) return null;
-  return <Button className={`install-button ${className ?? (install.nativeAvailable ? "primary-button" : "secondary-button")}`} onPress={install.open}><Download size={18} aria-hidden="true" />添加到主屏幕</Button>;
+  return <Button className={`install-button ${className ?? (install.nativeAvailable ? "primary-button" : "secondary-button")}`} onPress={install.open}><Download size={18} aria-hidden="true" />{detectInstallGuide(navigator.userAgent, navigator.maxTouchPoints) === "android" ? "安装合谱" : "添加到主屏幕"}</Button>;
 }
 
 export function InstallSuggestion() {

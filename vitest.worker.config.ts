@@ -12,7 +12,7 @@ export default defineConfig({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
         d1Databases: ["DB"],
-        r2Buckets: ["SCORES_BUCKET"],
+        r2Buckets: ["SCORES_BUCKET", "ANDROID_RELEASES"],
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(
             path.join(process.cwd(), "migrations"),

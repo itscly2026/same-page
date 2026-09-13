@@ -1,3 +1,4 @@
+import { androidReleaseRoutes } from "./android-release";
 import { trialRoutes } from "./choirs/trial-routes";
 import { excludeDeletedResources } from "./choirs/deleted-access";
 import { permissionRoutes } from "./permissions/routes";
@@ -44,6 +45,8 @@ app.get("/api/health", (context) => {
 });
 
 app.on(["GET", "POST"], "/api/auth/*", handleAuthRequest);
+
+app.route("/api", androidReleaseRoutes);
 
 app.use("/api/*", excludeDeletedResources);
 app.route("/api", trialRoutes);

@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database;
   SCORES_BUCKET: R2Bucket;
+  ANDROID_RELEASES?: R2Bucket;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   RESEND_API_KEY_SAMEPAGE: string;

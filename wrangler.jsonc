@@ -20,6 +20,7 @@
     }
   ],
   "r2_buckets": [
+    { "binding": "ANDROID_RELEASES", "bucket_name": "same-page-android-releases" },
     {
       "binding": "SCORES_BUCKET",
       "bucket_name": "same-page-production-scores"

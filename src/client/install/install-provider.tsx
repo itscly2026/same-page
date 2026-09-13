@@ -1,3 +1,4 @@
+import { AndroidInstallOption } from "./android-install-option";
 import { InstallCompletion } from "./install-completion";
 import { InstallSteps } from "./install-steps";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -71,7 +72,7 @@ export function InstallProvider({ children }: { children: ReactNode }) {
       return;
     }
     setMessage(""); setOpen(true);
-    if (!installed && !deviceGuide.endsWith("external")) void install();
+    if (!installed && !deviceGuide.endsWith("external") && deviceGuide !== "android") void install();
   };
   const external = guide.endsWith("external");
   const android = deviceGuide.startsWith("android") || guide.startsWith("android");
@@ -79,11 +80,12 @@ export function InstallProvider({ children }: { children: ReactNode }) {
     {children}
     <ModalOverlay className="modal-overlay" isOpen={open && !runningInApp} onOpenChange={setOpen} isDismissable>
       <Modal className="app-modal install-modal"><Dialog className="app-dialog install-dialog">
-        <div className="dialog-heading"><Heading slot="title">添加到主屏幕</Heading><Button className="icon-button" aria-label="关闭安装引导" onPress={() => setOpen(false)}><X size={22} /></Button></div>
+        <div className="dialog-heading"><Heading slot="title">{guide === "android" ? "安装合谱" : "添加到主屏幕"}</Heading><Button className="icon-button" aria-label="关闭安装引导" onPress={() => setOpen(false)}><X size={22} /></Button></div>
         <div className="install-intro"><img src="/icon-192.png" width="56" height="56" alt="" /><div><strong>下次排练，一点就能打开</strong><p>添加到主屏幕，随时开始排练。</p></div></div>
         {requested ? <InstallCompletion guide={guide} /> : <>
         {external && <p className="install-platform-note">{ios ? "先用 Safari 打开，再添加到主屏幕。" : "先在浏览器中打开，再添加到主屏幕。"}</p>}
         {prompt && !external ? <Button className="primary-button install-native" isDisabled={busy} onPress={() => void install()}><Download size={18} />添加到主屏幕</Button> : <InstallSteps guide={guide} />}
+        {guide === "android" && <AndroidInstallOption />}
         <details className="install-fallback"><summary>{external ? "找不到浏览器选项？" : "添加时遇到问题？"}</summary>
           {ios && <p>没有“添加到主屏幕”？向下滚动分享菜单，或在“编辑操作”中添加；也可以用 Safari 再试。</p>}
           {android && <><p>添加后没有图标？到手机设置中找到当前浏览器 → 权限 / 其他权限，查找“创建桌面快捷方式”并允许；没有此项可跳过。</p><p>仍无法添加，可换浏览器尝试。Chrome 安装可能受 Google Play 服务或网络影响。</p></>}
