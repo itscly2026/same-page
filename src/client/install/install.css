@@ -54,5 +54,13 @@
 }
 .install-suggestion .install-button { padding: 8px 14px; }
 
-.install-apk { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--border, #dce3e2); }
-.install-apk > a { display: inline-flex; text-decoration: none; }
+ .install-choices { margin-bottom: 20px; }
+.install-choice-intro { color: #173d44; font-size: 15px; font-weight: 600; margin: 0 0 14px; }
+.install-choice { padding: 16px; border: 1px solid #cbd8d9; border-radius: 14px; }
+.install-choice h3 { margin: 0; font-size: 17px; color: #173d44; }
+.install-choice-description { font-size: 13px; line-height: 1.6; color: #52666b; margin: 7px 0 14px; }
+.install-choice .install-native { box-sizing: border-box; margin: 0; text-decoration: none; }
+.install-choice .install-note { margin-top: 10px; }
+.install-choice .install-fallback { margin-top: 12px; padding-top: 4px; }
+.install-choice-or { text-align: center; color: #65777a; font-size: 13px; margin: 8px 0; }
+.install-choice-manual summary { cursor: pointer; color: #014653; padding: 10px 0; }
