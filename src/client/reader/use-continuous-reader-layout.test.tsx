@@ -160,7 +160,7 @@ it("restores the visit's actual position after delayed geometry without initial 
   expect(screen.getByTestId("viewport").scrollTop).toBe(950);
 });
 
-it("waits for committed zoom and lets a newer page replace the pending fit", async () => {
+it("waits for committed zoom and recalculates a pending fit after resize", async () => {
   mount({ document: pdf([1, 0.5, 2]).document, initialPage: 2, deferZoom: true });
   await waitFor(() => expect(screen.getByTestId("viewport").scrollTop).toBe(608));
   fireEvent.click(screen.getByText("fit"));
@@ -173,8 +173,24 @@ it("waits for committed zoom and lets a newer page replace the pending fit", asy
   fireEvent.click(screen.getByText("commit zoom"));
   await waitFor(() => expect(Number(screen.getByTestId("zoom").textContent)).toBe(0.5));
   expect(screen.getByTestId("viewport").scrollTop).toBe(308);
+
+});
+
+
+it("lets a newer page replace an uncommitted fit without aligning the old destination", async () => {
+  mount({ document: pdf([1, 0.5, 2]).document, initialPage: 2, deferZoom: true });
+  const viewport = screen.getByTestId("viewport");
+  await waitFor(() => expect(viewport.scrollTop).toBe(608));
+  fireEvent.click(screen.getByText("fit"));
+  expect(screen.getByTestId("zoom")).toHaveTextContent("1");
   fireEvent.click(screen.getByText("select first"));
+  await waitFor(() => expect(viewport.scrollTop).toBe(0));
+  // Deliver the previously requested zoom only after the newer page selection.
   fireEvent.click(screen.getByText("commit zoom"));
-  await waitFor(() => expect(screen.getByTestId("viewport").scrollTop).toBe(0));
+  fireEvent.scroll(viewport);
   expect(screen.getByTestId("page")).toHaveTextContent("1");
+  expect(viewport.scrollTop).toBe(0);
+  fireEvent.click(screen.getByText("commit zoom"));
+  expect(screen.getByTestId("zoom")).toHaveTextContent("1");
+  expect(viewport.scrollTop).toBe(0);
 });

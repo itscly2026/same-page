@@ -1,3 +1,4 @@
+import { useElementSize } from "./use-element-size";
 import { useReturnViewport } from "../navigation/use-return-viewport";
 import { useContinuousReaderLayout } from "./use-continuous-reader-layout";
 import {
@@ -463,20 +464,6 @@ function AnnotatedPdfPage({
   );
 }
 
-function useElementSize(ref: RefObject<HTMLElement | null>) {
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const update = () =>
-      setSize({ width: element.clientWidth, height: element.clientHeight });
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [ref]);
-  return size;
-}
 
 function usePdfPageAspectRatio(
   document: PDFDocumentProxy,
