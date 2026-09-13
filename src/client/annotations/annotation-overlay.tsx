@@ -132,6 +132,7 @@ export function AnnotationOverlay({
   const [hover, setHover] = useState<Extract<AnnotationPayload, { kind: "ink" }>["points"][number] | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
+  const composingText = useRef(false);
   const textSavingRef = useRef(false);
   const [textSaving, setTextSaving] = useState(false);
   const [editorText, setEditorText] = useState("");
@@ -312,6 +313,7 @@ export function AnnotationOverlay({
       setEditorText(editor.initial);
       setEditorFontScale(editor.fontScale);
       setEditorTextAlign(editor.textAlign ?? "center");
+      composingText.current = true;
       setTextEditor(editor);
       updateInteraction("composing-text");
     });
@@ -323,6 +325,7 @@ export function AnnotationOverlay({
   const closeTextEditor = () => {
     textSelection.current = null;
     pendingTextPlacement.current = null;
+    composingText.current = false;
     setTextEditor(null);
     updateInteraction("idle");
     const input = textInputRef.current;
@@ -695,6 +698,8 @@ export function AnnotationOverlay({
     void notes.end("interrupt");
   };
   // Layout capture invokes this synchronously before the second touch can edit.
+  useEffect(() => editing ? editor?.registerNavigationInterrupt(interrupt) : undefined);
+  useEffect(() => editing ? editor?.registerNavigationGuard(() => !composingText.current && !textSavingRef.current) : undefined, [editing, editor]);
   useImperativeHandle(handoffRef, () => ({ interrupt, ownsObjectGesture: () => objectTransform.current !== null }));
 
   const previousTool = useRef(tool);

@@ -3,10 +3,10 @@ import { useReturnViewport } from "../navigation/use-return-viewport";
 import { useContinuousReaderLayout } from "./use-continuous-reader-layout";
 import {
   type CSSProperties,
+  type TransitionEvent as ReactTransitionEvent,
   lazy,
   type RefObject,
   Suspense,
-  type TransitionEvent as ReactTransitionEvent,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -58,6 +58,7 @@ interface ReaderLayoutProps {
   currentPage: number;
   zoom: number;
   fitRequest?: number;
+  navigationRequest?: number;
   onZoomChange(value: number): void;
   onPageChange(page: number): void;
   onToggleChrome(): void;
@@ -78,6 +79,7 @@ export function PageLayout({
   const contentRef = useRef<HTMLDivElement>(null);
   const previewBoundaryRef = useRef<HTMLDivElement>(null);
   const size = useElementSize(containerRef);
+  const position = useViewportPosition(containerRef);
   useReturnViewport(containerRef, "page", size.width > 0);
   const pageRatio = usePdfPageAspectRatio(document, currentPage);
   const fitWidth = calculateFittedPageWidth(
@@ -88,10 +90,10 @@ export function PageLayout({
   const renderedWidth = Math.max(1, fitWidth * zoom);
   const renderedHeight = renderedWidth / pageRatio;
   const pageTurnDistance = calculatePageTurnDistance(
-    renderedWidth,
+    size.width,
     PAGE_TURN_GUTTER_PX,
   );
-  const showPageWindow = zoom <= 1 && (!annotationProps.editing || pager.phase !== "idle");
+  const showPageWindow = !annotationProps.editing || pager.phase !== "idle";
   const pageItems: PagedReaderItem[] = showPageWindow
     ? pager.items
     : [{ page: currentPage, position: 0 }];
@@ -101,18 +103,7 @@ export function PageLayout({
     previousPage.current = currentPage;
     if (containerRef.current) { containerRef.current.scrollLeft = 0; containerRef.current.scrollTop = 0; }
   }, [currentPage]);
-  const requestPage = (target: "previous" | "next") => {
-    if (zoom > 1) onZoomChange(1);
-    pager.request(target);
-  };
-  const finishPageTransition = (event: ReactTransitionEvent<HTMLDivElement>) => {
-    if (
-      event.target === event.currentTarget &&
-      event.propertyName === "transform"
-    ) {
-      pager.finishTransition();
-    }
-  };
+  const requestPage = pager.request;
   const gestureHandlers = useReaderGestures({
     containerRef,
     contentRef,
@@ -124,15 +115,10 @@ export function PageLayout({
     zoom,
     onZoomChange,
     onTap: onToggleChrome,
-    onEdgeTap: !annotationProps.editing && zoom <= 1 ? requestPage : undefined,
-    pageTurn: !annotationProps.editing && zoom <= 1 ? pager.gesture : undefined,
+    onEdgeTap: !annotationProps.editing ? requestPage : undefined,
+    pageTurn: pager.gesture,
     pageTurnExtent: pageTurnDistance,
-    onEditingPageTurn: annotationProps.editing ? direction => {
-      const next = currentPage + (direction === "next" ? 1 : -1);
-      if (next < 1 || next > document.numPages || annotationProps.editor?.getSnapshot() !== "idle") return;
-      onZoomChange(1);
-      pager.request(direction);
-    } : undefined,
+
   });
 
   return (
@@ -166,15 +152,7 @@ export function PageLayout({
           >
             <div
               className="page-reader__pager-track"
-              data-page-turn-phase={showPageWindow ? pager.phase : "disabled"}
-              data-page-turn-progress={showPageWindow ? pager.progress : 0}
-              onTransitionCancel={finishPageTransition}
-              onTransitionEnd={finishPageTransition}
-              style={{
-                "--page-turn-offset": `${
-                  (showPageWindow ? pager.progress : 0) * pageTurnDistance
-                }px`,
-              } as CSSProperties}
+              {...pageTurnPresentation(pager, pageTurnDistance)}
             >
               {pageItems.map((item) => (
                 <div
@@ -186,6 +164,12 @@ export function PageLayout({
                   key={pager.renderKey(item.page)}
                   style={{
                     "--page-turn-slot-offset": `${item.position * pageTurnDistance}px`,
+                    ...(item.position !== 0 ? {
+                      width: size.width, height: size.height,
+                      left: position.x - Math.max(0, (size.width - renderedWidth) / 2),
+                      top: position.y - Math.max(0, (size.height - renderedHeight) / 2),
+                      visibility: zoom > 1 && pager.phase === "idle" ? "hidden" : undefined,
+                    } : {}),
                   } as CSSProperties}
                 >
                   <div
@@ -195,7 +179,8 @@ export function PageLayout({
                     <AnnotatedPdfPage
                       document={document}
                       pageNumber={item.page}
-                      width={renderedWidth}
+                      width={item.position === 0 ? renderedWidth : undefined}
+                      fitViewport={item.position === 0 ? undefined : size}
                       aspectRatio={item.page === currentPage ? pageRatio : undefined}
                       annotationProps={item.position === 0 ? annotationProps : { ...annotationProps, editing: false }}
                       interactionRef={annotationProps.editing && item.position === 0 ? noteInteraction : undefined}
@@ -237,18 +222,21 @@ export function ContinuousLayout({
   currentPage,
   zoom,
   fitRequest = 0,
+  navigationRequest = 0,
   onZoomChange,
   onPageChange,
   onToggleChrome,
   annotationProps,
-}: ReaderLayoutProps) {
+  pager,
+}: ReaderLayoutProps & { pager: PagedReader }) {
   const noteInteraction = useRef<AnnotationInteractionHandle>(null);
-  const { scrollRef, contentRef, onScroll, geometryGestures, width, height, items } = useContinuousReaderLayout({
-    document, currentPage, zoom, fitRequest,
+  const { scrollRef, contentRef, onScroll, geometryGestures, width, height, items, size } = useContinuousReaderLayout({
+    document, currentPage, zoom, fitRequest, navigationRequest,
     editing: annotationProps.editing,
-    canTurnEditingPage: () => annotationProps.editor?.getSnapshot() === "idle",
+    navigation: pager,
     onZoomChange, onPageChange,
   });
+  const viewportPosition = useViewportPosition(scrollRef);
   const gestureHandlers = useReaderGestures({
     containerRef: scrollRef,
     contentRef: contentRef,
@@ -257,6 +245,9 @@ export function ContinuousLayout({
     onNavigationStart: () => noteInteraction.current?.interrupt(),
     isObjectGestureActive: () => noteInteraction.current?.ownsObjectGesture() ?? false,
     zoom, onZoomChange, onTap: onToggleChrome,
+    pageTurn: pager.gesture,
+    pageTurnExtent: size.width,
+    onEdgeTap: !annotationProps.editing ? pager.request : undefined,
     ...geometryGestures,
   });
 
@@ -271,6 +262,7 @@ export function ContinuousLayout({
       onScroll={onScroll}
       aria-label={annotationProps.editing ? "当前页编辑" : "连续滚动阅读"}
     >
+      {pager.failedPage !== null && <aside className="reader-page-failure" role="alert">第 {pager.failedPage} 页显示失败，当前页已保留。<Button onPress={pager.retryPage}>重试翻页</Button></aside>}
       <div
         className="continuous-reader__inner"
         ref={contentRef}
@@ -279,28 +271,69 @@ export function ContinuousLayout({
           height: height,
         }}
       >
-        {items.map((item) => (
-          <div
+        {items.map((item) => {
+          const page = item.index + 1;
+          const active = pager.phase !== "idle";
+          const target = active && page === pager.targetPage;
+          const current = page === currentPage;
+          const extent = size.width;
+          const targetWidth = calculateFittedPageWidth(extent, size.height, item.aspectRatio);
+          const hidden = (annotationProps.editing || active) && !current && !target;
+          const top = target ? (viewportPosition.y) + Math.max(0, ((size.height) - targetWidth / item.aspectRatio) / 2) : item.start;
+          const position = target ? (page > currentPage ? 1 : -1) : 0;
+          return <div
             className="continuous-reader__page"
             key={item.index}
             data-index={item.index}
-            data-edit-hidden={annotationProps.editing && item.index + 1 !== currentPage || undefined}
-            inert={annotationProps.editing && item.index + 1 !== currentPage}
-            style={{ transform: `translateY(${item.start}px)` }}
+            data-page-turn-current={current || undefined}
+            data-page-turn-target={target || undefined}
+            data-edit-hidden={hidden || undefined}
+            inert={hidden || target}
+            {...pageTurnPresentation(pager, extent, position, top, active && (current || target))}
+            style={{ ...pageTurnPresentation(pager, extent, position, top, active && (current || target)).style,
+              ...(target ? { left: viewportPosition.x, width: extent } : {}) }}
           >
             <AnnotatedPdfPage
               document={document}
-              pageNumber={item.index + 1}
-              width={item.width}
+              pageNumber={page}
+              width={target ? targetWidth : item.width}
               aspectRatio={item.aspectRatio}
-              interactionRef={annotationProps.editing && item.index + 1 === currentPage ? noteInteraction : undefined}
-              annotationProps={item.index + 1 === currentPage ? annotationProps : { ...annotationProps, editing: false }}
+              onPageRenderStart={target ? pager.beginPageRender : undefined}
+              interactionRef={annotationProps.editing && current ? noteInteraction : undefined}
+              annotationProps={current ? annotationProps : { ...annotationProps, editing: false }}
             />
-          </div>
-        ))}
+          </div>;
+        })}
       </div>
     </section>
   );
+}
+
+// Both geometries use the same progress and settling presentation. A scroll
+// selection never enters this surface's horizontal transition.
+function pageTurnPresentation(pager: PagedReader, extent: number, slot = 0, top = 0, active = true) {
+  return {
+    "data-page-turn-phase": active ? pager.phase : "idle",
+    "data-page-turn-progress": active ? pager.progress : 0,
+    style: { transform: `translate3d(${active ? (pager.progress + slot) * extent : 0}px, ${top}px, 0)` },
+    onTransitionEnd: (event: ReactTransitionEvent<HTMLDivElement>) => {
+      if (active && slot === 0 && event.target === event.currentTarget && event.propertyName === "transform") pager.finishTransition();
+    },
+  };
+}
+
+function useViewportPosition(ref: RefObject<HTMLElement | null>) {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  useLayoutEffect(() => {
+    const viewport = ref.current;
+    if (!viewport) return;
+    const update = () => setPosition(previous => previous.x === viewport.scrollLeft && previous.y === viewport.scrollTop
+      ? previous : { x: viewport.scrollLeft, y: viewport.scrollTop });
+    viewport.addEventListener("scroll", update);
+    update();
+    return () => viewport.removeEventListener("scroll", update);
+  }, [ref]);
+  return position;
 }
 
 export function PageNavigatorPanel({
@@ -418,6 +451,7 @@ function AnnotatedPdfPage({
   document,
   pageNumber,
   width,
+  fitViewport,
   aspectRatio,
   annotationProps,
   onPageRenderStart,
@@ -425,7 +459,8 @@ function AnnotatedPdfPage({
 }: {
   document: PDFDocumentProxy;
   pageNumber: number;
-  width: number;
+  width?: number;
+  fitViewport?: { width: number; height: number };
   aspectRatio?: number;
   annotationProps: AnnotationPageProps;
   onPageRenderStart?(page: number): PdfPageRenderLease;
@@ -436,18 +471,19 @@ function AnnotatedPdfPage({
     pageNumber,
     aspectRatio,
   );
+  const renderedWidth = width ?? calculateFittedPageWidth(fitViewport!.width, fitViewport!.height, resolvedAspectRatio);
   return (
     <div
       className="annotated-pdf-page"
       style={{
-        width,
-        height: width / resolvedAspectRatio,
+        width: renderedWidth,
+        height: renderedWidth / resolvedAspectRatio,
       }}
     >
       <PdfPageCanvas
         document={document}
         pageNumber={pageNumber}
-        width={width}
+        width={renderedWidth}
         aspectRatio={resolvedAspectRatio}
         onRenderStart={onPageRenderStart}
       />

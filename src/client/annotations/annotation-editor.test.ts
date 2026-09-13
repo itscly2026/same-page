@@ -285,3 +285,36 @@ it("writes explicit center when undo restores a legacy text payload", async () =
   await editor.redo("personal");
   expect(await savedText()).toMatchObject({ text: "aligned", textAlign: "left" });
 });
+
+it("admits page navigation after composing text is durable without retiring editing history", async () => {
+  await editor.persist(text("before"));
+  let composing = true;
+  editor.registerNavigationGuard(() => !composing);
+  editor.registerFinishCommit(async () => {
+    const saved = await editor.persist(text("composed"));
+    if (saved) composing = false;
+    return saved;
+  });
+  expect(editor.canNavigate()).toBe(false);
+  expect(await editor.prepareNavigation()).toBe(true);
+  expect(editor.canNavigate()).toBe(true);
+  expect(await savedText()).toMatchObject({ text: "composed" });
+  expect(await editor.undo("personal")).toBe(true);
+  expect(await savedText()).toMatchObject({ text: "before" });
+  expect(await editor.persist(text("next page"))).toBe(true);
+});
+
+it("does not retry failed local writes or discard composing text to navigate", async () => {
+  const write = vi.spyOn(localDatabase.annotations, "put").mockRejectedValueOnce(new Error("full"));
+  const saving = editor.persist(text("retained"));
+  expect(await editor.prepareNavigation()).toBe(false);
+  expect(await saving).toBe(false);
+  expect(await editor.prepareNavigation()).toBe(false);
+  expect(editor.canNavigate()).toBe(false);
+  expect(write).toHaveBeenCalledOnce();
+  write.mockRestore();
+  expect(await editor.retry()).toBe(true);
+  editor.registerFinishCommit(async () => false);
+  expect(await editor.prepareNavigation()).toBe(false);
+  expect(await savedText()).toMatchObject({ text: "retained" });
+});

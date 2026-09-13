@@ -55,6 +55,30 @@ export class AnnotationEditor {
     this.finishCommits.add(commit);
     return () => { this.finishCommits.delete(commit); };
   }
+  private readonly navigationInterrupts = new Set<() => void>();
+  registerNavigationInterrupt(interrupt: () => void) {
+    this.navigationInterrupts.add(interrupt);
+    return () => { this.navigationInterrupts.delete(interrupt); };
+  }
+  private readonly navigationGuards = new Set<() => boolean>();
+  registerNavigationGuard(guard: () => boolean) {
+    this.navigationGuards.add(guard);
+    return () => { this.navigationGuards.delete(guard); };
+  }
+  canNavigate = () => this.active && this.getSnapshot() === "idle" && [...this.navigationGuards].every(guard => guard());
+  async prepareNavigation(): Promise<boolean> {
+    if (!this.active || this.getSnapshot() !== "idle") return false;
+    const signal = this.lifetime.signal;
+    try {
+      for (const interrupt of this.navigationInterrupts) interrupt();
+      for (const commit of [...this.finishCommits]) {
+        if (!await untilAborted(commit(), signal)) return false;
+      }
+      await assertLocalWorkspaceActive(await this.workspace);
+      return !signal.aborted && this.active && this.getSnapshot() === "idle";
+    } catch { return false; }
+  }
+
   // Callers request completion; input commits, durable drafts and retirement
   // are one protocol. Concurrent toolbar/navigation requests share its result.
   finish(): Promise<EditingCompletion> {

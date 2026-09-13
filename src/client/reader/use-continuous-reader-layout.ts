@@ -3,6 +3,7 @@ import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useReturnViewport } from "../navigation/use-return-viewport";
 import type { PDFDocumentProxy } from "./pdf-document";
+import type { PagedReader } from "./use-paged-reader";
 import { calculateFittedPageWidth } from "./reader-dimensions";
 
 const PAGE_GAP = 8;
@@ -13,8 +14,9 @@ interface ContinuousReaderLayoutOptions {
   currentPage: number;
   zoom: number;
   fitRequest?: number;
+  navigationRequest?: number;
   editing: boolean;
-  canTurnEditingPage(): boolean;
+  navigation: Pick<PagedReader, "phase" | "targetPage">;
   onZoomChange(zoom: number): void;
   onPageChange(page: number): void;
 }
@@ -22,8 +24,8 @@ interface ContinuousReaderLayoutOptions {
 // Owns measurement, fitting and the scroll commit. Callers render the returned
 // geometry and connect the gesture capabilities; they do not sequence commands.
 export function useContinuousReaderLayout({
-  document, currentPage, zoom, fitRequest = 0, editing,
-  canTurnEditingPage, onZoomChange, onPageChange,
+  document, currentPage, zoom, fitRequest = 0, navigationRequest = 0, editing,
+  navigation, onZoomChange, onPageChange,
 }: ContinuousReaderLayoutOptions) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -41,15 +43,16 @@ export function useContinuousReaderLayout({
     fitted: { request: number; zoom: number };
     programTop: number | null;
     padding: number;
-  }>({ document, alignedPage: null, pending: null, fitted: { request: 0, zoom: 1 }, programTop: null, padding: 0 });
+    navigationRequest: number;
+  }>({ document, alignedPage: null, pending: null, fitted: { request: 0, zoom: 1 }, programTop: null, padding: 0, navigationRequest });
   useLayoutEffect(() => {
     if (commit.current.document !== document) {
       commit.current = { document, alignedPage: null, pending: null,
-        fitted: { request: 0, zoom: 1 }, programTop: null, padding: 0 };
+        fitted: { request: 0, zoom: 1 }, programTop: null, padding: 0, navigationRequest };
     }
     if (scrollRef.current) scrollRef.current.scrollTop += startPadding - commit.current.padding;
     commit.current.padding = startPadding;
-  }, [document, startPadding]);
+  }, [document, startPadding, navigationRequest]);
   // PDF page geometry is known independently of canvas rendering. Key the
   // virtual measurements by that geometry, so zoom never reuses old heights.
   const getItemKey = useCallback((index: number) => `${index}:${pageWidth}:${ratios[index] ?? FALLBACK_PAGE_RATIO}`, [pageWidth, ratios]);
@@ -65,9 +68,7 @@ export function useContinuousReaderLayout({
     // pages sit at the viewport center after a fit-and-turn.
     paddingStart: startPadding,
     paddingEnd: fitPadding ? Math.max(0, (size.height - pageWidth / (ratios[document.numPages - 1] ?? FALLBACK_PAGE_RATIO)) / 2) : 0,
-    rangeExtractor: range => editing
-      ? [...new Set([...defaultRangeExtractor(range), currentPage - 1])].sort((a, b) => a - b)
-      : defaultRangeExtractor(range),
+    rangeExtractor: range => [...new Set([...defaultRangeExtractor(range), currentPage - 1, ...(navigation.targetPage === null ? [] : [navigation.targetPage - 1])])].sort((a, b) => a - b),
   });
 
   useEffect(() => {
@@ -75,6 +76,11 @@ export function useContinuousReaderLayout({
     // Intent belongs to this document and current selection. A newer selection
     // supersedes a fit even if its zoom has not committed yet.
     if (state.pending?.page !== currentPage) state.pending = null;
+    if (state.navigationRequest !== navigationRequest) {
+      state.navigationRequest = navigationRequest;
+      state.pending = { page: currentPage, center: true };
+      setPaddingDocument(document);
+    }
     if (!geometryReady || size.width <= 0 || size.height <= 0) return;
     const newFit = fitRequest !== 0 && state.fitted.request !== fitRequest;
     const retainFit = fitRequest !== 0 && Math.abs(zoom - state.fitted.zoom) <= 0.001;
@@ -92,6 +98,7 @@ export function useContinuousReaderLayout({
         onZoomChange(next);
         return;
       }
+      if (scrollRef.current) scrollRef.current.scrollLeft = 0;
       virtualizer.scrollToIndex(intent.page - 1, { align: intent.center ? "center" : "start" });
       state.programTop = scrollRef.current?.scrollTop ?? null;
       state.alignedPage = intent.page;
@@ -108,7 +115,7 @@ export function useContinuousReaderLayout({
       virtualizer.scrollToIndex(currentPage - 1, { align: "start" });
       state.programTop = element?.scrollTop ?? null;
     }
-  }, [document, editing, currentPage, virtualizer, size.width, size.height, geometryReady, ratios, fitRequest, zoom, onZoomChange]);
+  }, [document, editing, currentPage, virtualizer, size.width, size.height, geometryReady, ratios, fitRequest, navigationRequest, zoom, onZoomChange]);
 
   // Restore only after the real list geometry exists. Restoring an estimated
   // list lets its later initial alignment erase the saved reading position.
@@ -124,14 +131,6 @@ export function useContinuousReaderLayout({
         element.scrollTop = Math.max(centeredStart, Math.min(element.scrollTop, Math.max(centeredStart, page.end - PAGE_GAP - element.clientHeight)));
       }
     },
-    onEditingPageTurn: editing ? (direction: "previous" | "next") => {
-      const nextPage = currentPage + (direction === "next" ? 1 : -1);
-      if (nextPage < 1 || nextPage > document.numPages || !canTurnEditingPage()) return;
-      setPaddingDocument(document);
-      commit.current.pending = { page: nextPage, center: true };
-      if (scrollRef.current) scrollRef.current.scrollLeft = 0;
-      onPageChange(nextPage);
-    } : undefined,
     nativeTouchScroll: !editing,
     minimumZoom: Math.min(1, calculateFittedPageWidth(size.width, size.height, ratios[currentPage - 1] ?? FALLBACK_PAGE_RATIO) / Math.max(1, size.width)),
     captureAnchor: (center: { x: number; y: number }) => {
@@ -151,7 +150,7 @@ export function useContinuousReaderLayout({
 
   const onScroll = () => {
     const state = commit.current;
-    if (state.document !== document || editing || state.pending || !geometryReady || state.alignedPage === null) return;
+    if (state.document !== document || editing || navigation.phase !== "idle" || state.pending || !geometryReady || state.alignedPage === null) return;
     const scrollTop = scrollRef.current?.scrollTop ?? 0;
     // A queued event from our own alignment is not a new page selection. A
     // different offset resumes ordinary viewport-center feedback immediately.
@@ -165,7 +164,7 @@ export function useContinuousReaderLayout({
     }
   };
   return {
-    scrollRef, contentRef, onScroll, geometryGestures,
+    scrollRef, contentRef, onScroll, geometryGestures, size,
     width: Math.max(size.width, pageWidth), height: virtualizer.getTotalSize(),
     items: virtualizer.getVirtualItems().map(item => ({
       index: item.index, start: item.start, width: pageWidth,

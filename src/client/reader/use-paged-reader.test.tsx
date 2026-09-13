@@ -26,6 +26,20 @@ afterEach(() => {
 });
 
 describe("usePagedReader", () => {
+  it("returns to the current page when local navigation admission fails", async () => {
+    const onPageChange = vi.fn();
+    const beforePageChange = vi.fn(async () => false);
+    const { result } = renderHook(() => usePagedReader({ currentPage: 2, pageCount: 4,
+      documentKey: "admission", enabled: true, onPageChange, beforePageChange }));
+    finishRenders(result.current.beginPageRender, 3);
+    act(() => result.current.request("next"));
+    await act(async () => { flushFrame(); });
+    expect(beforePageChange).toHaveBeenCalledOnce();
+    expect(result.current.anchorPage).toBe(2);
+    expect(result.current.phase).toBe("idle");
+    expect(onPageChange).not.toHaveBeenCalled();
+  });
+
   it("keeps the current page when a prefetched target fails and retries its render", () => {
     const { result } = renderPager(vi.fn());
     let render!: PageRenderLease;
@@ -109,6 +123,7 @@ describe("usePagedReader", () => {
     expect(result.current.targetPage).toBe(3);
 
     act(() => result.current.gesture.end(sample(1, 180, 300, 110)));
+    flushFrame();
     expect(result.current.phase).toBe("settling");
     expect(result.current.progress).toBe(-1);
     act(() => result.current.finishTransition());
@@ -144,6 +159,7 @@ describe("usePagedReader", () => {
     act(() => result.current.gesture.begin(sample(4, 500, 300, 0)));
     act(() => result.current.gesture.move(sample(4, 430, 300, 20)));
     act(() => result.current.gesture.end(sample(4, 430, 300, 21)));
+    flushFrame();
     expect(result.current.progress).toBe(-1);
     act(() => result.current.finishTransition());
     expect(onPageChange).toHaveBeenLastCalledWith(3);
@@ -315,12 +331,12 @@ function renderPager(
 }
 
 function sample(
-  pointerId: number,
+  sessionId: number,
   x: number,
   y: number,
   time: number,
 ): PageTurnSample {
-  return { pointerId, x, y, time, extent: 1000 };
+  return { sessionId, x, y, time, extent: 1000 };
 }
 
 function finishRenders(

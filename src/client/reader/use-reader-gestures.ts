@@ -55,7 +55,6 @@ export function useReaderGestures({
   constrainScroll,
   onNavigationStart,
   isObjectGestureActive,
-  onEditingPageTurn,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   contentRef: RefObject<HTMLElement | null>;
@@ -73,7 +72,6 @@ export function useReaderGestures({
   constrainScroll?(): void;
   onNavigationStart?(): void;
   isObjectGestureActive?(): boolean;
-  onEditingPageTurn?(direction: "previous" | "next"): void;
   captureAnchor?(center: Point): (zoom: number) => Point;
 }) {
   const constrain = useEffectEvent(() => constrainScroll?.());
@@ -83,16 +81,50 @@ export function useReaderGestures({
     id: number;
     x: number;
     y: number;
-    scrollLeft: number;
-    scrollTop: number;
   } | null>(null);
   const pinch = useRef<PinchSession | null>(null);
   const preview = useRef<PinchPreview | null>(null);
   const pendingCommit = useRef<PinchPreview | null>(null);
-  const previewFrame = useRef<number | null>(null);
   const latestZoom = useRef(zoom);
   const pinched = useRef(false);
-  const editTurn = useRef<{ center: Point; bounds: DOMRect; viewport: DOMRect; distance: number; scaled: boolean; direction: "previous" | "next" | null } | null>(null);
+  const navigation = useRef<{ origin: Point; left: number; right: number; scrollLeft: number; scrollTop: number; extent: number } | null>(null);
+  const scaled = useRef(false);
+  const drained = useRef(false);
+  const nativeAxis = useRef<"pending" | "horizontal" | "vertical">("pending");
+  const pairFrame = useRef<number | null>(null);
+  const pairTime = useRef(0);
+  const beginNavigation = (center: Point, time: number) => {
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content) return;
+    const paper = content.getBoundingClientRect();
+    const viewport = container.getBoundingClientRect();
+    const extent = pageTurnExtent ?? viewport.width;
+    navigation.current = { origin: center, left: Math.max(0, viewport.left - paper.left),
+      right: Math.max(0, paper.right - viewport.right), scrollLeft: container.scrollLeft,
+      scrollTop: container.scrollTop, extent };
+    pageTurn?.begin({ sessionId: 0, x: 0, y: 0, time, extent });
+  };
+  const moveNavigation = (center: Point, time: number, nativeVertical = false) => {
+    const session = navigation.current;
+    const container = containerRef.current;
+    if (!session || !container) return;
+    const dx = center.x - session.origin.x;
+    const dy = center.y - session.origin.y;
+    const pan = clamp(dx, -session.right, session.left);
+    container.scrollLeft = session.scrollLeft - pan;
+    if (!nativeVertical) container.scrollTop = session.scrollTop - dy;
+    constrainScroll?.();
+    const remaining = dx - pan;
+    // Rebase while inside the paper: neither pan distance nor its velocity
+    // enters the pager, including after reversing a partial page turn.
+    if (remaining === 0) {
+      pageTurn?.cancel(0, true);
+      pageTurn?.begin({ sessionId: 0, x: 0, y: 0, time, extent: session.extent });
+    } else {
+      pageTurn?.move({ sessionId: 0, x: remaining, y: Math.abs(dx) > Math.abs(dy) ? 0 : dy, time, extent: session.extent });
+    }
+  };
 
   const clearPreview = useCallback(() => {
     previewBoundaryRef?.current?.removeAttribute("data-gesture-preview");
@@ -114,32 +146,10 @@ export function useReaderGestures({
     content.setAttribute("data-gesture-preview", "");
   }, [contentRef, previewBoundaryRef]);
 
-  const sampleEditingTurn = useCallback(() => {
-    const turn = editTurn.current;
-    if (!turn || points.current.size !== 2) return;
-    const [first, second] = [...points.current.values()];
-    if (Math.abs(distance(first, second) / turn.distance - 1) > 0.08) turn.scaled = true;
-    turn.direction = editingTurnDirection(turn, midpoint(first, second));
-    if (turn.direction) containerRef.current?.setAttribute("data-edit-page-turn", turn.direction);
-    else containerRef.current?.removeAttribute("data-edit-page-turn");
-  }, [containerRef]);
-
-  const schedulePreview = useCallback((next: PinchPreview) => {
-    preview.current = next;
-    if (previewFrame.current !== null) return;
-    previewFrame.current = requestAnimationFrame(() => {
-      previewFrame.current = null;
-      // Pointer events arrive separately; classify their combined frame, not
-      // the transient distance after just one finger moves.
-      sampleEditingTurn();
-      if (preview.current) paintPreview(preview.current);
-    });
-  }, [paintPreview, sampleEditingTurn]);
-
-  const cancelPreviewFrame = useCallback(() => {
-    if (previewFrame.current === null) return;
-    cancelAnimationFrame(previewFrame.current);
-    previewFrame.current = null;
+  const cancelPairFrame = useCallback(() => {
+    if (pairFrame.current === null) return;
+    cancelAnimationFrame(pairFrame.current);
+    pairFrame.current = null;
   }, []);
 
   useLayoutEffect(() => {
@@ -165,44 +175,50 @@ export function useReaderGestures({
 
   useLayoutEffect(
     () => () => {
-      cancelPreviewFrame();
+      cancelPairFrame();
       clearPreview();
     },
-    [cancelPreviewFrame, clearPreview],
+    [cancelPairFrame, clearPreview],
   );
+
+  useLayoutEffect(() => {
+    cancelPairFrame();
+    clearPreview();
+    navigation.current = null;
+    pinch.current = null;
+    preview.current = null;
+    pendingCommit.current = null;
+    drained.current = points.current.size > 0;
+  }, [pageTurn, disabled, cancelPairFrame, clearPreview]);
 
   const pointerDown = (event: GesturePointer) => {
     if (disabled || (twoFingerOnly && event.pointerType !== "touch")) return;
-    if (!twoFingerOnly && !(nativeTouchScroll && event.pointerType === "touch")) event.currentTarget.setPointerCapture?.(event.pointerId);
+    if (!twoFingerOnly && !(nativeTouchScroll && event.pointerType === "touch")) {
+      try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* The browser may already have retired this pointer. */ }
+    }
     points.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    const container = containerRef.current;
+    if (drained.current) return;
     if (points.current.size === 1) {
       primary.current = {
         id: event.pointerId,
         x: event.clientX,
         y: event.clientY,
-        scrollLeft: container?.scrollLeft ?? 0,
-        scrollTop: container?.scrollTop ?? 0,
       };
       pinched.current = false;
-      pageTurn?.begin(pageTurnSample(event, pageTurnExtent));
+      scaled.current = false;
+      nativeAxis.current = "pending";
+      if (!twoFingerOnly) beginNavigation({ x: event.clientX, y: event.clientY }, event.timeStamp);
       return;
     }
-    if (points.current.size > 2 && editTurn.current) {
-      editTurn.current.scaled = true;
-      editTurn.current.direction = null;
-      containerRef.current?.removeAttribute("data-edit-page-turn");
+    if (points.current.size > 2) {
+      pageTurn?.cancel(0, true);
+      drained.current = true;
+      cancelPairFrame(); clearPreview(); preview.current = null;
+      return;
     }
     if (points.current.size !== 2) return;
-    if (
-      primary.current &&
-      pageTurn &&
-      !pageTurn.cancel(primary.current.id, true)
-    ) {
-      points.current.clear();
-      primary.current = null;
-      return;
-    }
+    if (nativeAxis.current === "vertical") { drained.current = true; return; }
+    if (!twoFingerOnly && pageTurn && !pageTurn.cancel(0, true)) { drained.current = true; return; }
     const content = contentRef.current;
     if (!content) return;
     if (twoFingerOnly) onNavigationStart?.();
@@ -219,82 +235,92 @@ export function useReaderGestures({
         y: center.y - contentBounds.top,
       },
     };
-    if (twoFingerOnly && onEditingPageTurn && container) {
-      editTurn.current = { center, bounds: contentBounds, viewport: container.getBoundingClientRect(), distance: distance(first, second), scaled: false, direction: null };
-    }
+    beginNavigation(center, event.timeStamp);
     latestZoom.current = zoom;
     pinched.current = true;
-    previewBoundaryRef?.current?.setAttribute("data-gesture-preview", "");
   };
 
-  const pointerMove = (event: GesturePointer) => {
-    if (disabled || !points.current.has(event.pointerId)) return;
-    points.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (points.current.size >= 2 && pinch.current) {
-      const [first, second] = [...points.current.values()];
-      const center = midpoint(first, second);
-      const nextZoom = clamp(
-        pinch.current.zoom * (distance(first, second) / pinch.current.distance),
-        Math.min(MIN_PINCH_ZOOM, minimumZoom * 0.75),
-        MAX_ZOOM,
-      );
-      const scale = nextZoom / pinch.current.zoom;
-      const next: PinchPreview = {
-        resolveAnchor: pinch.current.resolveAnchor,
-        zoom: nextZoom,
-        scale,
-        offset: {
-          x:
-            center.x -
-            pinch.current.contentBounds.left -
-            pinch.current.contentPoint.x * scale,
-          y:
-            center.y -
-            pinch.current.contentBounds.top -
-            pinch.current.contentPoint.y * scale,
-        },
-        center,
-        contentRatio: {
-          x: clamp(
-            pinch.current.contentPoint.x / Math.max(1, pinch.current.contentBounds.width),
-            0,
-            1,
-          ),
-          y: clamp(
-            pinch.current.contentPoint.y / Math.max(1, pinch.current.contentBounds.height),
-            0,
-            1,
-          ),
-        },
-      };
-      latestZoom.current = nextZoom;
-      schedulePreview(next);
+  const samplePair = (time: number) => {
+    if (drained.current || points.current.size !== 2 || !pinch.current) return;
+    const [first, second] = [...points.current.values()];
+    const center = midpoint(first, second);
+    if (pageTurn && !scaled.current && Math.abs(distance(first, second) / pinch.current.distance - 1) <= 0.08) {
+      moveNavigation(center, time);
       return;
     }
+    scaled.current = true;
+    pageTurn?.cancel(0, true);
+    const nextZoom = clamp(
+      pinch.current.zoom * (distance(first, second) / pinch.current.distance),
+      Math.min(MIN_PINCH_ZOOM, minimumZoom * 0.75),
+      MAX_ZOOM,
+    );
+    const scale = nextZoom / pinch.current.zoom;
+    const next: PinchPreview = {
+      resolveAnchor: pinch.current.resolveAnchor,
+      zoom: nextZoom,
+      scale,
+      offset: {
+        x:
+          center.x -
+          pinch.current.contentBounds.left -
+          pinch.current.contentPoint.x * scale,
+        y:
+          center.y -
+          pinch.current.contentBounds.top -
+          pinch.current.contentPoint.y * scale,
+      },
+      center,
+      contentRatio: {
+        x: clamp(
+          pinch.current.contentPoint.x / Math.max(1, pinch.current.contentBounds.width),
+          0,
+          1,
+        ),
+        y: clamp(
+          pinch.current.contentPoint.y / Math.max(1, pinch.current.contentBounds.height),
+          0,
+          1,
+        ),
+      },
+    };
+    latestZoom.current = nextZoom;
+    preview.current = next;
+    paintPreview(next);
+  };
 
-    if (twoFingerOnly || pinched.current) return;
-    const start = primary.current;
-    const container = containerRef.current;
-    if (!start || !container || start.id !== event.pointerId) return;
-    if (zoom <= 1 && pageTurn?.move(pageTurnSample(event, pageTurnExtent))) {
+  const flushPair = () => {
+    if (pairFrame.current !== null) cancelAnimationFrame(pairFrame.current);
+    pairFrame.current = null;
+    samplePair(pairTime.current);
+  };
+  const pointerMove = (event: GesturePointer) => {
+    if (disabled || !points.current.has(event.pointerId) || drained.current) return;
+    points.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (points.current.size === 2 && pinch.current) {
+      pairTime.current = event.timeStamp;
+      if (pairFrame.current === null) pairFrame.current = requestAnimationFrame(() => {
+        pairFrame.current = null;
+        samplePair(pairTime.current);
+      });
       return;
     }
-    if ((zoom > 1 || nativeTouchScroll) && !(nativeTouchScroll && event.pointerType === "touch")) {
-      container.scrollLeft = start.scrollLeft - (event.clientX - start.x);
-      container.scrollTop = start.scrollTop - (event.clientY - start.y);
-    }
+    if (twoFingerOnly || pinched.current || nativeAxis.current === "vertical") return;
+    moveNavigation({ x: event.clientX, y: event.clientY }, event.timeStamp,
+      nativeTouchScroll && event.pointerType === "touch");
   };
 
   const resetGesture = () => {
     primary.current = null;
     pinch.current = null;
     pinched.current = false;
-    editTurn.current = null;
-    containerRef.current?.removeAttribute("data-edit-page-turn");
+    navigation.current = null;
+    drained.current = false;
+    nativeAxis.current = "pending";
   };
 
   const finishPinch = () => {
-    cancelPreviewFrame();
+    cancelPairFrame();
     const lastPreview = preview.current;
     const settledZoom = clamp(latestZoom.current, minimumZoom, MAX_ZOOM);
     if (lastPreview && Math.abs(settledZoom - zoom) < 0.001) {
@@ -330,22 +356,22 @@ export function useReaderGestures({
     if (disabled) return;
     const start = primary.current;
     const wasPinched = pinched.current;
-    sampleEditingTurn();
+    if (wasPinched && points.current.size === 2 && pairFrame.current !== null) flushPair();
     points.current.delete(event.pointerId);
-    if (points.current.size < 2) pinch.current = null;
+    if (drained.current) {
+      if (points.current.size === 0) resetGesture();
+      return;
+    }
     if (wasPinched) {
-      if (points.current.size === 0) {
-        const direction = editTurn.current?.direction;
-        if (direction) {
-          cancelPreviewFrame(); clearPreview(); preview.current = null; pendingCommit.current = null;
-          resetGesture(); onEditingPageTurn?.(direction);
-        } else finishPinch();
-      }
+      if (points.current.size === 1 && pageTurn && !scaled.current) {
+        pageTurn.end({ sessionId: 0, x: 0, y: 0, time: event.timeStamp, extent: pageTurnExtent ?? 1 });
+        drained.current = true;
+      } else if (points.current.size === 0) finishPinch();
       return;
     }
     if (twoFingerOnly || !start || start.id !== event.pointerId) return;
     primary.current = null;
-    if (zoom <= 1 && pageTurn?.end(pageTurnSample(event, pageTurnExtent))) {
+    if (pageTurn?.end({ sessionId: 0, x: 0, y: 0, time: event.timeStamp, extent: pageTurnExtent ?? 1 })) {
       return;
     }
     const x = event.clientX - start.x;
@@ -371,14 +397,16 @@ export function useReaderGestures({
 
   const cancelPointer = (event: GesturePointer) => {
     points.current.delete(event.pointerId);
-    pageTurn?.cancel(event.pointerId);
+    pageTurn?.cancel(0);
+    if (pairFrame.current !== null) cancelAnimationFrame(pairFrame.current);
+    pairFrame.current = null;
     if (pinched.current) {
-      points.current.clear();
-      cancelPreviewFrame();
+      drained.current = points.current.size > 0;
+      cancelPairFrame();
       pendingCommit.current = null;
       preview.current = null;
       clearPreview();
-      resetGesture();
+      if (points.current.size === 0) resetGesture();
     } else if (points.current.size === 0) {
       primary.current = null;
     }
@@ -388,7 +416,13 @@ export function useReaderGestures({
   // cancels the default touch action; both input paths share the zoom state.
   const handleTouch = useEffectEvent((event: TouchEvent) => {
     if (disabled) return;
-    if ((event.touches.length >= 2 || pinched.current) && event.cancelable) event.preventDefault();
+    if (event.type === "touchmove" && event.touches.length === 1 && primary.current && nativeAxis.current === "pending") {
+      const touch = event.touches[0];
+      const dx = Math.abs(touch.clientX - primary.current.x);
+      const dy = Math.abs(touch.clientY - primary.current.y);
+      if (Math.max(dx, dy) >= 8) nativeAxis.current = dx > dy ? "horizontal" : "vertical";
+    }
+    if (nativeAxis.current !== "vertical" && (event.touches.length >= 2 || pinched.current || nativeAxis.current === "horizontal") && event.cancelable) event.preventDefault();
     const target = containerRef.current;
     if (!target) return;
     for (const touch of Array.from(event.changedTouches)) {
@@ -419,6 +453,8 @@ export function useReaderGestures({
     // the child's transform before the other fingers leave the screen.
     const objectActive = isObjectGestureActive?.() ?? false;
     if (objectPointers.current.size > 0 || objectActive) {
+      pageTurn?.cancel(0, true);
+      cancelPairFrame(); clearPreview();
       for (const id of points.current.keys()) objectPointers.current.add(id);
       points.current.clear();
       primary.current = null;
@@ -432,7 +468,7 @@ export function useReaderGestures({
       }
       return;
     }
-    const suppress = pinched.current || points.current.size >= 2;
+    const suppress = drained.current || pinched.current || points.current.size >= 2;
     handle(event);
     if (suppress || pinched.current) {
       event.preventDefault();
@@ -451,22 +487,6 @@ export function useReaderGestures({
   };
 }
 
-function pageTurnSample(
-  event: GesturePointer,
-  extent?: number,
-) {
-  return {
-    pointerId: event.pointerId,
-    x: event.clientX,
-    y: event.clientY,
-    time: event.timeStamp,
-    extent: Math.max(
-      1,
-      extent ?? event.currentTarget.getBoundingClientRect().width,
-    ),
-  };
-}
-
 function midpoint(first: Point, second: Point) {
   return { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
 }
@@ -477,15 +497,4 @@ function distance(first: Point, second: Point) {
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
-}
-
-/** Extra travel beyond the paper edge, never travel used to pan the paper. */
-export function editingTurnDirection(session: { center: Point; bounds: Pick<DOMRect, "left" | "right">; viewport: Pick<DOMRect, "left" | "right">; scaled: boolean }, center: Point): "previous" | "next" | null {
-  if (session.scaled) return null;
-  const dx = center.x - session.center.x;
-  const dy = center.y - session.center.y;
-  if (Math.abs(dx) < Math.abs(dy) * 2) return null;
-  const allowance = dx > 0 ? Math.max(0, session.viewport.left - session.bounds.left) : Math.max(0, session.bounds.right - session.viewport.right);
-  if (Math.abs(dx) - allowance < 80) return null;
-  return dx > 0 ? "previous" : "next";
 }

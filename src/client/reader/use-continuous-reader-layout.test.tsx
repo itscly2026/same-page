@@ -53,15 +53,17 @@ function Harness({ document, initialPage = 1, editing = false, idle = () => true
   const [zoom, setZoom] = useState(1);
   const requestedZoom = useRef(1);
   const [fitRequest, fit] = useState(0);
-  const { scrollRef, contentRef, onScroll, geometryGestures, width, height, items } = useContinuousReaderLayout({ document, currentPage: page, zoom, fitRequest,
-    editing, canTurnEditingPage: idle, onPageChange: setPage, onZoomChange: value => { requestedZoom.current = value; if (!deferZoom) setZoom(value); } });
+  const [navigationRequest, navigated] = useState(0);
+  const { scrollRef, contentRef, onScroll, width, height, items } = useContinuousReaderLayout({ document, currentPage: page, zoom, fitRequest, navigationRequest,
+    editing, navigation: { phase: "idle", targetPage: null }, onPageChange: setPage, onZoomChange: value => { requestedZoom.current = value; if (!deferZoom) setZoom(value); } });
+  const navigate = (delta: number) => { if (!idle() || page + delta < 1 || page + delta > document.numPages) return; setPage(page + delta); navigated(value => value + 1); };
   return <>
     <output data-testid="page">{page}</output><output data-testid="zoom">{zoom}</output>
     <button onClick={() => setZoom(requestedZoom.current)}>commit zoom</button>
     <button onClick={() => setPage(1)}>select first</button>
     <button onClick={() => fit(value => value + 1)}>fit</button>
-    <button onClick={() => geometryGestures.onEditingPageTurn?.("next")}>next</button>
-    <button onClick={() => geometryGestures.onEditingPageTurn?.("previous")}>previous</button>
+    <button onClick={() => navigate(1)}>next</button>
+    <button onClick={() => navigate(-1)}>previous</button>
     <div data-testid="viewport" ref={scrollRef} onScroll={onScroll}>
       <div ref={contentRef} style={{ width: width, height: height }}>
         {items.map(item => <div key={item.index} data-testid={`page-${item.index + 1}`}
