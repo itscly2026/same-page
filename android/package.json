@@ -1,0 +1,13 @@
+{
+  "name": "same-page-android",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "node generate.mjs",
+    "verify": "node verify.mjs"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "3.1131.0",
+    "@bubblewrap/core": "1.25.0"
+  }
+}

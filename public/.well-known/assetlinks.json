@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.clyapps.samepage",
+      "sha256_cert_fingerprints": [
+        "D8:B7:49:FD:99:FD:4E:BF:24:AF:C3:8B:64:1C:CB:9D:47:64:F1:A1:F0:53:59:AF:09:2F:0E:AF:24:86:D3:27"
+      ]
+    }
+  }
+]

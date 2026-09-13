@@ -70,7 +70,8 @@ test("invited guest crosses isolated browsers and cold-starts with only the copi
     Object.defineProperty(event, "prompt", { value: async () => ({ outcome: "accepted" }) });
     window.dispatchEvent(event);
   });
-  await androidPage.getByRole("button", { name: "添加到主屏幕", exact: true }).click();
+  await androidPage.getByRole("button", { name: "安装合谱", exact: true }).click();
+  await androidPage.getByRole("dialog").getByRole("button", { name: "添加到主屏幕", exact: true }).click();
   await expect(androidPage.getByRole("dialog").getByText("主屏幕没有合谱图标？")).toBeVisible();
   await androidPage.evaluate(() => window.dispatchEvent(new Event("appinstalled")));
   await androidPage.getByRole("button", { name: "关闭安装引导" }).click();

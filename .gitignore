@@ -13,3 +13,10 @@ release.tar
 artifacts/issue-225/
 
 artifacts/issue-238/
+
+# Generated Android output and signing material (keys never belong in this repo).
+android/generated/
+android/out/
+*.keystore
+*.jks
+*.p12

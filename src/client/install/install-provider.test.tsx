@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { NavigationProvider } from "../navigation/navigation";
@@ -85,14 +85,16 @@ it.each(["iPhone MicroMessenger", "Android MicroMessenger"])("only shows WeChat 
 
 });
 
-it("opens the native prompt directly and keeps actionable Android guidance after cancellation", async () => {
+it("waits for the Android PWA choice and keeps guidance after cancellation", async () => {
   vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Android Chrome");
   mount();
   const prompt = vi.fn().mockResolvedValue({ outcome: "dismissed" });
   const event = new Event("beforeinstallprompt", { cancelable: true });
   Object.defineProperty(event, "prompt", { value: prompt });
   act(() => { window.dispatchEvent(event); });
-  fireEvent.click(screen.getAllByRole("button", { name: "添加到主屏幕" })[0]);
+  fireEvent.click(screen.getAllByRole("button", { name: "安装合谱" })[0]);
+  expect(prompt).not.toHaveBeenCalled();
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "添加到主屏幕" }));
   expect(prompt).toHaveBeenCalledTimes(1);
   await act(async () => {});
   const details = screen.getByText("添加时遇到问题？").closest("details");
@@ -128,7 +130,8 @@ it("keeps Android permission recovery after acceptance and appinstalled", async 
   const event = new Event("beforeinstallprompt", { cancelable: true });
   Object.defineProperty(event, "prompt", { value: prompt });
   act(() => window.dispatchEvent(event));
-  await act(async () => fireEvent.click(screen.getAllByRole("button", { name: "添加到主屏幕" })[0]));
+  fireEvent.click(screen.getAllByRole("button", { name: "安装合谱" })[0]);
+  await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "添加到主屏幕" })));
   const help = screen.getByText("主屏幕没有合谱图标？").closest("details");
   expect(help).not.toHaveAttribute("open");
   expect(help).toHaveTextContent("创建桌面快捷方式");
@@ -136,4 +139,29 @@ it("keeps Android permission recovery after acceptance and appinstalled", async 
   expect(screen.getByText("主屏幕没有合谱图标？")).toBeInTheDocument();
   expect(screen.queryByText("现在已从合谱应用打开，可以继续看谱。")).not.toBeInTheDocument();
   expect(prompt).toHaveBeenCalledTimes(1);
+});
+
+
+it("offers Android APK alongside PWA without consuming the prompt on opening", async () => {
+  vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Android Chrome");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ release: { versionName: "1.0.0", versionCode: 1, size: 2000000, sha256: "a".repeat(64) } }))));
+  mount();
+  const prompt = vi.fn().mockResolvedValue({ outcome: "dismissed" });
+  const event = new Event("beforeinstallprompt", { cancelable: true });
+  Object.defineProperty(event, "prompt", { value: prompt });
+  act(() => window.dispatchEvent(event));
+  fireEvent.click(screen.getAllByRole("button", { name: "安装合谱" })[0]);
+  expect(await screen.findByRole("link", { name: "下载 Android 安装包" })).toHaveAttribute("href", "/api/android-release/apk");
+  expect(prompt).not.toHaveBeenCalled();
+  await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "添加到主屏幕" })));
+  expect(prompt).toHaveBeenCalledTimes(1);
+});
+
+it("never fetches or shows APK installation inside WeChat", () => {
+  vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Android MicroMessenger");
+  const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+  mount();
+  fireEvent.click(screen.getAllByRole("button", { name: "添加到主屏幕" })[0]);
+  expect(screen.queryByText("下载 Android 安装包")).not.toBeInTheDocument();
+  expect(fetch).not.toHaveBeenCalled();
 });
