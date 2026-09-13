@@ -12,7 +12,7 @@ function deployment({ worker = "new-sha", build = "new-sha", shell = "new-sha", 
     if (pathname === "/") return new Response(`<title>合谱 · Same Page</title><meta name="same-page-build-id" content="${shell}"><script src="/assets/app.js"></script>${preload ? '<link rel="modulepreload" href="/assets/shared.js">' : ""}`, { headers: { "content-type": "text/html", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" } });
     if (pathname === "/assets/app.js") return new Response(preload ? "entry without build identity" : script, { headers: { "cache-control": "public,max-age=31536000,immutable" } });
     if (pathname === "/assets/shared.js") return new Response(script, { headers: { "cache-control": "public,max-age=31536000,immutable" } });
-    if (pathname === "/manifest.webmanifest") return Response.json({ name: "合谱 · Same Page", short_name: "合谱", display: "fullscreen" }, { headers: { "cache-control": "no-cache" } });
+    if (pathname === "/manifest.webmanifest") return Response.json({ name: "合谱 · Same Page", short_name: "合谱", display: "standalone" }, { headers: { "cache-control": "no-cache" } });
     if (pathname === "/sw.js") return new Response("/* service worker */".repeat(10), { headers: { "content-type": "text/javascript", "cache-control": "no-cache" } });
     if (pathname === "/api/auth/social-providers") return json({ providers: [] });
     if (pathname === "/api/choirs") return json({ error: "unauthorized" }, 401);

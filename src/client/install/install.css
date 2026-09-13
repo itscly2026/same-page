@@ -1,5 +1,5 @@
 .install-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; white-space: nowrap; }
-.install-modal { width: min(480px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); overflow-y: auto; }
+.install-modal { width: min(480px, calc(100vw - 24px)); max-height: calc(var(--safe-height) - 32px); overflow-y: auto; }
 .install-dialog { padding: 24px; }
 .install-intro { display: flex; gap: 14px; align-items: center; margin: 20px 0 24px; }
 .install-intro img, .install-suggestion img { border-radius: 12px; flex-shrink: 0; }

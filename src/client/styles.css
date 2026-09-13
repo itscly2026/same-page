@@ -1,4 +1,9 @@
 :root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-height: calc(100dvh - var(--safe-top) - var(--safe-bottom));
   --brand: #014653;
   --brand-strong: #003640;
   --brand-soft: #e6efec;
@@ -199,9 +204,9 @@ h1 {
 
 .update-prompt {
   position: fixed;
-  right: 1rem;
-  bottom: 1rem;
-  width: min(24rem, calc(100% - 2rem));
+  right: calc(1rem + var(--safe-right));
+  bottom: calc(1rem + var(--safe-bottom));
+  width: min(24rem, calc(100% - 2rem - var(--safe-left) - var(--safe-right)));
   border: 1px solid var(--line);
   border-radius: 1rem;
   padding: 1rem;
@@ -772,7 +777,7 @@ h1 {
   display: grid;
   place-items: center;
   overflow: auto;
-  padding: 1rem;
+  padding: calc(1rem + var(--safe-top)) calc(1rem + var(--safe-right)) calc(1rem + var(--safe-bottom)) calc(1rem + var(--safe-left));
   background: rgb(0 30 35 / 46%);
   backdrop-filter: blur(7px);
 }
@@ -789,7 +794,7 @@ h1 {
 }
 
 .app-dialog {
-  max-height: min(44rem, calc(100dvh - 2rem));
+  max-height: min(44rem, calc(var(--safe-height) - 2rem));
   overflow: auto;
   padding: clamp(1.25rem, 3vw, 2rem);
   outline: none;
@@ -3006,7 +3011,7 @@ h1 {
 
   .modal-overlay {
     align-items: end;
-    padding: 0;
+    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
   }
 
   .app-modal,
@@ -3016,8 +3021,8 @@ h1 {
   }
 
   .app-dialog {
-    max-height: min(85dvh, 48rem);
-    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+    max-height: min(85dvh, var(--safe-height), 48rem);
+    padding-bottom: 1.5rem;
   }
 
   .dialog-actions > * {
@@ -3057,14 +3062,16 @@ h1 {
 
   .layer-permission-popover {
     position: fixed !important;
-    inset: auto 0 0 !important;
-    width: 100vw;
+    inset: auto var(--safe-right) var(--safe-bottom) var(--safe-left) !important;
+    width: auto;
     transform: none !important;
   }
 
   .layer-permission-dialog {
     border-radius: 1rem 1rem 0 0;
-    padding-bottom: max(1.35rem, env(safe-area-inset-bottom));
+    padding-bottom: 1.35rem;
+    max-height: var(--safe-height);
+    overflow-y: auto;
   }
 
   .annotation-controls {
@@ -3116,7 +3123,10 @@ h1 {
 
 .lifecycle-page button[data-disabled], .pdf-version-dialog button[data-disabled] { opacity: 0.45; cursor: default; }
 
-.page-with-footer { min-height: 100dvh; display: flex; flex-direction: column; }
+/* Ordinary routes own their safe area once. Reader geometry is independent.
+   The strip keeps scrolled content out from behind the system status bar. */
+.page-with-footer { min-height: 100dvh; display: flex; flex-direction: column; padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left); }
+.page-with-footer::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: var(--safe-top); background: var(--canvas); z-index: 30; pointer-events: none; }
 .page-with-footer > :first-child { flex: 1; min-height: 0; }
 .app-footer nav { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; }
 
@@ -3133,18 +3143,18 @@ h1 {
 .diagnostic-receipt code { overflow-wrap: anywhere; }
 .diagnostic-overlay {
   position: fixed; inset: 0; z-index: 200; background: rgb(0 0 0 / 25%);
-  display: flex; align-items: center; justify-content: center; padding: 1rem; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center; padding: calc(1rem + var(--safe-top)) calc(1rem + var(--safe-right)) calc(1rem + var(--safe-bottom)) calc(1rem + var(--safe-left)); box-sizing: border-box;
 }
 .diagnostic-modal {
-  width: min(38rem, 100%); max-height: calc(100dvh - 2rem); overflow-y: auto;
+  width: min(38rem, 100%); max-height: calc(var(--safe-height) - 2rem); overflow-y: auto;
   box-sizing: border-box; padding: 1.5rem; background: white; color: var(--ink); border-radius: 1rem;
   line-height: 1.6; overflow-wrap: anywhere;
 }
 .diagnostic-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .diagnostic-dialog-heading h2 { margin: 0; }
 @media (max-width: 600px) {
-  .diagnostic-overlay { align-items: flex-end; padding: 0; }
-  .diagnostic-modal { max-height: 90dvh; padding: 1rem; padding-bottom: max(1rem, env(safe-area-inset-bottom)); border-radius: 1rem 1rem 0 0; }
+  .diagnostic-overlay { align-items: flex-end; padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left); }
+  .diagnostic-modal { max-height: min(90dvh, var(--safe-height)); padding: 1rem; border-radius: 1rem 1rem 0 0; }
 }
 .diagnostics-document { padding-top: 2rem; }
 .diagnostic-help { margin: 1rem 0; }
