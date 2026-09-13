@@ -61,7 +61,7 @@
 .library-title p { margin: .25rem 0 0; color: var(--muted); font-size: .85rem; }
 .drive-drawer-overlay { position: fixed; inset: 0; z-index: 100; background: rgb(0 0 0 / 35%); }
 .drive-drawer { width: min(21rem, calc(100vw - 3rem)); height: 100dvh; overflow-y: auto; overscroll-behavior: contain; background: var(--surface); box-shadow: .5rem 0 2rem rgb(0 0 0 / 12%); }
-.drive-drawer [role="dialog"] { min-height: 100%; padding: max(1.25rem, env(safe-area-inset-top)) max(1.25rem, var(--safe-right)) max(1.25rem, env(safe-area-inset-bottom)) max(1.25rem, var(--safe-left)); outline: none; }
+.drive-drawer [role="dialog"] { min-height: 100%; padding: max(1.25rem, var(--safe-top)) max(1.25rem, var(--safe-right)) max(1.25rem, var(--safe-bottom)) max(1.25rem, var(--safe-left)); outline: none; }
 .drive-drawer .dialog-heading { align-items: flex-start; }
 .drive-drawer h2 { margin: 0; font-size: 1.35rem; line-height: 1.5; overflow-wrap: anywhere; }
 .drive-drawer .icon-button { flex-shrink: 0; }
@@ -73,7 +73,7 @@
 .drive-drawer nav a:hover, .drive-drawer [role="menuitem"][data-focused] { background: var(--brand-soft); }
 .drive-drawer-management { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: 1rem; }
 .drive-drawer-management h3 { padding-inline: .75rem; font-size: .8rem; color: var(--muted); font-weight: 500; }
-.upload-fab { position: fixed; z-index: 20; right: max(1.25rem, env(safe-area-inset-right)); bottom: calc(1.25rem + env(safe-area-inset-bottom)); display: grid; place-items: center; width: 60px; height: 60px; border: 0; border-radius: 1.1rem; background: var(--brand); color: white; box-shadow: 0 .3rem 1rem rgb(0 0 0 / 20%); cursor: pointer; transition: opacity 160ms, transform 160ms, visibility 160ms; }
+.upload-fab { position: fixed; z-index: 20; right: max(1.25rem, var(--safe-right)); bottom: calc(1.25rem + var(--safe-bottom)); display: grid; place-items: center; width: 60px; height: 60px; border: 0; border-radius: 1.1rem; background: var(--brand); color: white; box-shadow: 0 .3rem 1rem rgb(0 0 0 / 20%); cursor: pointer; transition: opacity 160ms, transform 160ms, visibility 160ms; }
 .upload-fab[data-visible="false"] { opacity: 0; transform: translateY(1rem) scale(.9); visibility: hidden; pointer-events: none; }
 @media (max-width: 600px) {
   .drive-header { width: 100%; padding-inline: .5rem; }
