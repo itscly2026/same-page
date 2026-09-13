@@ -55,8 +55,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
         await expect(viewport).toHaveAttribute("data-zoom", "2");
       }
       if (touch) assert.equal(await viewport.evaluate(node => getComputedStyle(node).touchAction), "pan-y");
-      const allowance = await viewport.evaluate(node => Math.max(0,
-        node.querySelector(".page-reader__content, .continuous-reader__inner").getBoundingClientRect().right - node.getBoundingClientRect().right));
+      const allowance = await horizontalPanAllowance(viewport);
       const xs = offset => Array.from({ length: fingers }, (_, index) => 500 + index * 100 - offset);
       const gestureStart = await navigationSnapshot(viewport);
       await send(viewport, touch, "down", xs(0));
@@ -85,7 +84,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       assert.equal(await currentPage(viewport), 1);
       assert.equal(Number(await viewport.getAttribute("data-zoom")), zoom);
       // Consume the current pan allowance, then the common distance rule commits either input.
-      const nextAllowance = await viewport.evaluate(node => Math.max(0, node.querySelector(".page-reader__content, .continuous-reader__inner").getBoundingClientRect().right - node.getBoundingClientRect().right));
+      const nextAllowance = await horizontalPanAllowance(viewport);
       await send(viewport, touch, "down", xs(0));
       await send(viewport, touch, "move", xs(nextAllowance + 300));
       await send(viewport, touch, "up", xs(nextAllowance + 300));
@@ -117,12 +116,17 @@ async function send(viewport, touch, phase, xs) {
       // Desktop WebKit does not expose a constructible Touch. Exercise the
       // native listener's complete contact snapshot; trusted touch/momentum is
       // covered separately through Chromium's input protocol below.
-      const samples = xs.map((clientX, identifier) => ({ identifier: identifier + 1, target: node, clientX, clientY: 300 }));
+      const samples = xs.map((clientX, identifier) => ({ identifier: identifier + 101, target: node, clientX, clientY: 300 }));
       const event = new Event(`touch${{ down: "start", move: "move", up: "end" }[phase]}`, { bubbles: true, cancelable: true });
       Object.defineProperties(event, { changedTouches: { value: samples }, touches: { value: phase === "up" ? [] : samples } });
       node.dispatchEvent(event);
-    } else xs.forEach((clientX, index) => node.dispatchEvent(new PointerEvent(`pointer${phase}`,
-      { bubbles: true, pointerType: "touch", pointerId: index + 1, clientX, clientY: 300 })));
+    } else {
+      // Keep synthetic contacts separate from the real mouse used by locator.click.
+      // Linux WebKit sends mouse moves after layout/scroll at pointerId 1;
+      // reusing that id would turn those moves into part of this touch gesture.
+      xs.forEach((clientX, index) => node.dispatchEvent(new PointerEvent(`pointer${phase}`,
+        { bubbles: true, pointerType: "touch", pointerId: index + 101, clientX, clientY: 300 })));
+    }
     return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   }, { touch, phase, xs });
 }
@@ -180,4 +184,9 @@ async function navigationSnapshot(viewport) {
     navigation: { ...node.querySelector("[data-page-turn-phase]")?.dataset },
     alert: document.querySelector("[role=alert]")?.textContent,
   }));
+}
+
+async function horizontalPanAllowance(viewport) {
+  return viewport.evaluate(node => Math.max(0,
+    node.querySelector("[data-page-turn-current] .page-reader__content, .continuous-reader__inner").getBoundingClientRect().right - node.getBoundingClientRect().right));
 }

@@ -50,6 +50,26 @@ describe("useReaderGestures", () => {
     expect(pageTurn.end).toHaveBeenCalledTimes(kind === "turn" ? 1 : 0);
   });
 
+  it.each(["move", "up", "cancel"] as const)("ignores mouse %s with the same numeric id as an active native touch", phase => {
+    const pageTurn: PageTurnGesture = { begin: vi.fn(), move: vi.fn(() => true), end: vi.fn(() => true), cancel: vi.fn(() => true) };
+    render(<GestureHarness onZoomChange={vi.fn()} pageTurn={pageTurn} nativeTouchScroll />);
+    const viewport = screen.getByTestId("gesture-viewport");
+    mockGeometry(viewport, screen.getByTestId("gesture-content"));
+    const touch = (clientX: number) => ({ identifier: 1, clientX, clientY: 200, target: viewport });
+    fireEvent.touchStart(viewport, { touches: [touch(500)], changedTouches: [touch(500)] });
+    const mouse = { pointerId: 1, pointerType: "mouse", clientX: 400, clientY: 200 };
+    if (phase === "move") fireEvent.pointerMove(viewport, mouse);
+    else if (phase === "up") fireEvent.pointerUp(viewport, mouse);
+    else fireEvent.pointerCancel(viewport, mouse);
+    expect(pageTurn.move).not.toHaveBeenCalled();
+    expect(pageTurn.end).not.toHaveBeenCalled();
+    expect(pageTurn.cancel).not.toHaveBeenCalled();
+    fireEvent.touchMove(viewport, { touches: [touch(300)], changedTouches: [touch(300)] });
+    expect(pageTurn.move).toHaveBeenCalledWith(expect.objectContaining({ x: -200 }));
+    fireEvent.touchEnd(viewport, { touches: [], changedTouches: [touch(300)] });
+    expect(pageTurn.end).toHaveBeenCalledOnce();
+  });
+
   it("previews around the midpoint and commits one settled zoom", () => {
     const onZoomChange = vi.fn();
     render(<GestureHarness onZoomChange={onZoomChange} />);
@@ -335,10 +355,12 @@ function GestureHarness({
   onZoomChange,
   pageTurn,
   twoFingerOnly = false,
+  nativeTouchScroll = false,
 }: {
   onZoomChange: (zoom: number) => void;
   pageTurn?: PageTurnGesture;
   twoFingerOnly?: boolean;
+  nativeTouchScroll?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -350,6 +372,7 @@ function GestureHarness({
     previewBoundaryRef,
     disabled: false,
     twoFingerOnly,
+    nativeTouchScroll,
     zoom,
     onZoomChange: (value) => {
       onZoomChange(value);

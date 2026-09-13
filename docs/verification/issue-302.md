@@ -28,3 +28,16 @@
 ## 尚待真机验收
 
 未执行 iPad Safari／安装后 PWA 真机验收，不能用桌面 WebKit、模拟触摸或截图替代。验收时记录设备型号、iPadOS 版本、Safari／主屏幕启动方式；重点检查单／双指交接、连续纵向惯性、捏合触点增减、Pencil 对象归属和翻页跟手。提交 PR 不代表已合并或部署。
+
+## PR #307 CI 失败复核与修复
+
+2026-09-13，分支已 rebase 到 main `53ea4c1`。前两次 CI 的 Linux WebKit 在 `page-read-2` 找不到 dragging；增加只读失败现场后，另一次失败暴露在 `continuous-read-2`，进度被逆转成正值。没有增加断言超时、删除场景或添加重试。
+
+在独立 Linux/Ubuntu 22.04、Node 24.19.0、同版 Playwright 环境复现。临时事件采样确认：测试的合成触摸 `pointerId=1` 与初始 locator.click 使用的真实鼠标 `pointerId=1` 冲突。WebKit 在滚动/布局变化后发送鼠标移动，导致已发送的 `remaining=-100` 被鼠标坐标 `(417,400)` 改写成 `remaining=0`，导航退回 idle。该单场景在修复前连续复现两次。临时采样已从产品代码移除，仅保留测试失败时的只读几何快照。
+
+- 浏览器测试的合成 PointerEvent 与 TouchEvent 都使用独立编号 `101+index`，避免与真实鼠标混用；全部原断言保留。只改测试编号、产品手势代码保持原样时，Linux WebKit 8 个组合已全部通过。
+- 同时发现真实边界缺陷：连续模式将 TouchEvent.identifier 与 PointerEvent.pointerId 用作同一数字键。内部改为包含事件来源的 contactKey，未追踪的 up/cancel 不影响其他触点。三个同号鼠标 move/up/cancel 回归在修复前全部失败，修复后通过，并验证触摸仍可继续及正常结束。
+- Spec 复核还发现缩略图选择直接修改页码。已改用 goToPage；回归验证目标未 ready 时仍保留当前页，ready 后经公共过渡提交。原立即跳页断言先改为等待公共过渡并确认失败，再修复。
+- Standards：0 项硬性违规；重复平移余量读取已抽取，并限定当前页。Spec：上述遗漏已修复，最终复核无剩余发现。
+
+最终本地验证：Node 117 项、客户端 713 项（79 文件）通过；typecheck、lint、build 通过。macOS Chromium/WebKit 共 16 个导航组合和 Chromium 原生触摸测试通过；Linux WebKit 8 个组合通过。Linux 复现命令：`SAME_PAGE_BUILD_ID=<tested-head> NAVIGATION_CASE=page-read-2 node --test --test-name-pattern='^webkit:' visual-report/reader-navigation.test.mjs`；去掉 NAVIGATION_CASE 运行全部 8 个组合。Linux 证据仍不代表 iPad 真机验收。

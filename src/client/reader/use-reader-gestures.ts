@@ -13,7 +13,7 @@ import type { PageTurnGesture } from "./use-paged-reader";
 const MIN_PINCH_ZOOM = 0.75;
 const MAX_ZOOM = 3;
 
-type GesturePointer = Pick<ReactPointerEvent<HTMLElement>, "pointerId" | "pointerType" | "clientX" | "clientY" | "timeStamp" | "currentTarget">;
+type GesturePointer = Pick<ReactPointerEvent<HTMLElement>, "pointerId" | "pointerType" | "clientX" | "clientY" | "timeStamp" | "currentTarget"> & { source?: "touch-event" };
 
 interface Point {
   x: number;
@@ -76,10 +76,10 @@ export function useReaderGestures({
   captureAnchor?(center: Point): (zoom: number) => Point;
 }) {
   const constrain = useEffectEvent(() => constrainScroll?.());
-  const objectPointers = useRef(new Set<number>());
-  const points = useRef(new Map<number, Point>());
+  const objectPointers = useRef(new Set<string>());
+  const points = useRef(new Map<string, Point>());
   const primary = useRef<{
-    id: number;
+    id: string;
     x: number;
     y: number;
   } | null>(null);
@@ -207,11 +207,11 @@ export function useReaderGestures({
     if (!twoFingerOnly && !(nativeTouchScroll && event.pointerType === "touch")) {
       try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* The browser may already have retired this pointer. */ }
     }
-    points.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    points.current.set(contactKey(event), { x: event.clientX, y: event.clientY });
     if (drained.current) return;
     if (points.current.size === 1) {
       primary.current = {
-        id: event.pointerId,
+        id: contactKey(event),
         x: event.clientX,
         y: event.clientY,
       };
@@ -306,8 +306,8 @@ export function useReaderGestures({
     samplePair(pairTime.current);
   };
   const pointerMove = (event: GesturePointer) => {
-    if (disabled || !points.current.has(event.pointerId) || drained.current) return;
-    points.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (disabled || !points.current.has(contactKey(event)) || drained.current) return;
+    points.current.set(contactKey(event), { x: event.clientX, y: event.clientY });
     if (points.current.size === 2 && pinch.current) {
       pairTime.current = event.timeStamp;
       if (pairFrame.current === null) pairFrame.current = requestAnimationFrame(() => {
@@ -364,11 +364,11 @@ export function useReaderGestures({
   };
 
   const finishPointer = (event: GesturePointer) => {
-    if (disabled) return;
+    if (disabled || !points.current.has(contactKey(event))) return;
     const start = primary.current;
     const wasPinched = pinched.current;
     if (wasPinched && points.current.size === 2 && pairFrame.current !== null) flushPair();
-    points.current.delete(event.pointerId);
+    points.current.delete(contactKey(event));
     if (drained.current) {
       if (points.current.size === 0) resetGesture();
       return;
@@ -380,7 +380,7 @@ export function useReaderGestures({
       } else if (points.current.size === 0) finishPinch();
       return;
     }
-    if (twoFingerOnly || !start || start.id !== event.pointerId) return;
+    if (twoFingerOnly || !start || start.id !== contactKey(event)) return;
     primary.current = null;
     if (pageTurn?.end({ sessionId: 0, x: 0, y: 0, time: event.timeStamp, extent: pageTurnExtent ?? 1 })) {
       return;
@@ -407,7 +407,8 @@ export function useReaderGestures({
   };
 
   const cancelPointer = (event: GesturePointer) => {
-    points.current.delete(event.pointerId);
+    if (!points.current.has(contactKey(event))) return;
+    points.current.delete(contactKey(event));
     pageTurn?.cancel(0);
     if (pairFrame.current !== null) cancelAnimationFrame(pairFrame.current);
     pairFrame.current = null;
@@ -438,7 +439,7 @@ export function useReaderGestures({
     if (!target) return;
     for (const touch of Array.from(event.changedTouches)) {
       const sample: GesturePointer = {
-        pointerId: touch.identifier, pointerType: "touch",
+        source: "touch-event", pointerId: touch.identifier, pointerType: "touch",
         clientX: touch.clientX, clientY: touch.clientY,
         timeStamp: event.timeStamp, currentTarget: target,
       };
@@ -469,8 +470,8 @@ export function useReaderGestures({
       for (const id of points.current.keys()) objectPointers.current.add(id);
       points.current.clear();
       primary.current = null;
-      if (event.type === "pointerup" || event.type === "pointercancel") objectPointers.current.delete(event.pointerId);
-      else objectPointers.current.add(event.pointerId);
+      if (event.type === "pointerup" || event.type === "pointercancel") objectPointers.current.delete(contactKey(event));
+      else objectPointers.current.add(contactKey(event));
       // A cancelled child no longer owns these events. Drain the sequence
       // without letting a remaining/new finger start a fresh note.
       if (!objectActive) {
@@ -508,4 +509,9 @@ function distance(first: Point, second: Point) {
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+// Touch identifiers and PointerEvent ids are unique only within their own API.
+function contactKey(event: GesturePointer): string {
+  return `${event.source ?? "pointer-event"}:${event.pointerId}`;
 }
