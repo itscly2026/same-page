@@ -94,28 +94,7 @@ const alice = { choirId: "choir", scoreId: "score", experience: false,
   identity: { localUserId: "alice", restoring: false, onlineState: "unreachable" as const } };
 
 it.each(["resolve", "capture", "cleanup"] as const)("ignores late %s after timeout and retry", async stage => {
-  const platform = await import("../platform/local-workspace");
-  const annotations = await import("../annotations/annotation-state");
-  const gate = deferred<void>();
-  const entered = deferred<void>();
-  const method = stage === "resolve" ? "resolveLocalWorkspace" : "captureLocalWorkspaceSession";
-  if (stage === "cleanup") {
-    vi.spyOn(annotations, "cleanupUncreatedDeleteConflicts").mockImplementationOnce(async () => {
-      entered.resolve(); await gate.promise; return 0;
-    });
-  } else if (method === "resolveLocalWorkspace") {
-    const original = platform.resolveLocalWorkspace;
-    vi.spyOn(platform, method).mockImplementationOnce(async options => {
-      const workspace = await original(options);
-      entered.resolve(); await gate.promise; return workspace;
-    });
-  } else {
-    const original = platform.captureLocalWorkspaceSession;
-    vi.spyOn(platform, method).mockImplementationOnce(async workspace => {
-      const captured = await original(workspace);
-      entered.resolve(); await gate.promise; return captured;
-    });
-  }
+  const { gate, entered } = await pauseWorkspaceStage(stage);
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const { result } = renderHook(() => useReaderWorkspace(alice));
   await act(async () => { await entered.promise; });
@@ -158,24 +137,9 @@ it("starts a fresh preparation deadline after identity waiting and keeps failure
 });
 
 it.each(["resolve", "capture"] as const)("does not start cleanup after unmount during %s", async stage => {
-  const platform = await import("../platform/local-workspace");
   const annotations = await import("../annotations/annotation-state");
   const cleanup = vi.spyOn(annotations, "cleanupUncreatedDeleteConflicts");
-  const gate = deferred<void>();
-  const entered = deferred<void>();
-  if (stage === "resolve") {
-    const original = platform.resolveLocalWorkspace;
-    vi.spyOn(platform, "resolveLocalWorkspace").mockImplementationOnce(async options => {
-      const workspace = await original(options);
-      entered.resolve(); await gate.promise; return workspace;
-    });
-  } else {
-    const original = platform.captureLocalWorkspaceSession;
-    vi.spyOn(platform, "captureLocalWorkspaceSession").mockImplementationOnce(async workspace => {
-      const captured = await original(workspace);
-      entered.resolve(); await gate.promise; return captured;
-    });
-  }
+  const { gate, entered } = await pauseWorkspaceStage(stage);
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const { result, unmount } = renderHook(() => useReaderWorkspace(alice));
   await act(async () => { await entered.promise; });
@@ -228,3 +192,55 @@ it("ignores old rejection after a target change", async () => {
   await act(async () => { gate.reject(new Error("late failure")); });
   expect(result.current.state).toBe(ready);
 });
+
+it("waits when ownership disappears during epoch recapture and resumes only after legitimate activation", async () => {
+  const platform = await import("../platform/local-workspace");
+  const { ACTIVE_LOCAL_OWNER_KEY } = await import("../platform/local-database");
+  const { result } = renderHook(() => useReaderWorkspace(alice));
+  await waitFor(() => expect(result.current.state.status).toBe("ready"));
+  const gate = deferred<void>();
+  const entered = deferred<void>();
+  const capture = platform.captureLocalWorkspaceSession;
+  const finished = deferred<void>();
+  vi.spyOn(platform, "captureLocalWorkspaceSession").mockImplementationOnce(async workspace => {
+    entered.resolve(); await gate.promise;
+    try { return await capture(workspace); } finally { finished.resolve(); }
+  });
+  await act(async () => {
+    await localDatabase.system.put({ key: "local-workspace:epoch", value: "new-epoch" });
+    await entered.promise;
+    await platform.activateAuthenticatedLocalOwner("bob");
+    gate.resolve();
+    await finished.promise;
+  });
+  expect(result.current.state.status).toBe("opening");
+  expect((await localDatabase.system.get(ACTIVE_LOCAL_OWNER_KEY))?.value).toBe("user:bob");
+  await act(async () => { await platform.activateAuthenticatedLocalOwner("alice"); });
+  await waitFor(() => expect(result.current.state.status).toBe("ready"));
+});
+
+
+async function pauseWorkspaceStage(stage: "resolve" | "capture" | "cleanup") {
+  const platform = await import("../platform/local-workspace");
+  const annotations = await import("../annotations/annotation-state");
+  const gate = deferred<void>();
+  const entered = deferred<void>();
+  if (stage === "cleanup") {
+    vi.spyOn(annotations, "cleanupUncreatedDeleteConflicts").mockImplementationOnce(async () => {
+      entered.resolve(); await gate.promise; return 0;
+    });
+  } else if (stage === "resolve") {
+    const original = platform.resolveLocalWorkspace;
+    vi.spyOn(platform, "resolveLocalWorkspace").mockImplementationOnce(async options => {
+      const workspace = await original(options);
+      entered.resolve(); await gate.promise; return workspace;
+    });
+  } else {
+    const original = platform.captureLocalWorkspaceSession;
+    vi.spyOn(platform, "captureLocalWorkspaceSession").mockImplementationOnce(async workspace => {
+      const captured = await original(workspace);
+      entered.resolve(); await gate.promise; return captured;
+    });
+  }
+  return { gate, entered };
+}

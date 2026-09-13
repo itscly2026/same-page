@@ -54,20 +54,10 @@ export function useReaderWorkspace({ choirId, scoreId, experience, identity }: O
       phase = "opening";
       publish({ status: "opening" });
       restartDeadline();
-      try {
-        // Only the initial attempt resolves ownership. Epoch recovery must not
-        // activate an owner that another login/logout has already revoked.
-        const base = resolved ?? await resolveLocalWorkspace({ choirId, scoreId, experience,
-          authenticatedUserId: identity.localUserId, signal: controller.signal });
-        if (!current()) return;
-        const workspace = await captureLocalWorkspaceSession(base);
-        if (!current()) return;
-        await cleanupUncreatedDeleteConflicts(workspace).catch(() => {
-          // Historical cleanup failure is tolerated; a stall still has a deadline.
-        });
-        if (!current()) return;
+      const observe = (base: LocalWorkspace, workspace?: LocalWorkspace) => {
         let invalidated = false;
         subscription = liveQuery(async () => {
+          if (!workspace) return await isLocalWorkspaceActive(base) ? "recapture" as const : "revoked" as const;
           try {
             await assertLocalWorkspaceActive(workspace);
             return "valid" as const;
@@ -78,7 +68,7 @@ export function useReaderWorkspace({ choirId, scoreId, experience, identity }: O
         }).subscribe({
           next: validity => {
             if (!current()) return;
-            if (validity === "valid" && !invalidated) {
+            if (validity === "valid" && workspace && !invalidated) {
               clearTimeout(timer);
               phase = "ready";
               publish({ status: "ready", workspace });
@@ -94,8 +84,28 @@ export function useReaderWorkspace({ choirId, scoreId, experience, identity }: O
           },
           error: () => { if (current()) fail(failureMessage); },
         });
-      } catch {
-        if (current()) fail(failureMessage);
+      };
+      let base = resolved;
+      try {
+        // Only the initial attempt resolves ownership. Epoch recovery must not
+        // activate an owner that another login/logout has already revoked.
+        base = resolved ?? await resolveLocalWorkspace({ choirId, scoreId, experience,
+          authenticatedUserId: identity.localUserId, signal: controller.signal });
+        if (!current()) return;
+        const workspace = await captureLocalWorkspaceSession(base);
+        if (!current()) return;
+        await cleanupUncreatedDeleteConflicts(workspace).catch(() => {
+          // Historical cleanup failure is tolerated; a stall still has a deadline.
+        });
+        if (!current()) return;
+        observe(base, workspace);
+      } catch (error) {
+        if (!current()) return;
+        if (error instanceof LocalWorkspaceOwnerChangedError && base) {
+          // Ownership can disappear between observing an epoch and capturing it.
+          // Keep waiting without reactivating that owner or publishing a bare scope.
+          observe(base);
+        } else fail(failureMessage);
       }
     };
     publish({ status: "opening" });
