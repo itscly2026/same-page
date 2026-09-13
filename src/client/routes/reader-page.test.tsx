@@ -38,6 +38,8 @@ import { clearDiagnostics, exportDiagnostics } from "../diagnostics/diagnostics"
 // Navigation blocking is exercised with the production data router in
 // reader-navigation-guard.test.tsx and the browser status flow.
 
+const heldPageRenders = vi.hoisted(() => new Map<number, (() => void) | null>());
+
 const readerAuthState = vi.hoisted(() => ({ signedIn: true, pending: false }));
 
 const virtualTestState = vi.hoisted(() => ({
@@ -168,7 +170,11 @@ vi.mock("../reader/pdf-page", async () => {
           lease?.cancel();
         };
       }, [onRenderStart, pageNumber]);
-      useEffect(() => { leaseRef.current?.ready(); }, [onRenderStart, pageNumber]);
+      useEffect(() => {
+        const ready = () => leaseRef.current?.ready();
+        if (onRenderStart && heldPageRenders.has(pageNumber)) heldPageRenders.set(pageNumber, ready);
+        else ready();
+      }, [onRenderStart, pageNumber]);
       return <div aria-label={`渲染第 ${pageNumber} 页`} />;
     },
   };
@@ -286,6 +292,7 @@ it("keeps a single exit while the PDF never settles", async () => {
       ?.getAttribute("data-page-number");
 
   beforeEach(async () => {
+    heldPageRenders.clear();
     readerAuthState.signedIn = true;
     readerAuthState.pending = false;
     clearDiagnostics();
@@ -1049,6 +1056,25 @@ it("keeps a single exit while the PDF never settles", async () => {
     parsingView.unmount();
   });
 
+  it("keeps the current page until a scrubber destination has rendered", async () => {
+    heldPageRenders.set(2, null);
+    render(
+      <MemoryRouter initialEntries={["/choirs/choir-1/scores/score-1"]}>
+        <Routes><Route path="/choirs/:choirId/scores/:scoreId" element={<ReaderPage />} /></Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByLabelText("翻页阅读");
+    toggleChrome();
+    fireEvent.change(screen.getByRole("slider", { name: "跳转页码" }), { target: { value: "2" } });
+    fireEvent.pointerUp(window);
+    expect(currentRenderedPage()).toBe("1");
+    await waitFor(() => expect(document.querySelector("[data-page-turn-phase]")).toHaveAttribute("data-page-turn-phase", "preparing"));
+    expect(currentRenderedPage()).toBe("1");
+    await act(async () => { heldPageRenders.get(2)?.(); });
+    await finishPageTurn();
+    expect(currentRenderedPage()).toBe("2");
+  });
+
   it("opens with score-only chrome and switches layouts without entering edit mode", async () => {
     render(
       <MemoryRouter
@@ -1084,6 +1110,8 @@ it("keeps a single exit while the PDF never settles", async () => {
     expect(screen.getByLabelText("页面位置")).toHaveTextContent("3 / 3");
     expect(currentRenderedPage()).toBe("2");
     fireEvent.pointerUp(window);
+    expect(currentRenderedPage()).toBe("2");
+    await finishPageTurn();
     expect(currentRenderedPage()).toBe("3");
     expect(screen.getByLabelText("页面缩略图")).toBeInTheDocument();
     toggleChrome();

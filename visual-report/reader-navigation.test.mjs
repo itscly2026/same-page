@@ -58,6 +58,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       const allowance = await viewport.evaluate(node => Math.max(0,
         node.querySelector(".page-reader__content, .continuous-reader__inner").getBoundingClientRect().right - node.getBoundingClientRect().right));
       const xs = offset => Array.from({ length: fingers }, (_, index) => 500 + index * 100 - offset);
+      const gestureStart = await navigationSnapshot(viewport);
       await send(viewport, touch, "down", xs(0));
       if (allowance > 0) {
         await send(viewport, touch, "move", xs(allowance));
@@ -65,7 +66,12 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       }
       await send(viewport, touch, "move", xs(allowance + 100));
       const surface = viewport.locator('[data-page-turn-phase="dragging"]').first();
-      await expect(surface).toHaveAttribute("data-page-turn-progress", /-0\./);
+      try {
+        await expect(surface).toHaveAttribute("data-page-turn-progress", /-0\./);
+      } catch (error) {
+        t.diagnostic(JSON.stringify({ scenario, allowance, gestureStart, failed: await navigationSnapshot(viewport) }));
+        throw error;
+      }
 
       await viewport.locator("[data-page-turn-target] [data-pdf-canvas-active]").waitFor();
       await send(viewport, touch, "move", xs(allowance + 105));
@@ -164,3 +170,14 @@ test("Chromium native touch keeps vertical momentum and reserves horizontal navi
   await expect.poll(() => currentPage(viewport)).toBe(2);
   assert.ok((await viewport.evaluate(node => node.touchDecisions)).some(Boolean));
 });
+
+async function navigationSnapshot(viewport) {
+  return viewport.evaluate(node => ({
+    zoom: node.dataset.zoom,
+    scrollLeft: node.scrollLeft,
+    viewport: node.getBoundingClientRect().toJSON(),
+    paper: node.querySelector("[data-page-turn-current] .page-reader__content, .continuous-reader__inner")?.getBoundingClientRect().toJSON(),
+    navigation: { ...node.querySelector("[data-page-turn-phase]")?.dataset },
+    alert: document.querySelector("[role=alert]")?.textContent,
+  }));
+}

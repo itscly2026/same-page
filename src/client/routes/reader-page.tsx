@@ -586,7 +586,7 @@ function ReaderPageContent() {
             key={score.currentVersion.id}
             document={document}
             currentPage={currentPage}
-            onSelect={page => { setZoom(1); setCurrentPage(page); }}
+            onSelect={goToPage}
           />
         </>
       ) : null}
