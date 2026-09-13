@@ -162,7 +162,7 @@
 .shared-layer-summary li { display: flex; justify-content: space-between; padding: 1rem 0; border-bottom: 1px solid var(--line); }
 .shared-layer-summary span { color: var(--muted); font-size: .85rem; }
 
-.task-header { display: flex; align-items: center; gap: .75rem; padding: .75rem max(1rem, env(safe-area-inset-left)); min-height: 64px; border-bottom: 1px solid var(--line); }
+.task-header { display: flex; align-items: center; gap: .75rem; padding: .75rem 1rem; min-height: 64px; border-bottom: 1px solid var(--line); }
 .task-header h1 { font-size: 1.25rem; line-height: 1.4; margin: 0; flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .task-header + main { padding-top: 1.5rem; }
 .member-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(8rem, .45fr); gap: .75rem; margin: 1.5rem 0 .5rem; }

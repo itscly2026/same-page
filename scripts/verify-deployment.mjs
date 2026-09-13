@@ -123,7 +123,7 @@ export async function verifyDeployment({
     );
     assert.equal(manifest.name, "合谱 · Same Page");
     assert.equal(manifest.short_name, "合谱");
-    assert.equal(manifest.display, "fullscreen");
+    assert.equal(manifest.display, "standalone");
   }
 
   async function verifyServiceWorker() {

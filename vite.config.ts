@@ -80,7 +80,7 @@ export default defineConfig(({ isPreview }) => ({
         description: "合唱乐谱与排练批注",
         theme_color: "#014653",
         background_color: "#ffffff",
-        display: "fullscreen",
+        display: "standalone",
         start_url: "/",
         icons: [
           {
