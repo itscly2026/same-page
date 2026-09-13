@@ -41,7 +41,6 @@ import type {
   AnnotationOverlayInteraction,
 } from "../annotations/annotation-overlay";
 import {
-  cleanupUncreatedDeleteConflicts,
   readScoreAnnotationState,
 } from "../annotations/annotation-state";
 import { getAnnotationSyncActivity, subscribeAnnotationSync } from "../annotations/sync";
@@ -53,12 +52,7 @@ import {
   ensureLoadingJourney,
   startLoadingJourney,
 } from "../performance/loading-performance";
-import {
-  isLocalWorkspaceActive,
-  captureLocalWorkspaceSession,
-  resolveLocalWorkspace,
-  type LocalWorkspace,
-} from "../platform/local-workspace";
+import { useReaderWorkspace } from "../reader/use-reader-workspace";
 import { useOfflineScore } from "../offline/use-offline-score";
 import { driveCacheOwnerKey } from "../score-library/drive-library-cache";
 import { recordScoreOpened } from "../score-library/library-view-state";
@@ -113,26 +107,17 @@ function ReaderPageContent() {
   const returnedPanel = navigationType !== "POP" && location.state?.readerReturnPanel === "layers";
   const { choirId = "", scoreId = "" } = useParams();
   const identity = useApplicationIdentity();
-  const [resolvedWorkspace, setResolvedWorkspace] =
-    useState<LocalWorkspace | null>(null);
-  const [workspaceAttempt, setWorkspaceAttempt] = useState(0);
-  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
-  const workspaceIsActive = useLiveQuery(
-    () => resolvedWorkspace
-      ? isLocalWorkspaceActive(resolvedWorkspace)
-      : false,
-    [resolvedWorkspace?.scopeKey],
-    false,
-  );
+  const opening = useReaderWorkspace({ choirId, scoreId, experience, identity });
+  const workspace = opening.state.status === "ready" ? opening.state.workspace : null;
   const navigation = useAppNavigation();
   const [fitRequest, setFitRequest] = useState(0);
   const [zoom, setZoom] = useReturnState("zoom", 1);
   const [editingEditor, setEditingEditor] = useState<AnnotationEditor | null>(null);
   const [annotationInteraction, setAnnotationInteraction] =
     useState<AnnotationOverlayInteraction>("idle");
-  const { tool, setTool } = useLastTool(resolvedWorkspace?.ownerKey ?? `user:${identity.localUserId ?? "guest"}`);
-  const { style: toolStyle, setStyle: setToolStyle } = useToolStyle(resolvedWorkspace?.ownerKey ?? `user:${identity.localUserId ?? "guest"}`, tool);
-  const { color: toolColor, setColor: setToolColor } = useToolColor(resolvedWorkspace?.ownerKey ?? `user:${identity.localUserId ?? "guest"}`, tool);
+  const { tool, setTool } = useLastTool(workspace?.ownerKey ?? `user:${identity.localUserId ?? "guest"}`);
+  const { style: toolStyle, setStyle: setToolStyle } = useToolStyle(workspace?.ownerKey ?? `user:${identity.localUserId ?? "guest"}`, tool);
+  const { color: toolColor, setColor: setToolColor } = useToolColor(workspace?.ownerKey ?? `user:${identity.localUserId ?? "guest"}`, tool);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const [syncOutcome, setSyncOutcome] = useState<ReaderSyncOutcome>("none");
   const [syncing, setSyncing] = useState(false);
@@ -144,19 +129,19 @@ function ReaderPageContent() {
     return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
   }, []);
   const syncActivity = useSyncExternalStore(subscribeAnnotationSync,
-    () => getAnnotationSyncActivity(resolvedWorkspace?.scopeKey ?? ""));
+    () => getAnnotationSyncActivity(workspace?.scopeKey ?? ""));
   useEffect(() => subscribeAnnotationSync(() => {
-    if (getAnnotationSyncActivity(resolvedWorkspace?.scopeKey ?? "") === "running") setSyncOutcome("none");
-  }), [resolvedWorkspace?.scopeKey]);
+    if (getAnnotationSyncActivity(workspace?.scopeKey ?? "") === "running") setSyncOutcome("none");
+  }), [workspace?.scopeKey]);
   const [chromeVisible, setChromeVisible] = useReturnState("chrome", returnedPanel);
   const [readerPanel, setReaderPanel] = useReturnState<ReaderPanel | null>("panel", returnedPanel ? "layers" : null);
   const [cloudCheck, setCloudCheck] = useState<{ scope: string; at: number } | null>(null);
   useEffect(() => {
-    if (!resolvedWorkspace) return;
-    return subscribeReaderSync(resolvedWorkspace, result => {
-      if (result.state === "active") setCloudCheck({ scope: resolvedWorkspace.scopeKey, at: Date.now() });
+    if (!workspace) return;
+    return subscribeReaderSync(workspace, result => {
+      if (result.state === "active") setCloudCheck({ scope: workspace.scopeKey, at: Date.now() });
     });
-  }, [resolvedWorkspace]);
+  }, [workspace]);
   const [moreOpen, setMoreOpen] = useState(false);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
   const moreTrigger = useRef<HTMLButtonElement>(null);
@@ -175,53 +160,6 @@ function ReaderPageContent() {
   useEffect(() => {
     ensureLoadingJourney("open-score", "direct");
   }, []);
-  const waitingForIdentity = identity.restoring || (!identity.localUserId && identity.onlineState === "checking");
-  useEffect(() => {
-    if (workspaceError) return;
-    let active = true;
-    const controller = new AbortController();
-    const fail = (message: string) => {
-      if (!active) return;
-      active = false;
-      clearTimeout(timer);
-      setWorkspaceError(message);
-    };
-    const timer = setTimeout(() => fail("打开本机工作区用时较长，可以重试或返回云盘。"), 45_000);
-    if (waitingForIdentity) return () => { active = false; clearTimeout(timer); };
-    void resolveLocalWorkspace({
-      authenticatedUserId: identity.localUserId,
-      experience,
-      signal: controller.signal,
-      choirId,
-      scoreId,
-    }).then(async (resolved) => {
-      if (!active) return;
-      const workspace = await captureLocalWorkspaceSession(resolved);
-      try {
-        await cleanupUncreatedDeleteConflicts(workspace);
-      } catch {
-        // Historical cleanup must never prevent the local workspace from opening.
-      }
-      if (active) {
-        clearTimeout(timer);
-        setResolvedWorkspace(workspace);
-      }
-    }).catch(() => fail("本机工作区暂时无法打开，请重试；已保存的内容仍然保留。"));
-    return () => {
-      active = false;
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [choirId, scoreId, identity.localUserId, waitingForIdentity, workspaceAttempt, workspaceError, experience]);
-
-  const workspace =
-    resolvedWorkspace &&
-    (!identity.localUserId || resolvedWorkspace.ownerKey === `${experience ? "experience:" : ""}user:${identity.localUserId}`) &&
-    workspaceIsActive &&
-    resolvedWorkspace.choirId === choirId &&
-    resolvedWorkspace.scoreId === scoreId
-      ? resolvedWorkspace
-      : null;
   const { editor, persistence } = useAnnotationEditor(workspace);
   const editing = editor !== null && editor === editingEditor;
   const [exportOpen, setExportOpen] = useState(false);
@@ -374,12 +312,12 @@ function ReaderPageContent() {
   const loadingScreen = <ReaderLoading choirId={choirId} fileName={score?.fileName} />;
 
   if (!workspace) {
-    if (!workspaceError) return loadingScreen;
+    if (opening.state.status !== "failed") return loadingScreen;
     return <main className="page-shell compact-page">
       <h1>无法打开</h1>
-      <p role="alert">{workspaceError}</p>
+      <p role="alert">{opening.state.message}</p>
       <BackButton className="primary-link" to={`/choirs/${choirId}`}>返回云盘</BackButton>
-      <Button className="secondary-button" onPress={() => { setWorkspaceError(null); setWorkspaceAttempt(value => value + 1); }}>重试打开工作区</Button>
+      <Button className="secondary-button" onPress={opening.retry}>重试打开工作区</Button>
       <details><summary>更多帮助</summary>{diagnosticDialog}</details>
     </main>;
   }
